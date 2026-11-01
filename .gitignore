@@ -13,3 +13,5 @@
 .classpath
 /data/music/temp*
 *.log
+/runtime/
+/madness.jar

@@ -2,12 +2,13 @@ package nfm.lit;
 import fallk.logmaster.HLogger;
 import nfm.lit.audio.BASSLoader;
 
-import java.applet.Applet;
 import java.awt.*;
 import java.awt.geom.Rectangle2D;
 import java.io.*;
+import java.net.MalformedURLException;
 import java.net.Socket;
 import java.net.URI;
+import java.net.URL;
 import java.util.Date;
 import java.util.Enumeration;
 import java.util.Objects;
@@ -23,7 +24,7 @@ import java.util.zip.ZipOutputStream;
  *
  * @author Kaffeinated, Omar Waly
  */
-public class GameSparker extends Applet implements Runnable {
+public class GameSparker extends Panel implements Runnable {
     /**
     *
     */
@@ -98,7 +99,7 @@ public class GameSparker extends Applet implements Runnable {
     private int xm;
     private int ym;
     private boolean lostfcs;
-    private boolean exwist;
+    private volatile boolean exwist;
     private int nob;
     private int notb;
     private int view;
@@ -158,11 +159,22 @@ public class GameSparker extends Applet implements Runnable {
         return false;
     }
 
-    @Override
+    /**
+     * The folder the game was started from; data files are resolved against it.
+     */
+    public URL getCodeBase() {
+        try {
+            return new File(System.getProperty("user.dir")).toURI().toURL();
+        } catch (MalformedURLException ex) {
+            return null;
+        }
+    }
+
     public void stop() {
         if (exwist && gamer != null) {
             System.gc();
-            gamer.stop();
+            // the game loop exits on its own once it sees exwist; just wake it
+            gamer.interrupt();
             gamer = null;
         }
         exwist = true;
@@ -464,7 +476,6 @@ public class GameSparker extends Applet implements Runnable {
         return false;
     }
 
-    @Override
     public void start() {
         if (gamer == null)
             gamer = new Thread(this);
@@ -1887,8 +1898,8 @@ public class GameSparker extends Applet implements Runnable {
                 rd.dispose();
                 xtgraphics.stopallnow();
                 System.gc();
-                gamer.stop();
                 gamer = null;
+                return;
             }
 
             // if (xtgraphics.devtriggered) {
@@ -1940,7 +1951,6 @@ public class GameSparker extends Applet implements Runnable {
         } while (true);
     }
 
-    @Override
     public void init() {
         /*
          * load some fonts

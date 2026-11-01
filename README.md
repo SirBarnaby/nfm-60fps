@@ -24,3 +24,12 @@ Special thanks to:
 
 Need for Madness 2 (c) Radicalplay.com.
 All changes and improvements (c) their original authors. See @author documentation fields or other comments where appropriate.
+## Building and running on Windows
+
+1. Install a JDK 21 or newer (any vendor). `build.ps1` finds it via `JAVA_HOME` or `%USERPROFILE%\.jdks`, or pass `-Jdk <path>`.
+2. Run `powershell -ExecutionPolicy Bypass -File build.ps1`. It produces `madness.jar` and a private Java runtime in `runtime\`.
+3. Double-click `madness64.exe`. No system-wide Java install is needed to play once `runtime\` exists.
+
+`madness.exe` is the 32-bit launcher and needs a 32-bit runtime, so use `madness64.exe` on 64-bit Windows.
+
+The game no longer depends on the Applet API (removed in Java 26) or `Thread.stop()` (which throws since Java 20), so it builds and runs on current JDKs.

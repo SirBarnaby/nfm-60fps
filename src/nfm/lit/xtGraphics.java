@@ -10,8 +10,6 @@ import nfm.lit.audio.TrackZipLoader;
 
 import java.io.*;
 import java.net.*;
-import java.applet.Applet;
-import java.applet.AudioClip;
 import java.awt.*;
 import java.awt.color.ColorSpace;
 import java.awt.image.*;
@@ -53,7 +51,7 @@ public class xtGraphics extends Panel implements Runnable {
 
     private final Graphics2D rd;
     private ImageObserver ob;
-    private final Applet app;
+    private final GameSparker app;
     public Phase fase;
     private Phase oldfase;
     public int starcnt;
@@ -75,7 +73,7 @@ public class xtGraphics extends Panel implements Runnable {
     private Image fleximg;
     private int flatrstart;
     private Thread runner;
-    private int runtyp;
+    private volatile int runtyp;
     private Image odmg;
     private Image opwr;
     private Image opos;
@@ -1839,11 +1837,20 @@ public class xtGraphics extends Panel implements Runnable {
     }
 
     public void stoploading() {
+        // Thread.stop() throws on Java 20+, so end the loader loop cooperatively
+        Thread loader = runner;
+        runtyp = 0;
+        runner = null;
+        if (loader != null) {
+            loader.interrupt();
+            try {
+                loader.join();
+            } catch (InterruptedException _ex) {
+                Thread.currentThread().interrupt();
+            }
+        }
         loading();
         app.repaint();
-        runner.stop();
-        runner = null;
-        runtyp = 0;
     }
 
     public void nofocus() {
@@ -3912,7 +3919,7 @@ public class xtGraphics extends Panel implements Runnable {
         rd.fillRect(Utility.centeredImageX(loadbar) + 5, 346, 26 + (int) ((shload / kbload) * 200F), 10);
     }
 
-    public xtGraphics(Graphics2D graphics2d, Applet applet) {
+    public xtGraphics(Graphics2D graphics2d, GameSparker applet) {
         fase = Phase.LOADING;
         oldfase = Phase.INGAME;
         starcnt = 0;
@@ -5658,16 +5665,6 @@ public class xtGraphics extends Panel implements Runnable {
         }
 
         return createImage(new MemoryImageSource(l, k, ai, 0, l));
-    }
-
-    /**
-     * returns an audioclip
-     *
-     * @param s name of clip
-     * @return the new audio clip
-     */
-    private AudioClip getSound(String s) {
-        return Applet.newAudioClip(getClass().getResource(s));
     }
 
     private void carsbginflex() {
