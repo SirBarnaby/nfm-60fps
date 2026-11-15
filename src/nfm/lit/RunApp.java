@@ -74,13 +74,18 @@ class RunApp extends Panel {
         frame.pack();
         frame.setMinimumSize(frame.getSize());
         if (autoTest) {
+            /*
+             * Never show the window at all. pack() already created the peer, so
+             * the game can render into its off-screen buffer and the harness can
+             * capture it without a visible window or a taskbar entry.
+             */
             frame.setFocusableWindowState(false);
             frame.setAutoRequestFocus(false);
             frame.setLocation(-20000, -20000);
         } else {
             frame.setLocationRelativeTo(null);
+            frame.setVisible(true);
         }
-        frame.setVisible(true);
         applet.init();
         applet.start();
     }
