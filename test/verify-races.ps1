@@ -11,6 +11,10 @@
 # checks other races' frames against another folder. -Fresh checks the races
 # only, because a few things on screen carry over from the races before.
 #
+# -Rollback <n> also rewinds every race every n ticks, after playing a few
+# ticks ahead with the steering and throttle reversed: the race must still
+# match, which proves the whole race state can be captured and put back.
+#
 # Run it after any change that could touch gameplay or drawing. Exit code 0
 # means every race played out exactly as recorded and every frame looked the
 # same, 1 that a race or a frame differed (the first differing tick, car and
@@ -23,7 +27,8 @@ param(
     [switch]$CanonicalOnly,
     [string]$Golden,
     [switch]$NoGolden,
-    [switch]$UpdateGolden
+    [switch]$UpdateGolden,
+    [int]$Rollback = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -46,6 +51,7 @@ if ($Golden) { $Golden = [IO.Path]::GetFullPath($Golden) }
 function Invoke-Verify([string]$target) {
     $arguments = @('-Dnfm.debug=false', "-Dnfm.verify=$target")
     if ($CanonicalOnly) { $arguments += '-Dnfm.verify.canonical=true' }
+    if ($Rollback -gt 0) { $arguments += "-Dnfm.verify.rollback=$Rollback" }
     if ($Golden) {
         $arguments += "-Dnfm.verify.golden=$Golden"
         if ($UpdateGolden) { $arguments += '-Dnfm.verify.golden.update=true' }

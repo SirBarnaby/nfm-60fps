@@ -64,6 +64,9 @@ final class RaceSession {
 
         /** The race as it would be presented now, scene and HUD, without changing anything. */
         BufferedImage frame();
+
+        /** How many of {@link RaceState.View#cars()} are on the track now: the cars, then the stage. */
+        int sceneCount();
     }
 
     private static final String TAG_RECORD = "[record] ";
@@ -101,6 +104,17 @@ final class RaceSession {
      * stored dumps are too far apart to show where a difference started.
      */
     private static final int TRACE_TICK = Integer.getInteger("nfm.verify.trace", -1);
+    /**
+     * Rollback self-test: {@code -Dnfm.verify.rollback=<n>} captures the race
+     * every {@code n} ticks, plays {@link #ROLLBACK_AHEAD} ticks with the
+     * steering and throttle reversed, rewinds and carries on. The race must
+     * still match the recording, which proves {@link RaceSnapshot} holds
+     * everything a race depends on.
+     */
+    private static final int ROLLBACK_EVERY = Integer.getInteger("nfm.verify.rollback", 0);
+    private static final int ROLLBACK_AHEAD = 8;
+    private static final int DRIVING_KEYS = RaceLog.KEY_UP | RaceLog.KEY_DOWN | RaceLog.KEY_LEFT
+            | RaceLog.KEY_RIGHT | RaceLog.KEY_HANDBRAKE;
 
     /** Phases that are part of a race in progress. */
     private static final Set<Phase> RACE_PHASES = EnumSet.of(Phase.INGAME, Phase.PAUSETRIGGER, Phase.PAUSEMENU,
@@ -601,6 +615,12 @@ final class RaceSession {
         /** Golden screenshots to check while the race plays, or null. */
         private final GoldenFrames golden;
         private final List<String> goldenReport = new ArrayList<>();
+        /* Rollback self-test: the state to rewind to and the ticks left to play ahead. */
+        private RaceSnapshot rewindTo;
+        private int aheadLeft;
+        private int rewinds;
+        private long captureNanos;
+        private long restoreNanos;
 
         Verifier(Host host, List<File> files, GoldenFrames golden) {
             this.host = host;
@@ -671,6 +691,11 @@ final class RaceSession {
             trackDifferences = 0;
             carsProblem = null;
             goldenReport.clear();
+            rewindTo = null;
+            aheadLeft = 0;
+            rewinds = 0;
+            captureNanos = 0L;
+            restoreNanos = 0L;
             System.out.println(TAG_VERIFY + file.getName() + ": stage " + log.stage + ", " + log.players + " cars, "
                     + log.ticks() + " ticks, " + log.end.name().toLowerCase(Locale.ROOT) + " (" + log.note + ")");
             setUpRace(host, log.stage, log.nfmmode, log.players, log.unlocked, log.carsBefore);
@@ -688,6 +713,11 @@ final class RaceSession {
             if (!racing) {
                 // skip the intro fly-by: the race starts from the recorded state anyway
                 u.enter = true;
+                return;
+            }
+            if (aheadLeft > 0) {
+                int ahead = tick + ROLLBACK_AHEAD - aheadLeft;
+                RaceLog.applyKeys(u, log.keys(ahead) ^ DRIVING_KEYS);
                 return;
             }
             if (tick >= log.ticks()) {
@@ -760,6 +790,15 @@ final class RaceSession {
             }
             idleTicks = 0;
             RaceState.View race = host.race();
+            if (aheadLeft > 0) {
+                if (--aheadLeft == 0) {
+                    long start = System.nanoTime();
+                    rewindTo.restore();
+                    restoreNanos += System.nanoTime() - start;
+                    rewindTo = null;
+                }
+                return;
+            }
             if (tick == TRACE_TICK) {
                 trace(race);
             }
@@ -790,7 +829,32 @@ final class RaceSession {
                 } else {
                     pass();
                 }
+                return;
             }
+            if (rollbackDue()) {
+                long start = System.nanoTime();
+                rewindTo = RaceSnapshot.capture(race, host.sceneCount());
+                captureNanos += System.nanoTime() - start;
+                aheadLeft = ROLLBACK_AHEAD;
+                rewinds++;
+            }
+        }
+
+        /**
+         * Time to play ahead and rewind: not near the end, and not across a
+         * tick where the player paused or pressed Enter, which leave the race.
+         */
+        private boolean rollbackDue() {
+            if (ROLLBACK_EVERY <= 0 || mismatchTick >= 0 || tick % ROLLBACK_EVERY != 0
+                    || tick + ROLLBACK_AHEAD + 2 >= log.ticks()) {
+                return false;
+            }
+            for (int t = tick - 1; t <= tick + ROLLBACK_AHEAD; t++) {
+                if (log.countEvents(t, RaceLog.Event.REPLAY) > 0 || (log.keys(Math.max(t, 0)) & RaceLog.KEY_ENTER) != 0) {
+                    return false;
+                }
+            }
+            return true;
         }
 
         private void pauseMenu() {
@@ -903,6 +967,11 @@ final class RaceSession {
                         .append(" track values left by the stages loaded before differed from the recording and were")
                         .append(" restored (boundary-wall surfaces, and wall slots the AI still remembers from the")
                         .append(" last race)");
+            }
+            if (rewinds > 0) {
+                sb.append(System.lineSeparator()).append(TAG_VERIFY).append(String.format(Locale.ROOT,
+                        "    rewound %d times after playing %d ticks ahead (capture %.1f ms, restore %.1f ms on average)",
+                        rewinds, ROLLBACK_AHEAD, captureNanos / 1e6 / rewinds, restoreNanos / 1e6 / rewinds));
             }
             System.out.println(sb);
             printGoldenReport();

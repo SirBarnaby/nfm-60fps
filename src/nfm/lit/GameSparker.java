@@ -3080,5 +3080,10 @@ public class GameSparker extends Panel implements Runnable {
             }
             return captureFrame();
         }
+
+        @Override
+        public int sceneCount() {
+            return nob;
+        }
     }
 }
