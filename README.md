@@ -36,15 +36,33 @@ The game no longer depends on the Applet API (removed in Java 26) or `Thread.sto
 
 ## The frame loop
 
-Simulation and presentation are decoupled. The world is stepped at the original ~19 Hz cadence so physics, AI and every frame-counted timer behave exactly as before, while the 3D scene is redrawn at up to 120 FPS using car and camera transforms interpolated between the last two ticks. The HUD is rendered once per simulation tick into its own layer and composited on top, keeping its blink and pause timers on the legacy cadence.
+Simulation and presentation are decoupled. The world is stepped at the original cadence (one tick per 53 ms during races, replays and highlights, one per 40 ms in menus), so physics, AI and every frame-counted timer behave exactly as before. Races, instant replays and the post-race highlights are redrawn as often as the frame limit allows, using car, wheel and camera transforms interpolated between the last two ticks. The HUD and replay captions are rendered once per tick into their own layer and composited on top, keeping their blink and pause timers on the legacy cadence.
 
-Three system properties are available while developing:
+If drawing a frame takes longer than a tick, the loop runs the ticks it owes before drawing again, so a slow frame lowers the frame rate but never slows the race down.
+
+## Frame rate limit
+
+By default the frame rate matches the refresh rate of the monitor the window is on. To change it, open the developer console (it appears on the main menu) and type:
+
+| Command | Effect |
+| --- | --- |
+| `fps` | Show the current limit. |
+| `fps auto` | Match the monitor's refresh rate (default). |
+| `fps unlimited` | No limit: draw as fast as the CPU allows. |
+| `fps 144` | Any fixed cap from 30 to 1000. |
+
+The setting is saved with the rest of the game's settings. Adding `vm.arg.2=-Dnfm.fps=unlimited` (or `auto`, or a number) to `madness64.ini` overrides the saved value at every start.
+
+All drawing is done on the CPU by Java2D, so the ceiling depends on the processor: on a laptop i7-8550U it is roughly 100-170 FPS mid-race and 25-40 FPS during the opening fly-over of the whole track.
+
+## Developer options
 
 | Property | Meaning |
 | --- | --- |
-| `-Dnfm.profile=true` | Print simulation rate, render rate and current phase every two seconds. |
+| `-Dnfm.profile=true` | Print simulation rate, render rate, time per tick and per frame, the frame limit and the current phase every two seconds. |
 | `-Dnfm.debug=false` | Do not open the developer console on the main menu. |
-| `-Dnfm.autotest=<dir>` | Run the scripted smoke test and write screenshots to `<dir>`. The window is moved off-screen, cannot take focus and the test drives the game through its own controls, so it is safe to run while using the machine. |
+| `-Dnfm.fps=<auto, unlimited or a number>` | Frame rate limit for this run, see above. |
+| `-Dnfm.autotest=<dir>` | Run the scripted smoke test and write screenshots to `<dir>`. The window is never shown and the test drives the game through its own controls, so it is safe to run while using the machine. |
 
 For example:
 

@@ -119,16 +119,40 @@ public class GameSparker extends Panel implements Runnable {
      * the frame rate could not be raised without fast-forwarding the world.
      *
      * The loop now separates the two:
-     *   - simulation runs in fixed steps at the legacy cadence (SIM_TICK_HZ)
+     *   - simulation runs in fixed steps at the legacy cadence (SCENE_TICK_NANOS
+     *     during races, replays and highlights, MENU_TICK_NANOS elsewhere)
      *   - the 3D scene is redrawn at the display rate, interpolating car and
      *     camera transforms between the last two simulation states
      *   - the HUD is drawn once per simulation tick into its own layer and
      *     composited on top, so its timers keep the original cadence
      * ------------------------------------------------------------------ */
-    private static final double SIM_TICK_HZ = 19.0D;
-    private static final double MAX_RENDER_HZ = 120.0D;
+    /*
+     * The original pacer aimed for 10 iterations per 530 ms while a race, replay
+     * or highlight was on screen and 10 per 400 ms everywhere else. Those are the
+     * cadences every frame-counted timer in the game was tuned against.
+     */
+    private static final long SCENE_TICK_NANOS = 53_000_000L;
+    private static final long MENU_TICK_NANOS = 40_000_000L;
+    /**
+     * Ticks the loop may run back to back to catch up after a slow frame before it
+     * presents again. Keeps the world at real-time speed when drawing is slow.
+     */
+    private static final int MAX_TICKS_PER_FRAME = 5;
     private static final long MAX_TICK_LAG_NS = 500_000_000L;
+    /** A car or camera that moves further than this in one tick was teleported. */
+    private static final int TELEPORT_DISTANCE = 2500;
     private static final boolean PROFILE_LOOP = Boolean.getBoolean("nfm.profile");
+
+    /* Frame rate limit: a positive value caps it, these two are special. */
+    public static final int FPS_MATCH_DISPLAY = -1;
+    public static final int FPS_UNLIMITED = 0;
+    public static final int FPS_MIN = 30;
+    public static final int FPS_MAX = 1000;
+    private static final String FPS_COOKIE = "fpslimit";
+    /** The cookie store reads -1 as "missing", so "match display" is saved as 1. */
+    private static final int FPS_COOKIE_MATCH_DISPLAY = 1;
+    private static volatile int fpsLimit = FPS_MATCH_DISPLAY;
+    private static volatile boolean fpsLimitChanged;
 
     private Image hudImage;
     private Graphics2D hudG;
@@ -154,6 +178,25 @@ public class GameSparker extends Panel implements Runnable {
     private final int[] savedCarXZ = new int[51];
     private final int[] savedCarXY = new int[51];
     private final int[] savedCarZY = new int[51];
+
+    /* Wheel steering angle and wheel roll. */
+    private final int[] prevCarWXZ = new int[51];
+    private final int[] prevCarWZY = new int[51];
+    private final int[] savedCarWXZ = new int[51];
+    private final int[] savedCarWZY = new int[51];
+    /**
+     * The object each car slot held when the snapshot was taken. Replays,
+     * highlights and car repairs swap in a fresh ContO, which must not be blended
+     * with the transform of the object it replaced.
+     */
+    private final ContO[] prevCarRef = new ContO[51];
+
+    /** Real back-buffer graphics while a tick draws its overlays into the HUD layer. */
+    private Graphics2D sceneGraphics;
+    /** Length of the tick that produced the current state, for interpolation. */
+    private long currentTickNanos = SCENE_TICK_NANOS;
+    private int displayRefreshHz;
+    private long displayRefreshCheckedAt;
 
     private int prevCamX;
     private int prevCamY;
@@ -1066,6 +1109,9 @@ public class GameSparker extends Panel implements Runnable {
             prevCarXZ[i] = conto.xz;
             prevCarXY[i] = conto.xy;
             prevCarZY[i] = conto.zy;
+            prevCarWXZ[i] = conto.wxz;
+            prevCarWZY[i] = conto.wzy;
+            prevCarRef[i] = conto;
         }
         prevCamX = Medium.x;
         prevCamY = Medium.y;
@@ -1084,8 +1130,21 @@ public class GameSparker extends Panel implements Runnable {
      * not spin the car all the way around between two ticks.
      */
     private static int mixAngle(int a, int b, float t) {
-        int delta = ((b - a + 540) % 360 + 360) % 360 - 180;
+        return mixPeriodic(a, b, t, 360);
+    }
+
+    /**
+     * Interpolates a value that wraps every {@code period} units, along the
+     * shorter way round. Wheel roll, for example, wraps every 45 degrees.
+     */
+    private static int mixPeriodic(int a, int b, float t, int period) {
+        int half = period / 2;
+        int delta = Math.floorMod(b - a + half, period) - half;
         return a + Math.round(delta * t);
+    }
+
+    private static boolean teleported(int dx, int dy, int dz) {
+        return Math.abs(dx) + Math.abs(dy) + Math.abs(dz) > TELEPORT_DISTANCE;
     }
 
     /**
@@ -1145,6 +1204,8 @@ public class GameSparker extends Panel implements Runnable {
             savedCarXZ[i] = conto.xz;
             savedCarXY[i] = conto.xy;
             savedCarZY[i] = conto.zy;
+            savedCarWXZ[i] = conto.wxz;
+            savedCarWZY[i] = conto.wzy;
         }
         int camX = Medium.x;
         int camY = Medium.y;
@@ -1155,10 +1216,9 @@ public class GameSparker extends Panel implements Runnable {
         if (prevFrameValid && alpha < 1F) {
             for (int i = 0; i < np; i++) {
                 ContO conto = sceneObjects[i];
-                int dx = savedCarX[i] - prevCarX[i];
-                int dz = savedCarZ[i] - prevCarZ[i];
-                if (Math.abs(dx) + Math.abs(dz) > 2500) {
-                    // respawn or teleport: interpolating would smear the car
+                if (conto != prevCarRef[i] || teleported(savedCarX[i] - prevCarX[i],
+                        savedCarY[i] - prevCarY[i], savedCarZ[i] - prevCarZ[i])) {
+                    // new object, respawn or teleport: interpolating would smear the car
                     continue;
                 }
                 conto.x = mix(prevCarX[i], savedCarX[i], alpha);
@@ -1167,12 +1227,16 @@ public class GameSparker extends Panel implements Runnable {
                 conto.xz = mixAngle(prevCarXZ[i], savedCarXZ[i], alpha);
                 conto.xy = mixAngle(prevCarXY[i], savedCarXY[i], alpha);
                 conto.zy = mixAngle(prevCarZY[i], savedCarZY[i], alpha);
+                conto.wxz = mix(prevCarWXZ[i], savedCarWXZ[i], alpha);
+                conto.wzy = mixPeriodic(prevCarWZY[i], savedCarWZY[i], alpha, 45);
             }
-            Medium.x = mix(prevCamX, camX, alpha);
-            Medium.y = mix(prevCamY, camY, alpha);
-            Medium.z = mix(prevCamZ, camZ, alpha);
-            Medium.xz = mixAngle(prevCamXZ, camXZ, alpha);
-            Medium.zy = mixAngle(prevCamZY, camZY, alpha);
+            if (!teleported(camX - prevCamX, camY - prevCamY, camZ - prevCamZ)) {
+                Medium.x = mix(prevCamX, camX, alpha);
+                Medium.y = mix(prevCamY, camY, alpha);
+                Medium.z = mix(prevCamZ, camZ, alpha);
+                Medium.xz = mixAngle(prevCamXZ, camXZ, alpha);
+                Medium.zy = mixAngle(prevCamZY, camZY, alpha);
+            }
         }
 
         /*
@@ -1200,6 +1264,8 @@ public class GameSparker extends Panel implements Runnable {
             conto.xz = savedCarXZ[i];
             conto.xy = savedCarXY[i];
             conto.zy = savedCarZY[i];
+            conto.wxz = savedCarWXZ[i];
+            conto.wzy = savedCarWZY[i];
         }
         Medium.x = camX;
         Medium.y = camY;
@@ -1221,6 +1287,183 @@ public class GameSparker extends Panel implements Runnable {
         ui.setTarget(hudG);
         ui.stat(racers, raceCheckpoints, control, sceneObjects, flag);
         ui.setTarget(previous);
+    }
+
+    /**
+     * Phases whose 3D scene is drawn by the presentation pass, interpolated, with
+     * the HUD layer composited on top.
+     */
+    private static boolean isScenePhase(Phase phase) {
+        return phase == Phase.INGAME || phase == Phase.INSTANTREPLAY || phase == Phase.GAMEHIGHLIGHT;
+    }
+
+    private static long tickNanosFor(Phase phase) {
+        return isScenePhase(phase) || phase == Phase.DRAWENVIRONMENT ? SCENE_TICK_NANOS : MENU_TICK_NANOS;
+    }
+
+    /**
+     * Sends everything a replay or highlight tick draws (captions, black and
+     * white flashes) to the cleared HUD layer instead of the back buffer, so the
+     * presentation pass can draw the scene underneath at the display rate.
+     */
+    private void beginOverlayTick() {
+        hudG.setComposite(AlphaComposite.Clear);
+        hudG.fillRect(0, 0, GameFacts.screenWidth, GameFacts.screenHeight);
+        hudG.setComposite(AlphaComposite.SrcOver);
+        sceneGraphics = rd;
+        rd = hudG;
+        ui.setTarget(hudG);
+    }
+
+    private void endOverlayTick() {
+        rd = sceneGraphics;
+        ui.setTarget(rd);
+        sceneGraphics = null;
+    }
+
+    /**
+     * d() used to age off-screen dust while drawing. Drawing now happens many
+     * times per tick, so the tick advances it exactly once instead. dist is left
+     * over from the latest presentation frame and tells which objects were culled.
+     */
+    private void ageSceneDust() {
+        for (int i = 0; i < nob; i++) {
+            if (sceneObjects[i].dist == 0) {
+                sceneObjects[i].ageDust();
+            }
+        }
+    }
+
+    /**
+     * Puts the back buffer on screen right away, from the game thread.
+     * <p>
+     * repaint() only asks the event thread to paint at some later point and
+     * merges requests that arrive faster than it paints, so frames were dropped
+     * at random and could be shown while the next one was half drawn.
+     */
+    private void presentFrame() {
+        Graphics graphics = getGraphics();
+        if (graphics != null) {
+            try {
+                paint(graphics);
+            } finally {
+                graphics.dispose();
+            }
+        }
+        Toolkit.getDefaultToolkit().sync();
+    }
+
+    /**
+     * Minimum time between two presented frames for the current limit, or 0 for
+     * no limit. "Match display" follows the refresh rate of the monitor the
+     * window is on and notices when it is moved to another one.
+     */
+    private long frameIntervalNanos(long now) {
+        int limit = fpsLimit;
+        if (limit == FPS_UNLIMITED) {
+            return 0L;
+        }
+        if (limit == FPS_MATCH_DISPLAY) {
+            if (displayRefreshHz == 0 || now - displayRefreshCheckedAt > 1_000_000_000L) {
+                displayRefreshHz = queryRefreshRate();
+                displayRefreshCheckedAt = now;
+            }
+            limit = displayRefreshHz;
+            if (limit <= 0) {
+                return 0L;
+            }
+        }
+        return 1_000_000_000L / limit;
+    }
+
+    private int queryRefreshRate() {
+        try {
+            GraphicsConfiguration configuration = getGraphicsConfiguration();
+            GraphicsDevice device = configuration != null ? configuration.getDevice()
+                    : GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice();
+            int hz = device.getDisplayMode().getRefreshRate();
+            return hz == DisplayMode.REFRESH_RATE_UNKNOWN ? -1 : hz;
+        } catch (RuntimeException ex) {
+            return -1;
+        }
+    }
+
+    /**
+     * Sets the frame rate limit: {@link #FPS_MATCH_DISPLAY}, {@link #FPS_UNLIMITED}
+     * or a cap between {@link #FPS_MIN} and {@link #FPS_MAX}. The game saves it
+     * with the rest of its settings on the next tick.
+     *
+     * @return false if the value is out of range
+     */
+    public static boolean setFpsLimit(int limit) {
+        if (limit != FPS_MATCH_DISPLAY && limit != FPS_UNLIMITED && (limit < FPS_MIN || limit > FPS_MAX)) {
+            return false;
+        }
+        fpsLimit = limit;
+        fpsLimitChanged = true;
+        return true;
+    }
+
+    public static String describeFpsLimit() {
+        int limit = fpsLimit;
+        if (limit == FPS_MATCH_DISPLAY) {
+            return "match display";
+        }
+        return limit == FPS_UNLIMITED ? "unlimited" : limit + " fps";
+    }
+
+    /**
+     * The limit comes from -Dnfm.fps (madness64.ini) when present, otherwise
+     * from the saved setting, otherwise it matches the display.
+     */
+    private void loadFpsLimit() {
+        String property = System.getProperty("nfm.fps");
+        if (property != null) {
+            Integer parsed = parseFpsLimit(property);
+            if (parsed != null && setFpsLimit(parsed)) {
+                fpsLimitChanged = false;
+                return;
+            }
+            HLogger.warn("Ignoring invalid nfm.fps value: " + property);
+        }
+        int saved = readcookie(FPS_COOKIE);
+        int limit = saved == FPS_COOKIE_MATCH_DISPLAY ? FPS_MATCH_DISPLAY : saved;
+        if (saved < 0 || !setFpsLimit(limit)) {
+            fpsLimit = FPS_MATCH_DISPLAY;
+        }
+        fpsLimitChanged = false;
+    }
+
+    /**
+     * Parses "auto"/"display", "unlimited"/"off"/"0" or a number.
+     *
+     * @return the limit, or null if the text is not one of those
+     */
+    public static Integer parseFpsLimit(String text) {
+        String value = text.trim().toLowerCase();
+        switch (value) {
+            case "auto":
+            case "display":
+                return FPS_MATCH_DISPLAY;
+            case "unlimited":
+            case "uncapped":
+            case "off":
+                return FPS_UNLIMITED;
+            default:
+                try {
+                    return Integer.parseInt(value);
+                } catch (NumberFormatException ex) {
+                    return null;
+                }
+        }
+    }
+
+    private void saveFpsLimitIfChanged() {
+        if (fpsLimitChanged) {
+            fpsLimitChanged = false;
+            int limit = fpsLimit;
+            savecookie(FPS_COOKIE, "" + (limit == FPS_MATCH_DISPLAY ? FPS_COOKIE_MATCH_DISPLAY : limit));
+        }
     }
 
     /**
@@ -1474,6 +1717,7 @@ public class GameSparker extends Panel implements Runnable {
         raceCheckpoints = checkpoints;
         raceRecord = record;
 
+        loadFpsLimit();
         startAutoTest();
 
         int k1 = 0;
@@ -1484,28 +1728,32 @@ public class GameSparker extends Panel implements Runnable {
         exwist = false;
 
         /*
-         * Fixed simulation cadence. 1000/19 ms is the rate the original adaptive
-         * pacer converged on in game (~53 ms per iteration), so physics, AI and
-         * every frame-counted timer keep behaving exactly as they did before.
+         * Fixed simulation cadence, at the rates the original adaptive pacer
+         * converged on (see SCENE_TICK_NANOS), so physics, AI and every
+         * frame-counted timer keep behaving exactly as they did before.
          */
-        final long tickNanos = Math.max(1L, Math.round(1_000_000_000D / SIM_TICK_HZ));
-        final long renderNanos = MAX_RENDER_HZ > 0D
-                ? Math.max(1L, Math.round(1_000_000_000D / MAX_RENDER_HZ))
-                : 0L;
         final long profileWindowNanos = 2_000_000_000L;
 
-        long nextTickNanos = System.nanoTime() + tickNanos;
+        long nextTickNanos = System.nanoTime() + tickNanosFor(xtgraphics.fase);
         long nextRenderNanos = System.nanoTime();
         long lastProfileFlush = nextRenderNanos;
         long lastRenderAt = nextRenderNanos;
         int profileTicks = 0;
         int profileFrames = 0;
+        long profileTickNanos = 0L;
+        long profileRenderNanos = 0L;
 
         do {
-            long now = System.nanoTime();
             boolean ticked = false;
+            int ticksThisFrame = 0;
 
-            if (now - nextTickNanos >= 0L) {
+            /*
+             * Run every tick that is due, so a slow frame delays the picture but
+             * never slows the world down. The cap stops a long stall from
+             * running a burst of ticks with nothing on screen.
+             */
+            while (ticksThisFrame < MAX_TICKS_PER_FRAME && System.nanoTime() - nextTickNanos >= 0L) {
+                long now = System.nanoTime();
                 if (now - nextTickNanos > MAX_TICK_LAG_NS) {
                     /*
                      * Debugger stop, window drag or a long GC pause. Drop the
@@ -1513,10 +1761,13 @@ public class GameSparker extends Panel implements Runnable {
                      */
                     nextTickNanos = now;
                 }
+                currentTickNanos = tickNanosFor(xtgraphics.fase);
                 tickStartNanos = nextTickNanos;
-                nextTickNanos += tickNanos;
+                nextTickNanos += currentTickNanos;
                 ticked = true;
+                ticksThisFrame++;
                 profileTicks++;
+                saveFpsLimitIfChanged();
 
             if (xtgraphics.fase == Phase.LOADING) {
                 if (mouses == 1)
@@ -1905,17 +2156,7 @@ public class GameSparker extends Panel implements Runnable {
                     if (xtgraphics.starcnt != 0)
                         xtgraphics.starcnt--;
                 }
-                /*
-                 * d() used to age off-screen dust while drawing. Drawing now
-                 * happens many times per tick, so advance the dust exactly once
-                 * here instead. dist is left over from the previous presentation
-                 * frame and tells us which objects were culled.
-                 */
-                for (int dustIdx = 0; dustIdx < nob; dustIdx++) {
-                    if (sceneObjects[dustIdx].dist == 0) {
-                        sceneObjects[dustIdx].ageDust();
-                    }
-                }
+                ageSceneDust();
                 if (xtgraphics.starcnt < 38) {
                     if (view == 0) {
                         Medium.follow(aconto1[xtgraphics.spectate], amadness[xtgraphics.spectate].cxz,
@@ -1961,47 +2202,22 @@ public class GameSparker extends Panel implements Runnable {
                 }
             }
             if (xtgraphics.fase == Phase.INSTANTREPLAY) {
+                /*
+                 * Drawn by the presentation pass, like a race. The caption goes
+                 * to the HUD layer.
+                 */
+                snapshotFrameState();
+                if (k1 == 0) {
+                    prevFrameValid = false;
+                }
+                ageSceneDust();
+                beginOverlayTick();
                 if (k1 == 0) {
                     int i4 = 0;
                     do {
                         record.ocar[i4] = new ContO(aconto1[i4], 0, 0, 0, 0);
                         aconto1[i4] = new ContO(record.car[0][i4], 0, 0, 0, 0);
                     } while (++i4 < GameFacts.numberOfPlayers);
-                }
-                Medium.d(rd);
-                int j4 = 0;
-                int ai3[] = new int[100];
-                for (int l6 = 0; l6 < nob; l6++)
-                    if (aconto1[l6].dist != 0) {
-                        ai3[j4] = l6;
-                        j4++;
-                    } else {
-                        aconto1[l6].d(rd);
-                    }
-
-                int ai8[] = new int[j4];
-                for (int i9 = 0; i9 < j4; i9++)
-                    ai8[i9] = 0;
-
-                for (int j9 = 0; j9 < j4; j9++) {
-                    for (int i13 = j9 + 1; i13 < j4; i13++)
-                        if (aconto1[ai3[j9]].dist != aconto1[ai3[i13]].dist) {
-                            if (aconto1[ai3[j9]].dist < aconto1[ai3[i13]].dist)
-                                ai8[j9]++;
-                            else
-                                ai8[i13]++;
-                        } else if (i13 > j9)
-                            ai8[j9]++;
-                        else
-                            ai8[i13]++;
-
-                }
-
-                for (int k9 = 0; k9 < j4; k9++) {
-                    for (int j13 = 0; j13 < j4; j13++)
-                        if (ai8[j13] == k9)
-                            aconto1[ai3[j13]].d(rd);
-
                 }
 
                 if (u[0].enter || u[0].handb || mouses == 1) {
@@ -2032,6 +2248,7 @@ public class GameSparker extends Panel implements Runnable {
                     xtgraphics.replyn();
                 }
                 Medium.around(aconto1[0], false);
+                endOverlayTick();
             }
             if (xtgraphics.fase == Phase.CAUGHTHIGHLIGHT) {
                 if (record.hcaught && record.wasted == 0 && record.whenwasted != 229 && checkpoints.stage <= 2
@@ -2051,6 +2268,16 @@ public class GameSparker extends Panel implements Runnable {
                 }
             }
             if (xtgraphics.fase == Phase.GAMEHIGHLIGHT) {
+                /*
+                 * Drawn by the presentation pass, like a race. Captions and the
+                 * black and white flashes go to the HUD layer.
+                 */
+                snapshotFrameState();
+                if (k1 == 0) {
+                    prevFrameValid = false;
+                }
+                ageSceneDust();
+                beginOverlayTick();
                 if (k1 == 0) {
                     if (record.wasted == 0) {
                         if (record.whenwasted == 229) {
@@ -2069,41 +2296,6 @@ public class GameSparker extends Panel implements Runnable {
                     do
                         aconto1[k4] = new ContO(record.starcar[k4], 0, 0, 0, 0);
                     while (++k4 < GameFacts.numberOfPlayers);
-                }
-                Medium.d(rd);
-                int i5 = 0;
-                int ai4[] = new int[100];
-                for (int i7 = 0; i7 < nob; i7++)
-                    if (aconto1[i7].dist != 0) {
-                        ai4[i5] = i7;
-                        i5++;
-                    } else {
-                        aconto1[i7].d(rd);
-                    }
-
-                int ai9[] = new int[i5];
-                for (int i10 = 0; i10 < i5; i10++)
-                    ai9[i10] = 0;
-
-                for (int j10 = 0; j10 < i5; j10++) {
-                    for (int k13 = j10 + 1; k13 < i5; k13++)
-                        if (aconto1[ai4[j10]].dist != aconto1[ai4[k13]].dist) {
-                            if (aconto1[ai4[j10]].dist < aconto1[ai4[k13]].dist)
-                                ai9[j10]++;
-                            else
-                                ai9[k13]++;
-                        } else if (k13 > j10)
-                            ai9[j10]++;
-                        else
-                            ai9[k13]++;
-
-                }
-
-                for (int k10 = 0; k10 < i5; k10++) {
-                    for (int l13 = 0; l13 < i5; l13++)
-                        if (ai9[l13] == k10)
-                            aconto1[ai4[l13]].d(rd);
-
                 }
 
                 int l10 = 0;
@@ -2237,6 +2429,7 @@ public class GameSparker extends Panel implements Runnable {
                         }
                     }
                 }
+                endOverlayTick();
             }
             if (xtgraphics.fase == Phase.POSTGAMEFADEOUT) {
                 if (k1 <= 0) {
@@ -2289,7 +2482,7 @@ public class GameSparker extends Panel implements Runnable {
              * The original loop passed the adaptive sleep target here. Feeding a
              * constant keeps the fog distance at the stage's intended value.
              */
-            Medium.adjustFade((float) (1_000D / SIM_TICK_HZ));
+            Medium.adjustFade(currentTickNanos / 1_000_000F);
             if (exwist) {
                 rd.dispose();
                 xtgraphics.stopallnow();
@@ -2333,27 +2526,33 @@ public class GameSparker extends Panel implements Runnable {
                     break;
             }
 
+                profileTickNanos += System.nanoTime() - now;
             } // end of simulation tick
 
             /*
              * Presentation pass.
              *
-             * Menus and the other phases draw themselves while the tick runs, so
-             * they only need the repaint. The in-game scene is redrawn here at the
-             * display rate from transforms interpolated between the last two
-             * simulation states, then the HUD layer is composited on top.
+             * Menus and the other 2D phases draw themselves while the tick runs,
+             * so they are only put on screen when a tick produced a new picture.
+             * Races, replays and highlights are redrawn here at the display rate
+             * from transforms interpolated between the last two simulation
+             * states, with the HUD layer composited on top.
              */
             long frameNow = System.nanoTime();
-            if (renderNanos == 0L || frameNow - nextRenderNanos >= 0L) {
+            long renderNanos = frameIntervalNanos(frameNow);
+            boolean scene = isScenePhase(xtgraphics.fase);
+            boolean frameDue = renderNanos == 0L || frameNow - nextRenderNanos >= 0L;
+            if (scene ? frameDue : ticked) {
                 if (renderNanos > 0L) {
                     nextRenderNanos += renderNanos;
-                    if (frameNow - nextRenderNanos > renderNanos * 4L) {
+                    if (frameNow - nextRenderNanos > renderNanos * 4L || nextRenderNanos - frameNow > renderNanos) {
+                        // fell far behind, or the limit was raised: restart the schedule
                         nextRenderNanos = frameNow + renderNanos;
                     }
                 }
 
-                if (xtgraphics.fase == Phase.INGAME) {
-                    double elapsed = (double) (frameNow - tickStartNanos) / (double) tickNanos;
+                if (scene) {
+                    double elapsed = (double) (frameNow - tickStartNanos) / (double) currentTickNanos;
                     if (!prevFrameValid || elapsed >= 1D) {
                         renderAlpha = 1F;
                     } else if (elapsed <= 0D) {
@@ -2390,37 +2589,46 @@ public class GameSparker extends Panel implements Runnable {
                 lastRenderAt = frameNow;
                 profileFrames++;
 
-                repaint();
+                presentFrame();
+                profileRenderNanos += System.nanoTime() - frameNow;
             }
 
             if (PROFILE_LOOP && frameNow - lastProfileFlush >= profileWindowNanos) {
                 double seconds = (frameNow - lastProfileFlush) / 1e9D;
-                System.out.printf("[loop] sim %.1f Hz | render %.1f fps | %s%n",
-                        profileTicks / seconds, profileFrames / seconds, xtgraphics.fase);
+                System.out.printf("[loop] sim %.1f Hz (%.1f ms/tick) | render %.1f fps (%.1f ms/frame) | limit %s | %s%n",
+                        profileTicks / seconds, profileTicks == 0 ? 0D : profileTickNanos / 1e6D / profileTicks,
+                        profileFrames / seconds, profileFrames == 0 ? 0D : profileRenderNanos / 1e6D / profileFrames,
+                        describeFpsLimit(), xtgraphics.fase);
                 profileTicks = 0;
                 profileFrames = 0;
+                profileTickNanos = 0L;
+                profileRenderNanos = 0L;
                 lastProfileFlush = frameNow;
             }
 
             /*
-             * Short sleeps keep the cadence accurate. The old loop clamped its
-             * sleep to 15 ms, which is why it could never present faster than
-             * roughly 19-25 fps regardless of how much work it actually did.
+             * Sleep until the next tick or frame is due. Short sleeps keep the
+             * cadence accurate: Thread.sleep() can overshoot by a millisecond or
+             * more, so the last stretch is spent yielding. With no frame limit a
+             * race redraws continuously and only yields.
              */
-            if (!ticked && renderNanos > 0L) {
-                long wakeAt = nextTickNanos;
-                if (nextRenderNanos < wakeAt) {
+            long wakeAt = nextTickNanos;
+            if (isScenePhase(xtgraphics.fase)) {
+                if (renderNanos == 0L) {
+                    wakeAt = System.nanoTime();
+                } else if (nextRenderNanos - wakeAt < 0L) {
                     wakeAt = nextRenderNanos;
                 }
-                long sleepNanos = wakeAt - System.nanoTime();
-                if (sleepNanos > 3_000_000L) {
-                    try {
-                        Thread.sleep(sleepNanos / 1_000_000L - 1L);
-                    } catch (InterruptedException _ex) {
-                    }
-                } else if (sleepNanos > 300_000L) {
-                    Thread.yield();
+            }
+            long sleepNanos = wakeAt - System.nanoTime();
+            if (sleepNanos > 2_000_000L) {
+                try {
+                    Thread.sleep(sleepNanos / 1_000_000L - 1L);
+                } catch (InterruptedException _ex) {
+                    // shutdown is signalled through exwist, not interrupts
                 }
+            } else {
+                Thread.yield();
             }
         } while (true);
     }

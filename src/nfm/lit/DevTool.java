@@ -353,6 +353,19 @@ public class DevTool {
                     print("Usage: connect <host:port>");
                 }
                 break;
+            case "fps":
+                if (args.length == 1) {
+                    Integer limit = GameSparker.parseFpsLimit(args[0]);
+                    if (limit != null && GameSparker.setFpsLimit(limit)) {
+                        print("Frame rate limit set to " + GameSparker.describeFpsLimit() + " (saved).");
+                    } else {
+                        print("Usage: fps <auto|unlimited|" + GameSparker.FPS_MIN + "-" + GameSparker.FPS_MAX + ">");
+                    }
+                } else {
+                    print("Frame rate limit is " + GameSparker.describeFpsLimit()
+                            + ".\nUsage: fps <auto|unlimited|" + GameSparker.FPS_MIN + "-" + GameSparker.FPS_MAX + ">");
+                }
+                break;
             case "clear":
                 textArea.setText("");
                 break;
@@ -390,6 +403,7 @@ public class DevTool {
         commandDescriptions.put("map", "Loads a stage from the specified path. Usage: map <path-to-.txt>");
         commandDescriptions.put("stagesubdir", "Sets the stage subdirectory. Usage: stagesubdir <subdir>");
         commandDescriptions.put("status", "Displays the current game state.");
+        commandDescriptions.put("fps", "Sets the frame rate limit. auto matches the monitor, unlimited removes the cap. Usage: fps <auto|unlimited|30-1000>");
         commandDescriptions.put("clear", "Clears the console.");
         commandDescriptions.put("connect", "Connects to a test server. Usage: connect <ip:port>");
         commandDescriptions.put("help", "Displays help information. Usage: help <command>");
