@@ -1,0 +1,2 @@
+# Recorded races are gzip; never convert line endings in them.
+*.nfmr binary
