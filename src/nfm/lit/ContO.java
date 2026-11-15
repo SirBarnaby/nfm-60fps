@@ -27,13 +27,7 @@ public class ContO {
     public int wzy = 0;
     public int dist = 0;
     public int maxR = 0;
-    /**
-     * Off-screen dust puffs age by one step every time {@link #d(Graphics2D)} is
-     * called. The presentation pass redraws the scene several times per
-     * simulation tick, so it clears this flag and calls {@link #ageDust()}
-     * once per tick instead, keeping the puffs' lifetime unchanged.
-     */
-    public boolean dustAgesOnDraw = true;
+    private DrawState drawState;
     private int disp = 0;
     private int disline = 7;
     private boolean shadow = false;
@@ -623,24 +617,93 @@ public class ContO {
                         + ((Medium.y + Medium.cy) - y) * ((Medium.y + Medium.cy) - y))) * grounded);
             }
         }
-        if (dist == 0 && dustAgesOnDraw) {
-            ageDust();
+        if (dist == 0) {
+            int k1 = 0;
+            do {
+                if (stg[k1] != 0) {
+                    if (stg[k1] == 4) {
+                        stg[k1] = 0;
+                    } else {
+                        stg[k1]++;
+                    }
+                }
+            } while (++k1 < 4);
         }
     }
 
     /**
-     * Ages the off-screen dust puffs by one simulation step.
+     * Remembers everything {@link #d(Graphics2D)} advances while it draws: the
+     * repair animation (fix, fcnt), dust puffs, the electric arcs and spin of a
+     * repair hoop, and the per-plane wreck, debris and flash animation.
+     * <p>
+     * The game was written to draw each object once per simulation tick, and the
+     * simulation depends on it: a car only leaves a repair hoop once a tick sees
+     * fcnt reach 7, which fixit() advances while drawing. The presentation pass
+     * keeps the first frame drawn after each tick and puts this state back after
+     * every further frame, so these animations still step once per tick.
      */
-    public void ageDust() {
-        for (int k1 = 0; k1 < 4; k1++) {
-            if (stg[k1] != 0) {
-                if (stg[k1] == 4) {
-                    stg[k1] = 0;
-                } else {
-                    stg[k1]++;
-                }
-            }
+    void saveDrawState() {
+        DrawState s = drawState;
+        if (s == null) {
+            s = new DrawState();
+            drawState = s;
         }
+        s.fix = fix;
+        s.fcnt = fcnt;
+        s.xy = xy;
+        s.zy = zy;
+        System.arraycopy(sx, 0, s.sx, 0, 4);
+        System.arraycopy(sy, 0, s.sy, 0, 4);
+        System.arraycopy(sz, 0, s.sz, 0, 4);
+        System.arraycopy(stg, 0, s.stg, 0, 4);
+        System.arraycopy(dov, 0, s.dov, 0, 4);
+        System.arraycopy(edl, 0, s.edl, 0, 4);
+        System.arraycopy(edr, 0, s.edr, 0, 4);
+        System.arraycopy(elc, 0, s.elc, 0, 4);
+        for (int i = 0; i < npl; i++) {
+            p[i].saveDrawState();
+        }
+    }
+
+    /**
+     * Undoes everything {@link #d(Graphics2D)} advanced since
+     * {@link #saveDrawState()}.
+     */
+    void restoreDrawState() {
+        DrawState s = drawState;
+        if (s == null) {
+            return;
+        }
+        fix = s.fix;
+        fcnt = s.fcnt;
+        xy = s.xy;
+        zy = s.zy;
+        System.arraycopy(s.sx, 0, sx, 0, 4);
+        System.arraycopy(s.sy, 0, sy, 0, 4);
+        System.arraycopy(s.sz, 0, sz, 0, 4);
+        System.arraycopy(s.stg, 0, stg, 0, 4);
+        System.arraycopy(s.dov, 0, dov, 0, 4);
+        System.arraycopy(s.edl, 0, edl, 0, 4);
+        System.arraycopy(s.edr, 0, edr, 0, 4);
+        System.arraycopy(s.elc, 0, elc, 0, 4);
+        for (int i = 0; i < npl; i++) {
+            p[i].restoreDrawState();
+        }
+    }
+
+    private static final class DrawState {
+        boolean fix;
+        int fcnt;
+        int xy;
+        int zy;
+        final int[] sx = new int[4];
+        final int[] sy = new int[4];
+        final int[] sz = new int[4];
+        final int[] stg = new int[4];
+        final int[] dov = new int[4];
+        final int[] edl = new int[4];
+        final int[] edr = new int[4];
+        final int[] elc = new int[4];
     }
 
     public void dust(int i, float f, float f1, float f2, float f3, float f4, float f5, boolean flag, int j) {

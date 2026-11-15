@@ -45,6 +45,90 @@ public class Plane {
     private int pb;
     public int flx;
     public boolean solo;
+    private DrawState drawState;
+
+    /**
+     * The fields d() advances while drawing: the wreck and flame animation
+     * (embos, hsb, pa, pb), flying debris (chip and its motion) and the repair
+     * flash (flx). See {@link ContO#saveDrawState()}.
+     */
+    private static final class DrawState {
+        final float[] hsb = new float[3];
+        final int[] cox = new int[3];
+        final int[] coy = new int[3];
+        final int[] coz = new int[3];
+        int bfase;
+        int chip;
+        float ctmag;
+        int cxz;
+        int cxy;
+        int czy;
+        int dx;
+        int dy;
+        int dz;
+        int vx;
+        int vy;
+        int vz;
+        int embos;
+        int pa;
+        int pb;
+        int flx;
+    }
+
+    void saveDrawState() {
+        DrawState s = drawState;
+        if (s == null) {
+            s = new DrawState();
+            drawState = s;
+        }
+        System.arraycopy(hsb, 0, s.hsb, 0, 3);
+        System.arraycopy(cox, 0, s.cox, 0, 3);
+        System.arraycopy(coy, 0, s.coy, 0, 3);
+        System.arraycopy(coz, 0, s.coz, 0, 3);
+        s.bfase = bfase;
+        s.chip = chip;
+        s.ctmag = ctmag;
+        s.cxz = cxz;
+        s.cxy = cxy;
+        s.czy = czy;
+        s.dx = dx;
+        s.dy = dy;
+        s.dz = dz;
+        s.vx = vx;
+        s.vy = vy;
+        s.vz = vz;
+        s.embos = embos;
+        s.pa = pa;
+        s.pb = pb;
+        s.flx = flx;
+    }
+
+    void restoreDrawState() {
+        DrawState s = drawState;
+        if (s == null) {
+            return;
+        }
+        System.arraycopy(s.hsb, 0, hsb, 0, 3);
+        System.arraycopy(s.cox, 0, cox, 0, 3);
+        System.arraycopy(s.coy, 0, coy, 0, 3);
+        System.arraycopy(s.coz, 0, coz, 0, 3);
+        bfase = s.bfase;
+        chip = s.chip;
+        ctmag = s.ctmag;
+        cxz = s.cxz;
+        cxy = s.cxy;
+        czy = s.czy;
+        dx = s.dx;
+        dy = s.dy;
+        dz = s.dz;
+        vx = s.vx;
+        vy = s.vy;
+        vz = s.vz;
+        embos = s.embos;
+        pa = s.pa;
+        pb = s.pb;
+        flx = s.flx;
+    }
 
     public void loadprojf() {
         projf = 1.0F;

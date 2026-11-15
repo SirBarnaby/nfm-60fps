@@ -4,6 +4,8 @@ import fallk.logmaster.HLogger;
 import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.ArrayList;
 
 class RunApp extends Panel {
@@ -37,6 +39,16 @@ class RunApp extends Panel {
     public static void main(String[] strings) {
         //System.runFinalizersOnExit(true);
         HLogger.info("Need For Madness: LIT"); // Change this to the message of your preference
+        /*
+         * madness64.exe has no console, so an exception that ends the game thread
+         * used to leave a frozen window and no trace. Put it in the log file.
+         */
+        Thread.setDefaultUncaughtExceptionHandler((thread, ex) -> {
+            StringWriter trace = new StringWriter();
+            ex.printStackTrace(new PrintWriter(trace));
+            HLogger.severe("Uncaught exception in thread \"" + thread.getName() + "\": " + trace);
+            ex.printStackTrace();
+        });
         try {
             javax.swing.UIManager.setLookAndFeel(javax.swing.UIManager.getSystemLookAndFeelClassName());
         } catch (Exception ex) {

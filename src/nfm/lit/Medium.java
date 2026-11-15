@@ -173,6 +173,103 @@ public class Medium {
         return rand[trn] / 10F;
     }
 
+    /*
+     * Drawing the world is not free of side effects: d() and the scenery it draws
+     * advance the lightning, the checkpoint flicker and the star twinkle, and
+     * they draw from the shared random() stream that the AI and the crash code
+     * also use. The legacy loop drew exactly once per tick. The presentation
+     * pass draws more often, so it keeps the first frame after each tick and
+     * takes back the side effects of the others with this snapshot.
+     */
+    private static int savedCntrn;
+    private static final boolean[] savedDiup = new boolean[3];
+    private static final int[] savedRand = new int[3];
+    private static int savedTrn;
+    private static int savedLilo;
+    private static int savedLightn;
+    private static int savedNoelec;
+    private static boolean savedCpflik;
+    private static float savedElecr;
+    private static int savedFlex;
+    private static int savedLastmaf;
+    private static int[] savedTwn;
+    private static int[][][] savedStc;
+
+    public static void saveDrawState() {
+        savedCntrn = cntrn;
+        System.arraycopy(diup, 0, savedDiup, 0, 3);
+        System.arraycopy(rand, 0, savedRand, 0, 3);
+        savedTrn = trn;
+        savedLilo = lilo;
+        savedLightn = lightn;
+        savedNoelec = noelec;
+        savedCpflik = cpflik;
+        savedElecr = elecr;
+        savedFlex = flex;
+        savedLastmaf = lastmaf;
+        if (twn == null) {
+            savedTwn = null;
+            savedStc = null;
+            return;
+        }
+        if (savedTwn == null || savedTwn.length != twn.length) {
+            savedTwn = new int[twn.length];
+            savedStc = new int[stc.length][2][3];
+        }
+        System.arraycopy(twn, 0, savedTwn, 0, twn.length);
+        for (int i = 0; i < stc.length; i++) {
+            System.arraycopy(stc[i][0], 0, savedStc[i][0], 0, 3);
+            System.arraycopy(stc[i][1], 0, savedStc[i][1], 0, 3);
+        }
+    }
+
+    public static void restoreDrawState() {
+        cntrn = savedCntrn;
+        System.arraycopy(savedDiup, 0, diup, 0, 3);
+        System.arraycopy(savedRand, 0, rand, 0, 3);
+        trn = savedTrn;
+        lilo = savedLilo;
+        lightn = savedLightn;
+        noelec = savedNoelec;
+        cpflik = savedCpflik;
+        elecr = savedElecr;
+        flex = savedFlex;
+        lastmaf = savedLastmaf;
+        if (savedTwn == null || twn == null || twn.length != savedTwn.length) {
+            return;
+        }
+        System.arraycopy(savedTwn, 0, twn, 0, twn.length);
+        for (int i = 0; i < stc.length; i++) {
+            System.arraycopy(savedStc[i][0], 0, stc[i][0], 0, 3);
+            System.arraycopy(savedStc[i][1], 0, stc[i][1], 0, 3);
+        }
+    }
+
+    /**
+     * Keeps the camera inside the range the renderer supports. d() applies this
+     * before drawing, and the camera code (around(), watch()) depends on it
+     * having been applied between ticks: their pitch easing can run far past
+     * 90 degrees and is only pulled back by this clamp. The presentation pass
+     * restores the camera it drew from, so each scene tick calls this itself.
+     */
+    public static void clampView() {
+        if (zy > 90) {
+            zy = 90;
+        }
+        if (zy < -90) {
+            zy = -90;
+        }
+        if (xz > 360) {
+            xz -= 360;
+        }
+        if (xz < 0) {
+            xz += 360;
+        }
+        if (y > 0) {
+            y = 0;
+        }
+    }
+
     public static void newpolys(int i, int j, int k, int l, Trackers trackers, int i1) {
         if (detailtype == 0)
             return;
@@ -1222,21 +1319,7 @@ public class Medium {
 
     public static void d(Graphics2D graphics2d) {
         nsp = 0;
-        if (zy > 90) {
-            zy = 90;
-        }
-        if (zy < -90) {
-            zy = -90;
-        }
-        if (xz > 360) {
-            xz -= 360;
-        }
-        if (xz < 0) {
-            xz += 360;
-        }
-        if (y > 0) {
-            y = 0;
-        }
+        clampView();
 
         float t_cos = RadicalMath.cos(zy);
         float t_sin = RadicalMath.sin(zy);
@@ -1710,15 +1793,15 @@ public class Medium {
                     + ((conto.z + 5000) - conto.z) * RadicalMath.cos(i));
             td = false;
         }
-        char c = '\0';
+        int c = 0;
         if (conto.x - x - cx > 0) {
-            c = '\264';
+            c = 180;
         }
         int j = -(int) (90 + c
                 + Math.atan((double) (conto.z - z) / (double) (conto.x - x - cx)) / 0.017453292519943295D);
-        c = '\0';
+        c = 0;
         if (conto.y - y - cy < 0) {
-            c = '\uFF4C';
+            c = -180;
         }
         int k = (int) Math.sqrt((conto.z - z) * (conto.z - z) + (conto.x - x - cx) * (conto.x - x - cx));
         int l = (int) (90 + c - Math.atan((double) k / (double) (conto.y - y - cy)) / 0.017453292519943295D);
@@ -1770,13 +1853,19 @@ public class Medium {
         } else {
             vxz += 4;
         }
-        char c = '\0';
+        /*
+         * c is -180 when the camera is lower than the car, so the pitch turns
+         * up toward it. The decompiler declared these offsets as char, which
+         * turned -180 into 65356 and tipped the camera straight down instead;
+         * watch(), getaround() and transaround() had the same bug.
+         */
+        int c = 0;
         int j = y;
         if (j > 0) {
             j = 0;
         }
         if (conto.y - j - cy < 0) {
-            c = '\uFF4C';
+            c = -180;
         }
         int k = (int) Math.sqrt(((conto.z - z) + cz) * ((conto.z - z) + cz) + (conto.x - x - cx) * (conto.x - x - cx));
         int l = (int) (90 + c - Math.atan((double) k / (double) (conto.y - j - cy)) / 0.017453292519943295D);
@@ -1957,19 +2046,19 @@ public class Medium {
         for (vxz += 2; vxz > 360; vxz -= 360) {
         }
         int j1 = -vxz + 90;
-        char c = '\0';
+        int c = 0;
         if (conto.x - x - cx > 0) {
-            c = '\264';
+            c = 180;
         }
         int k1 = -(int) (90 + c
                 + Math.atan((double) (conto.z - z) / (double) (conto.x - x - cx)) / 0.017453292519943295D);
         int l1 = y;
-        c = '\0';
+        c = 0;
         if (l1 > 0) {
             l1 = 0;
         }
         if (conto.y - l1 - cy < 0) {
-            c = '\uFF4C';
+            c = -180;
         }
         int i2 = (int) Math.sqrt(((conto.z - z) + cz) * ((conto.z - z) + cz) + (conto.x - x - cx) * (conto.x - x - cx));
         int j2 = 25;
@@ -2048,13 +2137,13 @@ public class Medium {
         x = j + (int) ((j - i1 - j) * RadicalMath.cos(vxz));
         z = l + (int) ((j - i1 - j) * RadicalMath.sin(vxz));
         vxz += 2;
-        char c = '\0';
+        int c = 0;
         int j1 = y;
         if (j1 > 0) {
             j1 = 0;
         }
         if (k - j1 - cy < 0) {
-            c = '\uFF4C';
+            c = -180;
         }
         int k1 = (int) Math.sqrt(((l - z) + cz) * ((l - z) + cz) + (j - x - cx) * (j - x - cx));
         int l1 = (int) (90 + c - Math.atan((double) k1 / (double) (k - j1 - cy)) / 0.017453292519943295D);

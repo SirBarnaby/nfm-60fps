@@ -204,12 +204,21 @@ public class GameSparker extends Panel implements Runnable {
     private int prevCamXZ;
     private int prevCamZY;
     private boolean prevFrameValid;
+    /**
+     * A scene tick has run since the last presentation frame, so the next frame
+     * is the one whose drawing side effects are kept. See
+     * {@link ContO#saveDrawState()}.
+     */
+    private boolean drawStepPending;
 
-    private boolean pendingBlendude;
     private boolean pendingWhiteFlash;
     private float renderAlpha = 1F;
     private long tickStartNanos;
 
+    /** Set by the autotest thread; the next race tick jumps to the post-race highlight. */
+    private volatile boolean autotestHighlightRequested;
+    /** Set by the autotest thread; the next race tick starts repairing the player's car. */
+    private volatile boolean autotestRepairRequested;
     /** Set by the autotest thread; the render pass fulfils it with a complete frame. */
     private volatile boolean captureRequested;
     private BufferedImage capturedFrame;
@@ -1119,6 +1128,7 @@ public class GameSparker extends Panel implements Runnable {
         prevCamXZ = Medium.xz;
         prevCamZY = Medium.zy;
         prevFrameValid = true;
+        drawStepPending = true;
     }
 
     private static int mix(int a, int b, float t) {
@@ -1190,10 +1200,14 @@ public class GameSparker extends Panel implements Runnable {
     /**
      * Renders the in-game scene at an arbitrary presentation time.
      *
-     * @param alpha 0 = state at the previous simulation tick, 1 = state at the
-     *              most recent one
+     * @param alpha     0 = state at the previous simulation tick, 1 = state at
+     *                  the most recent one
+     * @param stepDrawn true for the first frame after a tick: the animation
+     *                  steps that drawing performs are kept, exactly as when the
+     *                  game drew once per tick. Every other frame is drawn and
+     *                  then rolled back, so it changes nothing but the screen.
      */
-    private void renderIngameScene(float alpha) {
+    private void renderIngameScene(float alpha, boolean stepDrawn) {
         final int np = Math.min(GameFacts.numberOfPlayers, savedCarX.length);
 
         for (int i = 0; i < np; i++) {
@@ -1239,20 +1253,15 @@ public class GameSparker extends Panel implements Runnable {
             }
         }
 
-        /*
-         * Dust must age once per simulation tick, not once per draw, so the
-         * presentation pass suppresses the aging that d() normally performs and
-         * the tick advances it explicitly.
-         */
-        for (int i = 0; i < nob; i++) {
-            sceneObjects[i].dustAgesOnDraw = false;
+        if (!stepDrawn) {
+            saveSceneDrawState();
         }
         try {
             Medium.d(rd);
             drawWorldObjects();
         } finally {
-            for (int i = 0; i < nob; i++) {
-                sceneObjects[i].dustAgesOnDraw = true;
+            if (!stepDrawn) {
+                restoreSceneDrawState();
             }
         }
 
@@ -1322,14 +1331,27 @@ public class GameSparker extends Panel implements Runnable {
     }
 
     /**
-     * d() used to age off-screen dust while drawing. Drawing now happens many
-     * times per tick, so the tick advances it exactly once instead. dist is left
-     * over from the latest presentation frame and tells which objects were culled.
+     * Only the cars and the electrified repair hoops carry state that drawing
+     * advances; the rest of the track is drawn without side effects.
      */
-    private void ageSceneDust() {
+    private boolean hasDrawAnimation(int index) {
+        return index < GameFacts.numberOfPlayers || sceneObjects[index].elec;
+    }
+
+    private void saveSceneDrawState() {
+        Medium.saveDrawState();
         for (int i = 0; i < nob; i++) {
-            if (sceneObjects[i].dist == 0) {
-                sceneObjects[i].ageDust();
+            if (hasDrawAnimation(i)) {
+                sceneObjects[i].saveDrawState();
+            }
+        }
+    }
+
+    private void restoreSceneDrawState() {
+        Medium.restoreDrawState();
+        for (int i = 0; i < nob; i++) {
+            if (hasDrawAnimation(i)) {
+                sceneObjects[i].restoreDrawState();
             }
         }
     }
@@ -1548,6 +1570,12 @@ public class GameSparker extends Panel implements Runnable {
         boolean replayAttempted = false;
         boolean replaySeen = false;
         boolean resumed = false;
+        ContO repairCar = null;
+        long repairStartedAt = 0L;
+        boolean repairChecked = false;
+        boolean highlightRequested = false;
+        boolean highlightSeen = false;
+        int highlightShots = 0;
 
         while (System.currentTimeMillis() - startMillis < budgetMillis) {
             try {
@@ -1613,11 +1641,57 @@ public class GameSparker extends Panel implements Runnable {
                         saveFrame(directory, String.format("%02d-resumed.png", shots++));
                         lastShot = now;
                     }
-                    if (inGameMillis >= 32_000L) {
-                        System.out.println("[autotest] done");
-                        break;
+                    /*
+                     * Drive through a virtual repair hoop: the hoop only sets fix,
+                     * and the car is replaced once a tick sees the repair
+                     * animation reach its last step.
+                     */
+                    if (inGameMillis >= 28_000L && repairCar == null) {
+                        repairCar = sceneObjects[0];
+                        repairStartedAt = now;
+                        autotestRepairRequested = true;
+                        System.out.println("[autotest] entering a repair hoop");
+                    }
+                    if (repairCar != null && !repairChecked) {
+                        if (sceneObjects[0] != repairCar) {
+                            System.out.println("[autotest] repair hoop OK: car fixed after " + (now - repairStartedAt) + " ms");
+                            repairChecked = true;
+                        } else if (now - repairStartedAt > 3_000L) {
+                            System.out.println("[autotest] repair hoop FAILED: still repairing after 3 s (fcnt "
+                                    + repairCar.fcnt + ", fix " + repairCar.fix + ")");
+                            repairChecked = true;
+                        }
+                    }
+                    if (inGameMillis >= 32_000L && !highlightRequested) {
+                        autotestHighlightRequested = true;
+                        highlightRequested = true;
+                        System.out.println("[autotest] finishing the race into the post-race highlight");
                     }
                 }
+            }
+
+            if (phase == Phase.GAMEHIGHLIGHT) {
+                if (!highlightSeen) {
+                    /*
+                     * Start with the camera low, below the car's height, which is
+                     * where the highlight camera used to tip over and stare at the
+                     * ground. It climbs back above the car within a few seconds.
+                     */
+                    Medium.vert = false;
+                    Medium.adv = 100;
+                    highlightSeen = true;
+                }
+                if (now - lastShot >= 700L && highlightShots < 20) {
+                    System.out.println("[autotest] highlight camera: pitch " + Medium.zy + ", height " + Medium.y
+                            + ", adv " + Medium.adv);
+                    saveFrame(directory, String.format("%02d-highlight.png", shots++));
+                    lastShot = now;
+                    highlightShots++;
+                }
+            }
+            if (highlightSeen && phase != Phase.GAMEHIGHLIGHT || highlightShots >= 20) {
+                System.out.println("[autotest] done (highlight ended in " + phase + ")");
+                break;
             }
 
             if (phase == Phase.PAUSEMENU) {
@@ -2087,6 +2161,21 @@ public class GameSparker extends Panel implements Runnable {
                     xtgraphics.fase = Phase.PREGAME;
                 }
             }
+            if (autotestHighlightRequested && xtgraphics.fase == Phase.INGAME && xtgraphics.starcnt == 0) {
+                /*
+                 * Smoke test only: end the race as if it had just been won after a
+                 * stunt, so the post-race highlight gets exercised.
+                 */
+                autotestHighlightRequested = false;
+                record.cotchinow(0);
+                xtgraphics.looped = 0;
+                xtgraphics.fase = Phase.CAUGHTHIGHLIGHT;
+            }
+            if (autotestRepairRequested && xtgraphics.fase == Phase.INGAME && xtgraphics.starcnt == 0) {
+                // Smoke test only: what a repair hoop does to a visible car.
+                autotestRepairRequested = false;
+                aconto1[0].fix = true;
+            }
             if (xtgraphics.fase == Phase.INGAME) {
                 /*
                  * Snapshot the transforms the presentation pass interpolates from,
@@ -2156,7 +2245,6 @@ public class GameSparker extends Panel implements Runnable {
                     if (xtgraphics.starcnt != 0)
                         xtgraphics.starcnt--;
                 }
-                ageSceneDust();
                 if (xtgraphics.starcnt < 38) {
                     if (view == 0) {
                         Medium.follow(aconto1[xtgraphics.spectate], amadness[xtgraphics.spectate].cxz,
@@ -2177,7 +2265,14 @@ public class GameSparker extends Panel implements Runnable {
                         mouses = 0;
                     }
                     if (xtgraphics.starcnt == 36) {
-                        pendingBlendude = true;
+                        /*
+                         * Tints the countdown portrait with the picture behind it.
+                         * The back buffer holds the last presented frame, scene and
+                         * HUD, which is what the original grabbed here too. It must
+                         * run in this tick: the portrait is drawn from the next one,
+                         * and a slow frame can let both ticks run back to back.
+                         */
+                        xtgraphics.blendude(offImage);
                     }
                 } else {
                     if (GameFacts.numberOfPlayers < 5)
@@ -2210,7 +2305,6 @@ public class GameSparker extends Panel implements Runnable {
                 if (k1 == 0) {
                     prevFrameValid = false;
                 }
-                ageSceneDust();
                 beginOverlayTick();
                 if (k1 == 0) {
                     int i4 = 0;
@@ -2276,7 +2370,6 @@ public class GameSparker extends Panel implements Runnable {
                 if (k1 == 0) {
                     prevFrameValid = false;
                 }
-                ageSceneDust();
                 beginOverlayTick();
                 if (k1 == 0) {
                     if (record.wasted == 0) {
@@ -2483,6 +2576,15 @@ public class GameSparker extends Panel implements Runnable {
              * constant keeps the fog distance at the stage's intended value.
              */
             Medium.adjustFade(currentTickNanos / 1_000_000F);
+            if (isScenePhase(xtgraphics.fase)) {
+                /*
+                 * The legacy loop clamped the camera in Medium.d() once per tick;
+                 * the presentation pass draws from a copy, so do it here. Without
+                 * this the highlight camera's pitch runs away and looks straight
+                 * down at the ground for seconds at a time.
+                 */
+                Medium.clampView();
+            }
             if (exwist) {
                 rd.dispose();
                 xtgraphics.stopallnow();
@@ -2561,12 +2663,9 @@ public class GameSparker extends Panel implements Runnable {
                         renderAlpha = (float) elapsed;
                     }
 
-                    renderIngameScene(renderAlpha);
+                    renderIngameScene(renderAlpha, drawStepPending);
+                    drawStepPending = false;
 
-                    if (pendingBlendude) {
-                        xtgraphics.blendude(offImage);
-                        pendingBlendude = false;
-                    }
                     if (hudImage != null) {
                         rd.drawImage(hudImage, 0, 0, null);
                     }

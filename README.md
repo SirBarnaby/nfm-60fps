@@ -40,6 +40,8 @@ Simulation and presentation are decoupled. The world is stepped at the original 
 
 If drawing a frame takes longer than a tick, the loop runs the ticks it owes before drawing again, so a slow frame lowers the frame rate but never slows the race down.
 
+Drawing is not free of side effects in this engine: it advances the repair hoop sequence, dust, wreck flames, flying debris and the checkpoint flicker, and it takes numbers from the same random stream the AI uses. The first frame after each tick keeps those changes, as the original's single draw per tick did. Every later frame is drawn and then rolled back, so a higher frame rate never speeds up an animation or changes how a race plays out.
+
 ## Frame rate limit
 
 By default the frame rate matches the refresh rate of the monitor the window is on. To change it, open the developer console (it appears on the main menu) and type:
