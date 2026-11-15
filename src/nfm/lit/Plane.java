@@ -145,6 +145,24 @@ public class Plane {
         projf = projf / 3F;
     }
 
+    /**
+     * Polygons of type -15 (the sand offroad pieces) get a random tint, and
+     * their corners nudged by a few units, every time the piece is copied, as
+     * in the original. The numbers come from this stream instead of the clock:
+     * seeded the same at start-up, and from the race seed whenever a stage is
+     * set up, so a stage looks the same every time a race on it is replayed.
+     */
+    private static final RaceRandom shapeJitter = new RaceRandom();
+
+    static {
+        seedShapes(0L);
+    }
+
+    /** Called with the race seed when a stage is set up, see {@link Medium#seedRace(long)}. */
+    static void seedShapes(long raceSeed) {
+        shapeJitter.reseed(RaceRandom.derive(raceSeed, RaceRandom.STREAM_SHAPES));
+    }
+
     public Plane(Trackers trackers, int ai[], int ai1[], int ai2[], int i, int ai3[], boolean flag,
                  int j, int k, int l, int i1, int j1, int k1, int l1, boolean flag1, int i2, boolean flag2) {
         c = new int[3];
@@ -212,19 +230,19 @@ public class Plane {
             oc[j3] = ai3[j3];
         } while (++j3 < 3);
         if (j == -15) {
-            j3 = (int) (185D + Math.random() * 30D);
+            j3 = (int) (185D + shapeJitter.nextDouble() * 30D);
             ai3[0] = (217 + j3) / 2;
             ai3[1] = (189 + j3) / 2;
             ai3[2] = (132 + j3) / 2;
             for (int k3 = 0; k3 < n; k3++) {
-                if (Math.random() > Math.random()) {
-                    ox[k3] += (int) (8D * Math.random() - 4D);
+                if (shapeJitter.nextDouble() > shapeJitter.nextDouble()) {
+                    ox[k3] += (int) (8D * shapeJitter.nextDouble() - 4D);
                 }
-                if (Math.random() > Math.random()) {
-                    oy[k3] += (int) (8D * Math.random() - 4D);
+                if (shapeJitter.nextDouble() > shapeJitter.nextDouble()) {
+                    oy[k3] += (int) (8D * shapeJitter.nextDouble() - 4D);
                 }
-                if (Math.random() > Math.random()) {
-                    oz[k3] += (int) (8D * Math.random() - 4D);
+                if (shapeJitter.nextDouble() > shapeJitter.nextDouble()) {
+                    oz[k3] += (int) (8D * shapeJitter.nextDouble() - 4D);
                 }
             }
 
@@ -1173,7 +1191,7 @@ public class Plane {
                     rd.setColor(new Color(i12, k13, l14));
                     rd.drawPolygon(ai14, ai15, n);
                 } else if (Medium.cpflik && Medium.hit == 5000) {
-                    int l13 = (int) (Math.random() * 115D);
+                    int l13 = (int) (Medium.fxRandom.nextDouble() * 115D);
                     int j12 = l13 * 2 - 54;
                     if (j12 < 0) {
                         j12 = 0;

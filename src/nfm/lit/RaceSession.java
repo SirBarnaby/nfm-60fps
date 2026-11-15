@@ -2,6 +2,7 @@ package nfm.lit;
 
 import nfm.lit.audio.SoundManager;
 
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
@@ -60,6 +61,9 @@ final class RaceSession {
         int cameraView();
 
         void setCameraView(int view);
+
+        /** The race as it would be presented now, scene and HUD, without changing anything. */
+        BufferedImage frame();
     }
 
     private static final String TAG_RECORD = "[record] ";
@@ -116,6 +120,7 @@ final class RaceSession {
     private boolean racing;
     private boolean customStage;
     private int[] carsBefore = new int[0];
+    private int mountainsBefore;
     private Phase lastPhase;
     private int pendingKeys;
     private int pendingLookback;
@@ -176,7 +181,8 @@ final class RaceSession {
                 System.out.println(TAG_VERIFY + "no recorded races in " + verify);
                 System.exit(2);
             }
-            return new RaceSession(host, null, null, new Verifier(host, files), unpacedRequested());
+            return new RaceSession(host, null, null, new Verifier(host, files, GoldenFrames.fromCommandLine()),
+                    unpacedRequested());
         }
         String record = System.getProperty("nfm.record");
         if (record == null) {
@@ -248,8 +254,9 @@ final class RaceSession {
         carsBefore = Arrays.copyOf(sc, sc.length);
         customStage = custom;
         if (verifier != null) {
-            return verifier.seed();
+            return verifier.stageLoading();
         }
+        mountainsBefore = Medium.mgen;
         return RaceRandom.newSeed();
     }
 
@@ -273,6 +280,7 @@ final class RaceSession {
         log.unlocked = ui.unlocked;
         log.carsBefore = Arrays.copyOf(carsBefore, players);
         log.carsAfter = Arrays.copyOf(ui.sc, players);
+        log.mountains = mountainsBefore;
         log.note = (autopilot != null ? "autopilot " + autopilot.describe() : "played")
                 + (unpaced ? ", unpaced" : ", real time") + ", " + timestamp();
     }
@@ -590,14 +598,23 @@ final class RaceSession {
         /** Track values left by earlier stages that differed from the recording and were put back. */
         private int trackDifferences;
         private String carsProblem;
+        /** Golden screenshots to check while the race plays, or null. */
+        private final GoldenFrames golden;
+        private final List<String> goldenReport = new ArrayList<>();
 
-        Verifier(Host host, List<File> files) {
+        Verifier(Host host, List<File> files, GoldenFrames golden) {
             this.host = host;
             this.files = files;
+            this.golden = golden;
         }
 
-        long seed() {
-            return log != null ? log.seed : RaceRandom.newSeed();
+        /** Sets up the scenery the recording had and returns the race seed. */
+        long stageLoading() {
+            if (log == null) {
+                return RaceRandom.newSeed();
+            }
+            Medium.mgen = log.mountains;
+            return log.seed;
         }
 
         void beforeTick(Phase phase) {
@@ -653,6 +670,7 @@ final class RaceSession {
             startDifferenceNames.clear();
             trackDifferences = 0;
             carsProblem = null;
+            goldenReport.clear();
             System.out.println(TAG_VERIFY + file.getName() + ": stage " + log.stage + ", " + log.players + " cars, "
                     + log.ticks() + " ticks, " + log.end.name().toLowerCase(Locale.ROOT) + " (" + log.note + ")");
             setUpRace(host, log.stage, log.nfmmode, log.players, log.unlocked, log.carsBefore);
@@ -755,6 +773,9 @@ final class RaceSession {
                     mismatchTick = tick;
                     mismatchHashes = hashes;
                 }
+            }
+            if (golden != null && mismatchTick < 0 && GoldenFrames.isGoldenTick(tick, log.ticks())) {
+                goldenReport.add(golden.check(file.getName().replace(".nfmr", ""), tick, host.frame()));
             }
             if (mismatchTick >= 0 && log.dumpTickAtOrAfter(mismatchTick) == tick) {
                 fail(sameLayout
@@ -884,13 +905,21 @@ final class RaceSession {
                         .append(" last race)");
             }
             System.out.println(sb);
+            printGoldenReport();
             endRace();
         }
 
         private void fail(String why) {
             failed++;
             System.out.println(TAG_VERIFY + "  MISMATCH: " + why);
+            printGoldenReport();
             endRace();
+        }
+
+        private void printGoldenReport() {
+            for (String line : goldenReport) {
+                System.out.println(TAG_VERIFY + "  frame after " + line);
+            }
         }
 
         private void error(String why) {
@@ -908,7 +937,11 @@ final class RaceSession {
         private void summary() {
             System.out.println(TAG_VERIFY + passed + " matched, " + failed + " differed, " + errors
                     + " could not be run");
-            System.exit(errors > 0 ? 2 : failed > 0 ? 1 : 0);
+            boolean framesChanged = golden != null && golden.anyChanged();
+            if (golden != null) {
+                System.out.println(TAG_VERIFY + golden.summary());
+            }
+            System.exit(errors > 0 ? 2 : failed > 0 || framesChanged ? 1 : 0);
         }
     }
 }

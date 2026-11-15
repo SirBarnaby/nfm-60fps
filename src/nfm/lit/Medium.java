@@ -178,6 +178,7 @@ public class Medium {
         raceRandom.reseed(seed);
         fxRandom.reseed(RaceRandom.derive(seed, RaceRandom.STREAM_EFFECTS));
         cameraRandom.reseed(RaceRandom.derive(seed, RaceRandom.STREAM_CAMERA));
+        Plane.seedShapes(seed);
     }
 
     public static long raceSeed() {

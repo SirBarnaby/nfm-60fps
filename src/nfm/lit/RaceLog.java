@@ -33,7 +33,7 @@ import java.util.zip.GZIPOutputStream;
 final class RaceLog {
 
     private static final int MAGIC = 0x4E464D52; // "NFMR"
-    private static final int VERSION = 2;
+    private static final int VERSION = 3;
     /** Ticks between full state dumps: about two seconds of racing. */
     static final int DUMP_INTERVAL = 40;
 
@@ -97,6 +97,12 @@ final class RaceLog {
     int[] trackShape = new int[0];
     /** What earlier stages left in the track pieces, see {@link RaceState#trackLeftovers}. */
     int[] trackLeftovers = new int[0];
+    /**
+     * The seed of the distant mountains when the stage started loading. Stages
+     * that do not set their own keep the one the game picked at launch, so
+     * the scenery of a session is random. Only golden frames depend on it.
+     */
+    int mountains;
     End end = End.CLOSED;
 
     /* Ticks. */
@@ -237,6 +243,7 @@ final class RaceLog {
             writeInts(out, raceRandom);
             writeInts(out, trackShape);
             writeInts(out, trackLeftovers);
+            out.writeInt(mountains);
             out.writeUTF(end.name());
 
             out.writeInt(groups);
@@ -304,6 +311,7 @@ final class RaceLog {
             log.raceRandom = readInts(in);
             log.trackShape = readInts(in);
             log.trackLeftovers = readInts(in);
+            log.mountains = in.readInt();
             log.end = End.valueOf(in.readUTF());
 
             log.groups = in.readInt();

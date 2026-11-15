@@ -3071,5 +3071,14 @@ public class GameSparker extends Panel implements Runnable {
         public void setCameraView(int cameraView) {
             view = cameraView;
         }
+
+        @Override
+        public BufferedImage frame() {
+            renderIngameScene(1F);
+            if (hudImage != null) {
+                rd.drawImage(hudImage, 0, 0, null);
+            }
+            return captureFrame();
+        }
     }
 }

@@ -150,6 +150,8 @@ public final class RaceRandom {
     static final int STREAM_RACE_EFFECTS = 3;
     /** The order the opponents are dealt in. */
     static final int STREAM_OPPONENTS = 4;
+    /** The jitter of the sand pieces' shape and tint, see {@link Plane#seedShapes(long)}. */
+    static final int STREAM_SHAPES = 5;
 
     /** Derives an independent seed for a second stream from a race seed. */
     static long derive(long seed, long stream) {

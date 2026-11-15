@@ -129,6 +129,22 @@ powershell -ExecutionPolicy Bypass -File test\verify-races.ps1
 
 `verify-races.ps1 -Fresh` runs each race in a game of its own, which is slower but shows nothing depends on the race before. `test\record-races.ps1` records more (`-Count`, `-Seed`, `-Ticks`, `-RealTime`).
 
+### Golden screenshots
+
+While it checks the races, `verify-races.ps1` also renders four frames of each one (just after the start, then spread evenly to the end) and compares them pixel by pixel with the frames in `test\golden`. A race replays exactly, so a frame only changes when drawing changes: this proves that rendering work leaves the picture as it was, and measures how far a new renderer is from the original. A changed frame is reported with the number of pixels, how far they are off and where, and the new frame plus a picture with every changed pixel marked are written to the temp folder.
+
+| Option | Meaning |
+| --- | --- |
+| `-UpdateGolden` | Save every frame again, after a change that is meant to alter the picture. Missing frames are always saved. |
+| `-NoGolden` | Check the races only. |
+| `-Golden <dir>` | Check the frames of other races (`-Races`) against another folder. |
+
+The same check is available directly with `-Dnfm.verify.golden=<dir>`, `-Dnfm.verify.golden.update=true` and `-Dnfm.verify.golden.tolerance=<n>` (how far a colour channel may be off before a pixel counts as changed; default 0).
+
+Golden frames are taken with every race in one game, in name order, so `-Fresh` checks the races only. Some of what is on screen carries over from the races before, as in the original: which hint the HUD shows, and some dust and sparks. Two separate runs of the corpus produce identical frames.
+
+A few things only change how a race looks, and they come from the session rather than the race. The original picks the distant mountains at random when the game starts, for every stage that does not set its own, so recordings store that choice too. The jittered shape of the sand pieces and the checkpoint flicker draw from seeded streams, so the same race looks the same every time.
+
 ### Full and canonical state
 
 The full state is every field of the race classes, read by reflection, so it catches anything. It depends on how those classes are laid out: once fields are renamed or moved, old recordings can no longer be compared field for field. The canonical state is a short list of what a race actually is (car positions, angles, speeds, wheels, damage, checkpoints, laps, input, race position, the camera and the race random stream) under stable names. When a recording's layout no longer matches the code, the verifier compares the canonical state only and says so. When code is reorganised, keep `RaceState.visitCanonical` pointing at the same quantities and the existing corpus stays usable.
