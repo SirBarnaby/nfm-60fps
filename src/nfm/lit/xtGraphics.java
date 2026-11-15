@@ -15,7 +15,7 @@ import java.awt.color.ColorSpace;
 import java.awt.image.*;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.Random;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -1273,7 +1273,7 @@ public class xtGraphics extends Panel implements Runnable {
             if (checkpoints.x[i] - checkpoints.opx[0] >= 0) {
                 c2 = '\264';
             }
-            k = (int) (90 + c2 + Math.atan(
+            k = (int) (90 + c2 + StrictMath.atan(
                     (double) (checkpoints.z[i] - checkpoints.opz[0]) / (double) (checkpoints.x[i] - checkpoints.opx[0]))
                     / 0.017453292519943295D);
         } else {
@@ -1296,7 +1296,7 @@ public class xtGraphics extends Panel implements Runnable {
             if (checkpoints.opx[l] - checkpoints.opx[0] >= 0) {
                 l2 = 180;
             }
-            k = (int) (90 + l2 + Math.atan((double) (checkpoints.opz[l] - checkpoints.opz[0])
+            k = (int) (90 + l2 + StrictMath.atan((double) (checkpoints.opz[l] - checkpoints.opz[0])
                     / (double) (checkpoints.opx[l] - checkpoints.opx[0])) / 0.017453292519943295D);
             drawcs(13, "[ " + names[sc[l]] + " ]", 76, 67, 240, 0);
             drawcs(13, names[sc[l]], 0, 0, 0, 0);
@@ -1611,7 +1611,7 @@ public class xtGraphics extends Panel implements Runnable {
                                 stopcnt = 10;
                             }
                         } else if (stopcnt <= -2) {
-                            sm.loop("air" + (2 + (int) (Medium.random() * 3F)));
+                            sm.loop("air" + (2 + (int) (Medium.fxRandom() * 3F)));
                             stopcnt = 7;
                         }
                     }
@@ -1622,14 +1622,14 @@ public class xtGraphics extends Panel implements Runnable {
                 aird = false;
             } else {
                 pwait = 15;
-                if (!madness.mtouch && !grrd && Medium.random() > 0.50000000000000002D) {
-                    sm.loop("air" + (int) (Medium.random() * 4F));
+                if (!madness.mtouch && !grrd && Medium.fxRandom() > 0.50000000000000002D) {
+                    sm.loop("air" + (int) (Medium.fxRandom() * 4F));
                     stopcnt = 5;
                     grrd = true;
                 }
                 if (!madness.wtouch && !aird) {
                     stopairs();
-                    sm.loop("air" + (int) (Medium.random() * 4F));
+                    sm.loop("air" + (int) (Medium.fxRandom() * 4F));
                     stopcnt = 10;
                     aird = true;
                 }
@@ -3080,12 +3080,12 @@ public class xtGraphics extends Panel implements Runnable {
                             byte0 = 3;
                         }
                         if (madness[0].surfer) {
-                            asay = " " + adj[4][(int) (Medium.random() * 3F)] + asay;
+                            asay = " " + adj[4][(int) (Medium.fxRandom() * 3F)] + asay;
                         }
                         if (byte0 != 3) {
-                            asay = adj[byte0][(int) (Medium.random() * 3F)] + asay + exlm[byte0];
+                            asay = adj[byte0][(int) (Medium.fxRandom() * 3F)] + asay + exlm[byte0];
                         } else {
-                            asay = adj[byte0][(int) (Medium.random() * 3F)];
+                            asay = adj[byte0][(int) (Medium.fxRandom() * 3F)];
                         }
                         if (!wasay) {
                             tcnt = auscnt;
@@ -3155,7 +3155,7 @@ public class xtGraphics extends Panel implements Runnable {
                         drawcs(80, "Stage Completed!", 170, 170, 170, 3);
                     }
                 } else {
-                    rd.drawImage(congrd, Utility.centeredImageX(congrd) + (int) (Medium.random() * 10F), 30, null);
+                    rd.drawImage(congrd, Utility.centeredImageX(congrd) + (int) (Medium.fxRandom() * 10F), 30, null);
                 }
                 byte byte0 = 0;
                 int i = 0;
@@ -3416,8 +3416,13 @@ public class xtGraphics extends Panel implements Runnable {
                     continue;
                 list.add(k);
             }
-            // randomize the order of this list (shuffle it like a deck of cards)
-            Collections.shuffle(list);
+            /*
+             * Randomize the order of this list (shuffle it like a deck of cards).
+             * The deck comes from the race seed, so a recorded race gets the
+             * same opponents when it is replayed.
+             */
+            Random deck = new Random(RaceRandom.derive(Medium.raceSeed(), RaceRandom.STREAM_OPPONENTS));
+            Collections.shuffle(list, deck);
 
             // which item of the list should be picked
             int k = 0;
@@ -3434,7 +3439,7 @@ public class xtGraphics extends Panel implements Runnable {
                 // have to ignore the duplicates here
                 while (sc[j] > GameFacts.numberOfCars - 1) {
                     HLogger.error("Car " + j + " is out of bounds");
-                    sc[j] -= ThreadLocalRandom.current().nextDouble() * 5F;
+                    sc[j] -= deck.nextDouble() * 5F;
                 }
                 // HLogger.info("sc of " + j + " is " + sc[j]);
             }
@@ -4374,7 +4379,7 @@ public class xtGraphics extends Panel implements Runnable {
             }
         } else {
             flyr = flyrdest;
-            flyrdest = (int) ((flyr + Medium.random() * 160F) - 80F);
+            flyrdest = (int) ((flyr + Medium.fxRandom() * 160F) - 80F);
         }
         if (flyr > 160) {
             flyr = 160;
@@ -4382,12 +4387,12 @@ public class xtGraphics extends Panel implements Runnable {
         if (flatr > 170) {
             flatrstart++;
             flatr = flatrstart * 3;
-            flyr = (int) (Medium.random() * 160F - 80F);
-            flyrdest = (int) ((flyr + Medium.random() * 160F) - 80F);
+            flyr = (int) (Medium.fxRandom() * 160F - 80F);
+            flyrdest = (int) ((flyr + Medium.fxRandom() * 160F) - 80F);
             flang = 1;
-            flangados = (int) (Medium.random() * 6F + 2.0F);
+            flangados = (int) (Medium.fxRandom() * 6F + 2.0F);
             blackn = 0.0F;
-            blacknados = Medium.random() * 0.4F;
+            blacknados = Medium.fxRandom() * 0.4F;
         }
         int i = 0;
         do {
@@ -4759,7 +4764,7 @@ public class xtGraphics extends Panel implements Runnable {
         if (radpx == Utility.centeredImageX(radicalplay)) {
             rd.setFont(new Font("SansSerif", 1, 11));
             FontHandler.fMetrics = rd.getFontMetrics();
-            drawcs(160 + (int) (5F * Medium.random()), "Radicalplay.com", 112, 120, 143, 3);
+            drawcs(160 + (int) (5F * Medium.fxRandom()), "Radicalplay.com", 112, 120, 143, 3);
         }
 
         rd.setFont(new Font("SansSerif", 1, 11));
@@ -5685,12 +5690,12 @@ public class xtGraphics extends Panel implements Runnable {
 
     private void carsbginflex() {
         flatr = 0;
-        flyr = (int) (Medium.random() * 160F - 80F);
-        flyrdest = (int) ((flyr + Medium.random() * 160F) - 80F);
+        flyr = (int) (Medium.fxRandom() * 160F - 80F);
+        flyrdest = (int) ((flyr + Medium.fxRandom() * 160F) - 80F);
         flang = 1;
-        flangados = (int) (Medium.random() * 6F + 2.0F);
+        flangados = (int) (Medium.fxRandom() * 6F + 2.0F);
         blackn = 0.0F;
-        blacknados = Medium.random() * 0.4F;
+        blacknados = Medium.fxRandom() * 0.4F;
         PixelGrabber pixelgrabber = new PixelGrabber(carsbg, 0, 0, GameFacts.screenWidth, GameFacts.screenHeight,
                 flexpix, 0, GameFacts.screenWidth);
         try {

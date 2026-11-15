@@ -11,11 +11,29 @@ public class SoundManager {
 
     private final HashMap<String, SoundClip> clips = new HashMap<>();
 
+    /**
+     * Set for the hidden developer runs (race recording and verification), which
+     * must never make a sound on the user's desktop. Music is silenced at the
+     * same switch, see {@link TrackZipLoader}.
+     */
+    private static volatile boolean silenced;
+
+    public static void silenceAll() {
+        silenced = true;
+    }
+
+    public static boolean isSilenced() {
+        return silenced;
+    }
+
     public void add(String name, SoundClip clip) {
         clips.put(name, clip);
     }
 
     public void play(String name) {
+        if (silenced) {
+            return;
+        }
         SoundClip soundClip = clips.get(name);
         if (soundClip != null) {
             if (soundClip instanceof SoundClipThreaded) {
@@ -43,6 +61,9 @@ public class SoundManager {
     }
 
     public void loop(String name) {
+        if (silenced) {
+            return;
+        }
         SoundClip soundClip = clips.get(name);
         if (soundClip != null) {
             if (soundClip instanceof SoundClipUnthreaded) {

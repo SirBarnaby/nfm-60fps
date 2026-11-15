@@ -59,11 +59,12 @@ class RunApp extends Panel {
 
     private static void startup() {
         /*
-         * The scripted smoke test renders into its own back buffer and never
-         * needs the window on screen. Keep it undecorated, off-screen and
+         * The scripted smoke test, the race verifier and the corpus autopilot
+         * render into their own back buffer and never need the window on screen. Keep it undecorated, off-screen and
          * unfocusable so it cannot steal the mouse or keyboard from the user.
          */
-        boolean autoTest = System.getProperty("nfm.autotest") != null;
+        boolean autoTest = System.getProperty("nfm.autotest") != null || RaceSession.runsHidden();
+        RaceSession.prepareProcess();
 
         frame = new Frame("Need For Madness: LIT");// Change this to the name of your preference
         if (autoTest) {

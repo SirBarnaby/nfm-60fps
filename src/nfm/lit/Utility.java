@@ -227,7 +227,7 @@ public class Utility {
      * inline (turn into x * x) calls to it.
      */
     public static int distance(final int x1, final int y1, final int x2, final int y2) {
-        return (int) Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+        return (int) Math.sqrt(StrictMath.pow(x2 - x1, 2) + StrictMath.pow(y2 - y1, 2));
     }
 
     public static void rot(float af[], float af1[], int i, int j, int k, int l) {

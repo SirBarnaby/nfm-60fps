@@ -1469,7 +1469,7 @@ public class Control {
                                 c2 = '\264';
                             }
                             pan = (int) (90 + c2
-                                    + Math.atan((double) (wtz - conto.z) / (double) (wtx - conto.x))
+                                    + StrictMath.atan((double) (wtz - conto.z) / (double) (wtx - conto.x))
                                     / 0.017453292519943295D);
                         }
                         turncnt = 0;
@@ -1488,7 +1488,7 @@ public class Control {
                         c = '\264';
                     }
                     pan = (int) (90 + c
-                            + Math.atan((double) (k5 - conto.z) / (double) (l3 - conto.x)) / 0.017453292519943295D);
+                            + StrictMath.atan((double) (k5 - conto.z) / (double) (l3 - conto.x)) / 0.017453292519943295D);
                     attack--;
                     if (attack <= 0) {
                         attack = 0;

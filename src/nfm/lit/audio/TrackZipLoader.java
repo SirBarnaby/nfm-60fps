@@ -22,6 +22,9 @@ import nfm.lit.xtGraphics;
 public final class TrackZipLoader {
 
     public static RadicalMusic loadZip(String file, final boolean download) throws FileNotFoundException, IOException {
+        if (SoundManager.isSilenced()) {
+            return new SilentMusic();
+        }
 
         if (download) {
             downloadMusic(file);
@@ -108,6 +111,9 @@ public final class TrackZipLoader {
      */
     public static RadicalMusic loadMusic(String file) throws FileNotFoundException, IOException
     {
+        if (SoundManager.isSilenced()) {
+            return new SilentMusic();
+        }
     	final File f = new File(file);
     	
     	if(file.endsWith(".ogg") || file.endsWith(".mp3") || file.endsWith(".wav"))

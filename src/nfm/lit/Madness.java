@@ -1070,7 +1070,7 @@ class Madness {
             else
                 i = 1;
             double d1 = f10 / Math.sqrt(f9 * f9 + f10 * f10);
-            mxz = (int) ((Math.acos(d1) / 0.017453292519943295D) * i);
+            mxz = (int) ((StrictMath.acos(d1) / 0.017453292519943295D) * i);
             if (skid == 2) {
                 if (!capsized) {
                     f9 /= 4F;
@@ -1354,7 +1354,7 @@ class Madness {
             if (d2 >= 0.99980000000000002D)
                 k5 = i;
             else
-                k5 = (int) ((Math.acos(d2) / 0.017453292519943295D) * i);
+                k5 = (int) ((StrictMath.acos(d2) / 0.017453292519943295D) * i);
         }
         if (scy[3] != scy[1]) {
             if (scy[3] < scy[1])
@@ -1368,7 +1368,7 @@ class Madness {
             if (d3 >= 0.99980000000000002D)
                 i6 = i;
             else
-                i6 = (int) ((Math.acos(d3) / 0.017453292519943295D) * i);
+                i6 = (int) ((StrictMath.acos(d3) / 0.017453292519943295D) * i);
         }
         if (scy[1] != scy[0]) {
             if (scy[1] < scy[0])
@@ -1382,7 +1382,7 @@ class Madness {
             if (d4 >= 0.99980000000000002D)
                 k6 = i;
             else
-                k6 = (int) ((Math.acos(d4) / 0.017453292519943295D) * i);
+                k6 = (int) ((StrictMath.acos(d4) / 0.017453292519943295D) * i);
         }
         if (scy[3] != scy[2]) {
             if (scy[3] < scy[2])
@@ -1396,7 +1396,7 @@ class Madness {
             if (d5 >= 0.99980000000000002D)
                 j7 = i;
             else
-                j7 = (int) ((Math.acos(d5) / 0.017453292519943295D) * i);
+                j7 = (int) ((StrictMath.acos(d5) / 0.017453292519943295D) * i);
         }
         if (flag2) {
             int j8;

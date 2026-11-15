@@ -131,7 +131,7 @@ public class GameSparker extends Panel implements Runnable {
      * or highlight was on screen and 10 per 400 ms everywhere else. Those are the
      * cadences every frame-counted timer in the game was tuned against.
      */
-    private static final long SCENE_TICK_NANOS = 53_000_000L;
+    static final long SCENE_TICK_NANOS = 53_000_000L;
     private static final long MENU_TICK_NANOS = 40_000_000L;
     /**
      * Ticks the loop may run back to back to catch up after a slow frame before it
@@ -164,6 +164,7 @@ public class GameSparker extends Panel implements Runnable {
     private xtGraphics ui;
     private CheckPoints raceCheckpoints;
     private Record raceRecord;
+    private Trackers raceTrackers;
 
     private final int[] prevCarX = new int[51];
     private final int[] prevCarY = new int[51];
@@ -205,11 +206,34 @@ public class GameSparker extends Panel implements Runnable {
     private int prevCamZY;
     private boolean prevFrameValid;
     /**
-     * A scene tick has run since the last presentation frame, so the next frame
-     * is the one whose drawing side effects are kept. See
-     * {@link ContO#saveDrawState()}.
+     * Target of the per-tick draw step: a graphics context that draws nothing,
+     * so drawing costs only the geometry and keeps every side effect. See
+     * {@link #drawSimulationStep()}.
      */
-    private boolean drawStepPending;
+    private final Graphics2D stepGraphics = new NullGraphics();
+    /** Each scene object's distance from the camera, kept across presented frames. */
+    private int[] savedDist = new int[0];
+
+    /** Recording or verifying races, see {@link RaceSession}; null in a normal game. */
+    private RaceSession session;
+
+    /*
+     * Keyboard state as the event thread last saw it. During a race every tick
+     * reads the controls once, at its start, so a key that changes in the middle
+     * of a tick cannot make the physics and the AI see different input, and a
+     * recording stores exactly the input each tick used.
+     */
+    private final Object inputLock = new Object();
+    private boolean liveUp;
+    private boolean liveDown;
+    private boolean liveLeft;
+    private boolean liveRight;
+    private boolean liveHandb;
+    private int liveLookback;
+    private boolean liveEnter;
+    private int liveView;
+    /** The controls are being latched once per tick (a race is running). */
+    private boolean latching;
 
     private boolean pendingWhiteFlash;
     private float renderAlpha = 1F;
@@ -251,35 +275,91 @@ public class GameSparker extends Panel implements Runnable {
     @Override
     public boolean keyDown(Event event, int i) {
         if (!exwist) {
-            if (i == 1004)
-                u[0].up = true;
-            if (i == 1005)
-                u[0].down = true;
-            if (i == 1007)
-                u[0].right = true;
-            if (i == 1006)
-                u[0].left = true;
-            if (i == 32)
-                u[0].handb = true;
-            if (i == 120 || i == 88)
-                u[0].lookback = -1;
-            if (i == 122 || i == 90)
-                u[0].lookback = 1;
-            if (i == 10 || i == 80 || i == 112 || i == 27)
-                u[0].enter = true;
+            synchronized (inputLock) {
+                if (i == 1004)
+                    liveUp = true;
+                if (i == 1005)
+                    liveDown = true;
+                if (i == 1007)
+                    liveRight = true;
+                if (i == 1006)
+                    liveLeft = true;
+                if (i == 32)
+                    liveHandb = true;
+                if (i == 120 || i == 88)
+                    liveLookback = -1;
+                if (i == 122 || i == 90)
+                    liveLookback = 1;
+                if (i == 10 || i == 80 || i == 112 || i == 27)
+                    liveEnter = true;
+                if (i == 118 || i == 86) {
+                    liveView++;
+                    if (liveView == 3)
+                        liveView = 0;
+                }
+                if (!latching) {
+                    applyLiveKeys();
+                }
+            }
             if (i == 77 || i == 109)
                 u[0].mutem = !u[0].mutem;
             if (i == 78 || i == 110)
                 u[0].mutes = !u[0].mutes;
             if (i == 97 || i == 65)
                 u[0].arrace = !u[0].arrace;
-            if (i == 118 || i == 86) {
-                view++;
-                if (view == 3)
-                    view = 0;
-            }
         }
         return false;
+    }
+
+    /**
+     * Copies the keyboard state into the player's controls. Called under
+     * {@link #inputLock}: from the event thread directly while no race is
+     * running, and once at the start of every race tick otherwise.
+     */
+    private void applyLiveKeys() {
+        applyHeldKeys();
+        Control c = u[0];
+        if (liveEnter) {
+            c.enter = true;
+            liveEnter = false;
+        }
+        view = liveView;
+    }
+
+    /** Only the keys held down: a consumed Enter press must not come back on release. */
+    private void applyHeldKeys() {
+        Control c = u[0];
+        c.up = liveUp;
+        c.down = liveDown;
+        c.left = liveLeft;
+        c.right = liveRight;
+        c.handb = liveHandb;
+        c.lookback = liveLookback;
+    }
+
+    /** Start of a race tick: the controls this tick will read. */
+    private void latchRaceInput() {
+        synchronized (inputLock) {
+            latching = true;
+            applyLiveKeys();
+        }
+    }
+
+    /** Not in a race: keys go straight to the controls again, as the menus expect. */
+    private void releaseRaceInput() {
+        synchronized (inputLock) {
+            if (latching) {
+                latching = false;
+                applyLiveKeys();
+            }
+        }
+    }
+
+    private void resetView() {
+        synchronized (inputLock) {
+            liveView = 0;
+            view = 0;
+        }
     }
 
     /**
@@ -308,7 +388,16 @@ public class GameSparker extends Panel implements Runnable {
         if (!exwist && !lostfcs) {
             lostfcs = true;
             mouses = 0;
-            u[0].falseo();
+            synchronized (inputLock) {
+                liveUp = false;
+                liveDown = false;
+                liveLeft = false;
+                liveRight = false;
+                liveHandb = false;
+                liveLookback = 0;
+                liveEnter = false;
+                u[0].falseo();
+            }
             setCursor(new Cursor(0));
         }
         return false;
@@ -322,6 +411,9 @@ public class GameSparker extends Panel implements Runnable {
     }
 
     private void savecookie(String filename, String num) {
+        if (session != null && session.keepsCookies()) {
+            return; // recording and verifying must not touch the player's progress
+        }
         try {
             /**
              * since I want full control over the filenames, we'll create a normal file in
@@ -583,18 +675,23 @@ public class GameSparker extends Panel implements Runnable {
     @Override
     public boolean keyUp(Event event, int i) {
         if (!exwist) {
-            if (i == 1004)
-                u[0].up = false;
-            if (i == 1005)
-                u[0].down = false;
-            if (i == 1007)
-                u[0].right = false;
-            if (i == 1006)
-                u[0].left = false;
-            if (i == 32)
-                u[0].handb = false;
-            if (i == 120 || i == 88 || i == 122 || i == 90)
-                u[0].lookback = 0;
+            synchronized (inputLock) {
+                if (i == 1004)
+                    liveUp = false;
+                if (i == 1005)
+                    liveDown = false;
+                if (i == 1007)
+                    liveRight = false;
+                if (i == 1006)
+                    liveLeft = false;
+                if (i == 32)
+                    liveHandb = false;
+                if (i == 120 || i == 88 || i == 122 || i == 90)
+                    liveLookback = 0;
+                if (!latching) {
+                    applyHeldKeys();
+                }
+            }
         }
         return false;
     }
@@ -631,6 +728,11 @@ public class GameSparker extends Panel implements Runnable {
 
     private void loadstage(ContO aconto[], ContO aconto1[], Trackers trackers, CheckPoints checkpoints,
             xtGraphics xtgraphics, Madness amadness[], Record record, boolean custom) {
+        /*
+         * Every race starts its random streams from one seed, before anything
+         * of the stage draws a number, so the race can be played again exactly.
+         */
+        Medium.seedRace(session != null ? session.stageLoading(custom) : RaceRandom.newSeed());
         trackers.nt = 0;
         nob = GameFacts.numberOfPlayers;
         notb = 0;
@@ -655,7 +757,7 @@ public class GameSparker extends Panel implements Runnable {
         xtgraphics.arrowDisabled = false;
         xtgraphics.opstatusDisabled = false;
 
-        view = 0;
+        resetView();
         int r_wall = 0;
         int l_wall = 100;
         int t_wall = 0;
@@ -1077,6 +1179,9 @@ public class GameSparker extends Panel implements Runnable {
             amadness[j1].reseto(xtgraphics.sc[j1], aconto[j1], checkpoints);
         } while (++j1 < GameFacts.numberOfPlayers);
         record.reset(aconto);
+        if (session != null) {
+            session.stageLoaded();
+        }
         System.gc();
     }
 
@@ -1128,7 +1233,6 @@ public class GameSparker extends Panel implements Runnable {
         prevCamXZ = Medium.xz;
         prevCamZY = Medium.zy;
         prevFrameValid = true;
-        drawStepPending = true;
     }
 
     private static int mix(int a, int b, float t) {
@@ -1162,13 +1266,13 @@ public class GameSparker extends Panel implements Runnable {
      * resolved on the previous pass (newly reset cars, track pieces) is drawn
      * first so it ends up behind everything else.
      */
-    private void drawWorldObjects() {
+    private void drawWorldObjects(Graphics2D g) {
         int count = 0;
         for (int i = 0; i < nob; i++) {
             if (sceneObjects[i].dist != 0) {
                 drawOrder[count++] = i;
             } else {
-                sceneObjects[i].d(rd);
+                sceneObjects[i].d(g);
             }
         }
 
@@ -1193,21 +1297,34 @@ public class GameSparker extends Panel implements Runnable {
         }
 
         for (int i = 0; i < count; i++) {
-            sceneObjects[drawOrder[drawIndices[i]]].d(rd);
+            sceneObjects[drawOrder[drawIndices[i]]].d(g);
         }
     }
 
     /**
-     * Renders the in-game scene at an arbitrary presentation time.
-     *
-     * @param alpha     0 = state at the previous simulation tick, 1 = state at
-     *                  the most recent one
-     * @param stepDrawn true for the first frame after a tick: the animation
-     *                  steps that drawing performs are kept, exactly as when the
-     *                  game drew once per tick. Every other frame is drawn and
-     *                  then rolled back, so it changes nothing but the screen.
+     * Draws one step of the world, invisibly, at the exact state the last tick
+     * left. The original drew the world once at the start of every tick, before
+     * the simulation, and the race reads back what drawing did: a car out of
+     * view finishes a repair hoop at once, one in view waits for the repair
+     * animation, and the HUD's opponent arrows follow what is on screen. Doing
+     * that step here, at tick state and never at an interpolated frame, keeps
+     * races exactly as they were and independent of the frame rate. Presented
+     * frames then draw on top and take their side effects back.
      */
-    private void renderIngameScene(float alpha, boolean stepDrawn) {
+    private void drawSimulationStep() {
+        Medium.d(stepGraphics);
+        drawWorldObjects(stepGraphics);
+    }
+
+    /**
+     * Renders the in-game scene at an arbitrary presentation time. The frame is
+     * drawn and then rolled back, so it changes nothing but the screen: the
+     * steps that drawing advances belong to {@link #drawSimulationStep()}.
+     *
+     * @param alpha 0 = state at the previous simulation tick, 1 = state at the
+     *              most recent one
+     */
+    private void renderIngameScene(float alpha) {
         final int np = Math.min(GameFacts.numberOfPlayers, savedCarX.length);
 
         for (int i = 0; i < np; i++) {
@@ -1253,16 +1370,12 @@ public class GameSparker extends Panel implements Runnable {
             }
         }
 
-        if (!stepDrawn) {
-            saveSceneDrawState();
-        }
+        saveSceneDrawState();
         try {
             Medium.d(rd);
-            drawWorldObjects();
+            drawWorldObjects(rd);
         } finally {
-            if (!stepDrawn) {
-                restoreSceneDrawState();
-            }
+            restoreSceneDrawState();
         }
 
         for (int i = 0; i < np; i++) {
@@ -1338,9 +1451,17 @@ public class GameSparker extends Panel implements Runnable {
         return index < GameFacts.numberOfPlayers || sceneObjects[index].elec;
     }
 
+    /**
+     * Besides the animations, drawing measures every object's distance from
+     * the camera, which the race reads and the next draw step sorts by.
+     */
     private void saveSceneDrawState() {
         Medium.saveDrawState();
+        if (savedDist.length < nob) {
+            savedDist = new int[nob];
+        }
         for (int i = 0; i < nob; i++) {
+            savedDist[i] = sceneObjects[i].dist;
             if (hasDrawAnimation(i)) {
                 sceneObjects[i].saveDrawState();
             }
@@ -1350,6 +1471,7 @@ public class GameSparker extends Panel implements Runnable {
     private void restoreSceneDrawState() {
         Medium.restoreDrawState();
         for (int i = 0; i < nob; i++) {
+            sceneObjects[i].dist = savedDist[i];
             if (hasDrawAnimation(i)) {
                 sceneObjects[i].restoreDrawState();
             }
@@ -1790,9 +1912,12 @@ public class GameSparker extends Panel implements Runnable {
         ui = xtgraphics;
         raceCheckpoints = checkpoints;
         raceRecord = record;
+        raceTrackers = trackers;
 
         loadFpsLimit();
         startAutoTest();
+        session = RaceSession.fromCommandLine(new SessionHost());
+        final boolean unpaced = session != null && session.unpaced();
 
         int k1 = 0;
         int i2 = 0;
@@ -1826,7 +1951,7 @@ public class GameSparker extends Panel implements Runnable {
              * never slows the world down. The cap stops a long stall from
              * running a burst of ticks with nothing on screen.
              */
-            while (ticksThisFrame < MAX_TICKS_PER_FRAME && System.nanoTime() - nextTickNanos >= 0L) {
+            while (ticksThisFrame < MAX_TICKS_PER_FRAME && (unpaced || System.nanoTime() - nextTickNanos >= 0L)) {
                 long now = System.nanoTime();
                 if (now - nextTickNanos > MAX_TICK_LAG_NS) {
                     /*
@@ -1842,6 +1967,12 @@ public class GameSparker extends Panel implements Runnable {
                 ticksThisFrame++;
                 profileTicks++;
                 saveFpsLimitIfChanged();
+                if (session != null) {
+                    session.beforeTick();
+                }
+                if (xtgraphics.fase != Phase.INGAME) {
+                    releaseRaceInput();
+                }
 
             if (xtgraphics.fase == Phase.LOADING) {
                 if (mouses == 1)
@@ -2177,10 +2308,14 @@ public class GameSparker extends Panel implements Runnable {
                 aconto1[0].fix = true;
             }
             if (xtgraphics.fase == Phase.INGAME) {
+                latchRaceInput();
+                if (session != null) {
+                    session.ingameInput();
+                }
                 /*
                  * Snapshot the transforms the presentation pass interpolates from,
-                 * then advance the simulation. All drawing for this phase happens
-                 * in the presentation pass, at the display rate.
+                 * then advance the simulation. Everything on screen is drawn by
+                 * the presentation pass, at the display rate.
                  */
                 snapshotFrameState();
 
@@ -2208,6 +2343,8 @@ public class GameSparker extends Panel implements Runnable {
                         amadness[k3].newcar = false;
                     }
                 } while (++k3 < GameFacts.numberOfPlayers);
+
+                drawSimulationStep();
 
                 if (xtgraphics.starcnt == 0) {
                     int l12 = 0;
@@ -2285,6 +2422,10 @@ public class GameSparker extends Panel implements Runnable {
                         u[0].handb = false;
                     }
                     if (xtgraphics.starcnt == 38) {
+                        if (session != null) {
+                            session.countdownStarting();
+                        }
+                        Medium.startCountdown();
                         mouses = 0;
                         Medium.vert = false;
                         Medium.adv = GameFacts.screenWidth;
@@ -2294,6 +2435,9 @@ public class GameSparker extends Panel implements Runnable {
                         renderHud(u[0], true);
                         pendingWhiteFlash = true;
                     }
+                }
+                if (session != null) {
+                    session.ingameTickEnded();
                 }
             }
             if (xtgraphics.fase == Phase.INSTANTREPLAY) {
@@ -2313,6 +2457,7 @@ public class GameSparker extends Panel implements Runnable {
                         aconto1[i4] = new ContO(record.car[0][i4], 0, 0, 0, 0);
                     } while (++i4 < GameFacts.numberOfPlayers);
                 }
+                drawSimulationStep();
 
                 if (u[0].enter || u[0].handb || mouses == 1) {
                     k1 = 299;
@@ -2349,9 +2494,9 @@ public class GameSparker extends Panel implements Runnable {
                         && xtgraphics.looped != 0)
                     record.hcaught = false;
                 if (record.hcaught) {
-                    Medium.vert = Medium.random() <= 0.45000000000000001D;
-                    Medium.adv = (int) (900F * Medium.random());
-                    Medium.vxz = (int) (360F * Medium.random());
+                    Medium.vert = Medium.fxRandom() <= 0.45000000000000001D;
+                    Medium.adv = (int) (900F * Medium.fxRandom());
+                    Medium.vxz = (int) (360F * Medium.fxRandom());
                     k1 = 0;
                     xtgraphics.fase = Phase.GAMEHIGHLIGHT;
                     i2 = 0;
@@ -2377,7 +2522,7 @@ public class GameSparker extends Panel implements Runnable {
                             k2 = 67;
                             Medium.vxz += 90;
                         } else {
-                            k2 = (int) (Medium.random() * 4F);
+                            k2 = (int) (Medium.fxRandom() * 4F);
                             if (k2 == 1 || k2 == 3)
                                 k2 = 69;
                             if (k2 == 2 || k2 == 4)
@@ -2390,6 +2535,7 @@ public class GameSparker extends Panel implements Runnable {
                         aconto1[k4] = new ContO(record.starcar[k4], 0, 0, 0, 0);
                     while (++k4 < GameFacts.numberOfPlayers);
                 }
+                drawSimulationStep();
 
                 int l10 = 0;
                 do {
@@ -2505,7 +2651,7 @@ public class GameSparker extends Panel implements Runnable {
                             rd.fillRect(0, 0, GameFacts.screenWidth, GameFacts.screenHeight);
                         }
                         if (k2 == 30 && i2 >= 1 && i2 < 30)
-                            if (i2 % (int) (2.0F + Medium.random() * 3F) == 0 && !flag2) {
+                            if (i2 % (int) (2.0F + Medium.fxRandom() * 3F) == 0 && !flag2) {
                                 rd.setColor(new Color(255, 255, 255));
                                 rd.fillRect(0, 0, GameFacts.screenWidth, GameFacts.screenHeight);
                                 flag2 = true;
@@ -2644,7 +2790,7 @@ public class GameSparker extends Panel implements Runnable {
             long renderNanos = frameIntervalNanos(frameNow);
             boolean scene = isScenePhase(xtgraphics.fase);
             boolean frameDue = renderNanos == 0L || frameNow - nextRenderNanos >= 0L;
-            if (scene ? frameDue : ticked) {
+            if (!unpaced && (scene ? frameDue : ticked)) {
                 if (renderNanos > 0L) {
                     nextRenderNanos += renderNanos;
                     if (frameNow - nextRenderNanos > renderNanos * 4L || nextRenderNanos - frameNow > renderNanos) {
@@ -2663,8 +2809,7 @@ public class GameSparker extends Panel implements Runnable {
                         renderAlpha = (float) elapsed;
                     }
 
-                    renderIngameScene(renderAlpha, drawStepPending);
-                    drawStepPending = false;
+                    renderIngameScene(renderAlpha);
 
                     if (hudImage != null) {
                         rd.drawImage(hudImage, 0, 0, null);
@@ -2711,6 +2856,9 @@ public class GameSparker extends Panel implements Runnable {
              * more, so the last stretch is spent yielding. With no frame limit a
              * race redraws continuously and only yields.
              */
+            if (unpaced) {
+                continue; // a verify or corpus run: next tick right away
+            }
             long wakeAt = nextTickNanos;
             if (isScenePhase(xtgraphics.fase)) {
                 if (renderNanos == 0L) {
@@ -2865,5 +3013,63 @@ public class GameSparker extends Panel implements Runnable {
             ym = j;
         }
         return false;
+    }
+
+    /** What {@link RaceSession} may see and do. Called on the game thread only. */
+    private final class SessionHost implements RaceSession.Host {
+        @Override
+        public Phase phase() {
+            return ui.fase;
+        }
+
+        @Override
+        public void setPhase(Phase phase) {
+            ui.fase = phase;
+        }
+
+        @Override
+        public RaceState.View race() {
+            return new RaceState.View(racers, u, sceneObjects, raceCheckpoints, raceRecord, ui, raceTrackers,
+                    GameFacts.numberOfPlayers);
+        }
+
+        @Override
+        public xtGraphics ui() {
+            return ui;
+        }
+
+        @Override
+        public CheckPoints checkpoints() {
+            return raceCheckpoints;
+        }
+
+        @Override
+        public Control player() {
+            return u[0];
+        }
+
+        @Override
+        public void key(int code, boolean down) {
+            if (down) {
+                keyDown(null, code);
+            } else {
+                keyUp(null, code);
+            }
+        }
+
+        @Override
+        public void click() {
+            mouses = 1;
+        }
+
+        @Override
+        public int cameraView() {
+            return view;
+        }
+
+        @Override
+        public void setCameraView(int cameraView) {
+            view = cameraView;
+        }
     }
 }

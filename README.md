@@ -40,7 +40,7 @@ Simulation and presentation are decoupled. The world is stepped at the original 
 
 If drawing a frame takes longer than a tick, the loop runs the ticks it owes before drawing again, so a slow frame lowers the frame rate but never slows the race down.
 
-Drawing is not free of side effects in this engine: it advances the repair hoop sequence, dust, wreck flames, flying debris and the checkpoint flicker, and it takes numbers from the same random stream the AI uses. The first frame after each tick keeps those changes, as the original's single draw per tick did. Every later frame is drawn and then rolled back, so a higher frame rate never speeds up an animation or changes how a race plays out.
+Drawing is not free of side effects in this engine: it advances the repair hoop sequence, dust, wreck flames, flying debris and the checkpoint flicker, and the race reads the distances it works out (a car out of view is repaired at once, a car in view waits for the hoop). So every tick draws the scene once into an invisible surface, at the point where the original drew it, and every frame that reaches the screen is drawn and then rolled back. The frame rate, a minimised window or a run with no window at all therefore never speeds up an animation or changes how a race plays out. Cosmetic effects take their random numbers from a stream of their own, so they cannot shift the AI's choices either.
 
 ## Frame rate limit
 
@@ -71,3 +71,64 @@ For example:
 ```
 runtime\bin\java.exe -Dnfm.profile=true -Dnfm.debug=false -Dnfm.autotest=C:\temp\nfm-shots -jar madness.jar
 ```
+
+## Recorded races and the determinism check
+
+A race plays out the same way every time it is given the same start and the same input. The game can record races and play them back with no player, checking every tick, so any change to the code can be tested against races that are known to be right.
+
+What makes that possible:
+
+- **Three random streams.** The race (AI and opponent cars), the cosmetic effects and the camera shake each draw from their own stream, using the original generator. A race gets a seed when its stage loads; the streams are derived from it, so drawing more or fewer frames, or adding an effect, cannot change the race.
+- **Bit-exact maths.** Every angle, square root and power in physics and AI goes through `StrictMath`, which gives the same bits on every processor and Java version.
+- **Input read once per tick.** Keys pressed during a race are collected as they arrive and handed to the race at the start of each tick, so a tick always sees one consistent set of keys. That is the input a recording stores.
+- **A record of the state after every tick.** One hash per car, one for the race, one for the camera and one for the random streams, plus a canonical hash (see below); every 40 ticks the values themselves are stored too, so a mismatch can be traced to the field.
+
+### Recording
+
+| Property | Meaning |
+| --- | --- |
+| `-Dnfm.record=<dir>` | Record every race to `<dir>` as a `.nfmr` file (gzip; a race of one or two minutes is 50-160 KB). Recording starts at the countdown and ends when the race is won, lost or left. Works while playing normally. |
+| `-Dnfm.autopilot=<count>` | Play `<count>` races with scripted input and no window or sound, then exit. Stages are shuffled and cars picked at random; every third race watches an instant replay part way, half skip the intro. Use with `nfm.record`. |
+| `-Dnfm.autopilot.seed=<n>` | Seed for the autopilot's choices (default: the clock). |
+| `-Dnfm.autopilot.ticks=<n>` | Leave a race from the pause menu after this many ticks if it has not ended (default 2400, about two minutes). |
+
+To add races you played yourself to the corpus, add `vm.arg.2=-Dnfm.record=test\races` to `madness64.ini` (or the next free `vm.arg` number if `vm.arg.2` is taken) and play.
+
+### Verifying
+
+| Property | Meaning |
+| --- | --- |
+| `-Dnfm.verify=<file or dir>` | Play each recorded race again from its input alone, with no window or sound, and compare every tick. Exits with 0 if every race matched, 1 if one differed, 2 if one could not be run. |
+| `-Dnfm.verify.canonical=true` | Compare only the canonical state, even if the full state would line up. |
+| `-Dnfm.verify.perturb=<tick>` | Self-test: flip the left key on that tick, so the check must report a mismatch there. |
+| `-Dnfm.verify.trace=<tick>` | Write every named value after that tick to a text file in the temp folder. Run the same race two ways and compare the files to see exactly which value went wrong first. |
+| `-Dnfm.unpaced=false` | Record or verify at the real pace with frames drawn, instead of as fast as the processor allows (the default for autopilot and verify runs). |
+
+A mismatch is reported as the first differing tick (and how many seconds into the race), the state groups that differed, and up to 25 fields with the recorded and actual values from the next stored dump.
+
+Before checking, the verifier sets the race back to the state the recording started from. The original game does not reset everything between races, and that behaviour is kept as it is:
+
+- A few hundred AI and physics values carry over from the race before.
+- A stage's boundary walls never set their surface type, wall flag or dust colour. Each keeps what the track piece in the same slot had in the stage loaded before, which is zero in a freshly started game. So how cars grip and how the AI recovers along the boundary depends on the stages played earlier in the session.
+- An AI driver remembers the last wall it hit, and that memory survives into the next race. Until it hits a wall again it reads that slot's damage and surface, which can lie past the end of the new stage's pieces and still hold values from an earlier stage.
+
+Recordings store all three, and the verifier restores them and lists what it had to restore. It also checks that the track's collision boxes and the race's random stream are exactly as recorded, so a change to how stages load is reported, not covered up.
+
+If the game crashes during an autopilot or verify run, the run prints the error with the top of its stack trace and exits with 2 instead of hanging.
+
+One original bug is fixed: when stage 17 was the first stage of a session, the game froze at the start of the race, because the replay buffer copied more objects than that stage has.
+
+### The corpus
+
+`test\races` holds 20 races: one on each of the 17 stages, two long ones that end on their own, and one recorded at the real pace with frames drawn. Run the check after any change that could touch gameplay:
+
+```
+powershell -ExecutionPolicy Bypass -File build.ps1
+powershell -ExecutionPolicy Bypass -File test\verify-races.ps1
+```
+
+`verify-races.ps1 -Fresh` runs each race in a game of its own, which is slower but shows nothing depends on the race before. `test\record-races.ps1` records more (`-Count`, `-Seed`, `-Ticks`, `-RealTime`).
+
+### Full and canonical state
+
+The full state is every field of the race classes, read by reflection, so it catches anything. It depends on how those classes are laid out: once fields are renamed or moved, old recordings can no longer be compared field for field. The canonical state is a short list of what a race actually is (car positions, angles, speeds, wheels, damage, checkpoints, laps, input, race position, the camera and the race random stream) under stable names. When a recording's layout no longer matches the code, the verifier compares the canonical state only and says so. When code is reorganised, keep `RaceState.visitCanonical` pointing at the same quantities and the existing corpus stays usable.

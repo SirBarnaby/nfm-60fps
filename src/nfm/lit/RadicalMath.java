@@ -18,11 +18,11 @@ class RadicalMath {
 
     static {
         for (int i = 0; i < 360; i++) {
-            tcos[i] = (float) Math.cos(i * 0.01745329251994329576922);
+            tcos[i] = (float) StrictMath.cos(i * 0.01745329251994329576922);
         }
         //3.14159265358979323846 / 180 = 0.01745329251994329576922
         for (int i = 0; i < 360; i++) {
-            tsin[i] = (float) Math.sin(i * 0.01745329251994329576922);
+            tsin[i] = (float) StrictMath.sin(i * 0.01745329251994329576922);
         }
     }
 

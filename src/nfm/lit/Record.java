@@ -122,7 +122,7 @@ class Record {
                     for (int k1 = 0; k1 < conto.p[l].n; k1++) {
                         if (conto.p[l].wz == 0 && Utility.py(conto.keyx[i], conto.p[l].ox[k1], conto.keyz[i],
                                 conto.p[l].oz[k1]) < madness.stat.clrad) {
-                            f1 = (f / 20F) * Medium.random();
+                            f1 = (f / 20F) * Medium.fxRandom();
                             conto.p[l].oz[k1] += f1 * RadicalMath.sin(j);
                             conto.p[l].ox[k1] -= f1 * RadicalMath.sin(k);
                         }
@@ -179,7 +179,7 @@ class Record {
                     float f2 = 0.0F;
                     for (int i2 = 0; i2 < conto.p[l1].n; i2++) {
                         if (conto.p[l1].wz == 0) {
-                            f2 = (f / 15F) * Medium.random();
+                            f2 = (f / 15F) * Medium.fxRandom();
                             if ((Math
                                     .abs(conto.p[l1].oy[i2] - madness.stat.flipy
                                             - squash[0][madness.im]) < madness.stat.msquash * 3
@@ -218,7 +218,7 @@ class Record {
         int i = 0;
         do {
             if (prepit) {
-                starcar[i] = new ContO(aconto[i], 0, 0, 0, 0);
+                starcar[i] = copy(aconto[i]);
             }
             fix[i] = -1;
             dest[i] = -1;
@@ -228,7 +228,7 @@ class Record {
         do {
             int j = 0;
             do {
-                car[i][j] = new ContO(aconto[j], 0, 0, 0, 0);
+                car[i][j] = copy(aconto[j]);
                 squash[i][j] = 0;
             } while (++j < 51);
         } while (++i < 6);
@@ -424,7 +424,7 @@ class Record {
                 for (int k = 0; k < conto.p[j].n; k++) {
                     if (conto.p[j].wz == 0 && Utility.py(conto.keyx[i], conto.p[j].ox[k], conto.keyz[i],
                             conto.p[j].oz[k]) < madness.stat.clrad) {
-                        f1 = (f / 20F) * Medium.random();
+                        f1 = (f / 20F) * Medium.fxRandom();
                     }
                 }
 
@@ -450,7 +450,7 @@ class Record {
                 for (int k = 0; k < conto.p[j].n; k++) {
                     if (conto.p[j].wz == 0 && Utility.py(conto.keyx[i], conto.p[j].ox[k], conto.keyz[i],
                             conto.p[j].oz[k]) < madness.stat.clrad) {
-                        f1 = (f / 20F) * Medium.random();
+                        f1 = (f / 20F) * Medium.fxRandom();
                         conto.p[j].oz[k] += f1 * RadicalMath.cos(conto.xz) * RadicalMath.cos(conto.zy);
                         conto.p[j].ox[k] += f1 * RadicalMath.sin(conto.xz) * RadicalMath.cos(conto.xy);
                     }
@@ -569,6 +569,18 @@ class Record {
         } while (++i1 < 4);
     }
 
+    /**
+     * Copies one of the first 51 stage objects for the replay buffer. Only the
+     * cars' copies are ever shown, but the original copies all 51 slots. A
+     * stage with fewer objects (stage 17) has empty slots there when it is the
+     * first stage of a session, and copying those used to freeze the game at
+     * the start of the race. Later stages find the previous stage's objects in
+     * those slots, as in the original.
+     */
+    private static ContO copy(ContO conto) {
+        return conto == null ? null : new ContO(conto, 0, 0, 0, 0);
+    }
+
     public void rec(ContO conto, int i, int j, int k, int l) {
         if (i == 0) {
             caught++;
@@ -679,7 +691,7 @@ class Record {
             wasted = i;
             int j = 0;
             do {
-                starcar[j] = new ContO(car[0][j], 0, 0, 0, 0);
+                starcar[j] = copy(car[0][j]);
                 hsquash[j] = squash[0][j];
                 hfix[j] = fix[j];
                 hdest[j] = dest[j];
@@ -760,7 +772,7 @@ class Record {
                 for (int k = 0; k < conto.p[j].n; k++) {
                     if (conto.p[j].wz == 0 && Utility.py(conto.keyx[i], conto.p[j].ox[k], conto.keyz[i],
                             conto.p[j].oz[k]) < madness.stat.clrad) {
-                        f1 = (f / 20F) * Medium.random();
+                        f1 = (f / 20F) * Medium.fxRandom();
                     }
                 }
 
@@ -786,7 +798,7 @@ class Record {
                 for (int k = 0; k < conto.p[j].n; k++) {
                     if (conto.p[j].wz == 0 && Utility.py(conto.keyx[i], conto.p[j].ox[k], conto.keyz[i],
                             conto.p[j].oz[k]) < madness.stat.clrad) {
-                        f1 = (f / 20F) * Medium.random();
+                        f1 = (f / 20F) * Medium.fxRandom();
                         conto.p[j].oz[k] -= f1 * RadicalMath.sin(conto.xz) * RadicalMath.cos(conto.zy);
                         conto.p[j].ox[k] += f1 * RadicalMath.cos(conto.xz) * RadicalMath.cos(conto.xy);
                     }

@@ -325,11 +325,11 @@ public class Plane {
 
             }
         } else {
-            if (embos <= 11 && Medium.random() > 0.5D && !glass) {
+            if (embos <= 11 && Medium.fxRandom() > 0.5D && !glass) {
                 for (int l2 = 0; l2 < n; l2++) {
-                    ai[l2] = (int) (ox[l2] + i + (15F - Medium.random() * 30F));
-                    ai2[l2] = (int) (oy[l2] + j + (15F - Medium.random() * 30F));
-                    ai1[l2] = (int) (oz[l2] + k + (15F - Medium.random() * 30F));
+                    ai[l2] = (int) (ox[l2] + i + (15F - Medium.fxRandom() * 30F));
+                    ai2[l2] = (int) (oy[l2] + j + (15F - Medium.fxRandom() * 30F));
+                    ai1[l2] = (int) (oz[l2] + k + (15F - Medium.fxRandom() * 30F));
                 }
 
                 Utility.rot(ai, ai2, i, j, i1, n);
@@ -350,29 +350,29 @@ public class Plane {
             float f = 1.0F;
             if (embos <= 4)/// explode outward a little + white flame
             {
-                f = 1.0F + Medium.random() / 5F;
+                f = 1.0F + Medium.fxRandom() / 5F;
             }
             if (embos > 4 && embos <= 7)/// explode outward a little + white flame a bit bigger than previous
             {
-                f = 1.0F + Medium.random() / 4F;
+                f = 1.0F + Medium.fxRandom() / 4F;
             }
             if (embos > 7 && embos <= 9)/////// /// explode outward a little + white flame a bit bigger than previous + polUtility.ys start to darken
             {
-                f = 1.0F + Medium.random() / 3F;
+                f = 1.0F + Medium.fxRandom() / 3F;
                 if (hsb[2] > 0.69999999999999996D) {
                     hsb[2] = 0.7F;
                 }
             }
             if (embos > 9 && embos <= 10)/////// /// explode outward a little + white flame a bit bigger than previous + maor darkening
             {
-                f = 1.0F + Medium.random() / 2.0F;
+                f = 1.0F + Medium.fxRandom() / 2.0F;
                 if (hsb[2] > 0.59999999999999998D) {
                     hsb[2] = 0.6F;
                 }
             }
             if (embos > 10 && embos <= 12)/////// /// explode outward a little + white flame a bit bigger than previous + more darkkkk liek coffee beans
             {
-                f = 1.0F + Medium.random() / 1.0F;
+                f = 1.0F + Medium.fxRandom() / 1.0F;
                 if (hsb[2] > 0.5D) {
                     hsb[2] = 0.5F;
                 }
@@ -390,8 +390,8 @@ public class Plane {
             }
             if (embos == 16)//// flames
             {
-                pa = (int) (Medium.random() * n);
-                for (pb = (int) (Medium.random() * n); pa == pb; pb = (int) (Medium.random() * n)) {
+                pa = (int) (Medium.fxRandom() * n);
+                for (pb = (int) (Medium.fxRandom() * n); pa == pb; pb = (int) (Medium.fxRandom() * n)) {
                 }
             }
             if (embos >= 16) ///// flames as well
@@ -434,12 +434,12 @@ public class Plane {
                         ai1[1] += 30;
                     }
                 }
-                int i7 = (int) (Math.abs(ai[0] - ai[1]) / 3 * (0.5D - Medium.random()));
-                int l7 = (int) (Math.abs(ai1[0] - ai1[1]) / 3 * (0.5D - Medium.random()));
+                int i7 = (int) (Math.abs(ai[0] - ai[1]) / 3 * (0.5D - Medium.fxRandom()));
+                int l7 = (int) (Math.abs(ai1[0] - ai1[1]) / 3 * (0.5D - Medium.fxRandom()));
                 ai[2] = (ai[0] + ai[1]) / 2 + i7;
                 ai1[2] = (ai1[0] + ai1[1]) / 2 + l7;
                 int i8 = (int) (((Math.abs(ai[0] - ai[1]) + Math.abs(ai1[0] - ai1[1])) / 1.5D)
-                        * (Medium.random() / 2.0F + 0.5D));
+                        * (Medium.fxRandom() / 2.0F + 0.5D));
                 ai2[2] = (ai2[0] + ai2[1]) / 2 - byte0 * byte1 * i8;
                 Utility.rot(ai, ai2, i, j, i1, 3);
                 Utility.rot(ai2, ai1, j, k, j1, 3);
@@ -568,7 +568,7 @@ public class Plane {
         if (wx != 0) {
             Utility.rot(ai, ai1, wx + i, wz + k, k1, n);
         }
-        if (chip == 1 && (Medium.random() > 0.59999999999999998D || bfase == 0)) {
+        if (chip == 1 && (Medium.fxRandom() > 0.59999999999999998D || bfase == 0)) {
             chip = 0;
             if (bfase == 0 && nocol) {
                 bfase = 1;
@@ -579,7 +579,7 @@ public class Plane {
                 cxz = l;
                 cxy = i1;
                 czy = j1;
-                int i3 = (int) (Medium.random() * n);
+                int i3 = (int) (Medium.fxRandom() * n);
                 cox[0] = ox[i3];
                 coz[0] = oz[i3];
                 coy[0] = oy[i3];
@@ -589,23 +589,23 @@ public class Plane {
                 if (ctmag < -3F) {
                     ctmag = -3F;
                 }
-                cox[1] = (int) (cox[0] + ctmag * (10F - Medium.random() * 20F));
-                cox[2] = (int) (cox[0] + ctmag * (10F - Medium.random() * 20F));
-                coy[1] = (int) (coy[0] + ctmag * (10F - Medium.random() * 20F));
-                coy[2] = (int) (coy[0] + ctmag * (10F - Medium.random() * 20F));
-                coz[1] = (int) (coz[0] + ctmag * (10F - Medium.random() * 20F));
-                coz[2] = (int) (coz[0] + ctmag * (10F - Medium.random() * 20F));
+                cox[1] = (int) (cox[0] + ctmag * (10F - Medium.fxRandom() * 20F));
+                cox[2] = (int) (cox[0] + ctmag * (10F - Medium.fxRandom() * 20F));
+                coy[1] = (int) (coy[0] + ctmag * (10F - Medium.fxRandom() * 20F));
+                coy[2] = (int) (coy[0] + ctmag * (10F - Medium.fxRandom() * 20F));
+                coz[1] = (int) (coz[0] + ctmag * (10F - Medium.fxRandom() * 20F));
+                coz[2] = (int) (coz[0] + ctmag * (10F - Medium.fxRandom() * 20F));
                 dx = 0;
                 dy = 0;
                 dz = 0;
                 if (bfase != -7) {
-                    vx = (int) (ctmag * (30F - Medium.random() * 60F));
-                    vz = (int) (ctmag * (30F - Medium.random() * 60F));
-                    vy = (int) (ctmag * (30F - Medium.random() * 60F));
+                    vx = (int) (ctmag * (30F - Medium.fxRandom() * 60F));
+                    vz = (int) (ctmag * (30F - Medium.fxRandom() * 60F));
+                    vy = (int) (ctmag * (30F - Medium.fxRandom() * 60F));
                 } else {
-                    vx = (int) (ctmag * (10F - Medium.random() * 20F));
-                    vz = (int) (ctmag * (10F - Medium.random() * 20F));
-                    vy = (int) (ctmag * (10F - Medium.random() * 20F));
+                    vx = (int) (ctmag * (10F - Medium.fxRandom() * 20F));
+                    vz = (int) (ctmag * (10F - Medium.fxRandom() * 20F));
+                    vy = (int) (ctmag * (10F - Medium.fxRandom() * 20F));
                 }
                 chip = 2;
             }
@@ -646,7 +646,7 @@ public class Plane {
                     Medium.flex = 0;
                 }
             } while (++l5 < 3);
-            l5 = (int) (Medium.random() * 3F);
+            l5 = (int) (Medium.fxRandom() * 3F);
             if (bfase != -7) {
                 if (l5 == 0) {
                     rd.setColor((new Color(c[0], c[1], c[2])).darker());
@@ -917,7 +917,7 @@ public class Plane {
             if (gr == -16 && av > 1500) {
                 flag2 = false;
             }
-            if (flx != 0 && Medium.random() > 0.29999999999999999D) {
+            if (flx != 0 && Medium.fxRandom() > 0.29999999999999999D) {
                 flag2 = false;
             }
         }

@@ -9,6 +9,25 @@ import java.util.Random;
  * @author Kaffeinated, Chaotic, Omar Wally
  */
 public class Medium {
+    /**
+     * The race's own random stream: the AI and the car physics draw from it, and
+     * it is seeded once per race (see {@link #seedRace(long)}), so a race replays
+     * exactly from its seed and inputs.
+     */
+    public static final RaceRandom raceRandom = new RaceRandom();
+    /**
+     * The race camera's stream. The camera decides which cars are on screen, and
+     * the race reads that back (a car out of view finishes a repair hoop at
+     * once), so the camera's dice must be as reproducible as the race's.
+     */
+    public static final RaceRandom cameraRandom = new RaceRandom();
+    /**
+     * Everything that only looks or sounds different: dust, sparks, flames,
+     * clouds, lightning, captions, sound choices and menus. It never touches the
+     * race, so drawing more frames or playing sounds cannot change a result.
+     */
+    public static final RaceRandom fxRandom = new RaceRandom();
+
     private static int nmt = 0;
     private static int[] mrd = null;
     private static int[] nmv = null;
@@ -16,7 +35,7 @@ public class Medium {
     private static int[][] mty = null;
     private static int[][] mtz = null;
     private static int[][][] mtc = null;
-    public static int mgen = (int) (Math.random() * 100000D);
+    public static int mgen = (int) (fxRandom.nextDouble() * 100000D);
     public static int focus_point = 400;
     public static int ground = 250;
     private static int skyline = -300;
@@ -100,10 +119,6 @@ public class Medium {
     public static float elecr = 0.0F;
     public static boolean cpflik = false;
     public static boolean nochekflk = false;
-    private static int cntrn = 0;
-    private static boolean diup[] = new boolean[3];
-    private static int rand[] = new int[3];
-    private static int trn = 0;
     public static int hit = 45000;
     public static int ptr = 0;
     public static int ptcnt = -10;
@@ -114,7 +129,7 @@ public class Medium {
     private static long atrz = 0L;
     public static int fallen = 0;
     private static float fo = 1.0F;
-    private static float gofo = (float) (0.33000001311302185D + Math.random() * 1.3400000000000001D);
+    private static float gofo = (float) (0.33000001311302185D + fxRandom.nextDouble() * 1.3400000000000001D);
     private static float[][] pvr;
     private static int[] pmx;
     private static float[] pcv;
@@ -141,50 +156,52 @@ public class Medium {
 
     public static boolean noclouds = false;
 
+    /** One value from the race stream, the original {@code random()}. */
     public static float random() {
-        if (cntrn == 0) {
-            int i = 0;
-            do {
-                rand[i] = (int) (10D * Math.random());
-                diup[i] = Math.random() <= Math.random();
-            } while (++i < 3);
-            cntrn = 20;
-        } else {
-            cntrn--;
-        }
-        int j = 0;
-        do {
-            if (diup[j]) {
-                rand[j]++;
-                if (rand[j] == 10) {
-                    rand[j] = 0;
-                }
-            } else {
-                rand[j]--;
-                if (rand[j] == -1) {
-                    rand[j] = 9;
-                }
-            }
-        } while (++j < 3);
-        trn++;
-        if (trn == 3) {
-            trn = 0;
-        }
-        return rand[trn] / 10F;
+        return raceRandom.next();
+    }
+
+    /** One value from the cosmetic stream. */
+    public static float fxRandom() {
+        return fxRandom.next();
+    }
+
+    /** The seed of the race being set up or run, see {@link #seedRace(long)}. */
+    private static long raceSeed;
+
+    /**
+     * Starts a race's random streams from its seed. Called when a stage is set
+     * up, before anything in the race or its scenery draws a number.
+     */
+    public static void seedRace(long seed) {
+        raceSeed = seed;
+        raceRandom.reseed(seed);
+        fxRandom.reseed(RaceRandom.derive(seed, RaceRandom.STREAM_EFFECTS));
+        cameraRandom.reseed(RaceRandom.derive(seed, RaceRandom.STREAM_CAMERA));
+    }
+
+    public static long raceSeed() {
+        return raceSeed;
+    }
+
+    /**
+     * Restarts the camera and cosmetic streams when the countdown begins. The
+     * intro fly-by before it lasts as long as the player lets it, so these
+     * streams start the race itself from a known state either way.
+     */
+    public static void startCountdown() {
+        cameraRandom.reseed(RaceRandom.derive(raceSeed, RaceRandom.STREAM_CAMERA));
+        fxRandom.reseed(RaceRandom.derive(raceSeed, RaceRandom.STREAM_RACE_EFFECTS));
     }
 
     /*
      * Drawing the world is not free of side effects: d() and the scenery it draws
      * advance the lightning, the checkpoint flicker and the star twinkle, and
-     * they draw from the shared random() stream that the AI and the crash code
-     * also use. The legacy loop drew exactly once per tick. The presentation
-     * pass draws more often, so it keeps the first frame after each tick and
-     * takes back the side effects of the others with this snapshot.
+     * they draw from the cosmetic random stream. The legacy loop drew exactly
+     * once per tick. The game still draws one step per tick, and takes back the
+     * side effects of every presented frame with this snapshot.
      */
-    private static int savedCntrn;
-    private static final boolean[] savedDiup = new boolean[3];
-    private static final int[] savedRand = new int[3];
-    private static int savedTrn;
+    private static final int[] savedFx = new int[RaceRandom.STATE_SIZE];
     private static int savedLilo;
     private static int savedLightn;
     private static int savedNoelec;
@@ -196,10 +213,7 @@ public class Medium {
     private static int[][][] savedStc;
 
     public static void saveDrawState() {
-        savedCntrn = cntrn;
-        System.arraycopy(diup, 0, savedDiup, 0, 3);
-        System.arraycopy(rand, 0, savedRand, 0, 3);
-        savedTrn = trn;
+        fxRandom.exportState(savedFx);
         savedLilo = lilo;
         savedLightn = lightn;
         savedNoelec = noelec;
@@ -224,10 +238,7 @@ public class Medium {
     }
 
     public static void restoreDrawState() {
-        cntrn = savedCntrn;
-        System.arraycopy(savedDiup, 0, diup, 0, 3);
-        System.arraycopy(savedRand, 0, rand, 0, 3);
-        trn = savedTrn;
+        fxRandom.importState(savedFx);
         lilo = savedLilo;
         lightn = savedLightn;
         noelec = savedNoelec;
@@ -540,7 +551,7 @@ public class Medium {
         ground = 250;
         skyline = -300;
         fogd = 7;
-        mgen = (int) (Math.random() * 100000D);
+        mgen = (int) (fxRandom.nextDouble() * 100000D);
         snap = new int[3];
         origfade = 3000;
         fogd = 3;
@@ -585,10 +596,7 @@ public class Medium {
         elecr = 0.0F;
         cpflik = false;
         nochekflk = false;
-        cntrn = 0;
-        diup = new boolean[3];
-        rand = new int[3];
-        trn = 0;
+        seedRace(RaceRandom.newSeed());
         hit = 45000;
         ptr = 0;
         ptcnt = -10;
@@ -599,7 +607,7 @@ public class Medium {
         atrz = 0L;
         fallen = 0;
         fo = 1.0F;
-        gofo = (float) (0.33000001311302185D + Math.random() * 1.3400000000000001D);
+        gofo = (float) (0.33000001311302185D + fxRandom.nextDouble() * 1.3400000000000001D);
         detailtype = 2;
         noclouds = false;
     }
@@ -627,57 +635,57 @@ public class Medium {
         claz = new int[noc][3][12];
         clc = new int[noc][2][6][3];
         for (int i1 = 0; i1 < noc; i1++) {
-            clx[i1] = (int) (i + (j - i) * Math.random());
-            clz[i1] = (int) (k + (l - k) * Math.random());
-            float f = (float) (0.25D + Math.random() * 1.25D);
-            float f1 = (float) ((200D + Math.random() * 700D) * f);
+            clx[i1] = (int) (i + (j - i) * fxRandom.nextDouble());
+            clz[i1] = (int) (k + (l - k) * fxRandom.nextDouble());
+            float f = (float) (0.25D + fxRandom.nextDouble() * 1.25D);
+            float f1 = (float) ((200D + fxRandom.nextDouble() * 700D) * f);
             clax[i1][0][0] = (int) (f1 * 0.3826D);
             claz[i1][0][0] = (int) (f1 * 0.92379999999999995D);
-            clay[i1][0][0] = (int) ((25D - Math.random() * 50D) * f);
-            f1 = (float) ((200D + Math.random() * 700D) * f);
+            clay[i1][0][0] = (int) ((25D - fxRandom.nextDouble() * 50D) * f);
+            f1 = (float) ((200D + fxRandom.nextDouble() * 700D) * f);
             clax[i1][0][1] = (int) (f1 * 0.70709999999999995D);
             claz[i1][0][1] = (int) (f1 * 0.70709999999999995D);
-            clay[i1][0][1] = (int) ((25D - Math.random() * 50D) * f);
-            f1 = (float) ((200D + Math.random() * 700D) * f);
+            clay[i1][0][1] = (int) ((25D - fxRandom.nextDouble() * 50D) * f);
+            f1 = (float) ((200D + fxRandom.nextDouble() * 700D) * f);
             clax[i1][0][2] = (int) (f1 * 0.92379999999999995D);
             claz[i1][0][2] = (int) (f1 * 0.3826D);
-            clay[i1][0][2] = (int) ((25D - Math.random() * 50D) * f);
-            f1 = (float) ((200D + Math.random() * 700D) * f);
+            clay[i1][0][2] = (int) ((25D - fxRandom.nextDouble() * 50D) * f);
+            f1 = (float) ((200D + fxRandom.nextDouble() * 700D) * f);
             clax[i1][0][3] = (int) (f1 * 0.92379999999999995D);
             claz[i1][0][3] = -(int) (f1 * 0.3826D);
-            clay[i1][0][3] = (int) ((25D - Math.random() * 50D) * f);
-            f1 = (float) ((200D + Math.random() * 700D) * f);
+            clay[i1][0][3] = (int) ((25D - fxRandom.nextDouble() * 50D) * f);
+            f1 = (float) ((200D + fxRandom.nextDouble() * 700D) * f);
             clax[i1][0][4] = (int) (f1 * 0.70709999999999995D);
             claz[i1][0][4] = -(int) (f1 * 0.70709999999999995D);
-            clay[i1][0][4] = (int) ((25D - Math.random() * 50D) * f);
-            f1 = (float) ((200D + Math.random() * 700D) * f);
+            clay[i1][0][4] = (int) ((25D - fxRandom.nextDouble() * 50D) * f);
+            f1 = (float) ((200D + fxRandom.nextDouble() * 700D) * f);
             clax[i1][0][5] = (int) (f1 * 0.3826D);
             claz[i1][0][5] = -(int) (f1 * 0.92379999999999995D);
-            clay[i1][0][5] = (int) ((25D - Math.random() * 50D) * f);
-            f1 = (float) ((200D + Math.random() * 700D) * f);
+            clay[i1][0][5] = (int) ((25D - fxRandom.nextDouble() * 50D) * f);
+            f1 = (float) ((200D + fxRandom.nextDouble() * 700D) * f);
             clax[i1][0][6] = -(int) (f1 * 0.3826D);
             claz[i1][0][6] = -(int) (f1 * 0.92379999999999995D);
-            clay[i1][0][6] = (int) ((25D - Math.random() * 50D) * f);
-            f1 = (float) ((200D + Math.random() * 700D) * f);
+            clay[i1][0][6] = (int) ((25D - fxRandom.nextDouble() * 50D) * f);
+            f1 = (float) ((200D + fxRandom.nextDouble() * 700D) * f);
             clax[i1][0][7] = -(int) (f1 * 0.70709999999999995D);
             claz[i1][0][7] = -(int) (f1 * 0.70709999999999995D);
-            clay[i1][0][7] = (int) ((25D - Math.random() * 50D) * f);
-            f1 = (float) ((200D + Math.random() * 700D) * f);
+            clay[i1][0][7] = (int) ((25D - fxRandom.nextDouble() * 50D) * f);
+            f1 = (float) ((200D + fxRandom.nextDouble() * 700D) * f);
             clax[i1][0][8] = -(int) (f1 * 0.92379999999999995D);
             claz[i1][0][8] = -(int) (f1 * 0.3826D);
-            clay[i1][0][8] = (int) ((25D - Math.random() * 50D) * f);
-            f1 = (float) ((200D + Math.random() * 700D) * f);
+            clay[i1][0][8] = (int) ((25D - fxRandom.nextDouble() * 50D) * f);
+            f1 = (float) ((200D + fxRandom.nextDouble() * 700D) * f);
             clax[i1][0][9] = -(int) (f1 * 0.92379999999999995D);
             claz[i1][0][9] = (int) (f1 * 0.3826D);
-            clay[i1][0][9] = (int) ((25D - Math.random() * 50D) * f);
-            f1 = (float) ((200D + Math.random() * 700D) * f);
+            clay[i1][0][9] = (int) ((25D - fxRandom.nextDouble() * 50D) * f);
+            f1 = (float) ((200D + fxRandom.nextDouble() * 700D) * f);
             clax[i1][0][10] = -(int) (f1 * 0.70709999999999995D);
             claz[i1][0][10] = (int) (f1 * 0.70709999999999995D);
-            clay[i1][0][10] = (int) ((25D - Math.random() * 50D) * f);
-            f1 = (float) ((200D + Math.random() * 700D) * f);
+            clay[i1][0][10] = (int) ((25D - fxRandom.nextDouble() * 50D) * f);
+            f1 = (float) ((200D + fxRandom.nextDouble() * 700D) * f);
             clax[i1][0][11] = -(int) (f1 * 0.3826D);
             claz[i1][0][11] = (int) (f1 * 0.92379999999999995D);
-            clay[i1][0][11] = (int) ((25D - Math.random() * 50D) * f);
+            clay[i1][0][11] = (int) ((25D - fxRandom.nextDouble() * 50D) * f);
             for (int j1 = 0; j1 < 12; j1++) {
                 int j2 = j1 - 1;
                 if (j2 == -1) {
@@ -693,14 +701,14 @@ public class Medium {
             }
 
             for (int k1 = 0; k1 < 12; k1++) {
-                float f2 = (float) (1.2D + 0.59999999999999998D * Math.random());
+                float f2 = (float) (1.2D + 0.59999999999999998D * fxRandom.nextDouble());
                 clax[i1][1][k1] = (int) (clax[i1][0][k1] * f2);
                 claz[i1][1][k1] = (int) (claz[i1][0][k1] * f2);
-                clay[i1][1][k1] = (int) (clay[i1][0][k1] - 100D * Math.random());
-                f2 = (float) (1.1000000000000001D + 0.29999999999999999D * Math.random());
+                clay[i1][1][k1] = (int) (clay[i1][0][k1] - 100D * fxRandom.nextDouble());
+                f2 = (float) (1.1000000000000001D + 0.29999999999999999D * fxRandom.nextDouble());
                 clax[i1][2][k1] = (int) (clax[i1][1][k1] * f2);
                 claz[i1][2][k1] = (int) (claz[i1][1][k1] * f2);
-                clay[i1][2][k1] = (int) (clay[i1][1][k1] - 240D * Math.random());
+                clay[i1][2][k1] = (int) (clay[i1][1][k1] - 240D * fxRandom.nextDouble());
             }
 
             cmx[i1] = 0;
@@ -722,8 +730,8 @@ public class Medium {
             }
 
             for (int i2 = 0; i2 < 6; i2++) {
-                double d1 = Math.random();
-                double d2 = Math.random();
+                double d1 = fxRandom.nextDouble();
+                double d2 = fxRandom.nextDouble();
                 for (int k3 = 0; k3 < 3; k3++) {
                     float f3 = clds[k3] * 1.05F - clds[k3];
                     clc[i1][0][i2][k3] = (int) (clds[k3] + f3 * d1);
@@ -1211,7 +1219,7 @@ public class Medium {
         twn = null;
         nst = 0;
         if (lightson) {
-            Random random1 = new Random((long) (Math.random() * 100000D));
+            Random random1 = new Random((long) (fxRandom.nextDouble() * 100000D));
             nst = 40;
             stx = new int[nst];
             stz = new int[nst];
@@ -1271,7 +1279,7 @@ public class Medium {
                 continue;
             }
             if (twn[i] == 0) {
-                int j1 = (int) (3D * Math.random());
+                int j1 = (int) (3D * fxRandom.nextDouble());
                 if (j1 >= 3) {
                     j1 = 0;
                 }
@@ -1279,7 +1287,7 @@ public class Medium {
                     j1 = 2;
                 }
                 int l1 = j1 + 1;
-                if (Math.random() > Math.random()) {
+                if (fxRandom.nextDouble() > fxRandom.nextDouble()) {
                     l1 = j1 - 1;
                 }
                 if (l1 == 3) {
@@ -1291,7 +1299,7 @@ public class Medium {
                 for (int i2 = 0; i2 < 3; i2++) {
                     stc[i][0][i2] = 200;
                     if (j1 == i2) {
-                        stc[i][0][i2] += (int) (55D * Math.random());
+                        stc[i][0][i2] += (int) (55D * fxRandom.nextDouble());
                     }
                     if (l1 == i2) {
                         stc[i][0][i2] += 55;
@@ -1381,12 +1389,12 @@ public class Medium {
                 if (lilo > lightn + 217) {
                     lilo -= 3;
                 } else {
-                    lightn = (int) (16F + 16F * random());
+                    lightn = (int) (16F + 16F * fxRandom());
                 }
             } else if (lilo < lightn + 217) {
                 lilo += 7;
             } else {
-                lightn = (int) (16F * random());
+                lightn = (int) (16F * fxRandom());
             }
             csky[0] = (int) (lilo + lilo * (snap[0] / 100F));
             if (csky[0] > 255) {
@@ -1530,7 +1538,7 @@ public class Medium {
             cpflik = false;
         } else {
             cpflik = true;
-            elecr = random() * 15F - 6F;
+            elecr = fxRandom() * 15F - 6F;
         }
     }
 
@@ -1786,7 +1794,7 @@ public class Medium {
             flex = 0;
         }
         if (td) {
-            y = (int) (conto.y - 300 - 1100F * random());
+            y = (int) (conto.y - 300 - 1100F * cameraRandom.next());
             x = conto.x + (int) (((conto.x + 400) - conto.x) * RadicalMath.cos(i)
                     - ((conto.z + 5000) - conto.z) * RadicalMath.sin(i));
             z = conto.z + (int) (((conto.x + 400) - conto.x) * RadicalMath.sin(i)
@@ -1798,13 +1806,13 @@ public class Medium {
             c = 180;
         }
         int j = -(int) (90 + c
-                + Math.atan((double) (conto.z - z) / (double) (conto.x - x - cx)) / 0.017453292519943295D);
+                + StrictMath.atan((double) (conto.z - z) / (double) (conto.x - x - cx)) / 0.017453292519943295D);
         c = 0;
         if (conto.y - y - cy < 0) {
             c = -180;
         }
         int k = (int) Math.sqrt((conto.z - z) * (conto.z - z) + (conto.x - x - cx) * (conto.x - x - cx));
-        int l = (int) (90 + c - Math.atan((double) k / (double) (conto.y - y - cy)) / 0.017453292519943295D);
+        int l = (int) (90 + c - StrictMath.atan((double) k / (double) (conto.y - y - cy)) / 0.017453292519943295D);
         xz += (j - xz) / trns;
         if (trns != 1) {
             trns--;
@@ -1868,7 +1876,7 @@ public class Medium {
             c = -180;
         }
         int k = (int) Math.sqrt(((conto.z - z) + cz) * ((conto.z - z) + cz) + (conto.x - x - cx) * (conto.x - x - cx));
-        int l = (int) (90 + c - Math.atan((double) k / (double) (conto.y - j - cy)) / 0.017453292519943295D);
+        int l = (int) (90 + c - StrictMath.atan((double) k / (double) (conto.y - j - cy)) / 0.017453292519943295D);
         xz = -vxz + 90;
         if (flag) {
             l -= 15;
@@ -1918,7 +1926,7 @@ public class Medium {
                     fo -= 0.005F;
                 }
             } else {
-                gofo = (float) (0.34999999403953552D + Math.random() * 1.3D);
+                gofo = (float) (0.34999999403953552D + fxRandom.nextDouble() * 1.3D);
             }
             vxz++;
             trx -= (trx - checkpoints.x[ptr]) / 10L;
@@ -2051,7 +2059,7 @@ public class Medium {
             c = 180;
         }
         int k1 = -(int) (90 + c
-                + Math.atan((double) (conto.z - z) / (double) (conto.x - x - cx)) / 0.017453292519943295D);
+                + StrictMath.atan((double) (conto.z - z) / (double) (conto.x - x - cx)) / 0.017453292519943295D);
         int l1 = y;
         c = 0;
         if (l1 > 0) {
@@ -2064,7 +2072,7 @@ public class Medium {
         int j2 = 25;
         if (i2 != 0) {
             j2 = (int) (90 + c
-                    - Math.atan((double) i2 / (double) (conto.y - l1 - cy)) / 0.017453292519943295D);
+                    - StrictMath.atan((double) i2 / (double) (conto.y - l1 - cy)) / 0.017453292519943295D);
         }
         for (; j1 < 0; j1 += 360) {
         }
@@ -2146,7 +2154,7 @@ public class Medium {
             c = -180;
         }
         int k1 = (int) Math.sqrt(((l - z) + cz) * ((l - z) + cz) + (j - x - cx) * (j - x - cx));
-        int l1 = (int) (90 + c - Math.atan((double) k1 / (double) (k - j1 - cy)) / 0.017453292519943295D);
+        int l1 = (int) (90 + c - StrictMath.atan((double) k1 / (double) (k - j1 - cy)) / 0.017453292519943295D);
         xz = -vxz + 90;
         zy += (l1 - zy) / 10;
         if (trns != 5) {
