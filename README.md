@@ -33,3 +33,21 @@ All changes and improvements (c) their original authors. See @author documentati
 `madness.exe` is the 32-bit launcher and needs a 32-bit runtime, so use `madness64.exe` on 64-bit Windows.
 
 The game no longer depends on the Applet API (removed in Java 26) or `Thread.stop()` (which throws since Java 20), so it builds and runs on current JDKs.
+
+## The frame loop
+
+Simulation and presentation are decoupled. The world is stepped at the original ~19 Hz cadence so physics, AI and every frame-counted timer behave exactly as before, while the 3D scene is redrawn at up to 120 FPS using car and camera transforms interpolated between the last two ticks. The HUD is rendered once per simulation tick into its own layer and composited on top, keeping its blink and pause timers on the legacy cadence.
+
+Three system properties are available while developing:
+
+| Property | Meaning |
+| --- | --- |
+| `-Dnfm.profile=true` | Print simulation rate, render rate and current phase every two seconds. |
+| `-Dnfm.debug=false` | Do not open the developer console on the main menu. |
+| `-Dnfm.autotest=<dir>` | Run the scripted smoke test and write screenshots to `<dir>`. The window is moved off-screen, cannot take focus and the test drives the game through its own controls, so it is safe to run while using the machine. |
+
+For example:
+
+```
+runtime\bin\java.exe -Dnfm.profile=true -Dnfm.debug=false -Dnfm.autotest=C:\temp\nfm-shots -jar madness.jar
+```

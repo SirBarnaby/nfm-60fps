@@ -27,6 +27,13 @@ public class ContO {
     public int wzy = 0;
     public int dist = 0;
     public int maxR = 0;
+    /**
+     * Off-screen dust puffs age by one step every time {@link #d(Graphics2D)} is
+     * called. The presentation pass redraws the scene several times per
+     * simulation tick, so it clears this flag and calls {@link #ageDust()}
+     * once per tick instead, keeping the puffs' lifetime unchanged.
+     */
+    public boolean dustAgesOnDraw = true;
     private int disp = 0;
     private int disline = 7;
     private boolean shadow = false;
@@ -616,17 +623,23 @@ public class ContO {
                         + ((Medium.y + Medium.cy) - y) * ((Medium.y + Medium.cy) - y))) * grounded);
             }
         }
-        if (dist == 0) {
-            int k1 = 0;
-            do {
-                if (stg[k1] != 0) {
-                    if (stg[k1] == 4) {
-                        stg[k1] = 0;
-                    } else {
-                        stg[k1]++;
-                    }
+        if (dist == 0 && dustAgesOnDraw) {
+            ageDust();
+        }
+    }
+
+    /**
+     * Ages the off-screen dust puffs by one simulation step.
+     */
+    public void ageDust() {
+        for (int k1 = 0; k1 < 4; k1++) {
+            if (stg[k1] != 0) {
+                if (stg[k1] == 4) {
+                    stg[k1] = 0;
+                } else {
+                    stg[k1]++;
                 }
-            } while (++k1 < 4);
+            }
         }
     }
 

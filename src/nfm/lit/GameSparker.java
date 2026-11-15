@@ -4,12 +4,13 @@ import nfm.lit.audio.BASSLoader;
 
 import java.awt.*;
 import java.awt.geom.Rectangle2D;
+import java.awt.image.BufferedImage;
+import javax.imageio.ImageIO;
 import java.io.*;
 import java.net.MalformedURLException;
 import java.net.Socket;
 import java.net.URI;
 import java.net.URL;
-import java.util.Date;
 import java.util.Enumeration;
 import java.util.Objects;
 import java.util.regex.Matcher;
@@ -44,7 +45,11 @@ public class GameSparker extends Panel implements Runnable {
      * uh help
      */
     public static final String WORKING_DIRECTORY = ".";
-    public static final boolean DEBUG = true;
+    /**
+     * Developer mode. Opens the in-game console on the main menu and enables the
+     * frame-time overlay. Can be turned off with -Dnfm.debug=false.
+     */
+    public static final boolean DEBUG = Boolean.parseBoolean(System.getProperty("nfm.debug", "true"));
 
     private static final long serialVersionUID = -34048182014310663L;
 
@@ -103,6 +108,72 @@ public class GameSparker extends Panel implements Runnable {
     private int nob;
     private int notb;
     private int view;
+
+    /* ------------------------------------------------------------------
+     * Frame loop / presentation.
+     *
+     * The original loop fused simulation and rendering into one pass and paced
+     * itself with Thread.sleep(), which on Windows overshoots by up to a timer
+     * quantum. Every subsystem downstream (physics, AI, animations, HUD timers)
+     * counts loop iterations, so the game ran at roughly 19 ticks per second and
+     * the frame rate could not be raised without fast-forwarding the world.
+     *
+     * The loop now separates the two:
+     *   - simulation runs in fixed steps at the legacy cadence (SIM_TICK_HZ)
+     *   - the 3D scene is redrawn at the display rate, interpolating car and
+     *     camera transforms between the last two simulation states
+     *   - the HUD is drawn once per simulation tick into its own layer and
+     *     composited on top, so its timers keep the original cadence
+     * ------------------------------------------------------------------ */
+    private static final double SIM_TICK_HZ = 19.0D;
+    private static final double MAX_RENDER_HZ = 120.0D;
+    private static final long MAX_TICK_LAG_NS = 500_000_000L;
+    private static final boolean PROFILE_LOOP = Boolean.getBoolean("nfm.profile");
+
+    private Image hudImage;
+    private Graphics2D hudG;
+
+    /** Objects rendered by the in-game pass (was a local: aconto1). */
+    private ContO[] sceneObjects;
+    /** Simulation state per car (was a local: amadness). */
+    private Madness[] racers;
+    private xtGraphics ui;
+    private CheckPoints raceCheckpoints;
+    private Record raceRecord;
+
+    private final int[] prevCarX = new int[51];
+    private final int[] prevCarY = new int[51];
+    private final int[] prevCarZ = new int[51];
+    private final int[] prevCarXZ = new int[51];
+    private final int[] prevCarXY = new int[51];
+    private final int[] prevCarZY = new int[51];
+
+    private final int[] savedCarX = new int[51];
+    private final int[] savedCarY = new int[51];
+    private final int[] savedCarZ = new int[51];
+    private final int[] savedCarXZ = new int[51];
+    private final int[] savedCarXY = new int[51];
+    private final int[] savedCarZY = new int[51];
+
+    private int prevCamX;
+    private int prevCamY;
+    private int prevCamZ;
+    private int prevCamXZ;
+    private int prevCamZY;
+    private boolean prevFrameValid;
+
+    private boolean pendingBlendude;
+    private boolean pendingWhiteFlash;
+    private float renderAlpha = 1F;
+    private long tickStartNanos;
+
+    /** Set by the autotest thread; the render pass fulfils it with a complete frame. */
+    private volatile boolean captureRequested;
+    private BufferedImage capturedFrame;
+
+    private final int[] drawOrder = new int[200];
+    private final int[] drawRank = new int[200];
+    private final int[] drawIndices = new int[200];
 
     /* variables for screen shake */
 
@@ -977,6 +1048,369 @@ public class GameSparker extends Panel implements Runnable {
         }
     }
 
+    /**
+     * Copies the transforms that the presentation pass interpolates from.
+     * Called at the beginning of every in-game simulation tick, before physics
+     * has a chance to move anything.
+     */
+    private void snapshotFrameState() {
+        int np = GameFacts.numberOfPlayers;
+        if (np > prevCarX.length) {
+            np = prevCarX.length;
+        }
+        for (int i = 0; i < np; i++) {
+            ContO conto = sceneObjects[i];
+            prevCarX[i] = conto.x;
+            prevCarY[i] = conto.y;
+            prevCarZ[i] = conto.z;
+            prevCarXZ[i] = conto.xz;
+            prevCarXY[i] = conto.xy;
+            prevCarZY[i] = conto.zy;
+        }
+        prevCamX = Medium.x;
+        prevCamY = Medium.y;
+        prevCamZ = Medium.z;
+        prevCamXZ = Medium.xz;
+        prevCamZY = Medium.zy;
+        prevFrameValid = true;
+    }
+
+    private static int mix(int a, int b, float t) {
+        return a + Math.round((b - a) * t);
+    }
+
+    /**
+     * Interpolates an angle along the shortest arc so a wrap from 359 to 1 does
+     * not spin the car all the way around between two ticks.
+     */
+    private static int mixAngle(int a, int b, float t) {
+        int delta = ((b - a + 540) % 360 + 360) % 360 - 180;
+        return a + Math.round(delta * t);
+    }
+
+    /**
+     * Draws all scenery and cars, depth sorted. Anything whose distance was not
+     * resolved on the previous pass (newly reset cars, track pieces) is drawn
+     * first so it ends up behind everything else.
+     */
+    private void drawWorldObjects() {
+        int count = 0;
+        for (int i = 0; i < nob; i++) {
+            if (sceneObjects[i].dist != 0) {
+                drawOrder[count++] = i;
+            } else {
+                sceneObjects[i].d(rd);
+            }
+        }
+
+        for (int i = 0; i < count; i++) {
+            drawRank[i] = 0;
+        }
+        for (int i = 0; i < count; i++) {
+            for (int j = i + 1; j < count; j++) {
+                if (sceneObjects[drawOrder[i]].dist != sceneObjects[drawOrder[j]].dist) {
+                    if (sceneObjects[drawOrder[i]].dist < sceneObjects[drawOrder[j]].dist) {
+                        drawRank[i]++;
+                    } else {
+                        drawRank[j]++;
+                    }
+                } else if (j > i) {
+                    drawRank[i]++;
+                } else {
+                    drawRank[j]++;
+                }
+            }
+            drawIndices[drawRank[i]] = i;
+        }
+
+        for (int i = 0; i < count; i++) {
+            sceneObjects[drawOrder[drawIndices[i]]].d(rd);
+        }
+    }
+
+    /**
+     * Renders the in-game scene at an arbitrary presentation time.
+     *
+     * @param alpha 0 = state at the previous simulation tick, 1 = state at the
+     *              most recent one
+     */
+    private void renderIngameScene(float alpha) {
+        final int np = Math.min(GameFacts.numberOfPlayers, savedCarX.length);
+
+        for (int i = 0; i < np; i++) {
+            ContO conto = sceneObjects[i];
+            savedCarX[i] = conto.x;
+            savedCarY[i] = conto.y;
+            savedCarZ[i] = conto.z;
+            savedCarXZ[i] = conto.xz;
+            savedCarXY[i] = conto.xy;
+            savedCarZY[i] = conto.zy;
+        }
+        int camX = Medium.x;
+        int camY = Medium.y;
+        int camZ = Medium.z;
+        int camXZ = Medium.xz;
+        int camZY = Medium.zy;
+
+        if (prevFrameValid && alpha < 1F) {
+            for (int i = 0; i < np; i++) {
+                ContO conto = sceneObjects[i];
+                int dx = savedCarX[i] - prevCarX[i];
+                int dz = savedCarZ[i] - prevCarZ[i];
+                if (Math.abs(dx) + Math.abs(dz) > 2500) {
+                    // respawn or teleport: interpolating would smear the car
+                    continue;
+                }
+                conto.x = mix(prevCarX[i], savedCarX[i], alpha);
+                conto.y = mix(prevCarY[i], savedCarY[i], alpha);
+                conto.z = mix(prevCarZ[i], savedCarZ[i], alpha);
+                conto.xz = mixAngle(prevCarXZ[i], savedCarXZ[i], alpha);
+                conto.xy = mixAngle(prevCarXY[i], savedCarXY[i], alpha);
+                conto.zy = mixAngle(prevCarZY[i], savedCarZY[i], alpha);
+            }
+            Medium.x = mix(prevCamX, camX, alpha);
+            Medium.y = mix(prevCamY, camY, alpha);
+            Medium.z = mix(prevCamZ, camZ, alpha);
+            Medium.xz = mixAngle(prevCamXZ, camXZ, alpha);
+            Medium.zy = mixAngle(prevCamZY, camZY, alpha);
+        }
+
+        /*
+         * Dust must age once per simulation tick, not once per draw, so the
+         * presentation pass suppresses the aging that d() normally performs and
+         * the tick advances it explicitly.
+         */
+        for (int i = 0; i < nob; i++) {
+            sceneObjects[i].dustAgesOnDraw = false;
+        }
+        try {
+            Medium.d(rd);
+            drawWorldObjects();
+        } finally {
+            for (int i = 0; i < nob; i++) {
+                sceneObjects[i].dustAgesOnDraw = true;
+            }
+        }
+
+        for (int i = 0; i < np; i++) {
+            ContO conto = sceneObjects[i];
+            conto.x = savedCarX[i];
+            conto.y = savedCarY[i];
+            conto.z = savedCarZ[i];
+            conto.xz = savedCarXZ[i];
+            conto.xy = savedCarXY[i];
+            conto.zy = savedCarZY[i];
+        }
+        Medium.x = camX;
+        Medium.y = camY;
+        Medium.z = camZ;
+        Medium.xz = camXZ;
+        Medium.zy = camZY;
+    }
+
+    /**
+     * Draws the HUD into its own layer. Called from the simulation tick so all of
+     * the HUD's internal counters, blink timers and pause handling keep running at
+     * the legacy tick rate instead of the display rate.
+     */
+    private void renderHud(Control control, boolean flag) {
+        Graphics2D previous = ui.getTarget();
+        hudG.setComposite(AlphaComposite.Clear);
+        hudG.fillRect(0, 0, GameFacts.screenWidth, GameFacts.screenHeight);
+        hudG.setComposite(AlphaComposite.SrcOver);
+        ui.setTarget(hudG);
+        ui.stat(racers, raceCheckpoints, control, sceneObjects, flag);
+        ui.setTarget(previous);
+    }
+
+    /**
+     * Copies the current back buffer into an independent image.
+     */
+    private BufferedImage captureFrame() {
+        BufferedImage image = new BufferedImage(GameFacts.screenWidth, GameFacts.screenHeight,
+                BufferedImage.TYPE_INT_RGB);
+        Graphics2D graphics2d = image.createGraphics();
+        graphics2d.drawImage(offImage, 0, 0, null);
+        graphics2d.dispose();
+        return image;
+    }
+
+    /**
+     * Asks the render pass for a complete frame and writes it to disk.
+     * <p>
+     * Copying the back buffer straight from the test thread can catch the game
+     * mid-draw, which produces torn screenshots. The request is fulfilled at the
+     * end of a presentation pass instead.
+     */
+    private void saveFrame(File directory, String name) {
+        capturedFrame = null;
+        captureRequested = true;
+        long deadline = System.currentTimeMillis() + 2_000L;
+        while (captureRequested && System.currentTimeMillis() < deadline) {
+            try {
+                Thread.sleep(10L);
+            } catch (InterruptedException ex) {
+                return;
+            }
+        }
+        BufferedImage image = capturedFrame;
+        if (image == null) {
+            System.out.println("[autotest] no frame for " + name);
+            return;
+        }
+        try {
+            ImageIO.write(image, "png", new File(directory, name));
+        } catch (IOException ex) {
+            System.out.println("[autotest] screenshot failed: " + ex);
+        }
+    }
+
+    /**
+     * Scripted smoke test used while developing the frame loop.
+     * <p>
+     * Enabled with {@code -Dnfm.autotest=<screenshot directory>}. The harness
+     * drives the game through its own {@link Control} objects and writes the
+     * back buffer to PNG files, so it needs no OS-level keyboard, mouse or
+     * screen access and never takes focus away from the desktop.
+     */
+    private void startAutoTest() {
+        final String path = System.getProperty("nfm.autotest");
+        if (path == null) {
+            return;
+        }
+        final File directory = new File(path);
+        if (!directory.isDirectory() && !directory.mkdirs()) {
+            System.out.println("[autotest] cannot create " + directory);
+            return;
+        }
+        Thread thread = new Thread(() -> runAutoTest(directory), "nfm-autotest");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    private void runAutoTest(File directory) {
+        System.out.println("[autotest] screenshots -> " + directory.getAbsolutePath());
+        final long budgetMillis = 150_000L;
+        final long startMillis = System.currentTimeMillis();
+
+        long lastMenuPress = 0L;
+        long inGameMillis = 0L;
+        long lastShot = 0L;
+        long phaseSettledAt = startMillis;
+        int shots = 0;
+        int replayShots = 0;
+        Phase lastPhase = null;
+        Phase pendingPhaseShot = null;
+        boolean pauseRequested = false;
+        boolean replayAttempted = false;
+        boolean replaySeen = false;
+        boolean resumed = false;
+
+        while (System.currentTimeMillis() - startMillis < budgetMillis) {
+            try {
+                Thread.sleep(100L);
+            } catch (InterruptedException ex) {
+                return;
+            }
+
+            Phase phase = ui.fase;
+            long now = System.currentTimeMillis();
+
+            if (phase != lastPhase) {
+                System.out.println("[autotest] phase " + lastPhase + " -> " + phase);
+                lastPhase = phase;
+                phaseSettledAt = now;
+                pendingPhaseShot = phase;
+            }
+
+            /* Let the phase draw itself before grabbing its screenshot. */
+            if (pendingPhaseShot != null && phase == pendingPhaseShot && now - phaseSettledAt >= 300L) {
+                saveFrame(directory, String.format("%02d-%s.png", shots++, phase.name().toLowerCase()));
+                pendingPhaseShot = null;
+                lastShot = now;
+            }
+
+            boolean menu = phase == Phase.MAINMENU || phase == Phase.CARSELECT
+                    || phase == Phase.STAGESELECT || phase == Phase.PREGAME;
+            if (menu && now - lastMenuPress > 700L) {
+                u[0].enter = true;
+                lastMenuPress = now;
+            }
+
+            if (phase == Phase.INGAME) {
+                inGameMillis += 100L;
+
+                if (!pauseRequested) {
+                    u[0].up = true;
+                    // Small steering nudges exercise rotation interpolation without
+                    // driving the car off the track or into the sea.
+                    long cycle = inGameMillis % 4000L;
+                    u[0].right = cycle > 2200L && cycle < 2500L;
+                    u[0].left = cycle > 3400L && cycle < 3700L;
+
+                    if (now - lastShot >= 1000L) {
+                        saveFrame(directory, String.format("%02d-ingame-%04dms.png", shots++, inGameMillis));
+                        lastShot = now;
+                    }
+                    /*
+                     * The countdown eats the first ~7 s of INGAME, and instant
+                     * replay needs 300 recorded ticks, so wait a little longer
+                     * than the intro before pausing.
+                     */
+                    if (inGameMillis >= 26_000L) {
+                        u[0].up = false;
+                        u[0].right = false;
+                        u[0].left = false;
+                        u[0].enter = true;
+                        pauseRequested = true;
+                        System.out.println("[autotest] requesting pause");
+                    }
+                } else if (resumed) {
+                    if (now - lastShot >= 1000L) {
+                        saveFrame(directory, String.format("%02d-resumed.png", shots++));
+                        lastShot = now;
+                    }
+                    if (inGameMillis >= 32_000L) {
+                        System.out.println("[autotest] done");
+                        break;
+                    }
+                }
+            }
+
+            if (phase == Phase.PAUSEMENU) {
+                if (!replayAttempted) {
+                    // Select INSTANT REPLAY (second entry) without a real keyboard.
+                    ui.opselect = 1;
+                    u[0].enter = true;
+                    replayAttempted = true;
+                    System.out.println("[autotest] requesting instant replay");
+                } else if (!resumed) {
+                    // Either the replay finished or there was not enough data.
+                    ui.opselect = 0;
+                    u[0].enter = true;
+                    resumed = true;
+                    System.out.println("[autotest] resuming race (replay seen: " + replaySeen + ")");
+                }
+            }
+
+            if (phase == Phase.INSTANTREPLAY) {
+                replaySeen = true;
+                if (now - lastShot >= 1500L && replayShots < 4) {
+                    saveFrame(directory, String.format("%02d-replay.png", shots++));
+                    lastShot = now;
+                    replayShots++;
+                }
+            }
+        }
+
+        System.out.println("[autotest] finishing");
+        try {
+            Thread.sleep(500L);
+        } catch (InterruptedException _ex) {
+        }
+        System.exit(0);
+    }
+
     @Override
     public void run() {
         rd.setColor(new Color(0, 0, 0));
@@ -1034,13 +1468,14 @@ public class GameSparker extends Panel implements Runnable {
 
         xtgraphics.stoploading();
         System.gc();
-        Date date = new Date();
-        int i = 15;
-        int j = 530;
-        long l3 = date.getTime();
-        float f1 = 30F;
-        boolean flag1 = false;
-        int j1 = 0;
+        sceneObjects = aconto1;
+        racers = amadness;
+        ui = xtgraphics;
+        raceCheckpoints = checkpoints;
+        raceRecord = record;
+
+        startAutoTest();
+
         int k1 = 0;
         int i2 = 0;
         int j2 = 0;
@@ -1048,9 +1483,41 @@ public class GameSparker extends Panel implements Runnable {
         boolean flag2 = false;
         exwist = false;
 
+        /*
+         * Fixed simulation cadence. 1000/19 ms is the rate the original adaptive
+         * pacer converged on in game (~53 ms per iteration), so physics, AI and
+         * every frame-counted timer keep behaving exactly as they did before.
+         */
+        final long tickNanos = Math.max(1L, Math.round(1_000_000_000D / SIM_TICK_HZ));
+        final long renderNanos = MAX_RENDER_HZ > 0D
+                ? Math.max(1L, Math.round(1_000_000_000D / MAX_RENDER_HZ))
+                : 0L;
+        final long profileWindowNanos = 2_000_000_000L;
+
+        long nextTickNanos = System.nanoTime() + tickNanos;
+        long nextRenderNanos = System.nanoTime();
+        long lastProfileFlush = nextRenderNanos;
+        long lastRenderAt = nextRenderNanos;
+        int profileTicks = 0;
+        int profileFrames = 0;
+
         do {
-            Date date1 = new Date();
-            long l4 = date1.getTime();
+            long now = System.nanoTime();
+            boolean ticked = false;
+
+            if (now - nextTickNanos >= 0L) {
+                if (now - nextTickNanos > MAX_TICK_LAG_NS) {
+                    /*
+                     * Debugger stop, window drag or a long GC pause. Drop the
+                     * backlog instead of fast-forwarding the whole world.
+                     */
+                    nextTickNanos = now;
+                }
+                tickStartNanos = nextTickNanos;
+                nextTickNanos += tickNanos;
+                ticked = true;
+                profileTicks++;
+
             if (xtgraphics.fase == Phase.LOADING) {
                 if (mouses == 1)
                     i2 = 800;
@@ -1370,6 +1837,23 @@ public class GameSparker extends Panel implements Runnable {
                 }
             }
             if (xtgraphics.fase == Phase.INGAME) {
+                /*
+                 * Snapshot the transforms the presentation pass interpolates from,
+                 * then advance the simulation. All drawing for this phase happens
+                 * in the presentation pass, at the display rate.
+                 */
+                snapshotFrameState();
+
+                /*
+                 * The intro fly-by draws no HUD. Clear the layer so a previous
+                 * race's HUD cannot bleed through during the camera sweep.
+                 */
+                if (xtgraphics.starcnt >= 38) {
+                    hudG.setComposite(AlphaComposite.Clear);
+                    hudG.fillRect(0, 0, GameFacts.screenWidth, GameFacts.screenHeight);
+                    hudG.setComposite(AlphaComposite.SrcOver);
+                }
+
                 int k3 = 0;
                 do {
                     if (amadness[k3].newcar) {
@@ -1384,39 +1868,6 @@ public class GameSparker extends Panel implements Runnable {
                         amadness[k3].newcar = false;
                     }
                 } while (++k3 < GameFacts.numberOfPlayers);
-                Medium.d(rd);
-                k3 = 0;
-                int ai2[] = new int[200];
-                for (int k6 = 0; k6 < nob; k6++)
-                    if (aconto1[k6].dist != 0) {
-                        ai2[k3] = k6;
-                        k3++;
-                    } else {
-                        aconto1[k6].d(rd);
-                    }
-
-                int ai7[] = new int[k3];
-                int ai10[] = new int[k3];
-                for (int i12 = 0; i12 < k3; i12++)
-                    ai7[i12] = 0;
-
-                for (int j12 = 0; j12 < k3; j12++) {
-                    for (int i14 = j12 + 1; i14 < k3; i14++)
-                        if (aconto1[ai2[j12]].dist != aconto1[ai2[i14]].dist) {
-                            if (aconto1[ai2[j12]].dist < aconto1[ai2[i14]].dist)
-                                ai7[j12]++;
-                            else
-                                ai7[i14]++;
-                        } else if (i14 > j12)
-                            ai7[j12]++;
-                        else
-                            ai7[i14]++;
-
-                    ai10[ai7[j12]] = j12;
-                }
-
-                for (int k12 = 0; k12 < k3; k12++)
-                    aconto1[ai2[ai10[k12]]].d(rd);
 
                 if (xtgraphics.starcnt == 0) {
                     int l12 = 0;
@@ -1449,34 +1900,43 @@ public class GameSparker extends Panel implements Runnable {
                         Medium.adv = 1900;
                         Medium.zy = 40;
                         Medium.vxz = 70;
-                        rd.setColor(new Color(255, 255, 255));
-                        rd.fillRect(0, 0, GameFacts.screenWidth, GameFacts.screenHeight);
+                        pendingWhiteFlash = true;
                     }
                     if (xtgraphics.starcnt != 0)
                         xtgraphics.starcnt--;
+                }
+                /*
+                 * d() used to age off-screen dust while drawing. Drawing now
+                 * happens many times per tick, so advance the dust exactly once
+                 * here instead. dist is left over from the previous presentation
+                 * frame and tells us which objects were culled.
+                 */
+                for (int dustIdx = 0; dustIdx < nob; dustIdx++) {
+                    if (sceneObjects[dustIdx].dist == 0) {
+                        sceneObjects[dustIdx].ageDust();
+                    }
                 }
                 if (xtgraphics.starcnt < 38) {
                     if (view == 0) {
                         Medium.follow(aconto1[xtgraphics.spectate], amadness[xtgraphics.spectate].cxz,
                                 u[xtgraphics.spectate].lookback);
-                        xtgraphics.stat(amadness, checkpoints, u[xtgraphics.spectate], aconto1, true);
+                        renderHud(u[xtgraphics.spectate], true);
                         initMoto(amadness, 2, 5);
                     }
                     if (view == 1) {
                         Medium.around(aconto1[xtgraphics.spectate], false);
-                        xtgraphics.stat(amadness, checkpoints, u[xtgraphics.spectate], aconto1, false);
+                        renderHud(u[xtgraphics.spectate], false);
                     }
                     if (view == 2) {
                         Medium.watch(aconto1[xtgraphics.spectate], amadness[0].mxz);
-                        xtgraphics.stat(amadness, checkpoints, u[xtgraphics.spectate], aconto1, false);
+                        renderHud(u[xtgraphics.spectate], false);
                     }
                     if (mouses == 1) {
                         u[0].enter = true;
                         mouses = 0;
                     }
                     if (xtgraphics.starcnt == 36) {
-                        repaint();
-                        xtgraphics.blendude(offImage);
+                        pendingBlendude = true;
                     }
                 } else {
                     if (GameFacts.numberOfPlayers < 5)
@@ -1495,9 +1955,8 @@ public class GameSparker extends Panel implements Runnable {
                         Medium.vxz = 180;
                         checkpoints.checkstat(amadness, aconto1, record, GameFacts.numberOfPlayers);
                         Medium.follow(aconto1[0], amadness[0].cxz, 0);
-                        xtgraphics.stat(amadness, checkpoints, u[0], aconto1, true);
-                        rd.setColor(new Color(255, 255, 255));
-                        rd.fillRect(0, 0, GameFacts.screenWidth, GameFacts.screenHeight);
+                        renderHud(u[0], true);
+                        pendingWhiteFlash = true;
                     }
                 }
             }
@@ -1825,75 +2284,12 @@ public class GameSparker extends Panel implements Runnable {
                 if (mouses == 1 || mouses == 2)
                     lostfcs = false;
             }
-            repaint();
             xtgraphics.playsounds(amadness[0], u[0], checkpoints.stage);
-            date1 = new Date();
-            long l5 = date1.getTime();
-            if (xtgraphics.fase == Phase.INGAME || xtgraphics.fase == Phase.INSTANTREPLAY
-                    || xtgraphics.fase == Phase.GAMEHIGHLIGHT) {
-                if (!flag1) {
-                    f1 = f;
-                    flag1 = true;
-                    j1 = 0;
-                }
-                if (j1 == 10) {
-                    if (l5 - l3 < j) {
-                        f1 = (float) (f1 + 0.5D);
-                    } else {
-                        f1 = (float) (f1 - 0.5D);
-                        if (f1 < 5F)
-                            f1 = 5F;
-                    }
-                    if (xtgraphics.starcnt == 0)
-                        Medium.adjustFade(f1);
-                    l3 = l5;
-                    j1 = 0;
-                } else {
-                    j1++;
-                }
-            } else {
-                if (flag1) {
-                    f = f1;
-                    flag1 = false;
-                    j1 = 0;
-                }
-                if (i1 == 0 || xtgraphics.fase != Phase.DRAWENVIRONMENT) {
-                    if (j1 == 10) {
-                        if (l5 - l3 < 400L) {
-                            f1 = (float) (f1 + 3.5D);
-                        } else {
-                            f1 = (float) (f1 - 3.5D);
-                            if (f1 < 5F)
-                                f1 = 5F;
-                        }
-                        l3 = l5;
-                        j1 = 0;
-                    } else {
-                        j1++;
-                    }
-                } else {
-                    if (i1 == 79) {
-                        f1 = f;
-                        l3 = l5;
-                        j1 = 0;
-                    }
-                    if (j1 == 10) {
-                        if (l5 - l3 < j) {
-                            f1 += 5F;
-                        } else {
-                            f1 -= 5F;
-                            if (f1 < 5F)
-                                f1 = 5F;
-                        }
-                        l3 = l5;
-                        j1 = 0;
-                    } else {
-                        j1++;
-                    }
-                    if (i1 == 1)
-                        f = f1;
-                }
-            }
+            /*
+             * The original loop passed the adaptive sleep target here. Feeding a
+             * constant keeps the fog distance at the stage's intended value.
+             */
+            Medium.adjustFade((float) (1_000D / SIM_TICK_HZ));
             if (exwist) {
                 rd.dispose();
                 xtgraphics.stopallnow();
@@ -1937,16 +2333,94 @@ public class GameSparker extends Panel implements Runnable {
                     break;
             }
 
-            long l2 = Math.round(f1) - (l5 - l4);
-            if (l2 < i)
-                l2 = i;
-            if (xtgraphics.fase != Phase.LOADING && xtgraphics.debugmode) {
-                xtgraphics.gameMetrics.addFrameTimeSample((int) (l5 - l4));
-                xtgraphics.gameMetrics.render(rd);
+            } // end of simulation tick
+
+            /*
+             * Presentation pass.
+             *
+             * Menus and the other phases draw themselves while the tick runs, so
+             * they only need the repaint. The in-game scene is redrawn here at the
+             * display rate from transforms interpolated between the last two
+             * simulation states, then the HUD layer is composited on top.
+             */
+            long frameNow = System.nanoTime();
+            if (renderNanos == 0L || frameNow - nextRenderNanos >= 0L) {
+                if (renderNanos > 0L) {
+                    nextRenderNanos += renderNanos;
+                    if (frameNow - nextRenderNanos > renderNanos * 4L) {
+                        nextRenderNanos = frameNow + renderNanos;
+                    }
+                }
+
+                if (xtgraphics.fase == Phase.INGAME) {
+                    double elapsed = (double) (frameNow - tickStartNanos) / (double) tickNanos;
+                    if (!prevFrameValid || elapsed >= 1D) {
+                        renderAlpha = 1F;
+                    } else if (elapsed <= 0D) {
+                        renderAlpha = 0F;
+                    } else {
+                        renderAlpha = (float) elapsed;
+                    }
+
+                    renderIngameScene(renderAlpha);
+
+                    if (pendingBlendude) {
+                        xtgraphics.blendude(offImage);
+                        pendingBlendude = false;
+                    }
+                    if (hudImage != null) {
+                        rd.drawImage(hudImage, 0, 0, null);
+                    }
+                    if (pendingWhiteFlash) {
+                        rd.setColor(new Color(255, 255, 255));
+                        rd.fillRect(0, 0, GameFacts.screenWidth, GameFacts.screenHeight);
+                        pendingWhiteFlash = false;
+                    }
+                }
+
+                if (captureRequested) {
+                    capturedFrame = captureFrame();
+                    captureRequested = false;
+                }
+
+                if (xtgraphics.fase != Phase.LOADING && xtgraphics.debugmode) {
+                    xtgraphics.gameMetrics.addFrameTimeSample((int) ((frameNow - lastRenderAt) / 1_000_000L));
+                    xtgraphics.gameMetrics.render(rd);
+                }
+                lastRenderAt = frameNow;
+                profileFrames++;
+
+                repaint();
             }
-            try {
-                Thread.sleep(l2);
-            } catch (InterruptedException _ex) {
+
+            if (PROFILE_LOOP && frameNow - lastProfileFlush >= profileWindowNanos) {
+                double seconds = (frameNow - lastProfileFlush) / 1e9D;
+                System.out.printf("[loop] sim %.1f Hz | render %.1f fps | %s%n",
+                        profileTicks / seconds, profileFrames / seconds, xtgraphics.fase);
+                profileTicks = 0;
+                profileFrames = 0;
+                lastProfileFlush = frameNow;
+            }
+
+            /*
+             * Short sleeps keep the cadence accurate. The old loop clamped its
+             * sleep to 15 ms, which is why it could never present faster than
+             * roughly 19-25 fps regardless of how much work it actually did.
+             */
+            if (!ticked && renderNanos > 0L) {
+                long wakeAt = nextTickNanos;
+                if (nextRenderNanos < wakeAt) {
+                    wakeAt = nextRenderNanos;
+                }
+                long sleepNanos = wakeAt - System.nanoTime();
+                if (sleepNanos > 3_000_000L) {
+                    try {
+                        Thread.sleep(sleepNanos / 1_000_000L - 1L);
+                    } catch (InterruptedException _ex) {
+                    }
+                } else if (sleepNanos > 300_000L) {
+                    Thread.yield();
+                }
             }
         } while (true);
     }
@@ -1958,6 +2432,11 @@ public class GameSparker extends Panel implements Runnable {
         new FontHandler();
 
         offImage = createImage(GameFacts.screenWidth, GameFacts.screenHeight);
+        /*
+         * Must be a real ARGB buffer: Component.createImage() returns an opaque
+         * display-compatible image, which would hide the scene behind the HUD.
+         */
+        hudImage = new BufferedImage(GameFacts.screenWidth, GameFacts.screenHeight, BufferedImage.TYPE_INT_ARGB);
         if (offImage != null) {
             sg = offImage.getGraphics();
             rd = ((Graphics2D) sg);
@@ -1965,6 +2444,13 @@ public class GameSparker extends Panel implements Runnable {
             rd.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             rd.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
             rd.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        }
+        if (hudImage != null) {
+            hudG = (Graphics2D) hudImage.getGraphics();
+            hudG.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            hudG.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            hudG.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            hudG.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
         }
     }
 

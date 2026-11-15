@@ -46,7 +46,17 @@ class RunApp extends Panel {
     }
 
     private static void startup() {
+        /*
+         * The scripted smoke test renders into its own back buffer and never
+         * needs the window on screen. Keep it undecorated, off-screen and
+         * unfocusable so it cannot steal the mouse or keyboard from the user.
+         */
+        boolean autoTest = System.getProperty("nfm.autotest") != null;
+
         frame = new Frame("Need For Madness: LIT");// Change this to the name of your preference
+        if (autoTest) {
+            frame.setUndecorated(true);
+        }
         frame.setBackground(new Color(0, 0, 0));
         frame.setIgnoreRepaint(true);
         frame.setIconImages(getIcons());
@@ -63,7 +73,13 @@ class RunApp extends Panel {
         frame.setResizable(true);// If you plan to make you game support changes in resolution, you can comment out this line.
         frame.pack();
         frame.setMinimumSize(frame.getSize());
-        frame.setLocationRelativeTo(null);
+        if (autoTest) {
+            frame.setFocusableWindowState(false);
+            frame.setAutoRequestFocus(false);
+            frame.setLocation(-20000, -20000);
+        } else {
+            frame.setLocationRelativeTo(null);
+        }
         frame.setVisible(true);
         applet.init();
         applet.start();

@@ -49,7 +49,7 @@ public class xtGraphics extends Panel implements Runnable {
      */
     private Image aimLogo;
 
-    private final Graphics2D rd;
+    private Graphics2D rd;
     private ImageObserver ob;
     private final GameSparker app;
     public Phase fase;
@@ -3917,6 +3917,22 @@ public class xtGraphics extends Panel implements Runnable {
                 + (kbload - (int) shload) + " KB remaining", 32, 64, 128, 3);
         rd.setColor(new Color(32, 64, 128));
         rd.fillRect(Utility.centeredImageX(loadbar) + 5, 346, 26 + (int) ((shload / kbload) * 200F), 10);
+    }
+
+    /**
+     * Redirects every UI draw call to another surface.
+     * <p>
+     * The frame loop uses this to render the HUD into its own layer once per
+     * simulation tick (so HUD timers and pause handling keep running at the legacy
+     * cadence) while the 3D scene is redrawn at the display rate and composited
+     * underneath it.
+     */
+    public void setTarget(Graphics2D graphics2d) {
+        this.rd = graphics2d;
+    }
+
+    public Graphics2D getTarget() {
+        return rd;
     }
 
     public xtGraphics(Graphics2D graphics2d, GameSparker applet) {
