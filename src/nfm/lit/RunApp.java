@@ -40,6 +40,11 @@ class RunApp extends Panel {
         //System.runFinalizersOnExit(true);
         HLogger.info("Need For Madness: LIT"); // Change this to the message of your preference
         /*
+         * Every frame covers the whole window, so Windows clearing it first only
+         * flashes the background, and through the graphics card it would flicker.
+         */
+        System.setProperty("sun.awt.noerasebackground", "true");
+        /*
          * madness64.exe has no console, so an exception that ends the game thread
          * used to leave a frozen window and no trace. Put it in the log file.
          */
@@ -151,6 +156,30 @@ class RunApp extends Panel {
             }
             frame.setVisible(true);
             applet.requestFocus();
+        });
+    }
+
+    /**
+     * Gives the game a fresh native window in the same place, for going back
+     * from Direct3D to drawing in software: Windows does not show GDI drawing
+     * in a window a flip-model swap chain has presented to.
+     */
+    static void recreateWindow() {
+        if (frame == null || !frame.isVisible()) {
+            return;
+        }
+        EventQueue.invokeLater(() -> {
+            if (!frame.isVisible()) {
+                return;
+            }
+            Rectangle bounds = frame.getBounds();
+            boolean focused = frame.isFocused();
+            frame.dispose();
+            frame.setBounds(bounds);
+            frame.setVisible(true);
+            if (focused) {
+                applet.requestFocus();
+            }
         });
     }
 

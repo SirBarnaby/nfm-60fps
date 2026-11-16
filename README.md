@@ -60,6 +60,14 @@ The window can be resized freely, down to half of 1280x720. The game still draws
 
 Scaling uses a smooth (bilinear) filter computed on all CPU cores: about 2 ms a frame for 1920x1080 and under 4 ms for 3840x2160 on a laptop i7-8550U. Java's own filter would do the same picture in about 25 ms, because its Direct3D path refuses Intel graphics and falls back to software. To show the picture pixel for pixel in the middle of the window instead, type `scale off` in the developer console (`scale fit` to undo; saved), or start with `-Dnfm.scale=off`.
 
+## Drawing through the graphics card
+
+Finished frames reach the screen through the graphics card: each frame is uploaded as a texture and drawn as one rectangle with Direct3D 11, using [bgfx](https://github.com/bkaradzic/bgfx) through [LWJGL](https://www.lwjgl.org/) 3.4.3 (the jars are in `lib\`). Scaling to the window is then free for the processor, and the frame skips GDI: showing a frame takes about 1.7 ms of the game thread at any window size, 1080p or 4K, on a laptop i7-8550U with Intel UHD 620 graphics, mostly copying the picture to the card. What reaches the screen is the same picture: read back from the card in hidden test runs, it is identical pixel for pixel at 1280x720 and within 3/255 of the software filter when scaled.
+
+Its two shaders are compiled when the game starts by Windows' own shader compiler (`d3dcompiler_47.dll`) and packed into bgfx's shader format by the game, so the project needs no shader tools. With the frame limit on "match display" frames wait for the display's refresh, so they are never shown torn; with any other limit they are shown at once.
+
+If the graphics card cannot be used (no Direct3D 11, the libraries missing, or an error while drawing) the game says so in its log and draws in software as before, in a fresh window. Type `renderer software` or `renderer gpu` in the developer console to switch (saved), or start with `-Dnfm.renderer=software`. The game itself is still drawn by Java2D on the processor; only putting the frame on screen has moved.
+
 ## Frame rate limit
 
 By default the frame rate matches the refresh rate of the monitor the window is on. To change it, open the developer console (it appears on the main menu) and type:
@@ -79,11 +87,12 @@ All drawing is done on the CPU by Java2D, so the ceiling depends on the processo
 
 | Property | Meaning |
 | --- | --- |
-| `-Dnfm.profile=true` | Print simulation rate, render rate, time per tick and per frame, run-ahead ticks (their cost, and how many real ticks were checked against the prediction and missed it), the frame limit and the current phase every two seconds. |
+| `-Dnfm.profile=true` | Print simulation rate, render rate, time per tick and per frame, run-ahead ticks (their cost, and how many real ticks were checked against the prediction and missed it), the frame limit and the current phase every two seconds, including how long putting each frame on screen took and whether the GPU or software did it. |
 | `-Dnfm.runahead=<true or false>` | Run-ahead for this run, see above. |
 | `-Dnfm.debug=false` | Do not open the developer console on the main menu. |
 | `-Dnfm.fps=<auto, unlimited or a number>` | Frame rate limit for this run, see above. |
 | `-Dnfm.scale=<fit or off>` | Window scaling for this run, see above. |
+| `-Dnfm.renderer=<gpu or software>` | How frames reach the screen for this run, see above. Hidden test runs use software unless this asks for the GPU; they then also save `<name>-gpu.png`, the window read back from the graphics card. |
 | `-Dnfm.window=<width>x<height>` | Size of the window's inside at start, for example `1920x1080` (default 1280x720). Also sets the size of hidden test runs, which then save each screenshot twice when the size is not 1280x720: the picture itself and `<name>-window.png`, the window as shown. |
 | `-Dnfm.autotest=<dir>` | Run the scripted smoke test and write screenshots to `<dir>`. The window is never shown and the test drives the game through its own controls, so it is safe to run while using the machine. |
 

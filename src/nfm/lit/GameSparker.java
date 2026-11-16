@@ -4,6 +4,8 @@ import java.util.Arrays;
 import fallk.logmaster.HLogger;
 import nfm.lit.audio.BASSLoader;
 import nfm.lit.audio.SoundManager;
+import nfm.lit.gpu.GpuDisplay;
+import nfm.lit.gpu.NativeWindow;
 
 import java.awt.*;
 import java.awt.geom.Rectangle2D;
@@ -281,6 +283,8 @@ public class GameSparker extends Panel implements Runnable {
     private volatile boolean captureRequested;
     private volatile BufferedImage capturedFrame;
     private volatile BufferedImage capturedWindow;
+    /** The window as the graphics card showed it, read back; only when the GPU renderer is on. */
+    private volatile BufferedImage capturedGpu;
 
     /** Draw order of the scene objects in view, see {@link #drawWorldObjects}; grows with the stage. */
     private long[] drawKeys = new long[200];
@@ -303,6 +307,31 @@ public class GameSparker extends Panel implements Runnable {
      */
     private static volatile boolean scaleToWindow = true;
     private static volatile boolean scaleToWindowChanged;
+    private static final String RENDERER_COOKIE = "renderer";
+    /**
+     * Put frames on screen through the graphics card (on unless turned off):
+     * scaling to the window is free there and the frame skips GDI. Falls back
+     * to software when the card cannot, see {@link #presentOnGpu}.
+     */
+    private static volatile boolean gpuRenderer = true;
+    private static volatile boolean gpuRendererChanged;
+    /** The graphics card could not draw this session; cleared by asking for it again. */
+    private static volatile boolean gpuUnavailable;
+    /** How long a closing window waits for the game thread to stop drawing into it. */
+    private static final long WINDOW_RELEASE_WAIT_NANOS = 500_000_000L;
+    /**
+     * Held while the GPU draws into the window, so the window cannot be
+     * destroyed under it; guards windowShown and windowGeneration.
+     */
+    private final Object presentLock = new Object();
+    private boolean windowShown;
+    /** Counts native windows: changes whenever the window is made or destroyed. */
+    private int windowGeneration;
+    /** The GPU display, used only by the game thread; null while drawing in software. */
+    private GpuDisplay gpu;
+    private int gpuWindowGeneration;
+    /** True while the GPU display owns the window, so the event thread must not paint it. */
+    private volatile boolean gpuActive;
 
     public static String gameState = "None";
     public static int gameStateID;
@@ -562,7 +591,18 @@ public class GameSparker extends Panel implements Runnable {
      */
     @Override
     public void paint(Graphics g) {
-        Graphics2D graphics2d = (Graphics2D) g;
+        if (gpuActive) {
+            return; // the game thread puts every frame on screen through the graphics card
+        }
+        paintPicture((Graphics2D) g);
+    }
+
+    /**
+     * Where the picture goes in a window of the given size, with the screen
+     * shake applied, or null when the window has no room. Also remembers the
+     * placement for turning mouse positions into picture coordinates.
+     */
+    private Rectangle placePicture(int width, int height) {
         int i = 0;
         int i_97_ = 0;
         if (this.shaka > 10) {
@@ -571,13 +611,11 @@ public class GameSparker extends Panel implements Runnable {
             this.shaka -= 5;
         }
 
-        int width = getWidth();
-        int height = getHeight();
         double scale = scaleToWindow
                 ? Math.min(width / (double) GameFacts.screenWidth, height / (double) GameFacts.screenHeight)
                 : 1D;
         if (scale <= 0D) {
-            return;
+            return null;
         }
         int w = (int) Math.round(GameFacts.screenWidth * scale);
         int h = (int) Math.round(GameFacts.screenHeight * scale);
@@ -588,6 +626,21 @@ public class GameSparker extends Panel implements Runnable {
         presentScale = scale;
         x += (int) Math.round(i * scale);
         y += (int) Math.round(i_97_ * scale);
+        return new Rectangle(x, y, w, h);
+    }
+
+    /** Draws the picture into the window in software, as {@link #paint} does without the GPU. */
+    private void paintPicture(Graphics2D graphics2d) {
+        int width = getWidth();
+        int height = getHeight();
+        Rectangle place = placePicture(width, height);
+        if (place == null) {
+            return;
+        }
+        int x = place.x;
+        int y = place.y;
+        int w = place.width;
+        int h = place.height;
         if (w == GameFacts.screenWidth && h == GameFacts.screenHeight) {
             graphics2d.drawImage(this.offImage, x, y, this);
         } else {
@@ -1912,16 +1965,205 @@ public class GameSparker extends Panel implements Runnable {
      * merges requests that arrive faster than it paints, so frames were dropped
      * at random and could be shown while the next one was half drawn.
      */
-    private void presentFrame() {
+    private void presentFrame(boolean capture) {
+        if (presentOnGpu(capture)) {
+            return;
+        }
         Graphics graphics = getGraphics();
         if (graphics != null) {
             try {
-                paint(graphics);
+                paintPicture((Graphics2D) graphics);
             } finally {
                 graphics.dispose();
             }
         }
         Toolkit.getDefaultToolkit().sync();
+    }
+
+    /**
+     * Shows the frame through the graphics card when that renderer is on and
+     * works, starting it on first use and stopping it when the window goes
+     * away or the setting changes. Game thread only.
+     *
+     * @return false if the frame still has to be drawn in software
+     */
+    private boolean presentOnGpu(boolean capture) {
+        if (gpu == null) {
+            if (!gpuRenderer || gpuUnavailable || !IS_WINDOWS || !isDisplayable()) {
+                return false;
+            }
+            openGpu();
+            if (gpu == null) {
+                return false;
+            }
+        }
+        synchronized (presentLock) {
+            if (!gpuRenderer || gpuWindowGeneration != windowGeneration) {
+                boolean stillSameWindow = gpuWindowGeneration == windowGeneration;
+                closeGpu();
+                if (stillSameWindow) {
+                    RunApp.recreateWindow(); // a window Direct3D has drawn in cannot go back to GDI
+                }
+                return false;
+            }
+            int width = getWidth();
+            int height = getHeight();
+            Rectangle place = placePicture(width, height);
+            if (place == null) {
+                return true;
+            }
+            boolean smooth = place.width != GameFacts.screenWidth || place.height != GameFacts.screenHeight;
+            gpu.setVsync(fpsLimit == FPS_MATCH_DISPLAY);
+            Dimension size = new Dimension(width, height);
+            boolean shown;
+            try {
+                if (capture) {
+                    capturedGpu = gpu.presentAndCapture((BufferedImage) offImage, size, place, smooth);
+                    shown = true;
+                } else {
+                    shown = gpu.present((BufferedImage) offImage, size, place, smooth);
+                }
+            } catch (RuntimeException | LinkageError ex) {
+                HLogger.warn("The graphics card stopped drawing, drawing in software: " + ex);
+                shown = false;
+            }
+            if (!shown) {
+                gpuUnavailable = true;
+                closeGpu();
+                RunApp.recreateWindow();
+            }
+            return shown;
+        }
+    }
+
+    /** Starts the GPU display on the window, or marks it unavailable for this session. */
+    private void openGpu() {
+        if (!(offImage instanceof BufferedImage)) {
+            gpuUnavailable = true;
+            return;
+        }
+        int generation;
+        synchronized (presentLock) {
+            if (!windowShown) {
+                return;
+            }
+            generation = windowGeneration;
+        }
+        long window = windowHandle(); // outside the lock: AWT takes its own locks here
+        synchronized (presentLock) {
+            if (!windowShown || generation != windowGeneration) {
+                return; // the window changed meanwhile; try again next frame
+            }
+            gpu = window == 0L ? null
+                    : GpuDisplay.open(window, new Dimension(getWidth(), getHeight()),
+                            GameFacts.screenWidth, GameFacts.screenHeight);
+            if (gpu == null) {
+                gpuUnavailable = true;
+                if (window != 0L) {
+                    RunApp.recreateWindow(); // in case Direct3D got as far as the window before failing
+                }
+                return;
+            }
+            gpuWindowGeneration = generation;
+            gpuActive = true;
+        }
+    }
+
+    /** Stops the GPU display; the caller holds {@link #presentLock}. */
+    private void closeGpu() {
+        if (gpu != null) {
+            gpu.close();
+            gpu = null;
+        }
+        gpuActive = false;
+        presentLock.notifyAll();
+    }
+
+    /** The window's native handle, or 0 when it cannot be had. */
+    private long windowHandle() {
+        try {
+            return NativeWindow.handle(this);
+        } catch (LinkageError ex) {
+            HLogger.warn("The graphics card libraries are missing, drawing in software: " + ex);
+            return 0L;
+        }
+    }
+
+    @Override
+    public void addNotify() {
+        super.addNotify();
+        synchronized (presentLock) {
+            windowShown = true;
+            windowGeneration++;
+        }
+    }
+
+    /**
+     * The window is about to go (fullscreen switching remakes it). bgfx can
+     * only be stopped from the game thread, so give it a moment to let go of
+     * the window before it is destroyed.
+     */
+    @Override
+    public void removeNotify() {
+        synchronized (presentLock) {
+            windowShown = false;
+            windowGeneration++;
+            long deadline = System.nanoTime() + WINDOW_RELEASE_WAIT_NANOS;
+            while (gpuActive && !exwist) {
+                long left = deadline - System.nanoTime();
+                if (left <= 0L) {
+                    break;
+                }
+                try {
+                    presentLock.wait(Math.max(1L, left / 1_000_000L));
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }
+        super.removeNotify();
+    }
+
+    /** Turns drawing through the graphics card on or off, and saves the choice. */
+    public static void setGpuRenderer(boolean on) {
+        gpuRenderer = on;
+        gpuUnavailable = false; // asking again tries again
+        gpuRendererChanged = true;
+    }
+
+    public static boolean isGpuRenderer() {
+        return gpuRenderer;
+    }
+
+    public static String describeRenderer() {
+        if (!gpuRenderer) {
+            return "software";
+        }
+        return gpuUnavailable ? "gpu (not available here, drawing in software)" : "gpu";
+    }
+
+    /**
+     * -Dnfm.renderer=gpu|software, else software in hidden test runs, else the
+     * saved choice, else the graphics card.
+     */
+    private void loadRenderer() {
+        String property = System.getProperty("nfm.renderer");
+        if (property != null) {
+            gpuRenderer = !property.trim().equalsIgnoreCase("software");
+        } else if (System.getProperty("nfm.autotest") != null || RaceSession.runsHidden()) {
+            gpuRenderer = false;
+        } else {
+            gpuRenderer = readcookie(RENDERER_COOKIE) != 0;
+        }
+        gpuRendererChanged = false;
+    }
+
+    private void saveRendererIfChanged() {
+        if (gpuRendererChanged) {
+            gpuRendererChanged = false;
+            savecookie(RENDERER_COOKIE, gpuRenderer ? "1" : "0");
+        }
     }
 
     /**
@@ -2089,7 +2331,7 @@ public class GameSparker extends Panel implements Runnable {
         BufferedImage image = new BufferedImage(Math.max(1, getWidth()), Math.max(1, getHeight()),
                 BufferedImage.TYPE_INT_RGB);
         Graphics2D graphics2d = image.createGraphics();
-        paint(graphics2d);
+        paintPicture(graphics2d);
         graphics2d.dispose();
         return image;
     }
@@ -2097,6 +2339,7 @@ public class GameSparker extends Panel implements Runnable {
     private void saveFrame(File directory, String name) {
         capturedFrame = null;
         capturedWindow = null;
+        capturedGpu = null;
         captureRequested = true;
         long deadline = System.currentTimeMillis() + 2_000L;
         while (captureRequested && System.currentTimeMillis() < deadline) {
@@ -2117,6 +2360,11 @@ public class GameSparker extends Panel implements Runnable {
             if (window != null) {
                 // the picture as the window shows it, when the window is not 1280x720
                 ImageIO.write(window, "png", new File(directory, name.replace(".png", "-window.png")));
+            }
+            BufferedImage gpuWindow = capturedGpu;
+            if (gpuWindow != null) {
+                // the window read back from the graphics card, to compare with the software picture
+                ImageIO.write(gpuWindow, "png", new File(directory, name.replace(".png", "-gpu.png")));
             }
         } catch (IOException ex) {
             System.out.println("[autotest] screenshot failed: " + ex);
@@ -2389,6 +2637,7 @@ public class GameSparker extends Panel implements Runnable {
         loadFpsLimit();
         loadRunAhead();
         loadScaleToWindow();
+        loadRenderer();
         startAutoTest();
         session = RaceSession.fromCommandLine(new SessionHost());
         final boolean unpaced = session != null && session.unpaced();
@@ -2415,6 +2664,7 @@ public class GameSparker extends Panel implements Runnable {
         int profileFrames = 0;
         long profileTickNanos = 0L;
         long profileRenderNanos = 0L;
+        long profilePresentNanos = 0L;
 
         do {
             boolean ticked = false;
@@ -2443,6 +2693,7 @@ public class GameSparker extends Panel implements Runnable {
                 saveFpsLimitIfChanged();
                 saveRunAheadIfChanged();
                 saveScaleToWindowIfChanged();
+                saveRendererIfChanged();
                 if (session != null) {
                     session.beforeTick();
                 }
@@ -3177,11 +3428,11 @@ public class GameSparker extends Panel implements Runnable {
                     }
                 }
 
-                if (captureRequested) {
+                boolean capture = captureRequested;
+                if (capture) {
                     capturedFrame = captureFrame();
                     capturedWindow = getWidth() != GameFacts.screenWidth || getHeight() != GameFacts.screenHeight
                             ? captureWindow() : null;
-                    captureRequested = false;
                 }
 
                 if (xtgraphics.fase != Phase.LOADING && xtgraphics.debugmode) {
@@ -3191,16 +3442,24 @@ public class GameSparker extends Panel implements Runnable {
                 lastRenderAt = frameNow;
                 profileFrames++;
 
-                presentFrame();
-                profileRenderNanos += System.nanoTime() - frameNow;
+                long presentStart = System.nanoTime();
+                presentFrame(capture);
+                if (capture) {
+                    captureRequested = false; // after presenting: the GPU read-back comes from there
+                }
+                long presentEnd = System.nanoTime();
+                profilePresentNanos += presentEnd - presentStart;
+                profileRenderNanos += presentEnd - frameNow;
             }
 
             if (PROFILE_LOOP && frameNow - lastProfileFlush >= profileWindowNanos) {
                 double seconds = (frameNow - lastProfileFlush) / 1e9D;
-                System.out.printf("[loop] sim %.1f Hz (%.1f ms/tick) | render %.1f fps (%.1f ms/frame) | run-ahead %s"
-                        + " (%d, %.1f ms each; %d checked, %d missed) | limit %s | %s%n",
+                System.out.printf("[loop] sim %.1f Hz (%.1f ms/tick) | render %.1f fps (%.1f ms/frame, %.1f to show"
+                        + " on %s) | run-ahead %s (%d, %.1f ms each; %d checked, %d missed) | limit %s | %s%n",
                         profileTicks / seconds, profileTicks == 0 ? 0D : profileTickNanos / 1e6D / profileTicks,
                         profileFrames / seconds, profileFrames == 0 ? 0D : profileRenderNanos / 1e6D / profileFrames,
+                        profileFrames == 0 ? 0D : profilePresentNanos / 1e6D / profileFrames,
+                        gpuActive ? "gpu" : "software",
                         runAhead ? "on" : "off", profileAheads,
                         profileAheads == 0 ? 0D : profileAheadNanos / 1e6D / profileAheads,
                         profileAheadChecked, profileAheadMissed, describeFpsLimit(), xtgraphics.fase);
@@ -3212,6 +3471,7 @@ public class GameSparker extends Panel implements Runnable {
                 profileFrames = 0;
                 profileTickNanos = 0L;
                 profileRenderNanos = 0L;
+                profilePresentNanos = 0L;
                 lastProfileFlush = frameNow;
             }
 

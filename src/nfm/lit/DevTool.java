@@ -383,6 +383,14 @@ public class DevTool {
                     print("Run-ahead is " + (GameSparker.isRunAhead() ? "on" : "off") + ".\nUsage: runahead <on|off>");
                 }
                 break;
+            case "renderer":
+                if (args.length == 1 && (args[0].equalsIgnoreCase("gpu") || args[0].equalsIgnoreCase("software"))) {
+                    GameSparker.setGpuRenderer(args[0].equalsIgnoreCase("gpu"));
+                    print("Renderer set to " + (GameSparker.isGpuRenderer() ? "gpu" : "software") + " (saved).");
+                } else {
+                    print("Renderer is " + GameSparker.describeRenderer() + ".\nUsage: renderer <gpu|software>");
+                }
+                break;
             case "clear":
                 textArea.setText("");
                 break;
@@ -421,6 +429,7 @@ public class DevTool {
         commandDescriptions.put("stagesubdir", "Sets the stage subdirectory. Usage: stagesubdir <subdir>");
         commandDescriptions.put("status", "Displays the current game state.");
         commandDescriptions.put("scale", "fit scales the picture to fill the window, keeping its shape; off shows it pixel for pixel. Usage: scale <fit|off>");
+        commandDescriptions.put("renderer", "gpu puts frames on screen through the graphics card (Direct3D 11), which scales them for free; software draws them with Java2D. Usage: renderer <gpu|software>");
         commandDescriptions.put("runahead", "Shows race frames one tick ahead with the keys held now, for 53 ms less input lag. Usage: runahead <on|off>");
         commandDescriptions.put("fps", "Sets the frame rate limit. auto matches the monitor, unlimited removes the cap. Usage: fps <auto|unlimited|30-1000>");
         commandDescriptions.put("clear", "Clears the console.");
