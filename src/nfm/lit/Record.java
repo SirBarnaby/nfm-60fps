@@ -255,6 +255,94 @@ class Record {
         prepit = false;
     }
 
+    /**
+     * Saves or restores, through {@code b}, everything the replay buffer holds
+     * (see {@link RaceSnapshot}): the last 300 ticks of every car, the
+     * highlight it keeps, and which model copies it points at. The copies
+     * themselves never change once made, so they are kept by reference.
+     */
+    void syncRaceState(StateBuffer b) {
+        b.contents(ocar);
+        b.contents(starcar);
+        for (ContO[] row : car) {
+            b.contents(row);
+        }
+        caught = b.value(caught);
+        hcaught = b.value(hcaught);
+        prepit = b.value(prepit);
+        cntf = b.value(cntf);
+        wasted = b.value(wasted);
+        whenwasted = b.value(whenwasted);
+        powered = b.value(powered);
+        closefinish = b.value(closefinish);
+        lastfr = b.value(lastfr);
+        b.contents(squash);
+        b.contents(fix);
+        b.contents(dest);
+        b.contents(x);
+        b.contents(y);
+        b.contents(z);
+        b.contents(xy);
+        b.contents(zy);
+        b.contents(xz);
+        b.contents(wxz);
+        b.contents(wzy);
+        b.contents(ns);
+        b.contents(sspark);
+        b.contents(sx);
+        b.contents(sy);
+        b.contents(sz);
+        b.contents(smag);
+        b.contents(scx);
+        b.contents(scz);
+        b.contents(fulls);
+        b.contents(nry);
+        b.contents(ry);
+        b.contents(magy);
+        b.contents(mtouch);
+        b.contents(nrx);
+        b.contents(rx);
+        b.contents(magx);
+        b.contents(nrz);
+        b.contents(rz);
+        b.contents(magz);
+        b.contents(checkpoint);
+        b.contents(lastcheck);
+        b.contents(hsquash);
+        b.contents(hfix);
+        b.contents(hdest);
+        b.contents(hx);
+        b.contents(hy);
+        b.contents(hz);
+        b.contents(hxy);
+        b.contents(hzy);
+        b.contents(hxz);
+        b.contents(hwxz);
+        b.contents(hwzy);
+        b.contents(hns);
+        b.contents(hsspark);
+        b.contents(hsx);
+        b.contents(hsy);
+        b.contents(hsz);
+        b.contents(hsmag);
+        b.contents(hscx);
+        b.contents(hscz);
+        b.contents(hfulls);
+        b.contents(hnry);
+        b.contents(hry);
+        b.contents(hmagy);
+        b.contents(hnrx);
+        b.contents(hrx);
+        b.contents(hmagx);
+        b.contents(hnrz);
+        b.contents(hrz);
+        b.contents(hmagz);
+        b.contents(hmtouch);
+        b.contents(hcheckpoint);
+        b.contents(hlastcheck);
+        b.contents(cntdest);
+    }
+
     public Record() {
         caught = 0;
         hcaught = false;

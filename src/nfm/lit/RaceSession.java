@@ -14,6 +14,7 @@ import java.util.Date;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 
@@ -616,11 +617,15 @@ final class RaceSession {
         private final GoldenFrames golden;
         private final List<String> goldenReport = new ArrayList<>();
         /* Rollback self-test: the state to rewind to and the ticks left to play ahead. */
-        private RaceSnapshot rewindTo;
+        private final RaceSnapshot rewindTo = new RaceSnapshot();
+        /** Everything the race reached at the same tick, to prove the rewind put it all back. */
+        private RaceSnapshot rewindReference;
         private int aheadLeft;
         private int rewinds;
         private long captureNanos;
         private long restoreNanos;
+        private long fastestCapture;
+        private long fastestRestore;
 
         Verifier(Host host, List<File> files, GoldenFrames golden) {
             this.host = host;
@@ -691,11 +696,13 @@ final class RaceSession {
             trackDifferences = 0;
             carsProblem = null;
             goldenReport.clear();
-            rewindTo = null;
+            rewindReference = null;
             aheadLeft = 0;
             rewinds = 0;
             captureNanos = 0L;
             restoreNanos = 0L;
+            fastestCapture = Long.MAX_VALUE;
+            fastestRestore = Long.MAX_VALUE;
             System.out.println(TAG_VERIFY + file.getName() + ": stage " + log.stage + ", " + log.players + " cars, "
                     + log.ticks() + " ticks, " + log.end.name().toLowerCase(Locale.ROOT) + " (" + log.note + ")");
             setUpRace(host, log.stage, log.nfmmode, log.players, log.unlocked, log.carsBefore);
@@ -794,8 +801,14 @@ final class RaceSession {
                 if (--aheadLeft == 0) {
                     long start = System.nanoTime();
                     rewindTo.restore();
-                    restoreNanos += System.nanoTime() - start;
-                    rewindTo = null;
+                    long took = System.nanoTime() - start;
+                    restoreNanos += took;
+                    fastestRestore = Math.min(fastestRestore, took);
+                    Map<String, Integer> left = rewindReference.differences();
+                    rewindReference = null;
+                    if (!left.isEmpty()) {
+                        fail("rewinding to tick " + tick + " did not put everything back: " + describeLeftovers(left));
+                    }
                 }
                 return;
             }
@@ -833,8 +846,11 @@ final class RaceSession {
             }
             if (rollbackDue()) {
                 long start = System.nanoTime();
-                rewindTo = RaceSnapshot.capture(race, host.sceneCount());
-                captureNanos += System.nanoTime() - start;
+                rewindTo.capture(race, host.sceneCount());
+                long took = System.nanoTime() - start;
+                captureNanos += took;
+                fastestCapture = Math.min(fastestCapture, took);
+                rewindReference = RaceSnapshot.captureComplete(race, host.sceneCount());
                 aheadLeft = ROLLBACK_AHEAD;
                 rewinds++;
             }
@@ -855,6 +871,18 @@ final class RaceSession {
                 }
             }
             return true;
+        }
+
+        /** The fields a rewind left changed, most objects first: "Plane.av in 812 objects, ...". */
+        private static String describeLeftovers(Map<String, Integer> left) {
+            List<Map.Entry<String, Integer>> entries = new ArrayList<>(left.entrySet());
+            entries.sort(Map.Entry.<String, Integer>comparingByValue().reversed());
+            StringBuilder sb = new StringBuilder();
+            for (Map.Entry<String, Integer> e : entries.subList(0, Math.min(entries.size(), REPORT_FIELDS))) {
+                sb.append(sb.isEmpty() ? "" : ", ").append(e.getKey()).append(" in ").append(e.getValue())
+                        .append(e.getValue() == 1 ? " object" : " objects");
+            }
+            return sb.append(entries.size() > REPORT_FIELDS ? ", ..." : "").toString();
         }
 
         private void pauseMenu() {
@@ -970,8 +998,10 @@ final class RaceSession {
             }
             if (rewinds > 0) {
                 sb.append(System.lineSeparator()).append(TAG_VERIFY).append(String.format(Locale.ROOT,
-                        "    rewound %d times after playing %d ticks ahead (capture %.1f ms, restore %.1f ms on average)",
-                        rewinds, ROLLBACK_AHEAD, captureNanos / 1e6 / rewinds, restoreNanos / 1e6 / rewinds));
+                        "    rewound %d times after playing %d ticks ahead, every value put back"
+                                + " (capture %.2f ms on average, %.2f at best; restore %.2f ms, %.2f at best)",
+                        rewinds, ROLLBACK_AHEAD, captureNanos / 1e6 / rewinds, fastestCapture / 1e6,
+                        restoreNanos / 1e6 / rewinds, fastestRestore / 1e6));
             }
             System.out.println(sb);
             printGoldenReport();

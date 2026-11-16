@@ -4,10 +4,12 @@ import java.lang.reflect.Array;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -115,6 +117,79 @@ final class StateCopy {
                 put(fields[i], null, values[i]);
             }
         }
+    }
+
+    /**
+     * Compares everything captured with the values held now and counts the
+     * differences by field, as {@code "Plane.av" -> number of objects}. The
+     * rollback self-test uses it to prove that a smaller snapshot puts back
+     * everything a race changed.
+     */
+    Map<String, Integer> differences() {
+        Map<String, Integer> out = new TreeMap<>();
+        for (ArrayCopy a : arrays) {
+            if (!sameContents(a)) {
+                out.merge(a.array().getClass().getSimpleName(), 1, Integer::sum);
+            }
+        }
+        for (int p = 0; p < partialTargets.size(); p++) {
+            compare(partialTargets.get(p), partialFields.get(p), partialValues.get(p), out);
+        }
+        for (Map.Entry<Object, Object[]> e : objects.entrySet()) {
+            compare(e.getKey(), instanceFields(e.getKey().getClass()), e.getValue(), out);
+        }
+        for (int c = 0; c < classes.size(); c++) {
+            compare(null, staticFields(classes.get(c)), statics.get(c), out);
+        }
+        return out;
+    }
+
+    private static void compare(Object target, Field[] fields, Object[] values, Map<String, Integer> out) {
+        for (int i = 0; i < fields.length; i++) {
+            if (!same(get(fields[i], target), values[i])) {
+                out.merge(fields[i].getDeclaringClass().getSimpleName() + "." + fields[i].getName(), 1, Integer::sum);
+            }
+        }
+    }
+
+    private static boolean same(Object now, Object saved) {
+        if (saved instanceof ArrayCopy copy) {
+            return now == copy.array() && sameContents(copy);
+        }
+        if (saved instanceof Ref ref) {
+            return now == ref.value();
+        }
+        return saved.equals(now);
+    }
+
+    private static boolean sameContents(ArrayCopy saved) {
+        Object array = saved.array();
+        Object contents = saved.contents();
+        if (array.getClass().getComponentType().isPrimitive()) {
+            return switch (array) {
+                case int[] a -> Arrays.equals(a, (int[]) contents);
+                case float[] a -> Arrays.equals(a, (float[]) contents);
+                case boolean[] a -> Arrays.equals(a, (boolean[]) contents);
+                case long[] a -> Arrays.equals(a, (long[]) contents);
+                case double[] a -> Arrays.equals(a, (double[]) contents);
+                case short[] a -> Arrays.equals(a, (short[]) contents);
+                case byte[] a -> Arrays.equals(a, (byte[]) contents);
+                case char[] a -> Arrays.equals(a, (char[]) contents);
+                default -> throw new IllegalStateException(array.getClass().toString());
+            };
+        }
+        Object[] elements = (Object[]) contents;
+        Object[] target = (Object[]) array;
+        for (int i = 0; i < elements.length; i++) {
+            if (elements[i] instanceof ArrayCopy nested) {
+                if (target[i] != nested.array() || !sameContents(nested)) {
+                    return false;
+                }
+            } else if (target[i] != elements[i]) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /* ---------------------------------------------------------------- values */
@@ -226,7 +301,8 @@ final class StateCopy {
         return INSTANCE_FIELDS.computeIfAbsent(type, t -> fields(t, false));
     }
 
-    private static Field[] staticFields(Class<?> type) {
+    /** The static fields a capture of {@code type} covers. */
+    static Field[] staticFields(Class<?> type) {
         return STATIC_FIELDS.computeIfAbsent(type, t -> fields(t, true));
     }
 

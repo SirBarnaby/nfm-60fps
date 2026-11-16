@@ -130,6 +130,49 @@ public class Plane {
         flx = s.flx;
     }
 
+    /**
+     * Saves or restores, through {@code b}, everything a race can change on
+     * this polygon (see {@link RaceSnapshot}). On every polygon, drawing
+     * advances the distance the next draw sorts by, the projection factor,
+     * how many corners a round part is drawn with, and the flash. Only a car's
+     * polygons change otherwise ({@code onCar}): a crash dents the corners,
+     * dirties and repaints them and starts the debris, wreck and flame
+     * animation, and the repair hoop recolours them.
+     */
+    void syncRaceState(StateBuffer b, boolean onCar) {
+        av = b.value(av);
+        projf = b.value(projf);
+        n = b.value(n);
+        flx = b.value(flx);
+        if (!onCar) {
+            return;
+        }
+        b.contents(ox);
+        b.contents(oy);
+        b.contents(oz);
+        b.contents(c);
+        b.contents(hsb);
+        b.contents(cox);
+        b.contents(coy);
+        b.contents(coz);
+        gr = b.value(gr);
+        bfase = b.value(bfase);
+        chip = b.value(chip);
+        ctmag = b.value(ctmag);
+        cxz = b.value(cxz);
+        cxy = b.value(cxy);
+        czy = b.value(czy);
+        dx = b.value(dx);
+        dy = b.value(dy);
+        dz = b.value(dz);
+        vx = b.value(vx);
+        vy = b.value(vy);
+        vz = b.value(vz);
+        embos = b.value(embos);
+        pa = b.value(pa);
+        pb = b.value(pb);
+    }
+
     public void loadprojf() {
         projf = 1.0F;
         int i = 0;

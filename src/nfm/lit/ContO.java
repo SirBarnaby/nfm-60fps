@@ -691,6 +691,55 @@ public class ContO {
         }
     }
 
+    /**
+     * Saves or restores, through {@code b}, everything a race can change on
+     * this object itself (see {@link RaceSnapshot}): where it is and how it
+     * is turned, its distance from the camera, dust, sparks, the electric
+     * arcs and the repair-hoop sequence. Its polygons are synced separately,
+     * and the track pieces it was built with only change when a stage loads.
+     */
+    void syncRaceState(StateBuffer b) {
+        npl = b.value(npl);
+        x = b.value(x);
+        y = b.value(y);
+        z = b.value(z);
+        xz = b.value(xz);
+        xy = b.value(xy);
+        zy = b.value(zy);
+        wxz = b.value(wxz);
+        wzy = b.value(wzy);
+        dist = b.value(dist);
+        maxR = b.value(maxR);
+        disp = b.value(disp);
+        disline = b.value(disline);
+        shadow = b.value(shadow);
+        noline = b.value(noline);
+        grounded = b.value(grounded);
+        grat = b.value(grat);
+        b.contents(keyx);
+        b.contents(keyz);
+        b.contents(sx);
+        b.contents(sy);
+        b.contents(sz);
+        b.contents(stg);
+        b.contents(dov);
+        b.contents(smag);
+        b.contents(scx);
+        b.contents(scz);
+        b.contents(fulls);
+        elec = b.value(elec);
+        roted = b.value(roted);
+        b.contents(edl);
+        b.contents(edr);
+        b.contents(elc);
+        fix = b.value(fix);
+        fcnt = b.value(fcnt);
+        checkpoint = b.value(checkpoint);
+        tnt = b.value(tnt);
+        blackout = b.value(blackout);
+        bool16 = b.value(bool16);
+    }
+
     private static final class DrawState {
         boolean fix;
         int fcnt;

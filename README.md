@@ -101,7 +101,7 @@ To add races you played yourself to the corpus, add `vm.arg.2=-Dnfm.record=test\
 | `-Dnfm.verify=<file or dir>` | Play each recorded race again from its input alone, with no window or sound, and compare every tick. Exits with 0 if every race matched, 1 if one differed, 2 if one could not be run. |
 | `-Dnfm.verify.canonical=true` | Compare only the canonical state, even if the full state would line up. |
 | `-Dnfm.verify.perturb=<tick>` | Self-test: flip the left key on that tick, so the check must report a mismatch there. |
-| `-Dnfm.verify.rollback=<n>` | Rollback self-test: every `n` ticks, capture the whole race, play 8 ticks ahead with the steering and throttle reversed, rewind and carry on. The race must still match (`verify-races.ps1 -Rollback <n>`). |
+| `-Dnfm.verify.rollback=<n>` | Rollback self-test: every `n` ticks, capture the whole race, play 8 ticks ahead with the steering and throttle reversed, rewind and carry on. Every value the race can reach must be back as it was, and the race must still match (`verify-races.ps1 -Rollback <n>`). |
 | `-Dnfm.verify.trace=<tick>` | Write every named value after that tick to a text file in the temp folder. Run the same race two ways and compare the files to see exactly which value went wrong first. |
 | `-Dnfm.unpaced=false` | Record or verify at the real pace with frames drawn, instead of as fast as the processor allows (the default for autopilot and verify runs). |
 
@@ -121,7 +121,11 @@ One original bug is fixed: when stage 17 was the first stage of a session, the g
 
 ### Rewinding a race
 
-`RaceSnapshot` captures everything a race tick reads and writes and puts it back exactly: the cars' physics, drivers and models down to the dents in every polygon, the standings, the replay buffer, every object on the track with what drawing advanced on it, the camera, the sky and all of the random streams. A speculative tick (drawing the next frame from where the race will probably be, for lower input lag) and online play with rollback both need this. The rollback self-test proves nothing is left out: leave the drivers out of the snapshot and the check fails on the first rewind after the start. Today a capture takes about 50 ms and a restore about 30 ms, because it copies every polygon of the stage by reflection; a speculative tick will need it much faster.
+`RaceSnapshot` captures everything a race tick reads and writes and puts it back exactly: the cars' physics, drivers and models down to the dents in every polygon, the standings, the replay buffer, every object on the track with what drawing advanced on it, the camera, the sky and all of the random streams. A speculative tick (drawing the next frame from where the race will probably be, for lower input lag) and online play with rollback both need this.
+
+It is fast enough to use on every tick. On the biggest stage (262 objects, 7,212 polygons) a capture takes about 1.5 ms and a restore about 1.3 ms. Capturing leaves out what a race never changes: the track's collision boxes, the corners of every polygon that is not on a car, and the stage's ground, cloud and mountain geometry. The objects on the track, their polygons and the replay buffer each save and restore themselves through a single method, which writes and reads the same values in the same order. The rest is copied by reflection. A snapshot keeps its memory between captures.
+
+The rollback self-test proves nothing is left out. At every rewind it also takes a complete copy of everything the race can reach, by reflection. After rewinding, it compares every field with that copy and reports any value that came back different by class and field, for example `Plane.n in 2 objects`. Leave the drivers out of the snapshot, and the race check fails at the first rewind after the start.
 
 ### The corpus
 

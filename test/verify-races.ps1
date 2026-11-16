@@ -12,8 +12,9 @@
 # only, because a few things on screen carry over from the races before.
 #
 # -Rollback <n> also rewinds every race every n ticks, after playing a few
-# ticks ahead with the steering and throttle reversed: the race must still
-# match, which proves the whole race state can be captured and put back.
+# ticks ahead with the steering and throttle reversed. Every value the race
+# can reach must be back as it was, and the race must still match: this proves
+# the whole race state can be captured and put back.
 #
 # Run it after any change that could touch gameplay or drawing. Exit code 0
 # means every race played out exactly as recorded and every frame looked the
