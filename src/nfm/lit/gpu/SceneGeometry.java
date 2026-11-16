@@ -33,12 +33,13 @@ final class SceneGeometry {
     static final float FILL_SHIFT = 0.25F;
 
     /**
-     * Bytes per vertex: x and y as floats, the colour as RGBA bytes, and the
-     * distance from the middle of an antialiased line in pixels (0 for
-     * everything else), from which the shader works out how much of the
-     * pixel the line covers.
+     * Bytes per vertex: x and y as floats, the colour as RGBA bytes, then for
+     * antialiased lines where across the line the vertex is (-1 to 1) and
+     * the line's half width in target pixels, from which the shader works
+     * out how much of each pixel the line covers (0 and 1 for everything
+     * else, which covers it fully).
      */
-    static final int STRIDE = 16;
+    static final int STRIDE = 20;
 
     private ByteBuffer vertices = MemoryUtil.memAlloc(STRIDE * 65536).order(ByteOrder.LITTLE_ENDIAN);
     private int vertexCount;
@@ -51,6 +52,8 @@ final class SceneGeometry {
 
     private float scaleX;
     private float scaleY;
+    /** Target pixels per picture pixel: lines are drawn this thick. */
+    private float pixelScale = 1F;
     private int abgr;
     private int evenOddPolygons;
     private int antialiased;
@@ -89,8 +92,13 @@ final class SceneGeometry {
         return antialiased;
     }
 
-    /** Builds the triangles for a picture of {@code width} x {@code height}. */
-    void build(SceneList list, int width, int height) {
+    /**
+     * Builds the triangles for a picture of {@code width} x {@code height}
+     * drawn into a target {@code pixelScale} times its size. Shapes scale
+     * with the target, and one-pixel lines become pixelScale pixels thick.
+     */
+    void build(SceneList list, int width, int height, float pixelScale) {
+        this.pixelScale = pixelScale;
         vertexCount = 0;
         draws = 0;
         evenOddPolygons = 0;
@@ -266,14 +274,17 @@ final class SceneGeometry {
         float sy = y0 + 0.5F - uy * 0.5F;
         float tx = x1 + 0.5F + ux * 0.5F;
         float ty = y1 + 0.5F + uy * 0.5F;
-        float nx = -uy;
-        float ny = ux;
-        vertex(sx - nx, sy - ny, -1F);
-        vertex(tx - nx, ty - ny, -1F);
-        vertex(tx + nx, ty + ny, 1F);
-        vertex(sx - nx, sy - ny, -1F);
-        vertex(tx + nx, ty + ny, 1F);
-        vertex(sx + nx, sy + ny, 1F);
+        // a line pixelScale target pixels wide, fading over one more target pixel on each side
+        float halfWidth = pixelScale / 2F + 0.5F;
+        float reach = halfWidth / pixelScale;
+        float nx = -uy * reach;
+        float ny = ux * reach;
+        vertex(sx - nx, sy - ny, -1F, halfWidth);
+        vertex(tx - nx, ty - ny, -1F, halfWidth);
+        vertex(tx + nx, ty + ny, 1F, halfWidth);
+        vertex(sx - nx, sy - ny, -1F, halfWidth);
+        vertex(tx + nx, ty + ny, 1F, halfWidth);
+        vertex(sx + nx, sy + ny, 1F, halfWidth);
     }
 
     /** A one-pixel line from pixel (x0, y0) to pixel (x1, y1), both ends included. */
@@ -333,10 +344,10 @@ final class SceneGeometry {
     }
 
     private void vertex(float x, float y) {
-        vertex(x, y, 0F);
+        vertex(x, y, 0F, 1F);
     }
 
-    private void vertex(float x, float y, float edge) {
+    private void vertex(float x, float y, float across, float halfWidth) {
         if ((vertexCount + 1) * STRIDE > vertices.capacity()) {
             vertices = MemoryUtil.memRealloc(vertices, vertices.capacity() * 2).order(ByteOrder.LITTLE_ENDIAN);
         }
@@ -344,7 +355,8 @@ final class SceneGeometry {
         vertices.putFloat(at, x * scaleX - 1F);
         vertices.putFloat(at + 4, 1F - y * scaleY);
         vertices.putInt(at + 8, abgr);
-        vertices.putFloat(at + 12, edge);
+        vertices.putFloat(at + 12, across);
+        vertices.putFloat(at + 16, halfWidth);
         vertexCount++;
         drawCount[open]++;
     }

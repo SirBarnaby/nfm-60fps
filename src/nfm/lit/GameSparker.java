@@ -335,6 +335,8 @@ public class GameSparker extends Panel implements Runnable {
     private volatile boolean gpuActive;
     /** Draw races, replays and highlights on the graphics card too, not only put them on screen. */
     private static final boolean GPU_SCENE = !"false".equalsIgnoreCase(System.getProperty("nfm.gpuscene"));
+    /** Draw those scenes at the window's resolution rather than the picture's, see {@link #sceneTargetSize}. */
+    private static final boolean GPU_SCENE_NATIVE = !"picture".equalsIgnoreCase(System.getProperty("nfm.gpuscene"));
     /** Records the scene of a frame drawn on the graphics card, see {@link #renderIngameScene}. */
     private final SceneRecorder sceneRecorder = new SceneRecorder();
     /** The frame being drawn goes to the graphics card as a recorded scene. */
@@ -347,7 +349,7 @@ public class GameSparker extends Panel implements Runnable {
     private boolean backBufferStale;
     /** The HUD as it was on the last frame the graphics card drew. */
     private BufferedImage gpuSceneHud;
-    /** The scene read back from the graphics card, at the picture's size; for tests. */
+    /** The scene read back from the graphics card, at the size it drew it; for tests. */
     private volatile BufferedImage capturedGpuScene;
 
     public static String gameState = "None";
@@ -2084,7 +2086,8 @@ public class GameSparker extends Panel implements Runnable {
                 BufferedImage picture = (BufferedImage) offImage;
                 if (gpuSceneFrame) {
                     picture = null; // show the scene drawn on the card
-                    if (!gpu.drawScene(sceneRecorder.list(), gpuSceneHud, gpuSceneFlash, capture)) {
+                    if (!gpu.drawScene(sceneRecorder.list(), gpuSceneHud, gpuSceneFlash, capture,
+                            sceneTargetSize(place))) {
                         syncBackBuffer();
                         picture = (BufferedImage) offImage;
                     }
@@ -2107,6 +2110,19 @@ public class GameSparker extends Panel implements Runnable {
             }
             return shown;
         }
+    }
+
+    /**
+     * The size the card draws the scene at: the size the picture has in the
+     * window, so a large window shows it sharp rather than scaled up, or the
+     * picture's own size when the window is smaller (lines thinner than a
+     * pixel would break up) or {@code -Dnfm.gpuscene=picture} asks for it.
+     */
+    private static Dimension sceneTargetSize(Rectangle place) {
+        if (!GPU_SCENE_NATIVE || place.width < GameFacts.screenWidth || place.height < GameFacts.screenHeight) {
+            return new Dimension(GameFacts.screenWidth, GameFacts.screenHeight);
+        }
+        return new Dimension(place.width, place.height);
     }
 
     /** Starts the GPU display on the window, or marks it unavailable for this session. */
@@ -2437,7 +2453,7 @@ public class GameSparker extends Panel implements Runnable {
             }
             BufferedImage gpuScene = capturedGpuScene;
             if (gpuScene != null) {
-                // the scene as the graphics card drew it, at 1280x720, to compare with the picture
+                // the scene as the graphics card drew it (1280x720 unless the window is larger), to compare with the picture
                 ImageIO.write(gpuScene, "png", new File(directory, name.replace(".png", "-gpuscene.png")));
             }
             BufferedImage gpuWindow = capturedGpu;

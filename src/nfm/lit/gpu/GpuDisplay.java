@@ -66,18 +66,22 @@ public final class GpuDisplay {
             }
             """;
     private static final String COLOR_VS = """
-            struct In { float2 pos : POSITION; float4 col : COLOR0; float edge : TEXCOORD0; };
-            struct Out { float4 pos : SV_POSITION; float4 col : COLOR0; float edge : TEXCOORD0; };
+            struct In { float2 pos : POSITION; float4 col : COLOR0; float2 edge : TEXCOORD0; };
+            struct Out { float4 pos : SV_POSITION; float4 col : COLOR0; float2 edge : TEXCOORD0; };
             Out main(In i)
             {
                 Out o; o.pos = float4(i.pos, 0.0, 1.0); o.col = i.col; o.edge = i.edge; return o;
             }
             """;
-    /** Solid colour; on an antialiased line, covering 1 - |distance from its middle| of the pixel. */
+    /**
+     * Solid colour; on an antialiased line, edge.x runs -1 to 1 across it and
+     * edge.y is its half width in pixels, so a pixel at distance d from its
+     * middle is covered by half width - d.
+     */
     private static final String COLOR_FS = """
-            float4 main(float4 pos : SV_POSITION, float4 col : COLOR0, float edge : TEXCOORD0) : SV_TARGET
+            float4 main(float4 pos : SV_POSITION, float4 col : COLOR0, float2 edge : TEXCOORD0) : SV_TARGET
             {
-                return float4(col.rgb, col.a * saturate(1.0 - abs(edge)));
+                return float4(col.rgb, col.a * saturate(edge.y * (1.0 - abs(edge.x))));
             }
             """;
 
@@ -100,8 +104,10 @@ public final class GpuDisplay {
     private int resetFlags = BGFX_RESET_NONE;
     private boolean vsync;
 
-    /* the scene target, made on first use */
+    /* the scene target, made on first use and remade when its size changes */
     private short sceneBuffer = BGFX_INVALID_HANDLE;
+    private int sceneWidth;
+    private int sceneHeight;
     private short sceneColor = BGFX_INVALID_HANDLE;
     private short hud = BGFX_INVALID_HANDLE;
     private IntBuffer hudUpload;
@@ -194,7 +200,7 @@ public final class GpuDisplay {
         bgfx_vertex_layout_begin(colorLayout, BGFX_RENDERER_TYPE_DIRECT3D11);
         bgfx_vertex_layout_add(colorLayout, BGFX_ATTRIB_POSITION, 2, BGFX_ATTRIB_TYPE_FLOAT, false, false);
         bgfx_vertex_layout_add(colorLayout, BGFX_ATTRIB_COLOR0, 4, BGFX_ATTRIB_TYPE_UINT8, true, false);
-        bgfx_vertex_layout_add(colorLayout, BGFX_ATTRIB_TEXCOORD0, 1, BGFX_ATTRIB_TYPE_FLOAT, false, false);
+        bgfx_vertex_layout_add(colorLayout, BGFX_ATTRIB_TEXCOORD0, 2, BGFX_ATTRIB_TYPE_FLOAT, false, false);
         bgfx_vertex_layout_end(colorLayout);
         picture = bgfx_create_texture_2d(pictureWidth, pictureHeight, false, 1, BGFX_TEXTURE_FORMAT_BGRA8,
                 CLAMP, null, 0);
@@ -236,24 +242,28 @@ public final class GpuDisplay {
     /* ------------------------------------------------------------ scene */
 
     /**
-     * Draws a scene into the picture-sized target, then {@code hud} (a
-     * packed-int ARGB image of the picture's size, may be null) over it, and
-     * a white flash over everything when {@code flash}. The next
-     * {@link #present} with no picture shows the result.
+     * Draws a scene into a target of {@code size}, the picture's size or the
+     * size it will have in the window, then {@code hud} (a packed-int ARGB
+     * image of the picture's size, may be null) over it, and a white flash
+     * over everything when {@code flash}. The next {@link #present} with no
+     * picture shows the result.
+     * <p>
+     * A target larger than the picture draws the scene at that resolution,
+     * so it is sharp in a large window rather than scaled up; one-pixel
+     * lines get as much thicker as the picture is larger.
      *
      * @param capture also read the drawn picture back, see {@link #takeSceneCapture}
      * @return false if it could not be drawn (the caller should fall back)
      */
-    public boolean drawScene(SceneList scene, BufferedImage hudImage, boolean flash, boolean capture) {
-        if (!isValid(sceneBuffer)) {
-            createSceneTarget();
-        }
+    public boolean drawScene(SceneList scene, BufferedImage hudImage, boolean flash, boolean capture,
+            Dimension size) {
+        fitSceneTarget(Math.max(1, size.width), Math.max(1, size.height));
         if (hudImage != null && !uploadPicture(hudImage, hud, hudUpload)) {
             return false;
         }
-        geometry.build(scene, pictureWidth, pictureHeight);
+        geometry.build(scene, pictureWidth, pictureHeight, sceneWidth / (float) pictureWidth);
         int vertexCount = geometry.vertexCount();
-        bgfx_set_view_rect(SCENE_VIEW, 0, 0, pictureWidth, pictureHeight);
+        bgfx_set_view_rect(SCENE_VIEW, 0, 0, sceneWidth, sceneHeight);
         bgfx_touch(SCENE_VIEW);
         if (vertexCount > 0) {
             if (bgfx_get_avail_transient_vertex_buffer(vertexCount, colorLayout) < vertexCount) {
@@ -264,15 +274,15 @@ public final class GpuDisplay {
             submitScene();
         }
         if (hudImage != null) {
-            drawRectangle(SCENE_VIEW, overlayProgram, hud, pictureWidth, pictureHeight,
-                    new Rectangle(0, 0, pictureWidth, pictureHeight), false,
-                    OPAQUE | BGFX_STATE_BLEND_ALPHA);
+            boolean scaled = sceneWidth != pictureWidth || sceneHeight != pictureHeight;
+            drawRectangle(SCENE_VIEW, overlayProgram, hud, sceneWidth, sceneHeight,
+                    new Rectangle(0, 0, sceneWidth, sceneHeight), scaled, OPAQUE | BGFX_STATE_BLEND_ALPHA);
         }
         if (flash) {
             fillWhite();
         }
         if (capture) {
-            sceneRead = new ReadBack(sceneColor, pictureWidth, pictureHeight);
+            sceneRead = new ReadBack(sceneColor, sceneWidth, sceneHeight);
         }
         source = sceneColor;
         return true;
@@ -291,19 +301,29 @@ public final class GpuDisplay {
                 + geometry.evenOddPolygons() + " even-odd, " + geometry.antialiased() + " antialiased";
     }
 
-    private void createSceneTarget() {
-        sceneColor = bgfx_create_texture_2d(pictureWidth, pictureHeight, false, 1, BGFX_TEXTURE_FORMAT_BGRA8,
+    private void fitSceneTarget(int newWidth, int newHeight) {
+        if (isValid(sceneBuffer) && newWidth == sceneWidth && newHeight == sceneHeight) {
+            return;
+        }
+        if (isValid(sceneBuffer)) {
+            bgfx_destroy_frame_buffer(sceneBuffer); // and its two textures
+        }
+        sceneWidth = newWidth;
+        sceneHeight = newHeight;
+        sceneColor = bgfx_create_texture_2d(sceneWidth, sceneHeight, false, 1, BGFX_TEXTURE_FORMAT_BGRA8,
                 BGFX_TEXTURE_RT | CLAMP, null, 0);
-        short stencil = bgfx_create_texture_2d(pictureWidth, pictureHeight, false, 1, BGFX_TEXTURE_FORMAT_D24S8,
+        short stencil = bgfx_create_texture_2d(sceneWidth, sceneHeight, false, 1, BGFX_TEXTURE_FORMAT_D24S8,
                 BGFX_TEXTURE_RT_WRITE_ONLY, null, 0);
         sceneBuffer = bgfx_create_frame_buffer_from_handles(new short[] {sceneColor, stencil}, true);
-        hud = bgfx_create_texture_2d(pictureWidth, pictureHeight, false, 1, BGFX_TEXTURE_FORMAT_BGRA8,
-                CLAMP, null, 0);
+        if (!isValid(hud)) {
+            hud = bgfx_create_texture_2d(pictureWidth, pictureHeight, false, 1, BGFX_TEXTURE_FORMAT_BGRA8,
+                    CLAMP, null, 0);
+            hudUpload = MemoryUtil.memAllocInt(pictureWidth * pictureHeight);
+            geometry = new SceneGeometry();
+        }
         if (!isValid(sceneBuffer) || !isValid(hud)) {
             throw new IllegalStateException("creating the scene target failed");
         }
-        hudUpload = MemoryUtil.memAllocInt(pictureWidth * pictureHeight);
-        geometry = new SceneGeometry();
         bgfx_set_view_frame_buffer(SCENE_VIEW, sceneBuffer);
         bgfx_set_view_mode(SCENE_VIEW, BGFX_VIEW_MODE_SEQUENTIAL);
         // the scene paints every pixel, as it does in software; only the stencil starts empty
@@ -349,7 +369,7 @@ public final class GpuDisplay {
             ByteBuffer v = white.data().order(ByteOrder.LITTLE_ENDIAN);
             float[][] corners = {{-1F, 1F}, {1F, 1F}, {-1F, -1F}, {1F, -1F}};
             for (float[] c : corners) {
-                v.putFloat(c[0]).putFloat(c[1]).putInt(0xffffffff).putFloat(0F);
+                v.putFloat(c[0]).putFloat(c[1]).putInt(0xffffffff).putFloat(0F).putFloat(1F);
             }
             bgfx_set_transient_vertex_buffer(0, white, 0, 4);
             bgfx_set_state(OPAQUE | BGFX_STATE_PT_TRISTRIP, 0);
@@ -402,6 +422,9 @@ public final class GpuDisplay {
             source = picture;
         }
         fitSwapChain(windowSize);
+        if (source == sceneColor && place.width == sceneWidth && place.height == sceneHeight) {
+            smooth = false; // drawn at the size it is shown
+        }
         if (!drawRectangle(SCREEN_VIEW, pictureProgram, source, width, height, place, smooth, OPAQUE)) {
             return false;
         }
