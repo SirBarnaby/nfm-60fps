@@ -38,7 +38,7 @@ import java.util.Map;
  * and does nothing. The few getters keep what was set, so a caller that reads a
  * value back gets what a real context would have given it.
  */
-final class NullGraphics extends Graphics2D {
+class NullGraphics extends Graphics2D {
 
     private Color color = Color.BLACK;
     private Color background = Color.BLACK;

@@ -10,6 +10,7 @@ import nfm.lit.gpu.NativeWindow;
 import java.awt.*;
 import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
+import java.awt.image.DataBufferInt;
 import javax.imageio.ImageIO;
 import java.io.*;
 import java.net.MalformedURLException;
@@ -332,6 +333,22 @@ public class GameSparker extends Panel implements Runnable {
     private int gpuWindowGeneration;
     /** True while the GPU display owns the window, so the event thread must not paint it. */
     private volatile boolean gpuActive;
+    /** Draw races, replays and highlights on the graphics card too, not only put them on screen. */
+    private static final boolean GPU_SCENE = !"false".equalsIgnoreCase(System.getProperty("nfm.gpuscene"));
+    /** Records the scene of a frame drawn on the graphics card, see {@link #renderIngameScene}. */
+    private final SceneRecorder sceneRecorder = new SceneRecorder();
+    /** The frame being drawn goes to the graphics card as a recorded scene. */
+    private boolean gpuSceneFrame;
+    private boolean gpuSceneFlash;
+    /**
+     * The back buffer does not hold the last frame, which the graphics card
+     * drew: {@link #syncBackBuffer} draws it there before anything reads it.
+     */
+    private boolean backBufferStale;
+    /** The HUD as it was on the last frame the graphics card drew. */
+    private BufferedImage gpuSceneHud;
+    /** The scene read back from the graphics card, at the picture's size; for tests. */
+    private volatile BufferedImage capturedGpuScene;
 
     public static String gameState = "None";
     public static int gameStateID;
@@ -1538,8 +1555,9 @@ public class GameSparker extends Panel implements Runnable {
 
         saveSceneDrawState();
         try {
-            Medium.d(rd);
-            drawWorldObjects(rd);
+            Graphics2D target = gpuSceneFrame ? sceneRecorder.begin(rd) : rd;
+            Medium.d(target);
+            drawWorldObjects(target);
         } finally {
             restoreSceneDrawState();
         }
@@ -1650,6 +1668,7 @@ public class GameSparker extends Panel implements Runnable {
                  * run in this tick: the portrait is drawn from the next one,
                  * and a slow frame can let both ticks run back to back.
                  */
+                syncBackBuffer();
                 ui.blendude(offImage);
             }
         } else {
@@ -1969,6 +1988,7 @@ public class GameSparker extends Panel implements Runnable {
         if (presentOnGpu(capture)) {
             return;
         }
+        syncBackBuffer(); // a frame meant for the card goes on screen in software after all
         Graphics graphics = getGraphics();
         if (graphics != null) {
             try {
@@ -1978,6 +1998,50 @@ public class GameSparker extends Panel implements Runnable {
             }
         }
         Toolkit.getDefaultToolkit().sync();
+    }
+
+    /**
+     * Ends a frame whose scene was recorded for the graphics card: keeps the
+     * HUD as it is now and the white flash with it, and leaves the back
+     * buffer's colour as the software path would have.
+     */
+    private void finishGpuScene() {
+        if (hudImage instanceof BufferedImage hud) {
+            if (gpuSceneHud == null) {
+                gpuSceneHud = new BufferedImage(hud.getWidth(), hud.getHeight(), BufferedImage.TYPE_INT_ARGB);
+            }
+            int[] from = ((DataBufferInt) hud.getRaster().getDataBuffer()).getData();
+            int[] to = ((DataBufferInt) gpuSceneHud.getRaster().getDataBuffer()).getData();
+            System.arraycopy(from, 0, to, 0, Math.min(from.length, to.length));
+        }
+        gpuSceneFlash = pendingWhiteFlash;
+        if (pendingWhiteFlash) {
+            rd.setColor(new Color(255, 255, 255));
+            pendingWhiteFlash = false;
+        }
+        backBufferStale = true;
+    }
+
+    /**
+     * Draws the last frame into the back buffer when the graphics card drew
+     * it, replaying the recorded scene, so whatever reads or draws on the
+     * back buffer next finds exactly what the software renderer left there.
+     */
+    private void syncBackBuffer() {
+        if (!backBufferStale) {
+            return;
+        }
+        backBufferStale = false;
+        Color color = rd.getColor();
+        sceneRecorder.replay(rd);
+        if (gpuSceneHud != null) {
+            rd.drawImage(gpuSceneHud, 0, 0, null);
+        }
+        if (gpuSceneFlash) {
+            rd.setColor(new Color(255, 255, 255));
+            rd.fillRect(0, 0, GameFacts.screenWidth, GameFacts.screenHeight);
+        }
+        rd.setColor(color);
     }
 
     /**
@@ -2017,11 +2081,20 @@ public class GameSparker extends Panel implements Runnable {
             Dimension size = new Dimension(width, height);
             boolean shown;
             try {
+                BufferedImage picture = (BufferedImage) offImage;
+                if (gpuSceneFrame) {
+                    picture = null; // show the scene drawn on the card
+                    if (!gpu.drawScene(sceneRecorder.list(), gpuSceneHud, gpuSceneFlash, capture)) {
+                        syncBackBuffer();
+                        picture = (BufferedImage) offImage;
+                    }
+                }
                 if (capture) {
-                    capturedGpu = gpu.presentAndCapture((BufferedImage) offImage, size, place, smooth);
+                    capturedGpu = gpu.presentAndCapture(picture, size, place, smooth);
+                    capturedGpuScene = picture == null ? gpu.takeSceneCapture() : null;
                     shown = true;
                 } else {
-                    shown = gpu.present((BufferedImage) offImage, size, place, smooth);
+                    shown = gpu.present(picture, size, place, smooth);
                 }
             } catch (RuntimeException | LinkageError ex) {
                 HLogger.warn("The graphics card stopped drawing, drawing in software: " + ex);
@@ -2340,6 +2413,7 @@ public class GameSparker extends Panel implements Runnable {
         capturedFrame = null;
         capturedWindow = null;
         capturedGpu = null;
+        capturedGpuScene = null;
         captureRequested = true;
         long deadline = System.currentTimeMillis() + 2_000L;
         while (captureRequested && System.currentTimeMillis() < deadline) {
@@ -2360,6 +2434,11 @@ public class GameSparker extends Panel implements Runnable {
             if (window != null) {
                 // the picture as the window shows it, when the window is not 1280x720
                 ImageIO.write(window, "png", new File(directory, name.replace(".png", "-window.png")));
+            }
+            BufferedImage gpuScene = capturedGpuScene;
+            if (gpuScene != null) {
+                // the scene as the graphics card drew it, at 1280x720, to compare with the picture
+                ImageIO.write(gpuScene, "png", new File(directory, name.replace(".png", "-gpuscene.png")));
             }
             BufferedImage gpuWindow = capturedGpu;
             if (gpuWindow != null) {
@@ -2690,6 +2769,9 @@ public class GameSparker extends Panel implements Runnable {
                 ticked = true;
                 ticksThisFrame++;
                 profileTicks++;
+                if (backBufferStale && !isScenePhase(xtgraphics.fase)) {
+                    syncBackBuffer(); // menus and overlays draw on top of the last frame
+                }
                 saveFpsLimitIfChanged();
                 saveRunAheadIfChanged();
                 saveScaleToWindowIfChanged();
@@ -2744,6 +2826,7 @@ public class GameSparker extends Panel implements Runnable {
             if (xtgraphics.fase == Phase.CREDITS) {
                 xtgraphics.credits(u[0]);
                 if (xtgraphics.flipo == 102) {
+                    syncBackBuffer();
                     rd.drawImage(xtgraphics.credsnap(offImage), 0, 0, null);
                 }
                 xtgraphics.ctachm(xm, ym, mouses, u[0]);
@@ -3272,8 +3355,10 @@ public class GameSparker extends Panel implements Runnable {
                     rd.drawImage(xtgraphics.mdness, 224, 30, null);
                     rd.drawImage(xtgraphics.dude[0], 70, 10, null);
                 }
-                if (k1 >= 0)
+                if (k1 >= 0) {
+                    syncBackBuffer();
                     xtgraphics.fleximage(offImage, k1, checkpoints.stage);
+                }
                 k1++;
                 if (checkpoints.stage == GameFacts.numberOfStages && k1 == 10)
                     xtgraphics.fase = Phase.POSTGAME;
@@ -3282,6 +3367,7 @@ public class GameSparker extends Panel implements Runnable {
             }
             if (xtgraphics.fase == Phase.PAUSETRIGGER) {
                 repaint();
+                syncBackBuffer();
                 xtgraphics.pauseimage(offImage);
                 xtgraphics.fase = Phase.PAUSEMENU;
                 mouses = 0;
@@ -3396,6 +3482,7 @@ public class GameSparker extends Panel implements Runnable {
                     }
                 }
 
+                gpuSceneFrame = scene && GPU_SCENE && gpuActive && !xtgraphics.debugmode;
                 if (scene) {
                     double elapsed = (double) (frameNow - tickStartNanos) / (double) currentTickNanos;
                     if (!prevFrameValid || elapsed >= 1D) {
@@ -3418,18 +3505,28 @@ public class GameSparker extends Panel implements Runnable {
                         renderIngameScene(renderAlpha);
                     }
 
-                    if (hudImage != null) {
-                        rd.drawImage(hudImage, 0, 0, null);
+                    if (gpuSceneFrame && sceneRecorder.unsupported()) {
+                        sceneRecorder.replay(rd); // drawing the card does not do: this frame in software
+                        gpuSceneFrame = false;
                     }
-                    if (pendingWhiteFlash) {
-                        rd.setColor(new Color(255, 255, 255));
-                        rd.fillRect(0, 0, GameFacts.screenWidth, GameFacts.screenHeight);
-                        pendingWhiteFlash = false;
+                    if (gpuSceneFrame) {
+                        finishGpuScene();
+                    } else {
+                        if (hudImage != null) {
+                            rd.drawImage(hudImage, 0, 0, null);
+                        }
+                        if (pendingWhiteFlash) {
+                            rd.setColor(new Color(255, 255, 255));
+                            rd.fillRect(0, 0, GameFacts.screenWidth, GameFacts.screenHeight);
+                            pendingWhiteFlash = false;
+                        }
+                        backBufferStale = false;
                     }
                 }
 
                 boolean capture = captureRequested;
                 if (capture) {
+                    syncBackBuffer(); // the software picture of this frame, to compare with the card
                     capturedFrame = captureFrame();
                     capturedWindow = getWidth() != GameFacts.screenWidth || getHeight() != GameFacts.screenHeight
                             ? captureWindow() : null;
@@ -3444,6 +3541,7 @@ public class GameSparker extends Panel implements Runnable {
 
                 long presentStart = System.nanoTime();
                 presentFrame(capture);
+                gpuSceneFrame = false;
                 if (capture) {
                     captureRequested = false; // after presenting: the GPU read-back comes from there
                 }
@@ -3455,11 +3553,12 @@ public class GameSparker extends Panel implements Runnable {
             if (PROFILE_LOOP && frameNow - lastProfileFlush >= profileWindowNanos) {
                 double seconds = (frameNow - lastProfileFlush) / 1e9D;
                 System.out.printf("[loop] sim %.1f Hz (%.1f ms/tick) | render %.1f fps (%.1f ms/frame, %.1f to show"
-                        + " on %s) | run-ahead %s (%d, %.1f ms each; %d checked, %d missed) | limit %s | %s%n",
+                        + " on %s%s) | run-ahead %s (%d, %.1f ms each; %d checked, %d missed) | limit %s | %s%n",
                         profileTicks / seconds, profileTicks == 0 ? 0D : profileTickNanos / 1e6D / profileTicks,
                         profileFrames / seconds, profileFrames == 0 ? 0D : profileRenderNanos / 1e6D / profileFrames,
                         profileFrames == 0 ? 0D : profilePresentNanos / 1e6D / profileFrames,
                         gpuActive ? "gpu" : "software",
+                        gpu != null && GPU_SCENE ? "; last scene " + gpu.sceneStatistics() : "",
                         runAhead ? "on" : "off", profileAheads,
                         profileAheads == 0 ? 0D : profileAheadNanos / 1e6D / profileAheads,
                         profileAheadChecked, profileAheadMissed, describeFpsLimit(), xtgraphics.fase);
