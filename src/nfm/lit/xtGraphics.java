@@ -29,7 +29,7 @@ import java.util.zip.ZipInputStream;
  * @author Omar Waly
  * @author Jacherr
  */
-public class xtGraphics extends Panel implements Runnable {
+public class xtGraphics extends Panel implements Runnable, RaceEvents {
     public Metrics gameMetrics = new Metrics();
 
     /**
@@ -1703,6 +1703,7 @@ public class xtGraphics extends Panel implements Runnable {
         }
     }
 
+    @Override
     public void crash(float f, int i) {
         if (bfcrash == 0) {
             if (i == 0) {
@@ -1753,6 +1754,23 @@ public class xtGraphics extends Panel implements Runnable {
                 bfcrash = 3;
             }
         }
+    }
+
+    @Override
+    public void carFixed() {
+        if (!mutes) {
+            sm.play("carfixed");
+        }
+    }
+
+    @Override
+    public void showCheckpoint(int next) {
+        Medium.checkpoint = next;
+    }
+
+    @Override
+    public void showLastCheckpoint(boolean last) {
+        Medium.lastcheck = last;
     }
 
     public void replyn() {
@@ -4779,6 +4797,7 @@ public class xtGraphics extends Panel implements Runnable {
         rd.drawImage(rpro, Utility.centeredImageX(rpro), 240, null);
     }
 
+    @Override
     public void skid(int i, float f) {
         if (bfcrash == 0 && bfskid == 0 && f > 150F) {
             if (i == 0) {

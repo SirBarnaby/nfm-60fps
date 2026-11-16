@@ -114,8 +114,9 @@ Before checking, the verifier sets the race back to the state the recording star
 - A stage's boundary walls never set their surface type, wall flag or dust colour. Each keeps what the track piece in the same slot had in the stage loaded before, which is zero in a freshly started game. So how cars grip and how the AI recovers along the boundary depends on the stages played earlier in the session.
 - An AI driver remembers the last wall it hit, and that memory survives into the next race. Until it hits a wall again it reads that slot's damage and surface, which can lie past the end of the new stage's pieces and still hold values from an earlier stage.
 - The skid and crash sounds each rotate through three clips, and the rotation is only reset when the game starts. So which clip a race's first skid plays depends on the races before it.
+- The HUD's captions alternate colour every tick. The stage's loading screen runs on its own thread and flips the same blink phase every 20 ms while its cartoon animates, so the phase a race starts on depends on how long the stage took to load. Only the pictures depend on it.
 
-Recordings store all four, and the verifier restores them and lists what it had to restore. It also checks that the track's collision boxes and the race's random stream are exactly as recorded, so a change to how stages load is reported, not covered up.
+Recordings store all five, and the verifier restores them and lists what it had to restore. It also checks that the track's collision boxes and the race's random stream are exactly as recorded, so a change to how stages load is reported, not covered up.
 
 If the game crashes during an autopilot or verify run, the run prints the error with the top of its stack trace and exits with 2 instead of hanging.
 
@@ -130,6 +131,10 @@ It is fast enough to use on every tick. On the biggest stage (262 objects, 7,212
 Nothing that is undone may be heard either. While a tick is played only to be rewound, every sound command is thrown away before it reaches the speakers or the log (`SoundManager.setDiscarding`); the rollback self-test plays its ticks ahead that way, and the real ticks after each rewind must give exactly the recorded sounds.
 
 The rollback self-test proves nothing is left out. At every rewind it also takes a complete copy of everything the race can reach, by reflection. After rewinding, it compares every field with that copy and reports any value that came back different by class and field, for example `Plane.n in 2 objects`. Leave the drivers out of the snapshot, and the race check fails at the first rewind after the start.
+
+### The race and the rest of the game
+
+The race code (`Madness` for a car's physics, `Control` for a driver, `CheckPoints`, `Trackers`, `Stat`, `Wheels`) no longer reaches into the renderer's globals. Its random stream lives in a `World` object that the cars and drivers are given, and it reports what the HUD and the sound code react to (crashes, skids, a repair, the next checkpoint, the run to the finish) through `RaceEvents`, which `xtGraphics` implements with the original decision code. So the race can be captured, run ahead or rewound without the screen or the speakers taking part. The camera is still shared: the race reads back which cars are on screen.
 
 ### The corpus
 

@@ -10,12 +10,6 @@ import java.util.Random;
  */
 public class Medium {
     /**
-     * The race's own random stream: the AI and the car physics draw from it, and
-     * it is seeded once per race (see {@link #seedRace(long)}), so a race replays
-     * exactly from its seed and inputs.
-     */
-    public static final RaceRandom raceRandom = new RaceRandom();
-    /**
      * The race camera's stream. The camera decides which cars are on screen, and
      * the race reads that back (a car out of view finishes a repair hoop at
      * once), so the camera's dice must be as reproducible as the race's.
@@ -156,11 +150,6 @@ public class Medium {
 
     public static boolean noclouds = false;
 
-    /** One value from the race stream, the original {@code random()}. */
-    public static float random() {
-        return raceRandom.next();
-    }
-
     /** One value from the cosmetic stream. */
     public static float fxRandom() {
         return fxRandom.next();
@@ -170,12 +159,12 @@ public class Medium {
     private static long raceSeed;
 
     /**
-     * Starts a race's random streams from its seed. Called when a stage is set
+     * Starts the camera's and the scenery's random streams from the race's
+     * seed (the race's own is {@link World#seed}). Called when a stage is set
      * up, before anything in the race or its scenery draws a number.
      */
     public static void seedRace(long seed) {
         raceSeed = seed;
-        raceRandom.reseed(seed);
         fxRandom.reseed(RaceRandom.derive(seed, RaceRandom.STREAM_EFFECTS));
         cameraRandom.reseed(RaceRandom.derive(seed, RaceRandom.STREAM_CAMERA));
         Plane.seedShapes(seed);

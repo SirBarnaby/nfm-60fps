@@ -344,7 +344,7 @@ final class RaceSession {
         log.layout = RaceState.layout(race);
         log.startState = RaceState.startState(race);
         log.startNames = RaceState.startStateNames(race);
-        log.raceRandom = Medium.raceRandom.exportState();
+        log.raceRandom = host.race().world().random.exportState();
         log.trackShape = RaceState.trackShape(race.track());
         log.trackLeftovers = RaceState.trackLeftovers(race);
         log.setGroups(RaceState.groupCount(race.players()));
@@ -791,7 +791,7 @@ final class RaceSession {
              * from it before the countdown. So it is checked, not restored, and
              * a change to what set-up draws shows up here.
              */
-            if (!Arrays.equals(Medium.raceRandom.exportState(), log.raceRandom)) {
+            if (!Arrays.equals(race.world().random.exportState(), log.raceRandom)) {
                 fail("the race's random stream is not where it was when the countdown started:"
                         + " setting up the stage draws differently now");
                 return;

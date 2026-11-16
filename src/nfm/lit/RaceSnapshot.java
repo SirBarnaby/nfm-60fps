@@ -38,7 +38,7 @@ final class RaceSnapshot {
 
     /** Classes whose objects are copied by reflection wherever the race reaches them. */
     private static final Set<Class<?>> FOLLOWED = Set.of(Madness.class, Stat.class, Control.class,
-            CheckPoints.class, Wheels.class, RaceRandom.class);
+            CheckPoints.class, Wheels.class, RaceRandom.class, World.class);
 
     /** For the complete copy: everything, down to every polygon and the track's collision boxes. */
     private static final Set<Class<?>> FOLLOWED_COMPLETE = union(FOLLOWED,
@@ -158,6 +158,7 @@ final class RaceSnapshot {
     }
 
     private static ContO[] captureObjects(StateCopy copy, RaceState.View v, int sceneCount) {
+        copy.capture(v.world());
         for (int i = 0; i < v.players(); i++) {
             copy.capture(v.racers()[i]);
             copy.capture(v.drivers()[i]);

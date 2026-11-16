@@ -10,7 +10,10 @@ class Madness {
 
     public Stat stat;
     private final Record rpd;
-    private final xtGraphics xt;
+    /** Hears crashes, skids, repairs and checkpoint progress: the race draws and plays nothing itself. */
+    private final RaceEvents events;
+    /** The race's dice. */
+    private final World world;
     private final boolean[] dominate;
     private final boolean[] caught;
     public int pzy;
@@ -114,14 +117,14 @@ class Madness {
             if (byte0 * byte1 == 0)
                 shakedam = (int) ((Math.abs(f) + shakedam) / 2.0F);
             if (im == 0 || colidim)
-                xt.crash(f, byte1 * byte0);
+                events.crash(f, byte1 * byte0);
             if (byte1 * byte0 == 0 || mtouch) {
                 for (int l = 0; l < conto.npl; l++) {
                     float f1 = 0.0F;
                     for (int k1 = 0; k1 < conto.p[l].n; k1++)
                         if (conto.p[l].wz == 0
                                 && Utility.py(conto.keyx[i], conto.p[l].ox[k1], conto.keyz[i], conto.p[l].oz[k1]) < stat.clrad) {
-                            f1 = (f / 20F) * Medium.random();
+                            f1 = (f / 20F) * world.random();
                             conto.p[l].oz[k1] += f1 * RadicalMath.sin(j);
                             conto.p[l].ox[k1] -= f1 * RadicalMath.sin(k);
                             hitmag += Math.abs(f1);
@@ -168,7 +171,7 @@ class Madness {
                         float f2 = 0.0F;
                         for (int i2 = 0; i2 < conto.p[l1].n; i2++)
                             if (conto.p[l1].wz == 0) {
-                                f2 = (f / 15F) * Medium.random();
+                                f2 = (f / 15F) * world.random();
                                 if ((Math.abs(conto.p[l1].oy[i2] - stat.flipy - squash) < stat.msquash * 3
                                         || conto.p[l1].oy[i2] < stat.flipy + squash) && squash < stat.msquash) {
                                     conto.p[l1].oy[i2] += f2;
@@ -196,7 +199,7 @@ class Madness {
         }
     }
 
-    public Madness(Record record, xtGraphics xtgraphics, int i) {
+    public Madness(Record record, RaceEvents events, World world, int i) {
         cn = 0;
         im = 0;
         mxz = 0;
@@ -263,7 +266,8 @@ class Madness {
         rpdcatch = 0;
         colidim = false;
         rpd = record;
-        xt = xtgraphics;
+        this.events = events;
+        this.world = world;
         im = i;
         shakedam = 0;
         stat = new Stat();
@@ -288,13 +292,13 @@ class Madness {
                 f += 100F;
             shakedam = (int) ((Math.abs(f) + shakedam) / 2.0F);
             if (im == 0 || colidim)
-                xt.crash(f, 0);
+                events.crash(f, 0);
             for (int j = 0; j < conto.npl; j++) {
                 float f1 = 0.0F;
                 for (int k = 0; k < conto.p[j].n; k++)
                     if (conto.p[j].wz == 0
                             && Utility.py(conto.keyx[i], conto.p[j].ox[k], conto.keyz[i], conto.p[j].oz[k]) < stat.clrad) {
-                        f1 = (f / 20F) * Medium.random();
+                        f1 = (f / 20F) * world.random();
                         conto.p[j].oz[k] += f1 * RadicalMath.cos(conto.xz) * RadicalMath.cos(conto.zy);
                         conto.p[j].ox[k] += f1 * RadicalMath.sin(conto.xz) * RadicalMath.cos(conto.xy);
                         hitmag += Math.abs(f1);
@@ -548,8 +552,8 @@ class Madness {
         dest = false;
         newcar = false;
         if (im == 0) {
-            Medium.checkpoint = -1;
-            Medium.lastcheck = false;
+            events.showCheckpoint(-1);
+            events.showLastCheckpoint(false);
         }
         rpdcatch = 0;
     }
@@ -564,13 +568,13 @@ class Madness {
                 f += 100F;
             shakedam = (int) ((Math.abs(f) + shakedam) / 2.0F);
             if (im == 0 || colidim)
-                xt.crash(f, 0);
+                events.crash(f, 0);
             for (int j = 0; j < conto.npl; j++) {
                 float f1 = 0.0F;
                 for (int k = 0; k < conto.p[j].n; k++)
                     if (conto.p[j].wz == 0
                             && Utility.py(conto.keyx[i], conto.p[j].ox[k], conto.keyz[i], conto.p[j].oz[k]) < stat.clrad) {
-                        f1 = (f / 20F) * Medium.random();
+                        f1 = (f / 20F) * world.random();
                         conto.p[j].oz[k] -= f1 * RadicalMath.sin(conto.xz) * RadicalMath.cos(conto.zy);
                         conto.p[j].ox[k] += f1 * RadicalMath.cos(conto.xz) * RadicalMath.cos(conto.xy);
                         hitmag += Math.abs(f1);
@@ -1032,17 +1036,17 @@ class Madness {
                         float f11 = 1.0F;
                         if (k3 != 0)
                             f11 = 1.2F;
-                        if (Medium.random() > 0.75D) {
+                        if (world.random() > 0.75D) {
                             conto.dust(l6, af[l6], af2[l6], af1[l6], scx[l6], scz[l6], f11 * stat.simag, true,
                                     (int) tilt);
                             if (im == 0 && !capsized)
-                                xt.skid(k3, (float) Math.sqrt(scx[l6] * scx[l6] + scz[l6] * scz[l6]));
+                                events.skid(k3, (float) Math.sqrt(scx[l6] * scx[l6] + scz[l6] * scz[l6]));
                         }
                     } else {
-                        if (k3 == 1 && Medium.random() > 0.84999999999999998D)
+                        if (k3 == 1 && world.random() > 0.84999999999999998D)
                             conto.dust(l6, af[l6], af2[l6], af1[l6], scx[l6], scz[l6], 1.1F * stat.simag, false,
                                     (int) tilt);
-                        if ((k3 == 2 || k3 == 3) && Medium.random() > 0.69999999999999996D)
+                        if ((k3 == 2 || k3 == 3) && world.random() > 0.69999999999999996D)
                             conto.dust(l6, af[l6], af2[l6], af1[l6], scx[l6], scz[l6], 1.15F * stat.simag, false,
                                     (int) tilt);
                     }
@@ -1052,13 +1056,13 @@ class Madness {
                         dcnt = 0;
                 }
                 if (k3 == 3) {
-                    int k7 = (int) (Medium.random() * 4F);
-                    scy[k7] = (float) (-100F * Medium.random() * (speed / stat.swits[2])
+                    int k7 = (int) (world.random() * 4F);
+                    scy[k7] = (float) (-100F * world.random() * (speed / stat.swits[2])
                             * (stat.bounce - 0.29999999999999999D));
                 }
                 if (k3 == 4) {
-                    int l7 = (int) (Medium.random() * 4F);
-                    scy[l7] = (float) (-150F * Medium.random() * (speed / stat.swits[2])
+                    int l7 = (int) (world.random() * 4F);
+                    scy[l7] = (float) (-150F * world.random() * (speed / stat.swits[2])
                             * (stat.bounce - 0.29999999999999999D));
                 }
                 f9 += scx[l6];
@@ -1534,15 +1538,15 @@ class Madness {
         } else if (tilt != 0.0F)
             tilt = 0.0F;
         if (wtouch && k3 == 2) {
-            conto.zy += (int) (((Medium.random() * 25F * speed) / stat.swits[2]
+            conto.zy += (int) (((world.random() * 25F * speed) / stat.swits[2]
                     - (15F * speed) / stat.swits[2]) * (stat.bounce - 0.99999999999999989D));
-            conto.xy += (int) (((Medium.random() * 25F * speed) / stat.swits[2]
+            conto.xy += (int) (((world.random() * 25F * speed) / stat.swits[2]
                     - (15F * speed) / stat.swits[2]) * (stat.bounce - 0.99999999999999989D));
         }
         if (wtouch && k3 == 1) {
-            conto.zy += (int) (((Medium.random() * 20F * speed) / stat.swits[2]
+            conto.zy += (int) (((world.random() * 20F * speed) / stat.swits[2]
                     - (10F * speed) / stat.swits[2]) * (stat.bounce - 0.99999999999999989D));
-            conto.xy += (int) (((Medium.random() * 20F * speed) / stat.swits[2]
+            conto.xy += (int) (((world.random() * 20F * speed) / stat.swits[2]
                     - (10F * speed) / stat.swits[2]) * (stat.bounce - 0.99999999999999989D));
         }
         if (hitmag > stat.maxmag && !dest) {
@@ -1610,12 +1614,14 @@ class Madness {
         if (clear == l9 + nlaps * checkpoints.nsp)
             nlaps++;
         if (im == 0) {
-            for (Medium.checkpoint = clear; Medium.checkpoint >= checkpoints.nsp; Medium.checkpoint -= checkpoints.nsp)
-                ;
+            int next = clear;
+            while (next >= checkpoints.nsp)
+                next -= checkpoints.nsp;
+            events.showCheckpoint(next);
             if (clear == checkpoints.nlaps * checkpoints.nsp - 1)
-                Medium.lastcheck = true;
+                events.showLastCheckpoint(true);
             if (checkpoints.haltall)
-                Medium.lastcheck = false;
+                events.showLastCheckpoint(false);
         }
         if (focus == -1) {
             if (im == 0)
@@ -1672,8 +1678,8 @@ class Madness {
                     if (conto.dist == 0) {
                         conto.fcnt = 8;
                     } else {
-                        if (im == 0 && !conto.fix && !xt.mutes) {
-                            xt.sm.play("carfixed");
+                        if (im == 0 && !conto.fix) {
+                            events.carFixed();
                         }
                         conto.fix = true;
                     }
@@ -1684,8 +1690,8 @@ class Madness {
                 if (conto.dist == 0) {
                     conto.fcnt = 8;
                 } else {
-                    if (im == 0 && !conto.fix && !xt.mutes) {
-                        xt.sm.play("carfixed");
+                    if (im == 0 && !conto.fix) {
+                        events.carFixed();
                     }
                     conto.fix = true;
                 }
@@ -1836,7 +1842,7 @@ class Madness {
             if (rpdcatch == 0) {
                 rpd.cotchinow(0);
                 if (rpd.hcaught)
-                    rpd.whenwasted = (int) (185F + Medium.random() * 20F);
+                    rpd.whenwasted = (int) (185F + world.random() * 20F);
             }
         }
     }

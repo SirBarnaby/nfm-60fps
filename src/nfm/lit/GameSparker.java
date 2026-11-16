@@ -216,6 +216,8 @@ public class GameSparker extends Panel implements Runnable {
 
     /** Recording or verifying races, see {@link RaceSession}; null in a normal game. */
     private RaceSession session;
+    /** The race's own state that is in no car: its random stream. One for the whole session. */
+    private final World world = new World();
 
     /*
      * Keyboard state as the event thread last saw it. During a race every tick
@@ -732,7 +734,9 @@ public class GameSparker extends Panel implements Runnable {
          * Every race starts its random streams from one seed, before anything
          * of the stage draws a number, so the race can be played again exactly.
          */
-        Medium.seedRace(session != null ? session.stageLoading(custom) : RaceRandom.newSeed());
+        long seed = session != null ? session.stageLoading(custom) : RaceRandom.newSeed();
+        world.seed(seed);
+        Medium.seedRace(seed);
         trackers.nt = 0;
         nob = GameFacts.numberOfPlayers;
         notb = 0;
@@ -1871,8 +1875,8 @@ public class GameSparker extends Panel implements Runnable {
         Madness amadness[] = new Madness[51];
         int l = 0;
         do {
-            amadness[l] = new Madness(record, xtgraphics, l);
-            u[l] = new Control();
+            amadness[l] = new Madness(record, xtgraphics, world, l);
+            u[l] = new Control(world);
         } while (++l < 51); // dont touch this
         l = 0;
         float f = 35F;
@@ -3029,8 +3033,8 @@ public class GameSparker extends Panel implements Runnable {
 
         @Override
         public RaceState.View race() {
-            return new RaceState.View(racers, u, sceneObjects, raceCheckpoints, raceRecord, ui, raceTrackers,
-                    GameFacts.numberOfPlayers);
+            return new RaceState.View(world, racers, u, sceneObjects, raceCheckpoints, raceRecord, ui,
+                    raceTrackers, GameFacts.numberOfPlayers);
         }
 
         @Override

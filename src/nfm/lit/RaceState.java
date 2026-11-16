@@ -59,6 +59,14 @@ final class RaceState {
     private static final List<String> SOUND_FIELDS = List.of("crshturn", "crashup", "skflg", "dskflg", "skidup",
             "bfcrash", "bfskid", "pwait", "cntwis", "aird");
 
+    /**
+     * The HUD's blink phase: stunt captions and other HUD text alternate colour
+     * on it every tick. The stage's loading screen flips it on its own thread
+     * every 20 ms while its cartoon animates, so a race starts on a phase that
+     * depends on how long the stage took to load: recorded at the countdown.
+     */
+    private static final List<String> HUD_FIELDS = List.of("aflk");
+
     private static final Field[] MADNESS = fieldsOf(Madness.class, Set.of(), true);
     private static final Field[] STAT = fieldsOf(Stat.class, Set.of(), true);
     private static final Field[] CONTROL = fieldsOf(Control.class, CONTROL_SKIP, true);
@@ -69,10 +77,11 @@ final class RaceState {
     private static final Field[] CAMERA = named(Medium.class, CAMERA_FIELDS);
     private static final Field[] FLOW = named(xtGraphics.class, FLOW_FIELDS);
     private static final Field[] SOUND = named(xtGraphics.class, SOUND_FIELDS);
+    private static final Field[] HUD = named(xtGraphics.class, HUD_FIELDS);
 
     /** The live objects of one race. */
-    record View(Madness[] racers, Control[] drivers, ContO[] cars, CheckPoints checkpoints, Record record,
-            xtGraphics ui, Trackers track, int players) {
+    record View(World world, Madness[] racers, Control[] drivers, ContO[] cars, CheckPoints checkpoints,
+            Record record, xtGraphics ui, Trackers track, int players) {
     }
 
     /** One named slice of the state: some fields of one object. */
@@ -104,7 +113,8 @@ final class RaceState {
         out.add(List.of(new Group("race", v.checkpoints(), CHECKPOINTS),
                 new Group("race.record", v.record(), RECORD),
                 new Group("race.flow", v.ui(), FLOW),
-                new Group("race.sound", v.ui(), SOUND)));
+                new Group("race.sound", v.ui(), SOUND),
+                new Group("race.hud", v.ui(), HUD)));
         out.add(List.of(new Group("camera", null, CAMERA)));
         return out;
     }
@@ -129,7 +139,7 @@ final class RaceState {
     static void visit(View v, Sink sink) {
         visitRestorable(v, sink);
         sink.group("random");
-        long r = Medium.raceRandom.fingerprint();
+        long r = v.world().random.fingerprint();
         long cam = Medium.cameraRandom.fingerprint();
         sink.value("random.race", null, 0, (int) r);
         sink.value("random.race", null, 1, (int) (r >>> 32));
@@ -264,7 +274,7 @@ final class RaceState {
         put(sink, "camera.xz", Medium.xz);
         put(sink, "camera.zy", Medium.zy);
         sink.group("random");
-        long r = Medium.raceRandom.fingerprint();
+        long r = v.world().random.fingerprint();
         put(sink, "random.race.low", (int) r);
         put(sink, "random.race.high", (int) (r >>> 32));
     }
