@@ -48,6 +48,11 @@ public class SoundManager {
         discarding = discard;
     }
 
+    /** True during a speculative tick, which may never happen: nothing it does may be felt or heard. */
+    public static boolean isDiscarding() {
+        return discarding;
+    }
+
     /** Passes a command to the listener; false if it is to be thrown away. */
     private static boolean pass(String op, String name) {
         if (discarding) {

@@ -99,6 +99,24 @@ The setting is saved with the rest of the game's settings. Adding `vm.arg.2=-Dnf
 
 All drawing is done on the CPU by Java2D, so the ceiling depends on the processor: on a laptop i7-8550U it is roughly 100-170 FPS mid-race and 25-40 FPS during the opening fly-over of the whole track.
 
+## Game controllers
+
+Any game controller Windows knows (Xbox, PlayStation, Switch Pro and most others) can drive the game, read through SDL 3 (`lib\lwjgl-sdl-*.jar`). A pad presses the game's own keys, so it works everywhere the keyboard does and a race driven with one is recorded and replays as if typed:
+
+| In a race | |
+| --- | --- |
+| Right trigger or A | Accelerate (Up) |
+| Left trigger or X | Brake and reverse (Down) |
+| Left stick or d-pad | Steer (Left, Right) |
+| B | Handbrake (Space) |
+| LB, RB | Look back (Z, X) |
+| Y | Change the view (V) |
+| Start, Back | Pause (Enter, Esc) |
+
+In the menus the left stick and d-pad are the arrow keys, repeating while held as keys do, and A or Start is Enter. Hard hits shake the pad, harder for harder hits. Pads can be plugged in and out at any time; several work at once, and the keyboard keeps working beside them. The pads only count while the game's window has the focus.
+
+`gamepad` in the developer console says which pads are connected; `gamepad off` / `gamepad on` and `gamepad rumble off` / `gamepad rumble on` are saved. Hidden test runs never read pads, so a pad on the desk cannot drive them.
+
 ## Replays
 
 Every race you play is kept in the `replays` folder next to the game, as the same kind of recording the determinism check uses (see below): the set-up, your input on every tick and where your car was after it. Each file is named for when the race was played, its stage and, if you finished it, in how many ticks (`race-20261116-221500-123-stage08-t01234.nfmr`, 1234 ticks of 53 ms). The 50 newest races are kept, and on every stage the fastest finish however old, so a best run is never lost. A race is about 200 KB. Hidden test runs and the smoke test keep nothing, unless `-Dnfm.replays=<folder>` names a folder to keep them in (which also moves a normal game's replays).
@@ -115,6 +133,8 @@ Every race you play is kept in the `replays` folder next to the game, as the sam
 | `-Dnfm.renderer=<gpu or software>` | How frames reach the screen for this run, see above. Hidden test runs use software unless this asks for the GPU; they then also save `<name>-gpu.png`, the window read back from the graphics card, and in races `<name>-gpuscene.png`, the frame the card drew (at the window's size when that is larger than 1280x720), to compare with `<name>.png`, the same frame drawn in software. |
 | `-Dnfm.motiontest=<dir>` | With `-Dnfm.autotest`: at race ticks 200 to 450 records the scene at 49 points between two ticks into `<dir>\motion-<tick>.bin`, to check that every corner moves smoothly (`python test\motion.py <dir>` measures how far each corner strays from smooth motion), and the scene kept for the tick moved to the same points into `kept-<tick>.bin` (`python test\kept.py <dir>` compares the two). |
 | `-Dnfm.msaa=<off, 2, 4 or 8>` | Smooth polygon edges with the GPU renderer for this run, see above. |
+| `-Dnfm.gamepad=<on or off>` | Read game controllers for this run, see above; `on` also in hidden test runs. |
+| `-Dnfm.gamepad.test=true` | With `-Dnfm.gamepad=on`: a made-up pad, which SDL presents as any other, holds the right trigger and the stick to the right in races, so the smoke test shows a car driven by a pad. |
 | `-Dnfm.presenter=false` | With the GPU renderer, draws and shows race frames on the game thread, between ticks, instead of on a drawing thread of their own. |
 | `-Dnfm.retained=false` | With the GPU renderer, draws each race frame's whole scene again instead of moving the scene kept for the tick. |
 | `-Dnfm.gpuscene=<false or picture>` | `false` draws races in software even with the GPU renderer, which then only puts frames on screen; `picture` draws them on the card at 1280x720 rather than the window's resolution. |

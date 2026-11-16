@@ -18,6 +18,7 @@ import java.net.Socket;
 import java.net.URI;
 import java.net.URL;
 import java.util.Enumeration;
+import java.util.List;
 import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -3004,6 +3005,80 @@ public class GameSparker extends Panel implements Runnable {
     }
 
     /** -Dnfm.msaa, else off in hidden test runs (their pictures are compared pixel for pixel), else the saved choice. */
+    private static final String GAMEPAD_COOKIE = "gamepad";
+    private static final String RUMBLE_COOKIE = "rumble";
+    private static volatile boolean gamepadChanged;
+
+    /** Turns the game controllers on or off, and saves the choice. */
+    public static void setGamepad(boolean on) {
+        Gamepads.setOn(on);
+        gamepadChanged = true;
+    }
+
+    /** Turns the controllers' shaking on hard hits on or off, and saves the choice. */
+    public static void setRumble(boolean on) {
+        Gamepads.setRumble(on);
+        gamepadChanged = true;
+    }
+
+    /** One line on the controllers: on or off, which are connected, and whether they shake. */
+    public static String describeGamepads() {
+        if (!Gamepads.isOn()) {
+            return "Game controllers are off.";
+        }
+        List<String> pads = Gamepads.connected();
+        return (pads.isEmpty() ? "No game controller connected." : "Connected: " + String.join(", ", pads) + ".")
+                + " Shaking on hits is " + (Gamepads.isRumble() ? "on" : "off") + ".";
+    }
+
+    /**
+     * Starts reading game controllers: -Dnfm.gamepad=on|off, else never in
+     * hidden test runs (a pad on the desk must not drive them), else as saved.
+     */
+    private void startGamepads() {
+        String property = System.getProperty("nfm.gamepad");
+        boolean hidden = System.getProperty("nfm.autotest") != null || RaceSession.runsHidden();
+        if (property != null ? property.trim().equalsIgnoreCase("off") || property.trim().equalsIgnoreCase("false")
+                : hidden) {
+            Gamepads.setOn(false);
+            return;
+        }
+        if (property == null) {
+            Gamepads.setOn(readcookie(GAMEPAD_COOKIE) != 0);
+            Gamepads.setRumble(readcookie(RUMBLE_COOKIE) != 0);
+        }
+        gamepadChanged = false;
+        Gamepads.start(new Gamepads.Keys() {
+            @Override
+            public void key(int code, boolean down) {
+                if (down) {
+                    keyDown(null, code);
+                } else {
+                    keyUp(null, code);
+                }
+            }
+
+            @Override
+            public boolean racing() {
+                xtGraphics x = ui;
+                return x != null && x.fase == Phase.INGAME;
+            }
+
+            @Override
+            public boolean focused() {
+                return !lostfcs && !exwist;
+            }
+        });
+    }
+
+    private void saveGamepadIfChanged() {
+        if (gamepadChanged) {
+            gamepadChanged = false;
+            savecookie(GAMEPAD_COOKIE, Gamepads.isOn() ? "1" : "0");
+            savecookie(RUMBLE_COOKIE, Gamepads.isRumble() ? "1" : "0");
+        }
+    }
+
     private void loadMultisample() {
         String property = System.getProperty("nfm.msaa");
         int samples = 1;
@@ -3539,6 +3614,7 @@ public class GameSparker extends Panel implements Runnable {
         loadMultisample();
         startAutoTest();
         session = RaceSession.fromCommandLine(new SessionHost());
+        startGamepads();
         final boolean unpaced = session != null && session.unpaced();
 
         int k1 = 0;
@@ -3614,6 +3690,7 @@ public class GameSparker extends Panel implements Runnable {
                 saveScaleToWindowIfChanged();
                 saveRendererIfChanged();
                 saveMultisampleIfChanged();
+                saveGamepadIfChanged();
                 if (session != null) {
                     session.beforeTick();
                 }

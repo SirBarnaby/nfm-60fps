@@ -1706,6 +1706,9 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
     @Override
     public void crash(float f, int i) {
         if (bfcrash == 0) {
+            if (Math.abs(f) > 25F && !SoundManager.isDiscarding()) {
+                Gamepads.hit(f);
+            }
             if (i == 0) {
                 if (Math.abs(f) > 25F && Math.abs(f) < 170F) {
                     if (!mutes) {
