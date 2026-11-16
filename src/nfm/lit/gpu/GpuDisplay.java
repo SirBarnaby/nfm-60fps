@@ -109,6 +109,9 @@ public final class GpuDisplay {
     private int sceneWidth;
     private int sceneHeight;
     private short sceneColor = BGFX_INVALID_HANDLE;
+    /* samples per pixel asked for, and those the scene target has */
+    private int wantedSamples = 1;
+    private int samples = 1;
     private short hud = BGFX_INVALID_HANDLE;
     private IntBuffer hudUpload;
     private SceneGeometry geometry;
@@ -325,8 +328,48 @@ public final class GpuDisplay {
     private long buildNanos;
     private int builds;
 
+    /**
+     * Samples per pixel the scene is drawn with: 1 draws each polygon's
+     * edge pixels whole, as the game always did; 2, 4 or 8 smooth them
+     * (multisampling). Takes effect with the next scene.
+     */
+    public void setMultisample(int wanted) {
+        wantedSamples = wanted;
+    }
+
+    /** Samples per pixel the last scene was drawn with: what was asked for, or the most the card does below it. */
+    public int multisample() {
+        return samples;
+    }
+
+    /** The multisampling flag for {@code n} samples per pixel, 0 for none. */
+    private static long msaaFlag(int n) {
+        return switch (n) {
+            case 2 -> BGFX_TEXTURE_RT_MSAA_X2;
+            case 4 -> BGFX_TEXTURE_RT_MSAA_X4;
+            case 8 -> BGFX_TEXTURE_RT_MSAA_X8;
+            default -> 0L;
+        };
+    }
+
+    /** The most samples per pixel up to {@code wanted} the card can draw the scene with. */
+    private static int supportedSamples(int wanted) {
+        int n = Integer.highestOneBit(Math.max(1, Math.min(8, wanted)));
+        for (; n > 1; n /= 2) {
+            long msaa = msaaFlag(n);
+            if (bgfx_is_texture_valid(0, false, 1, BGFX_TEXTURE_FORMAT_BGRA8, BGFX_TEXTURE_RT | CLAMP | msaa)
+                    && bgfx_is_texture_valid(0, false, 1, BGFX_TEXTURE_FORMAT_D24S8,
+                    BGFX_TEXTURE_RT_WRITE_ONLY | msaa)) {
+                break;
+            }
+        }
+        return n;
+    }
+
     private void fitSceneTarget(int newWidth, int newHeight) {
-        if (isValid(sceneBuffer) && newWidth == sceneWidth && newHeight == sceneHeight) {
+        int newSamples = wantedSamples == samples ? samples : supportedSamples(wantedSamples);
+        if (isValid(sceneBuffer) && newWidth == sceneWidth && newHeight == sceneHeight && newSamples == samples) {
+
             return;
         }
         if (isValid(sceneBuffer)) {
@@ -334,10 +377,14 @@ public final class GpuDisplay {
         }
         sceneWidth = newWidth;
         sceneHeight = newHeight;
+        samples = newSamples;
+        wantedSamples = newSamples;
+        // multisampled, the colour is resolved into a plain texture when the scene view is done
+        long msaa = msaaFlag(samples);
         sceneColor = bgfx_create_texture_2d(sceneWidth, sceneHeight, false, 1, BGFX_TEXTURE_FORMAT_BGRA8,
-                BGFX_TEXTURE_RT | CLAMP, null, 0);
+                BGFX_TEXTURE_RT | CLAMP | msaa, null, 0);
         short stencil = bgfx_create_texture_2d(sceneWidth, sceneHeight, false, 1, BGFX_TEXTURE_FORMAT_D24S8,
-                BGFX_TEXTURE_RT_WRITE_ONLY, null, 0);
+                BGFX_TEXTURE_RT_WRITE_ONLY | msaa, null, 0);
         sceneBuffer = bgfx_create_frame_buffer_from_handles(new short[] {sceneColor, stencil}, true);
         if (!isValid(hud)) {
             hud = bgfx_create_texture_2d(pictureWidth, pictureHeight, false, 1, BGFX_TEXTURE_FORMAT_BGRA8,

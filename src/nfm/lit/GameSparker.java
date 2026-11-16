@@ -318,6 +318,15 @@ public class GameSparker extends Panel implements Runnable {
     private static volatile boolean gpuRendererChanged;
     /** The graphics card could not draw this session; cleared by asking for it again. */
     private static volatile boolean gpuUnavailable;
+    private static final String MSAA_COOKIE = "msaa";
+    /**
+     * Samples per pixel for races drawn on the graphics card: 1 (off, the
+     * game's own hard edges) or 2, 4 or 8, which smooth polygon edges.
+     */
+    private static volatile int multisample = 1;
+    private static volatile boolean multisampleChanged;
+    /** Samples per pixel the card last drew a race with: fewer than asked when it does no more. */
+    private static volatile int multisampleInUse = 1;
     /** How long a closing window waits for the game thread to stop drawing into it. */
     private static final long WINDOW_RELEASE_WAIT_NANOS = 500_000_000L;
     /**
@@ -2811,7 +2820,10 @@ public class GameSparker extends Panel implements Runnable {
                 BufferedImage picture = (BufferedImage) offImage;
                 if (scene != null) {
                     picture = null; // show the scene drawn on the card
-                    if (!gpu.drawScene(scene, hud, version, flash, capture, sceneTargetSize(place))) {
+                    gpu.setMultisample(multisample);
+                    boolean drawn = gpu.drawScene(scene, hud, version, flash, capture, sceneTargetSize(place));
+                    multisampleInUse = gpu.multisample();
+                    if (!drawn) {
                         if (presenterFrame) {
                             return false;
                         }
@@ -2950,6 +2962,70 @@ public class GameSparker extends Panel implements Runnable {
 
     public static boolean isGpuRenderer() {
         return gpuRenderer;
+    }
+
+    /** Sets how many samples per pixel races are drawn with on the graphics card (1 = off), and saves it. */
+    public static void setMultisample(int samples) {
+        multisample = samples;
+        multisampleChanged = true;
+    }
+
+    public static int getMultisample() {
+        return multisample;
+    }
+
+    /** The multisampling setting in words, with what the card made of it when that differs. */
+    public static String describeMultisample() {
+        int asked = multisample;
+        String words = asked <= 1 ? "off" : asked + "x";
+        if (!gpuRenderer) {
+            return words + " (only with the gpu renderer)";
+        }
+        int used = multisampleInUse;
+        if (asked > 1 && used != asked) {
+            return words + " (the graphics card does " + (used <= 1 ? "none" : used + "x at most") + ")";
+        }
+        return words;
+    }
+
+    /** 1, 2, 4 or 8 for "off", "1", "2", "4" or "8" (also with an "x"), or 0 if it is none of those. */
+    public static int parseMultisample(String text) {
+        String t = text.trim().toLowerCase(java.util.Locale.ROOT);
+        if (t.endsWith("x")) {
+            t = t.substring(0, t.length() - 1);
+        }
+        return switch (t) {
+            case "off", "1" -> 1;
+            case "2" -> 2;
+            case "4" -> 4;
+            case "8" -> 8;
+            default -> 0;
+        };
+    }
+
+    /** -Dnfm.msaa, else off in hidden test runs (their pictures are compared pixel for pixel), else the saved choice. */
+    private void loadMultisample() {
+        String property = System.getProperty("nfm.msaa");
+        int samples = 1;
+        if (property != null) {
+            samples = parseMultisample(property);
+            if (samples == 0) {
+                HLogger.warn("Ignoring invalid nfm.msaa value: " + property);
+                samples = 1;
+            }
+        } else if (System.getProperty("nfm.autotest") == null && !RaceSession.runsHidden()) {
+            int saved = readcookie(MSAA_COOKIE);
+            samples = saved == 2 || saved == 4 || saved == 8 ? saved : 1;
+        }
+        multisample = samples;
+        multisampleChanged = false;
+    }
+
+    private void saveMultisampleIfChanged() {
+        if (multisampleChanged) {
+            multisampleChanged = false;
+            savecookie(MSAA_COOKIE, String.valueOf(multisample));
+        }
     }
 
     public static String describeRenderer() {
@@ -3460,6 +3536,7 @@ public class GameSparker extends Panel implements Runnable {
         loadRunAhead();
         loadScaleToWindow();
         loadRenderer();
+        loadMultisample();
         startAutoTest();
         session = RaceSession.fromCommandLine(new SessionHost());
         final boolean unpaced = session != null && session.unpaced();
@@ -3536,6 +3613,7 @@ public class GameSparker extends Panel implements Runnable {
                 saveRunAheadIfChanged();
                 saveScaleToWindowIfChanged();
                 saveRendererIfChanged();
+                saveMultisampleIfChanged();
                 if (session != null) {
                     session.beforeTick();
                 }

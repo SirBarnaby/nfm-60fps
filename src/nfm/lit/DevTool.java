@@ -391,6 +391,16 @@ public class DevTool {
                     print("Renderer is " + GameSparker.describeRenderer() + ".\nUsage: renderer <gpu|software>");
                 }
                 break;
+            case "msaa": {
+                int samples = args.length == 1 ? GameSparker.parseMultisample(args[0]) : 0;
+                if (samples != 0) {
+                    GameSparker.setMultisample(samples);
+                    print("Smooth edges " + GameSparker.describeMultisample() + " (saved).");
+                } else {
+                    print("Smooth edges are " + GameSparker.describeMultisample() + ".\nUsage: msaa <off|2|4|8>");
+                }
+                break;
+            }
             case "clear":
                 textArea.setText("");
                 break;
@@ -429,6 +439,7 @@ public class DevTool {
         commandDescriptions.put("stagesubdir", "Sets the stage subdirectory. Usage: stagesubdir <subdir>");
         commandDescriptions.put("status", "Displays the current game state.");
         commandDescriptions.put("scale", "fit scales the picture to fill the window, keeping its shape; off shows it pixel for pixel. Usage: scale <fit|off>");
+        commandDescriptions.put("msaa", "Smooths the edges of the polygons in races drawn on the graphics card by taking 2, 4 or 8 samples per pixel (multisampling); off keeps the game's own hard edges. Usage: msaa <off|2|4|8>");
         commandDescriptions.put("renderer", "gpu puts frames on screen through the graphics card (Direct3D 11), which scales them for free; software draws them with Java2D. Usage: renderer <gpu|software>");
         commandDescriptions.put("runahead", "Shows race frames one tick ahead with the keys held now, for 53 ms less input lag. Usage: runahead <on|off>");
         commandDescriptions.put("fps", "Sets the frame rate limit. auto matches the monitor, unlimited removes the cap. Usage: fps <auto|unlimited|30-1000>");
