@@ -3,7 +3,7 @@ package nfm.lit.gpu;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Arrays;
-import org.lwjgl.system.MemoryUtil;
+
 
 /**
  * Turns a {@link SceneList} into triangles for the graphics card, keeping the
@@ -41,7 +41,15 @@ final class SceneGeometry {
      */
     static final int STRIDE = 20;
 
-    private ByteBuffer vertices = MemoryUtil.memAlloc(STRIDE * 65536).order(ByteOrder.LITTLE_ENDIAN);
+    /** Ints per vertex. */
+    private static final int INTS = STRIDE / 4;
+
+    /*
+     * The vertices as their float and colour bits, written here and copied to
+     * the card's buffer in one go: putting each float into a direct buffer
+     * checks the buffer every time and took a third of a frame.
+     */
+    private int[] vertices = new int[INTS * 65536];
     private int vertexCount;
 
     private int[] drawKind = new int[256];
@@ -65,8 +73,9 @@ final class SceneGeometry {
         return vertexCount;
     }
 
-    ByteBuffer vertices() {
-        return vertices.duplicate().order(ByteOrder.LITTLE_ENDIAN).position(0).limit(vertexCount * STRIDE);
+    /** Copies the vertices to {@code to}, which holds {@link #vertexCount} of them. */
+    void copyVertices(ByteBuffer to) {
+        to.duplicate().order(ByteOrder.LITTLE_ENDIAN).asIntBuffer().put(vertices, 0, vertexCount * INTS);
     }
 
     int draws() {
@@ -99,9 +108,17 @@ final class SceneGeometry {
      * Builds the triangles for a picture of {@code width} x {@code height}
      * drawn into a target {@code pixelScale} times its size. Shapes scale
      * with the target, and one-pixel lines become pixelScale pixels thick.
+     * Under the same {@code version} (0 or more) the list holds the same
+     * polygons as last time, moved, see {@link #reuseCut}.
      */
-    void build(SceneList list, int width, int height, float pixelScale) {
+    void build(SceneList list, int width, int height, float pixelScale, long version) {
         this.pixelScale = pixelScale;
+        if (version < 0L || version != cutVersion) {
+            cutVersion = version;
+            cutUsed = 0;
+            Arrays.fill(cutStart, -1);
+        }
+        polygon = 0;
         vertexCount = 0;
         draws = 0;
         evenOddPolygons = 0;
@@ -168,11 +185,12 @@ final class SceneGeometry {
     }
 
     private void fillPolygon(int n) {
+        int which = polygon++;
         if (n < 3) {
             return;
         }
         boolean convex = isConvex(px, py, n);
-        if (!convex && earClip(n)) {
+        if (!convex && (reuseCut(which, n) || earClip(which, n))) {
             return; // concave but not crossing itself: plain triangles cover what even-odd would
         }
         if (!convex) {
@@ -192,6 +210,91 @@ final class SceneGeometry {
     private int[] ring = new int[16];
     private int[] cut = new int[48];
 
+    /*
+     * How the concave polygons of the scene kept under cutVersion were cut:
+     * for the n-th filled polygon its n - 2 triangles from cutStart[n] in
+     * cuts (as corner numbers), -1 if it was not.
+     */
+    private long cutVersion = -1L;
+    private int polygon;
+    private int[] cutStart = new int[1024];
+    private int[] cuts = new int[3 * 4096];
+    private int cutUsed;
+
+    /**
+     * Fills polygon number {@code which} with the triangles it was cut into
+     * in an earlier frame of the same kept scene, if they still fit: while
+     * the polygon does not cross itself and none of the triangles has turned
+     * over, together they cover each point inside it exactly once (the
+     * outline goes round each such point once, and that is the sum of the
+     * triangles around it), so they fill what even-odd would. Checking that
+     * takes a pass over the triangles where cutting takes one per corner.
+     *
+     * @return false if there are none or they no longer fit; nothing has been drawn then
+     */
+    private boolean reuseCut(int which, int n) {
+        if (which >= cutStart.length || cutStart[which] < 0 || !isSimple(px, py, n)) {
+            return false;
+        }
+        int sign = winding(n);
+        if (sign == 0) {
+            return false;
+        }
+        int from = cutStart[which];
+        int to = from + 3 * (n - 2);
+        for (int t = from; t < to; t += 3) {
+            double turn = cross(cuts[t], cuts[t + 1], cuts[t + 2]);
+            if (turn != 0D && (turn > 0D ? 1 : -1) != sign) {
+                return false; // turned over
+            }
+        }
+        triangles(cuts, from, to);
+        return true;
+    }
+
+    /** Draws the triangles in {@code t[from..to)} (corner numbers), leaving out flat ones, which cover nothing. */
+    private void triangles(int[] t, int from, int to) {
+        begin(PLAIN);
+        for (int k = from; k < to; k += 3) {
+            int a = t[k];
+            int b = t[k + 1];
+            int c = t[k + 2];
+            if (cross(a, b, c) != 0D) {
+                vertex(px[a] + FILL_SHIFT, py[a] + FILL_SHIFT);
+                vertex(px[b] + FILL_SHIFT, py[b] + FILL_SHIFT);
+                vertex(px[c] + FILL_SHIFT, py[c] + FILL_SHIFT);
+            }
+        }
+    }
+
+    /** 1 or -1 for the way the polygon in px/py winds, 0 if it covers nothing. */
+    private int winding(int n) {
+        double area = 0D;
+        for (int k = 0, j = n - 1; k < n; j = k++) {
+            area += (double) px[j] * py[k] - (double) px[k] * py[j];
+        }
+        return area > 0D ? 1 : area < 0D ? -1 : 0;
+    }
+
+    /** Keeps the n - 2 triangles in {@link #cut} as how polygon {@code which} was cut. */
+    private void keepCut(int which, int n) {
+        if (cutVersion < 0L) {
+            return; // a scene drawn once
+        }
+        if (which >= cutStart.length) {
+            int old = cutStart.length;
+            cutStart = Arrays.copyOf(cutStart, Math.max(which + 1, old * 2));
+            Arrays.fill(cutStart, old, cutStart.length, -1);
+        }
+        int count = 3 * (n - 2);
+        if (cutUsed + count > cuts.length) {
+            cuts = Arrays.copyOf(cuts, Math.max(cutUsed + count, cuts.length * 2));
+        }
+        System.arraycopy(cut, 0, cuts, cutUsed, count);
+        cutStart[which] = cutUsed;
+        cutUsed += count;
+    }
+
     /**
      * Fills a polygon that does not cross itself with plain triangles, cut
      * off one corner (an "ear") at a time: what they cover is exactly what
@@ -201,18 +304,14 @@ final class SceneGeometry {
      * @return false if the polygon crosses or touches itself, or no ear was
      *         found; nothing has been drawn then
      */
-    private boolean earClip(int n) {
+    private boolean earClip(int which, int n) {
         if (!isSimple(px, py, n)) {
             return false;
         }
-        double area = 0D;
-        for (int k = 0, j = n - 1; k < n; j = k++) {
-            area += (double) px[j] * py[k] - (double) px[k] * py[j];
-        }
-        if (area == 0D) {
+        int sign = winding(n);
+        if (sign == 0) {
             return true; // covers nothing
         }
-        int sign = area > 0D ? 1 : -1;
         if (ring.length < n) {
             ring = new int[n];
             cut = new int[3 * n];
@@ -221,7 +320,7 @@ final class SceneGeometry {
             ring[k] = k;
         }
         int m = n;
-        int cuts = 0;
+        int made = 0;
         int k = 0;
         int tried = 0;
         while (m > 3) {
@@ -247,23 +346,20 @@ final class SceneGeometry {
                 tried++;
                 continue;
             }
-            if (turn != 0D) { // a straight corner is just dropped
-                cut[cuts++] = a;
-                cut[cuts++] = b;
-                cut[cuts++] = c;
-            }
+            // a straight corner is cut off too, as a flat triangle: it covers nothing now but may later
+            cut[made++] = a;
+            cut[made++] = b;
+            cut[made++] = c;
             System.arraycopy(ring, k + 1, ring, k, m - k - 1);
             m--;
             k %= m;
             tried = 0;
         }
-        cut[cuts++] = ring[0];
-        cut[cuts++] = ring[1];
-        cut[cuts++] = ring[2];
-        begin(PLAIN);
-        for (int t = 0; t < cuts; t++) {
-            vertex(px[cut[t]] + FILL_SHIFT, py[cut[t]] + FILL_SHIFT);
-        }
+        cut[made++] = ring[0];
+        cut[made++] = ring[1];
+        cut[made++] = ring[2];
+        keepCut(which, n);
+        triangles(cut, 0, made);
         return true;
     }
 
@@ -502,20 +598,21 @@ final class SceneGeometry {
     }
 
     private void vertex(float x, float y, float across, float halfWidth) {
-        if ((vertexCount + 1) * STRIDE > vertices.capacity()) {
-            vertices = MemoryUtil.memRealloc(vertices, vertices.capacity() * 2).order(ByteOrder.LITTLE_ENDIAN);
+        int at = vertexCount * INTS;
+        if (at + INTS > vertices.length) {
+            vertices = Arrays.copyOf(vertices, vertices.length * 2);
         }
-        int at = vertexCount * STRIDE;
-        vertices.putFloat(at, x * scaleX - 1F);
-        vertices.putFloat(at + 4, 1F - y * scaleY);
-        vertices.putInt(at + 8, abgr);
-        vertices.putFloat(at + 12, across);
-        vertices.putFloat(at + 16, halfWidth);
+        int[] v = vertices;
+        v[at] = Float.floatToRawIntBits(x * scaleX - 1F);
+        v[at + 1] = Float.floatToRawIntBits(1F - y * scaleY);
+        v[at + 2] = abgr;
+        v[at + 3] = Float.floatToRawIntBits(across);
+        v[at + 4] = Float.floatToRawIntBits(halfWidth);
         vertexCount++;
         drawCount[open]++;
     }
 
     void free() {
-        MemoryUtil.memFree(vertices);
+        vertices = new int[0];
     }
 }

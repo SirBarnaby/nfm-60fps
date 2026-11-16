@@ -56,10 +56,14 @@ if ($LASTEXITCODE -ne 0) { throw 'Packaging madness.jar failed.' }
 # The private runtime. Madness.drive and Control.preform (the car physics and
 # the AI) are over HotSpot's 8000-byte limit for compiling a method, so without
 # -XX:-DontCompileHugeMethods they stay interpreted: about 9% of a race frame's
-# CPU time, 2% compiled. Options given to jlink are stored in the runtime, so
-# madness64.exe and java.exe both get them.
+# CPU time, 2% compiled. With the trap limits at 0 the compiler keeps the
+# branches it has not seen taken yet: otherwise the first wreck, say, throws
+# Plane.d back to the interpreter, and ticks take 15-40 ms instead of 3-5 for
+# seconds while it is compiled again. Options given to jlink are stored in the
+# runtime, so madness64.exe and java.exe both get them.
 $jlinkArgs = @('--add-modules', 'java.base,java.desktop,java.logging', '--strip-debug', '--no-header-files',
-    '--no-man-pages', '--add-options=-XX:-DontCompileHugeMethods')
+    '--no-man-pages',
+    '--add-options=-XX:-DontCompileHugeMethods -XX:PerMethodTrapLimit=0 -XX:PerBytecodeTrapLimit=0')
 # Rebuilt only when the JDK or these arguments change: a runtime just written
 # is often held by the antivirus for a while, so it cannot be deleted at once.
 $stampFile = 'runtime\nfm-runtime.txt'

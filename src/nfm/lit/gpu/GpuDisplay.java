@@ -252,17 +252,24 @@ public final class GpuDisplay {
      * so it is sharp in a large window rather than scaled up; one-pixel
      * lines get as much thicker as the picture is larger.
      *
+     * @param version names a scene kept for a tick: under the same version the HUD is the same picture,
+     *                not uploaded again, and the scene holds the same polygons in the same order, only
+     *                moved, so how concave ones were cut into triangles can be checked rather than worked
+     *                out again; -1 for a scene and HUD drawn anew
      * @param capture also read the drawn picture back, see {@link #takeSceneCapture}
      * @return false if it could not be drawn (the caller should fall back)
      */
-    public boolean drawScene(SceneList scene, BufferedImage hudImage, boolean flash, boolean capture,
-            Dimension size) {
+    public boolean drawScene(SceneList scene, BufferedImage hudImage, long version, boolean flash,
+            boolean capture, Dimension size) {
         fitSceneTarget(Math.max(1, size.width), Math.max(1, size.height));
-        if (hudImage != null && !uploadPicture(hudImage, hud, hudUpload)) {
-            return false;
+        if (hudImage != null && (version < 0L || version != uploadedHud)) {
+            if (!uploadPicture(hudImage, hud, hudUpload)) {
+                return false;
+            }
+            uploadedHud = version;
         }
         long buildStart = System.nanoTime();
-        geometry.build(scene, pictureWidth, pictureHeight, sceneWidth / (float) pictureWidth);
+        geometry.build(scene, pictureWidth, pictureHeight, sceneWidth / (float) pictureWidth, version);
         buildNanos += System.nanoTime() - buildStart;
         builds++;
         int vertexCount = geometry.vertexCount();
@@ -273,7 +280,7 @@ public final class GpuDisplay {
                 return false;
             }
             bgfx_alloc_transient_vertex_buffer(transientBuffer, vertexCount, colorLayout);
-            MemoryUtil.memCopy(geometry.vertices(), transientBuffer.data());
+            geometry.copyVertices(transientBuffer.data());
             submitScene();
         }
         if (hudImage != null) {
@@ -310,6 +317,9 @@ public final class GpuDisplay {
         builds = 0;
         return text;
     }
+
+    /** Which HUD the HUD texture holds, see {@link #drawScene}. */
+    private long uploadedHud = -1L;
 
     /* time spent turning scenes into triangles since the last statistics */
     private long buildNanos;

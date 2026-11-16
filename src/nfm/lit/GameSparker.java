@@ -357,6 +357,24 @@ public class GameSparker extends Panel implements Runnable {
     private final SceneRecorder retainedRecorder = new SceneRecorder();
     private final RetainedScene retainedScene = new RetainedScene();
     private final FramePose framePose = new FramePose();
+    private final PoseSpan spanScratch = new PoseSpan();
+    /* what renderIngameScene records into while a kept scene is recorded */
+    private SceneRecorder recordingRecorder;
+    private RetainedScene recordingScene;
+
+    /*
+     * Races drawn on their own thread (see Presenter): -Dnfm.presenter=false
+     * draws every frame on the game thread between the ticks instead.
+     */
+    private static final boolean PRESENTER = !"false".equalsIgnoreCase(System.getProperty("nfm.presenter"));
+    private Presenter presenter;
+    /** The kept scene handed to the presenter is out of date: a tick ran since. */
+    private boolean keptStale = true;
+    private boolean keptAhead;
+    /** This tick's scene could not be kept (drawing the card does not do): frames are drawn the whole way. */
+    private boolean keptBlocked;
+    /** The HUD as the last frame drawn on the game thread showed it. */
+    private BufferedImage ownSceneHud;
     /** The kept scene still holds for the frames to come: no tick nor run-ahead since it was recorded. */
     private boolean retainedValid;
     private boolean retainedAhead;
@@ -1642,8 +1660,8 @@ public class GameSparker extends Panel implements Runnable {
         int camXZ = Medium.xz;
         int camZY = Medium.zy;
         // a frame for the graphics card also gets the exact positions between the whole ones
-        Precise.begin(retainedRecording ? retainedRecorder : gpuSceneFrame ? sceneRecorder : null,
-                retainedRecording ? retainedScene : null);
+        Precise.begin(retainedRecording ? recordingRecorder : gpuSceneFrame ? sceneRecorder : null,
+                retainedRecording ? recordingScene : null);
 
         if (prevFrameValid && alpha < 1F) {
             for (int i = 0; i < np; i++) {
@@ -1691,7 +1709,7 @@ public class GameSparker extends Panel implements Runnable {
 
         saveSceneDrawState();
         try {
-            Graphics2D target = retainedRecording ? retainedRecorder.begin(rd)
+            Graphics2D target = retainedRecording ? recordingRecorder.begin(rd)
                     : gpuSceneFrame ? sceneRecorder.begin(rd) : rd;
             Precise.cameraAngles();
             Medium.d(target);
@@ -1868,14 +1886,28 @@ public class GameSparker extends Panel implements Runnable {
 
     /** Records the scene kept for the frames until the next tick or run-ahead, see {@link RetainedScene}. */
     private void recordRetained(boolean ahead) {
+        retainedValid = recordKept(ahead, retainedRecorder, retainedScene);
+        retainedAhead = ahead;
+    }
+
+    /**
+     * Records a scene kept for a whole tick into {@code recorder} and
+     * {@code scene}, halfway between the poses {@link #renderIngameScene} (or
+     * with {@code ahead}, {@link #renderAheadScene}) draws between.
+     *
+     * @return false if it used drawing the graphics card does not do
+     */
+    private boolean recordKept(boolean ahead, SceneRecorder recorder, RetainedScene scene) {
         long start = System.nanoTime();
         Medium.cullX = RETAINED_MARGIN_X;
         Medium.cullY = RETAINED_MARGIN_Y;
         Medium.allBands = true;
         retainedRecording = true;
+        recordingRecorder = recorder;
+        recordingScene = scene;
         try {
-            framePose(RETAINED_AT, ahead, retainedScene.recorded);
-            retainedScene.begin();
+            framePose(RETAINED_AT, ahead, scene.recorded);
+            scene.begin();
             if (ahead) {
                 renderAheadScene(RETAINED_AT);
             } else {
@@ -1886,11 +1918,77 @@ public class GameSparker extends Panel implements Runnable {
             Medium.cullY = 0;
             Medium.allBands = false;
             retainedRecording = false;
+            recordingRecorder = null;
+            recordingScene = null;
         }
-        retainedValid = !retainedRecorder.unsupported();
-        retainedAhead = ahead;
         profileRecordNanos += System.nanoTime() - start;
         profileRecords++;
+        return !recorder.unsupported();
+    }
+
+    /**
+     * Hands the presenter the scene for the frames to come, when a tick or a
+     * change of keys made the last one out of date: the run-ahead tick, the
+     * kept scene, the two poses its frames move between, the HUD and the
+     * white flash. Game thread only.
+     *
+     * @return false if this tick's frames have to be drawn the whole way
+     */
+    private boolean handOverKept() {
+        boolean ahead = aheadPossible();
+        boolean stale = keptStale || keptAhead != ahead;
+        if (ahead) {
+            long aheadStart = System.nanoTime();
+            if (runAheadTick()) {
+                profileAheadNanos += System.nanoTime() - aheadStart;
+                profileAheads++;
+                stale = true;
+            }
+        } else {
+            aheadValid = false;
+        }
+        if (!stale) {
+            return true;
+        }
+        poseSpan(ahead, spanScratch);
+        spanScratch.handedLate = System.nanoTime() - tickStartNanos;
+        presenter.handOverSpan(spanScratch);
+        Presenter.Kept kept = presenter.free();
+        if (!recordKept(ahead, kept.recorder, kept.scene)) {
+            keptBlocked = true; // until the next tick
+            return false;
+        }
+        if (hudImage instanceof BufferedImage hud) {
+            if (kept.hud == null || kept.hud.getWidth() != hud.getWidth() || kept.hud.getHeight() != hud.getHeight()) {
+                kept.hud = new BufferedImage(hud.getWidth(), hud.getHeight(), BufferedImage.TYPE_INT_ARGB);
+            }
+            int[] from = ((DataBufferInt) hud.getRaster().getDataBuffer()).getData();
+            int[] to = ((DataBufferInt) kept.hud.getRaster().getDataBuffer()).getData();
+            System.arraycopy(from, 0, to, 0, Math.min(from.length, to.length));
+        } else {
+            kept.hud = null;
+        }
+        kept.flash = pendingWhiteFlash;
+        if (pendingWhiteFlash) {
+            rd.setColor(new Color(255, 255, 255)); // as the software frame would leave it
+            pendingWhiteFlash = false;
+        }
+        presenter.handOver(kept);
+        // what syncBackBuffer redraws in software: this scene, at the moment it was recorded
+        shownRecorder = kept.recorder;
+        gpuSceneHud = kept.hud;
+        gpuSceneFlash = kept.flash;
+        backBufferStale = true;
+        keptStale = false;
+        keptAhead = ahead;
+        return true;
+    }
+
+    /** True if the presenter can draw this race's frames on its own thread now. */
+    private boolean presenterDraws(boolean scene, boolean unpaced) {
+        return scene && presenter != null && !unpaced && !keptBlocked && GPU_SCENE && RETAINED && gpuActive
+                && gpuRenderer && !ui.debugmode && !captureRequested && MOTION_TEST == null
+                && !presenter.failed();
     }
 
     /**
@@ -1901,43 +1999,409 @@ public class GameSparker extends Panel implements Runnable {
      * jumped stays where it is, as there.
      */
     private void framePose(float alpha, boolean ahead, FramePose out) {
+        poseSpan(ahead, spanScratch);
+        spanScratch.at(alpha, out);
+    }
+
+    /**
+     * The two poses {@link #renderIngameScene} draws between (with
+     * {@code ahead}, those of {@link #renderAheadScene}), and when the frames
+     * between them are due, for any thread to place a kept scene with.
+     */
+    private void poseSpan(boolean ahead, PoseSpan out) {
         int np = Math.min(GameFacts.numberOfPlayers, Math.min(prevCarX.length, FramePose.SLOTS));
-        boolean moving = prevFrameValid && alpha < 1F;
         out.slots = np;
+        out.moving = prevFrameValid;
+        out.startNanos = tickStartNanos;
+        out.lengthNanos = currentTickNanos;
         for (int i = 0; i < np; i++) {
             ContO c = sceneObjects[i];
             if (ahead) {
                 Poses b = aheadPoses;
                 if (b.ref[i] != c) {
-                    out.car(i, c.x, c.y, c.z, c.xz, c.xy, c.zy, c.wxz, c.wzy); // replaced in the run-ahead tick
-                } else if (!moving || teleported(b.x[i] - c.x, b.y[i] - c.y, b.z[i] - c.z)) {
-                    out.car(i, b.x[i], b.y[i], b.z[i], b.xz[i], b.xy[i], b.zy[i], b.wxz[i], b.wzy[i]);
+                    out.setCar(i, PoseSpan.AT_START, c.x, c.y, c.z, c.xz, c.xy, c.zy, c.wxz, c.wzy); // replaced ahead
+                } else if (teleported(b.x[i] - c.x, b.y[i] - c.y, b.z[i] - c.z)) {
+                    out.setCar(i, PoseSpan.AT_END, b.x[i], b.y[i], b.z[i], b.xz[i], b.xy[i], b.zy[i], b.wxz[i], b.wzy[i]);
                 } else {
-                    out.car(i, alpha, c.x, c.y, c.z, c.xz, c.xy, c.zy, c.wxz, c.wzy,
-                            b.x[i], b.y[i], b.z[i], b.xz[i], b.xy[i], b.zy[i], b.wxz[i], b.wzy[i]);
+                    out.setCarStart(i, c.x, c.y, c.z, c.xz, c.xy, c.zy, c.wxz, c.wzy);
+                    out.setCar(i, PoseSpan.MOVING, b.x[i], b.y[i], b.z[i], b.xz[i], b.xy[i], b.zy[i], b.wxz[i],
+                            b.wzy[i]);
                 }
-            } else if (!moving || c != prevCarRef[i]
-                    || teleported(c.x - prevCarX[i], c.y - prevCarY[i], c.z - prevCarZ[i])) {
-                out.car(i, c.x, c.y, c.z, c.xz, c.xy, c.zy, c.wxz, c.wzy);
+            } else if (c != prevCarRef[i] || teleported(c.x - prevCarX[i], c.y - prevCarY[i], c.z - prevCarZ[i])) {
+                out.setCar(i, PoseSpan.AT_END, c.x, c.y, c.z, c.xz, c.xy, c.zy, c.wxz, c.wzy);
             } else {
-                out.car(i, alpha, prevCarX[i], prevCarY[i], prevCarZ[i], prevCarXZ[i], prevCarXY[i], prevCarZY[i],
-                        prevCarWXZ[i], prevCarWZY[i], c.x, c.y, c.z, c.xz, c.xy, c.zy, c.wxz, c.wzy);
+                out.setCarStart(i, prevCarX[i], prevCarY[i], prevCarZ[i], prevCarXZ[i], prevCarXY[i], prevCarZY[i],
+                        prevCarWXZ[i], prevCarWZY[i]);
+                out.setCar(i, PoseSpan.MOVING, c.x, c.y, c.z, c.xz, c.xy, c.zy, c.wxz, c.wzy);
             }
         }
-        int ax = ahead ? Medium.x : prevCamX;
-        int ay = ahead ? Medium.y : prevCamY;
-        int az = ahead ? Medium.z : prevCamZ;
-        int axz = ahead ? Medium.xz : prevCamXZ;
-        int azy = ahead ? Medium.zy : prevCamZY;
-        int bx = ahead ? aheadPoses.camX : Medium.x;
-        int by = ahead ? aheadPoses.camY : Medium.y;
-        int bz = ahead ? aheadPoses.camZ : Medium.z;
-        int bxz = ahead ? aheadPoses.camXZ : Medium.xz;
-        int bzy = ahead ? aheadPoses.camZY : Medium.zy;
-        if (!moving || teleported(bx - ax, by - ay, bz - az)) {
-            out.camera(bx, by, bz, bxz, bzy);
-        } else {
-            out.camera(alpha, ax, ay, az, axz, azy, bx, by, bz, bxz, bzy);
+        int[] from = out.cameraStart;
+        int[] to = out.cameraEnd;
+        from[0] = ahead ? Medium.x : prevCamX;
+        from[1] = ahead ? Medium.y : prevCamY;
+        from[2] = ahead ? Medium.z : prevCamZ;
+        from[3] = ahead ? Medium.xz : prevCamXZ;
+        from[4] = ahead ? Medium.zy : prevCamZY;
+        to[0] = ahead ? aheadPoses.camX : Medium.x;
+        to[1] = ahead ? aheadPoses.camY : Medium.y;
+        to[2] = ahead ? aheadPoses.camZ : Medium.z;
+        to[3] = ahead ? aheadPoses.camXZ : Medium.xz;
+        to[4] = ahead ? aheadPoses.camZY : Medium.zy;
+        out.cameraMode = teleported(to[0] - from[0], to[1] - from[1], to[2] - from[2]) ? PoseSpan.AT_END
+                : PoseSpan.MOVING;
+    }
+
+    /** How often the game thread looks at the keys while the presenter draws, for a new run-ahead tick. */
+    private static final long KEY_CHECK_NANOS = 2_000_000L;
+
+    /**
+     * The thread that owns the graphics card and puts every frame on screen
+     * through it.
+     * <p>
+     * Frames the game thread draws (menus, and races whenever a race frame
+     * has to be drawn the whole way) it shows while the game thread waits,
+     * as before. Races it draws on its own: the game thread hands it a
+     * {@link Kept} scene after each tick and each new run-ahead tick, and it
+     * places that scene for the moment each frame is due and shows it, at
+     * the display's rate. So ticks, the run-ahead tick and recording the
+     * scene, all on the game thread, never hold a frame back, and a frame
+     * waiting for the display never holds a tick back. While the next tick
+     * is being worked out, frames carry the motion on a little past the end
+     * of the last one (see {@link PoseSpan#MAX_CARRY_ON}).
+     */
+    private final class Presenter implements Runnable {
+
+        /** A scene kept for a tick, with what its frames need; owned by one thread at a time. */
+        final class Kept {
+            final SceneRecorder recorder = new SceneRecorder();
+            final RetainedScene scene = new RetainedScene();
+            BufferedImage hud;
+            boolean flash;
+            long version;
+        }
+
+        /* three, so one is drawn, one waits and the game thread fills the third */
+        private final Kept[] kept = {new Kept(), new Kept(), new Kept()};
+        private final Object lock = new Object();
+        /* guarded by lock */
+        private Kept drawing;
+        private Kept latest;
+        private long versions;
+        private final PoseSpan handedSpan = new PoseSpan();
+        private long spanVersion;
+        private boolean job;
+        private boolean jobCapture;
+        private boolean jobDone;
+        private boolean jobShown;
+        /** The game thread wants races drawn here. */
+        private volatile boolean races;
+        /** A race frame could not be shown: the game thread draws until a frame of its own is shown again. */
+        private volatile boolean failed;
+
+        private final Thread thread = new Thread(this, "nfm-presenter");
+        private final PreciseSleep sleep = new PreciseSleep();
+        private final FramePose pose = new FramePose();
+        private final FramePose carried = new FramePose();
+        /* the span frames are placed with, and the one before it for the profile */
+        private final PoseSpan span = new PoseSpan();
+        private final PoseSpan previousSpan = new PoseSpan();
+        private long placedSpanVersion = -1L;
+        private boolean spanChanged;
+        private long flashedVersion = -1L;
+        private long nextFrameNanos;
+        private long lastShownNanos;
+
+        /* the profile, presenter thread only */
+        private int statFrames;
+        private long statPlaceNanos;
+        private long statShowNanos;
+        private int statCarried;
+        private final double[] statCorrections = new double[1024];
+        private final double[] statHandedLate = new double[1024];
+        private int statCorrectionCount;
+        private final long[] statGaps = new long[4096];
+        private int statGapCount;
+        private long statSince = System.nanoTime();
+
+        Presenter() {
+            thread.setDaemon(true);
+            thread.setPriority(Thread.NORM_PRIORITY + 2);
+        }
+
+        void start() {
+            thread.start();
+        }
+
+        boolean failed() {
+            return failed;
+        }
+
+        boolean drawingRaces() {
+            return races && !failed;
+        }
+
+        /** Game thread: a kept scene neither drawn nor waiting, to record the next one into. */
+        Kept free() {
+            synchronized (lock) {
+                for (Kept k : kept) {
+                    if (k != drawing && k != latest) {
+                        return k;
+                    }
+                }
+            }
+            throw new IllegalStateException("no kept scene free");
+        }
+
+        /**
+         * Game thread: the cars and the camera move as {@code s} from now on.
+         * Handed over as soon as a tick has run, before its scene is
+         * recorded, so frames never carry the last tick's motion on for
+         * longer than the tick took: until the new scene comes, they place
+         * the last one, which reaches well past the picture's edges, for the
+         * new poses.
+         */
+        void handOverSpan(PoseSpan s) {
+            synchronized (lock) {
+                handedSpan.copyFrom(s);
+                spanVersion++;
+            }
+        }
+
+        /** Game thread: {@code k} is the scene for the frames from now on. */
+        void handOver(Kept k) {
+            synchronized (lock) {
+                k.version = ++versions;
+                latest = k;
+                lock.notifyAll();
+            }
+        }
+
+        /** Game thread: whether races are drawn here from the kept scenes. */
+        void drawRaces(boolean on) {
+            if (races == on) {
+                return;
+            }
+            synchronized (lock) {
+                races = on;
+                if (!on) {
+                    latest = null; // a later race starts from a scene handed over then
+                }
+                lock.notifyAll();
+            }
+        }
+
+        /**
+         * Game thread: shows the frame it drew, as {@link #presentOnGpu},
+         * here while the game thread waits.
+         *
+         * @return false if the frame has to be drawn in software
+         */
+        boolean show(boolean capture) {
+            synchronized (lock) {
+                jobCapture = capture;
+                jobDone = false;
+                job = true;
+                lock.notifyAll();
+                boolean interrupted = false;
+                while (!jobDone) {
+                    try {
+                        lock.wait();
+                    } catch (InterruptedException ex) {
+                        interrupted = true;
+                    }
+                }
+                if (interrupted) {
+                    Thread.currentThread().interrupt();
+                }
+                if (jobShown) {
+                    failed = false;
+                }
+                return jobShown;
+            }
+        }
+
+        @Override
+        public void run() {
+            while (!exwist) {
+                boolean doJob;
+                Kept frame = null;
+                synchronized (lock) {
+                    if (!job && !(races && latest != null && !failed)) {
+                        try {
+                            lock.wait(20L);
+                        } catch (InterruptedException ex) {
+                            return;
+                        }
+                    }
+                    doJob = job;
+                    if (!doJob && races && !failed && latest != null) {
+                        drawing = latest;
+                        frame = drawing;
+                        if (placedSpanVersion != spanVersion) {
+                            previousSpan.copyFrom(span);
+                            span.copyFrom(handedSpan);
+                            spanChanged = placedSpanVersion != -1L;
+                            placedSpanVersion = spanVersion;
+                        }
+                    }
+                }
+                if (doJob) {
+                    boolean shown;
+                    try {
+                        shown = presentOnGpu(jobCapture);
+                    } catch (RuntimeException | LinkageError ex) {
+                        HLogger.warn("The graphics card stopped drawing, drawing in software: " + ex);
+                        shown = false;
+                    }
+                    synchronized (lock) {
+                        jobShown = shown;
+                        job = false;
+                        jobDone = true;
+                        lock.notifyAll();
+                    }
+                } else if (frame != null) {
+                    drawFrame(frame);
+                } else {
+                    releaseIfWindowGone();
+                }
+            }
+        }
+
+        /** Lets go of the card when the window it draws in goes or the renderer is switched off, as presentOnGpu does. */
+        private void releaseIfWindowGone() {
+            synchronized (presentLock) {
+                if (gpu != null && (!gpuRenderer || gpuWindowGeneration != windowGeneration)) {
+                    boolean stillSameWindow = gpuWindowGeneration == windowGeneration;
+                    closeGpu();
+                    if (stillSameWindow) {
+                        RunApp.recreateWindow(); // a window Direct3D has drawn in cannot go back to GDI
+                    }
+                }
+            }
+        }
+
+        /** Places the kept scene for now, shows it and waits for the next frame. */
+        private void drawFrame(Kept k) {
+            long start = System.nanoTime();
+            float alpha = span.alphaAt(start, true);
+            if (alpha > 1F) {
+                statCarried++;
+            }
+            span.at(alpha, pose);
+            if (PROFILE_LOOP && spanChanged) {
+                // how far the motion carried on from the last tick was from where the new one has things
+                previousSpan.at(previousSpan.alphaAt(start, true), carried);
+                if (statCorrectionCount < statCorrections.length) {
+                    statCorrections[statCorrectionCount] = difference(carried, pose);
+                    statHandedLate[statCorrectionCount++] = span.handedLate / 1e6D;
+                }
+            }
+            spanChanged = false;
+            k.scene.realize(pose, k.recorder.list().data());
+            boolean flash = k.flash && k.version != flashedVersion;
+            if (flash) {
+                flashedVersion = k.version;
+            }
+            long placed = System.nanoTime();
+            boolean shown;
+            try {
+                shown = showOnGpu(false, k.recorder.list(), k.hud, k.version, flash, true);
+            } catch (RuntimeException | LinkageError ex) {
+                HLogger.warn("The graphics card stopped drawing a race: " + ex);
+                shown = false;
+            }
+            long end = System.nanoTime();
+            if (!shown) {
+                failed = true; // the game thread takes over and finds out why
+                return;
+            }
+            statFrames++;
+            statPlaceNanos += placed - start;
+            statShowNanos += end - placed;
+            if (lastShownNanos != 0L && statGapCount < statGaps.length) {
+                statGaps[statGapCount++] = end - lastShownNanos;
+            }
+            lastShownNanos = end;
+            if (PROFILE_LOOP && end - statSince >= 2_000_000_000L) {
+                report(end);
+            }
+            pace(end);
+        }
+
+        /** Waits until the next frame is due: the display's refresh, the frame limit or, with none, not at all. */
+        private void pace(long now) {
+            long interval = frameIntervalNanos(now);
+            if (interval <= 0L) {
+                Thread.yield();
+                return;
+            }
+            if (fpsLimit == FPS_MATCH_DISPLAY) {
+                // showing waits for the display; this only keeps a window that never waits from spinning
+                nextFrameNanos = now + interval / 4L;
+            } else {
+                nextFrameNanos += interval;
+                if (now - nextFrameNanos > interval * 4L || nextFrameNanos - now > interval) {
+                    nextFrameNanos = now + interval; // fell far behind, or the limit was raised
+                }
+            }
+            try {
+                sleep.sleepUntil(nextFrameNanos);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        /** The largest distance between the camera or a car in {@code a} and in {@code b}, in world units. */
+        private double difference(FramePose a, FramePose b) {
+            double d = Math.max(Math.abs(a.camX - b.camX), Math.max(Math.abs(a.camY - b.camY), Math.abs(a.camZ - b.camZ)));
+            for (int i = 0; i < Math.min(a.slots, b.slots); i++) {
+                d = Math.max(d, Math.max(Math.abs(a.x[i] - b.x[i]), Math.max(Math.abs(a.y[i] - b.y[i]),
+                        Math.abs(a.z[i] - b.z[i]))));
+            }
+            return d;
+        }
+
+        private void report(long now) {
+            double seconds = (now - statSince) / 1e9D;
+            String pace = "";
+            if (statGapCount > 0) {
+                long[] gaps = Arrays.copyOf(statGaps, statGapCount);
+                Arrays.sort(gaps);
+                long median = gaps[gaps.length / 2];
+                int late = 0;
+                for (long gap : gaps) {
+                    if (gap > median * 3 / 2 + 2_000_000L) {
+                        late++;
+                    }
+                }
+                pace = String.format("; frame gaps: median %.1f ms, 99%% %.1f ms, longest %.1f ms; %d of %d frames came late",
+                        median / 1e6D, gaps[Math.min(gaps.length - 1, gaps.length * 99 / 100)] / 1e6D,
+                        gaps[gaps.length - 1] / 1e6D, late, gaps.length);
+            }
+            Kept shown = drawing;
+            String corrections = "none";
+            if (statCorrectionCount > 0) {
+                double[] c = Arrays.copyOf(statCorrections, statCorrectionCount);
+                Arrays.sort(c);
+                double[] h = Arrays.copyOf(statHandedLate, statCorrectionCount);
+                Arrays.sort(h);
+                corrections = String.format("median %.1f, 90%% %.1f, largest %.1f units; the motion came %.1f ms after"
+                        + " the tick was due, 90%% within %.1f, at most %.1f", c[c.length / 2], c[c.length * 9 / 10],
+                        c[c.length - 1], h[h.length / 2], h[h.length * 9 / 10], h[h.length - 1]);
+            }
+            System.out.printf("[draw] own thread: %.1f fps (placing %.2f ms, showing %.2f ms; %d carried on past"
+                    + " the tick; corrections at new ticks: %s)%s; last scene %s, %d points, %d polygons kept%n",
+                    statFrames / seconds, statFrames == 0 ? 0D : statPlaceNanos / 1e6D / statFrames,
+                    statFrames == 0 ? 0D : statShowNanos / 1e6D / statFrames, statCarried, corrections, pace,
+                    gpu != null ? gpu.sceneStatistics() : "", shown == null ? 0 : shown.scene.points(),
+                    shown == null ? 0 : shown.scene.polygons());
+            statCorrectionCount = 0;
+            statFrames = 0;
+            statPlaceNanos = 0L;
+            statShowNanos = 0L;
+            statCarried = 0;
+            statGapCount = 0;
+            statSince = now;
         }
     }
 
@@ -2228,7 +2692,7 @@ public class GameSparker extends Panel implements Runnable {
      * at random and could be shown while the next one was half drawn.
      */
     private void presentFrame(boolean capture) {
-        if (presentOnGpu(capture)) {
+        if (presenter != null ? presenter.show(capture) : presentOnGpu(capture)) {
             return;
         }
         syncBackBuffer(); // a frame meant for the card goes on screen in software after all
@@ -2250,12 +2714,13 @@ public class GameSparker extends Panel implements Runnable {
      */
     private void finishGpuScene() {
         if (hudImage instanceof BufferedImage hud) {
-            if (gpuSceneHud == null) {
-                gpuSceneHud = new BufferedImage(hud.getWidth(), hud.getHeight(), BufferedImage.TYPE_INT_ARGB);
+            if (ownSceneHud == null) {
+                ownSceneHud = new BufferedImage(hud.getWidth(), hud.getHeight(), BufferedImage.TYPE_INT_ARGB);
             }
             int[] from = ((DataBufferInt) hud.getRaster().getDataBuffer()).getData();
-            int[] to = ((DataBufferInt) gpuSceneHud.getRaster().getDataBuffer()).getData();
+            int[] to = ((DataBufferInt) ownSceneHud.getRaster().getDataBuffer()).getData();
             System.arraycopy(from, 0, to, 0, Math.min(from.length, to.length));
+            gpuSceneHud = ownSceneHud; // not a kept frame's, which the presenter may be drawing
         }
         gpuSceneFlash = pendingWhiteFlash;
         if (pendingWhiteFlash) {
@@ -2288,13 +2753,32 @@ public class GameSparker extends Panel implements Runnable {
     }
 
     /**
-     * Shows the frame through the graphics card when that renderer is on and
-     * works, starting it on first use and stopping it when the window goes
-     * away or the setting changes. Game thread only.
+     * Shows the frame the game thread drew through the graphics card when
+     * that renderer is on and works, starting it on first use and stopping it
+     * when the window goes away or the setting changes. On the thread that
+     * owns the card: the presenter's while the game thread waits, or the game
+     * thread itself without one.
      *
      * @return false if the frame still has to be drawn in software
      */
     private boolean presentOnGpu(boolean capture) {
+        return showOnGpu(capture, gpuSceneFrame ? shownRecorder.list() : null, gpuSceneHud, -1L, gpuSceneFlash,
+                false);
+    }
+
+    /**
+     * Shows a frame through the graphics card: the 3D {@code scene} with the
+     * {@code hud} on top (with the same {@code version} of a kept scene, the
+     * HUD is not uploaded again and its polygons are cut as before; -1 for
+     * a frame drawn anew) and the white {@code flash}, or with no scene the
+     * game thread's picture. A frame the {@code presenter} draws on its own
+     * never falls back to the picture.
+     */
+    private boolean showOnGpu(boolean capture, nfm.lit.gpu.SceneList scene, BufferedImage hud, long version,
+            boolean flash, boolean presenterFrame) {
+        if (gpu == null && presenterFrame) {
+            return false;
+        }
         if (gpu == null) {
             if (!gpuRenderer || gpuUnavailable || !IS_WINDOWS || !isDisplayable()) {
                 return false;
@@ -2325,10 +2809,12 @@ public class GameSparker extends Panel implements Runnable {
             boolean shown;
             try {
                 BufferedImage picture = (BufferedImage) offImage;
-                if (gpuSceneFrame) {
+                if (scene != null) {
                     picture = null; // show the scene drawn on the card
-                    if (!gpu.drawScene(shownRecorder.list(), gpuSceneHud, gpuSceneFlash, capture,
-                            sceneTargetSize(place))) {
+                    if (!gpu.drawScene(scene, hud, version, flash, capture, sceneTargetSize(place))) {
+                        if (presenterFrame) {
+                            return false;
+                        }
                         syncBackBuffer();
                         picture = (BufferedImage) offImage;
                     }
@@ -2992,6 +3478,16 @@ public class GameSparker extends Panel implements Runnable {
          */
         final long profileWindowNanos = 2_000_000_000L;
 
+        if (PRESENTER && IS_WINDOWS && presenter == null) {
+            presenter = new Presenter();
+            presenter.start();
+            /*
+             * Ahead of the presenter: a tick is a few milliseconds every 53 and
+             * the frames wait for its motion, while the presenter, with no frame
+             * limit, would take all the time it gets.
+             */
+            Thread.currentThread().setPriority(Thread.NORM_PRIORITY + 3);
+        }
         long nextTickNanos = System.nanoTime() + tickNanosFor(xtgraphics.fase);
         long nextRenderNanos = System.nanoTime();
         long lastProfileFlush = nextRenderNanos;
@@ -3029,6 +3525,8 @@ public class GameSparker extends Panel implements Runnable {
                 nextTickNanos += currentTickNanos;
                 ticked = true;
                 retainedValid = false; // the next frame records the scene for this tick
+                keptStale = true;
+                keptBlocked = false;
                 ticksThisFrame++;
                 profileTicks++;
                 if (backBufferStale && !isScenePhase(xtgraphics.fase)) {
@@ -3735,7 +4233,20 @@ public class GameSparker extends Panel implements Runnable {
             long renderNanos = frameIntervalNanos(frameNow);
             boolean scene = isScenePhase(xtgraphics.fase);
             boolean frameDue = renderNanos == 0L || frameNow - nextRenderNanos >= 0L;
-            if (!unpaced && (scene ? frameDue : ticked)) {
+            /*
+             * Races on the graphics card are drawn by the presenter on its own
+             * thread, at the display's rate, from the scene kept for the tick:
+             * this thread only keeps it up to date, so a tick never holds a
+             * frame back.
+             */
+            boolean presented = presenterDraws(scene, unpaced) && handOverKept();
+            if (presenter != null) {
+                presenter.drawRaces(presented);
+            }
+            if (!presented) {
+                keptStale = true; // the presenter starts again from a scene handed over then
+            }
+            if (!unpaced && !presented && (scene ? frameDue : ticked)) {
                 if (renderNanos > 0L) {
                     nextRenderNanos += renderNanos;
                     if (frameNow - nextRenderNanos > renderNanos * 4L || nextRenderNanos - frameNow > renderNanos) {
@@ -3833,7 +4344,8 @@ public class GameSparker extends Panel implements Runnable {
                         profileFrames / seconds, profileFrames == 0 ? 0D : profileRenderNanos / 1e6D / profileFrames,
                         profileFrames == 0 ? 0D : profilePresentNanos / 1e6D / profileFrames,
                         gpuActive ? "gpu" : "software",
-                        gpu != null && GPU_SCENE ? "; last scene " + gpu.sceneStatistics() : "",
+                        gpu != null && GPU_SCENE && (presenter == null || !presenter.drawingRaces())
+                                ? "; last scene " + gpu.sceneStatistics() : "",
                         runAhead ? "on" : "off", profileAheads,
                         profileAheads == 0 ? 0D : profileAheadNanos / 1e6D / profileAheads,
                         profileAheadChecked, profileAheadMissed, describeFpsLimit(), xtgraphics.fase);
@@ -3848,10 +4360,9 @@ public class GameSparker extends Panel implements Runnable {
                         }
                     }
                     if (profileRecords > 0) {
-                        System.out.printf("[kept] scene recorded %d times (%.1f ms each), %d points, %d polygons;"
-                                + " placed for %d frames (%.2f ms each)%n",
-                                profileRecords, profileRecordNanos / 1e6D / profileRecords, retainedScene.points(),
-                                retainedScene.polygons(), profilePlaces,
+                        System.out.printf("[kept] scene recorded %d times (%.1f ms each); placed on this thread for %d"
+                                + " frames (%.2f ms each)%n",
+                                profileRecords, profileRecordNanos / 1e6D / profileRecords, profilePlaces,
                                 profilePlaces == 0 ? 0D : profilePlaceNanos / 1e6D / profilePlaces);
                     }
                     System.out.printf("[pace] frame gaps: median %.1f ms, 99%% %.1f ms, longest %.1f ms; %d of %d frames came late%n",
@@ -3884,7 +4395,9 @@ public class GameSparker extends Panel implements Runnable {
                 continue; // a verify or corpus run: next tick right away
             }
             long wakeAt = nextTickNanos;
-            if (isScenePhase(xtgraphics.fase)) {
+            if (presenter != null && presenter.drawingRaces()) {
+                wakeAt = Math.min(wakeAt - System.nanoTime(), KEY_CHECK_NANOS) + System.nanoTime();
+            } else if (isScenePhase(xtgraphics.fase)) {
                 if (renderNanos == 0L) {
                     Thread.yield();
                     continue;
