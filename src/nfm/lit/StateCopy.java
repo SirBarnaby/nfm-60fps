@@ -282,7 +282,7 @@ final class StateCopy {
         }
     }
 
-    private static Object get(Field field, Object target) {
+    static Object get(Field field, Object target) {
         try {
             return field.get(target);
         } catch (IllegalAccessException ex) {

@@ -82,6 +82,7 @@ What makes that possible:
 - **Bit-exact maths.** Every angle, square root and power in physics and AI goes through `StrictMath`, which gives the same bits on every processor and Java version.
 - **Input read once per tick.** Keys pressed during a race are collected as they arrive and handed to the race at the start of each tick, so a tick always sees one consistent set of keys. That is the input a recording stores.
 - **A record of the state after every tick.** One hash per car, one for the race, one for the camera and one for the random streams, plus a canonical hash (see below); every 40 ticks the values themselves are stored too, so a mismatch can be traced to the field.
+- **A record of the sounds of every tick.** Every sound the race tick starts, loops or stops (crashes, skids, power, checkpoints, fixes, the countdown) is logged in order, so the check also proves the race sounds exactly as it did. The engine and wind loops are chosen after the tick, and which wind clip plays draws from the cosmetic random stream that drawing shares, so they are not logged yet. Recordings made before this (format 3) are still checked, without the sounds.
 
 ### Recording
 
@@ -112,8 +113,9 @@ Before checking, the verifier sets the race back to the state the recording star
 - A few hundred AI and physics values carry over from the race before.
 - A stage's boundary walls never set their surface type, wall flag or dust colour. Each keeps what the track piece in the same slot had in the stage loaded before, which is zero in a freshly started game. So how cars grip and how the AI recovers along the boundary depends on the stages played earlier in the session.
 - An AI driver remembers the last wall it hit, and that memory survives into the next race. Until it hits a wall again it reads that slot's damage and surface, which can lie past the end of the new stage's pieces and still hold values from an earlier stage.
+- The skid and crash sounds each rotate through three clips, and the rotation is only reset when the game starts. So which clip a race's first skid plays depends on the races before it.
 
-Recordings store all three, and the verifier restores them and lists what it had to restore. It also checks that the track's collision boxes and the race's random stream are exactly as recorded, so a change to how stages load is reported, not covered up.
+Recordings store all four, and the verifier restores them and lists what it had to restore. It also checks that the track's collision boxes and the race's random stream are exactly as recorded, so a change to how stages load is reported, not covered up.
 
 If the game crashes during an autopilot or verify run, the run prints the error with the top of its stack trace and exits with 2 instead of hanging.
 
@@ -124,6 +126,8 @@ One original bug is fixed: when stage 17 was the first stage of a session, the g
 `RaceSnapshot` captures everything a race tick reads and writes and puts it back exactly: the cars' physics, drivers and models down to the dents in every polygon, the standings, the replay buffer, every object on the track with what drawing advanced on it, the camera, the sky and all of the random streams. A speculative tick (drawing the next frame from where the race will probably be, for lower input lag) and online play with rollback both need this.
 
 It is fast enough to use on every tick. On the biggest stage (262 objects, 7,212 polygons) a capture takes about 1.5 ms and a restore about 1.3 ms. Capturing leaves out what a race never changes: the track's collision boxes, the corners of every polygon that is not on a car, and the stage's ground, cloud and mountain geometry. The objects on the track, their polygons and the replay buffer each save and restore themselves through a single method, which writes and reads the same values in the same order. The rest is copied by reflection. A snapshot keeps its memory between captures.
+
+Nothing that is undone may be heard either. While a tick is played only to be rewound, every sound command is thrown away before it reaches the speakers or the log (`SoundManager.setDiscarding`); the rollback self-test plays its ticks ahead that way, and the real ticks after each rewind must give exactly the recorded sounds.
 
 The rollback self-test proves nothing is left out. At every rewind it also takes a complete copy of everything the race can reach, by reflection. After rewinding, it compares every field with that copy and reports any value that came back different by class and field, for example `Plane.n in 2 objects`. Leave the drivers out of the snapshot, and the race check fails at the first rewind after the start.
 

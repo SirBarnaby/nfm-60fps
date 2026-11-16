@@ -49,6 +49,16 @@ final class RaceState {
     private static final List<String> FLOW_FIELDS = List.of("starcnt", "holdit", "holdcnt", "winner", "wasted",
             "dested");
 
+    /**
+     * Which skid and crash clip plays next, and the gaps between them. The
+     * rotation is never reset between races, so a race's sounds depend on the
+     * races before it: recorded at the countdown like any other carry-over.
+     * Not grrd or stopcnt: whether the wind sound starts draws from the
+     * cosmetic stream, which drawing shares, so it may differ between runs.
+     */
+    private static final List<String> SOUND_FIELDS = List.of("crshturn", "crashup", "skflg", "dskflg", "skidup",
+            "bfcrash", "bfskid", "pwait", "cntwis", "aird");
+
     private static final Field[] MADNESS = fieldsOf(Madness.class, Set.of(), true);
     private static final Field[] STAT = fieldsOf(Stat.class, Set.of(), true);
     private static final Field[] CONTROL = fieldsOf(Control.class, CONTROL_SKIP, true);
@@ -58,6 +68,7 @@ final class RaceState {
     private static final Field[] CAR = named(ContO.class, CAR_FIELDS);
     private static final Field[] CAMERA = named(Medium.class, CAMERA_FIELDS);
     private static final Field[] FLOW = named(xtGraphics.class, FLOW_FIELDS);
+    private static final Field[] SOUND = named(xtGraphics.class, SOUND_FIELDS);
 
     /** The live objects of one race. */
     record View(Madness[] racers, Control[] drivers, ContO[] cars, CheckPoints checkpoints, Record record,
@@ -92,7 +103,8 @@ final class RaceState {
         }
         out.add(List.of(new Group("race", v.checkpoints(), CHECKPOINTS),
                 new Group("race.record", v.record(), RECORD),
-                new Group("race.flow", v.ui(), FLOW)));
+                new Group("race.flow", v.ui(), FLOW),
+                new Group("race.sound", v.ui(), SOUND)));
         out.add(List.of(new Group("camera", null, CAMERA)));
         return out;
     }

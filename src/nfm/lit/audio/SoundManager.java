@@ -26,12 +26,46 @@ public class SoundManager {
         return silenced;
     }
 
+    /** Sees every sound command the game gives, heard or silenced: the race log keeps them. */
+    public interface Listener {
+        /** @param command "play", "loop" or "stop", a space, then the clip */
+        void heard(String command);
+    }
+
+    private static volatile Listener listener;
+
+    /**
+     * While set, every sound command is thrown away, unheard and unlogged: a
+     * speculative tick, which may never happen, must not make a sound.
+     */
+    private static volatile boolean discarding;
+
+    public static void setListener(Listener l) {
+        listener = l;
+    }
+
+    public static void setDiscarding(boolean discard) {
+        discarding = discard;
+    }
+
+    /** Passes a command to the listener; false if it is to be thrown away. */
+    private static boolean pass(String op, String name) {
+        if (discarding) {
+            return false;
+        }
+        Listener l = listener;
+        if (l != null) {
+            l.heard(op + " " + name);
+        }
+        return true;
+    }
+
     public void add(String name, SoundClip clip) {
         clips.put(name, clip);
     }
 
     public void play(String name) {
-        if (silenced) {
+        if (!pass("play", name) || silenced) {
             return;
         }
         SoundClip soundClip = clips.get(name);
@@ -48,6 +82,9 @@ public class SoundManager {
     }
 
     public void stop(String name) {
+        if (!pass("stop", name)) {
+            return;
+        }
         SoundClip soundClip = clips.get(name);
         if (soundClip != null) {
             if (soundClip instanceof SoundClipUnthreaded) {
@@ -61,7 +98,7 @@ public class SoundManager {
     }
 
     public void loop(String name) {
-        if (silenced) {
+        if (!pass("loop", name) || silenced) {
             return;
         }
         SoundClip soundClip = clips.get(name);

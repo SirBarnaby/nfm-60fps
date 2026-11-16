@@ -141,6 +141,8 @@ final class RaceSession {
     private int pendingLookback;
     private int pendingView;
     private int pendingSpectate;
+    /** Between the start and the end of an in-game tick: its sound commands go to the log. */
+    private boolean inTick;
 
     private RaceSession(Host host, File recordFolder, Autopilot autopilot, Verifier verifier, boolean unpaced) {
         this.host = host;
@@ -196,8 +198,10 @@ final class RaceSession {
                 System.out.println(TAG_VERIFY + "no recorded races in " + verify);
                 System.exit(2);
             }
-            return new RaceSession(host, null, null, new Verifier(host, files, GoldenFrames.fromCommandLine()),
-                    unpacedRequested());
+            RaceSession session = new RaceSession(host, null, null,
+                    new Verifier(host, files, GoldenFrames.fromCommandLine()), unpacedRequested());
+            SoundManager.setListener(session::heard);
+            return session;
         }
         String record = System.getProperty("nfm.record");
         if (record == null) {
@@ -217,6 +221,7 @@ final class RaceSession {
             unpaced = unpacedRequested();
         }
         RaceSession session = new RaceSession(host, folder, pilot, null, unpaced);
+        SoundManager.setListener(session::heard);
         Runtime.getRuntime().addShutdownHook(new Thread(session::saveOnExit, "nfm-record-save"));
         System.out.println(TAG_RECORD + "races -> " + folder.getAbsolutePath()
                 + (pilot == null ? "" : " (autopilot, " + races + " races, " + (unpaced ? "unpaced" : "real time") + ")"));
@@ -300,8 +305,21 @@ final class RaceSession {
                 + (unpaced ? ", unpaced" : ", real time") + ", " + timestamp();
     }
 
+    /** A sound command, from any thread; only the in-game tick's are kept. */
+    private void heard(String command) {
+        if (!inTick) {
+            return;
+        }
+        if (verifier != null) {
+            verifier.heard(command);
+        } else if (racing) {
+            log.addSound(command);
+        }
+    }
+
     /** Start of an in-game tick, after the keyboard was read: the input this tick will use. */
     void ingameInput() {
+        inTick = true;
         if (verifier != null) {
             verifier.ingameInput();
             return;
@@ -335,6 +353,7 @@ final class RaceSession {
 
     /** End of an in-game tick. */
     void ingameTickEnded() {
+        inTick = false;
         if (verifier != null) {
             verifier.tickEnded();
             return;
@@ -626,6 +645,10 @@ final class RaceSession {
         private long restoreNanos;
         private long fastestCapture;
         private long fastestRestore;
+        /** This tick's sound commands, and the first tick whose sounds differed from the recording. */
+        private final List<String> heardThisTick = new ArrayList<>();
+        private int soundMismatchTick = -1;
+        private String soundMismatch;
 
         Verifier(Host host, List<File> files, GoldenFrames golden) {
             this.host = host;
@@ -703,6 +726,9 @@ final class RaceSession {
             restoreNanos = 0L;
             fastestCapture = Long.MAX_VALUE;
             fastestRestore = Long.MAX_VALUE;
+            heardThisTick.clear();
+            soundMismatchTick = -1;
+            soundMismatch = null;
             System.out.println(TAG_VERIFY + file.getName() + ": stage " + log.stage + ", " + log.players + " cars, "
                     + log.ticks() + " ticks, " + log.end.name().toLowerCase(Locale.ROOT) + " (" + log.note + ")");
             setUpRace(host, log.stage, log.nfmmode, log.players, log.unlocked, log.carsBefore);
@@ -715,7 +741,14 @@ final class RaceSession {
             }
         }
 
+        void heard(String command) {
+            if (racing) {
+                heardThisTick.add(command);
+            }
+        }
+
         void ingameInput() {
+            heardThisTick.clear();
             Control u = host.player();
             if (!racing) {
                 // skip the intro fly-by: the race starts from the recorded state anyway
@@ -802,6 +835,7 @@ final class RaceSession {
                     long start = System.nanoTime();
                     rewindTo.restore();
                     long took = System.nanoTime() - start;
+                    SoundManager.setDiscarding(false);
                     restoreNanos += took;
                     fastestRestore = Math.min(fastestRestore, took);
                     Map<String, Integer> left = rewindReference.differences();
@@ -826,6 +860,11 @@ final class RaceSession {
                     mismatchHashes = hashes;
                 }
             }
+            if (soundMismatchTick < 0 && log.hasSounds() && !heardThisTick.equals(log.sounds(tick))) {
+                soundMismatchTick = tick;
+                soundMismatch = "the sounds differ first at tick " + tick + ": recorded " + log.sounds(tick)
+                        + ", got " + heardThisTick;
+            }
             if (golden != null && mismatchTick < 0 && GoldenFrames.isGoldenTick(tick, log.ticks())) {
                 goldenReport.add(golden.check(file.getName().replace(".nfmr", ""), tick, host.frame()));
             }
@@ -839,6 +878,8 @@ final class RaceSession {
             if (tick >= log.ticks()) {
                 if (mismatchTick >= 0) {
                     fail(describeMismatch(null, null, null, false));
+                } else if (soundMismatch != null) {
+                    fail(soundMismatch);
                 } else {
                     pass();
                 }
@@ -852,6 +893,8 @@ final class RaceSession {
                 fastestCapture = Math.min(fastestCapture, took);
                 rewindReference = RaceSnapshot.captureComplete(race, host.sceneCount());
                 aheadLeft = ROLLBACK_AHEAD;
+                // what happens in the ticks played ahead is undone, and must not be heard either
+                SoundManager.setDiscarding(true);
                 rewinds++;
             }
         }
@@ -982,7 +1025,8 @@ final class RaceSession {
         private void pass() {
             passed++;
             StringBuilder sb = new StringBuilder(TAG_VERIFY).append("  OK: all ").append(log.ticks())
-                    .append(" ticks match");
+                    .append(log.hasSounds() ? " ticks and their " + log.soundCount() + " sound commands match"
+                            : " ticks match (recorded before sounds were logged)");
             if (startDifferences > 0) {
                 sb.append(System.lineSeparator()).append(TAG_VERIFY).append("    ").append(startDifferences)
                         .append(" values at the start of the countdown differed from the recording and were restored")
@@ -1029,6 +1073,8 @@ final class RaceSession {
 
         private void endRace() {
             racing = false;
+            aheadLeft = 0;
+            SoundManager.setDiscarding(false);
             log = null;
             finishing = true;
         }

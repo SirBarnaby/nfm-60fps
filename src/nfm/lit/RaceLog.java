@@ -28,12 +28,15 @@ import java.util.zip.GZIPOutputStream;
  * {@link #DUMP_INTERVAL} ticks the values themselves are stored as well, so a
  * mismatch can be traced to the exact fields. The full state depends on how
  * the classes are laid out, so {@link #layout} records that; the canonical
- * state is meant to stay comparable when the code is reorganised.
+ * state is meant to stay comparable when the code is reorganised. Each tick
+ * also keeps the sound commands it gave, in order.
  */
 final class RaceLog {
 
     private static final int MAGIC = 0x4E464D52; // "NFMR"
-    private static final int VERSION = 3;
+    private static final int VERSION = 4;
+    /** The last format without sound commands; still read, without the sound check. */
+    private static final int VERSION_WITHOUT_SOUND = 3;
     /** Ticks between full state dumps: about two seconds of racing. */
     static final int DUMP_INTERVAL = 40;
 
@@ -116,6 +119,9 @@ final class RaceLog {
     private int groups;
 
     private final List<int[]> events = new ArrayList<>();
+    /** The sound commands each tick gave, see {@link nfm.lit.audio.SoundManager.Listener}. */
+    private final List<List<String>> sounds = new ArrayList<>();
+    private boolean hasSounds = true;
     private final List<int[]> dumps = new ArrayList<>();
     private final List<int[]> canonicalDumps = new ArrayList<>();
     private final List<Integer> dumpTicks = new ArrayList<>();
@@ -170,6 +176,37 @@ final class RaceLog {
 
     int canonicalHash(int tick) {
         return canonical[tick];
+    }
+
+    /** A sound command given during the tick being recorded. */
+    void addSound(String command) {
+        soundsOf(ticks).add(command);
+    }
+
+    /** The sound commands the tick gave, in order. */
+    List<String> sounds(int tick) {
+        return tick < sounds.size() ? sounds.get(tick) : List.of();
+    }
+
+    /** How many sound commands the race gave. */
+    int soundCount() {
+        int n = 0;
+        for (List<String> heard : sounds) {
+            n += heard.size();
+        }
+        return n;
+    }
+
+    /** False for recordings made before sounds were logged. */
+    boolean hasSounds() {
+        return hasSounds;
+    }
+
+    private List<String> soundsOf(int tick) {
+        while (sounds.size() <= tick) {
+            sounds.add(new ArrayList<>());
+        }
+        return sounds.get(tick);
     }
 
     void addEvent(int afterTick, Event event) {
@@ -265,6 +302,16 @@ final class RaceLog {
                 out.writeInt(e[1]);
             }
 
+            int last = Math.min(sounds.size(), ticks);
+            out.writeInt(last);
+            for (int t = 0; t < last; t++) {
+                List<String> heard = sounds.get(t);
+                out.writeShort(heard.size());
+                for (String command : heard) {
+                    out.writeUTF(command);
+                }
+            }
+
             /*
              * Each dump is stored as the difference from the one before: most
              * values do not change in a second, so the file compresses well.
@@ -290,10 +337,11 @@ final class RaceLog {
                 throw new IOException(file + " is not a recorded race");
             }
             int version = in.readInt();
-            if (version != VERSION) {
+            if (version != VERSION && version != VERSION_WITHOUT_SOUND) {
                 throw new IOException(file + " was recorded by format " + version + ", this build reads " + VERSION);
             }
             RaceLog log = new RaceLog();
+            log.hasSounds = version != VERSION_WITHOUT_SOUND;
             log.note = in.readUTF();
             log.seed = in.readLong();
             log.stage = in.readInt();
@@ -337,6 +385,17 @@ final class RaceLog {
             int events = in.readInt();
             for (int i = 0; i < events; i++) {
                 log.events.add(new int[] {in.readInt(), in.readInt()});
+            }
+
+            if (log.hasSounds) {
+                int soundTicks = in.readInt();
+                for (int t = 0; t < soundTicks; t++) {
+                    int count = in.readUnsignedShort();
+                    List<String> heard = log.soundsOf(t);
+                    for (int i = 0; i < count; i++) {
+                        heard.add(in.readUTF());
+                    }
+                }
             }
 
             int dumps = in.readInt();

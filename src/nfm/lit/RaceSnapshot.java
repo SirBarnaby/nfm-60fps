@@ -48,8 +48,16 @@ final class RaceSnapshot {
     private static final Set<Field> REPLAY_CARS = Set.of(StateCopy.field(Record.class, "car"),
             StateCopy.field(Record.class, "starcar"), StateCopy.field(Record.class, "ocar"));
 
-    /** The HUD's plain fields: the race flow (countdown, finish, wasted) lives there. */
+    /**
+     * The HUD's plain fields and captions: the race flow (countdown, finish,
+     * wasted) lives there, and a stunt finished in an undone tick must not
+     * leave its caption behind.
+     */
     private static final Field[] UI_FIELDS = scalarFields(xtGraphics.class);
+
+    /** The HUD's own copy of who is wasted, and which engine loop it believes is playing. */
+    private static final Field[] UI_ARRAYS = {StateCopy.field(xtGraphics.class, "dested"),
+            StateCopy.field(xtGraphics.class, "pengs")};
 
     /**
      * Medium's statics a race can change: all but the stage's mountains,
@@ -156,6 +164,9 @@ final class RaceSnapshot {
         }
         copy.capture(v.checkpoints());
         copy.captureFields(v.ui(), UI_FIELDS);
+        for (Field f : UI_ARRAYS) {
+            copy.captureArray(StateCopy.get(f, v.ui()));
+        }
         return Arrays.copyOf(v.cars(), sceneCount);
     }
 
@@ -188,7 +199,7 @@ final class RaceSnapshot {
             if (Modifier.isStatic(m) || Modifier.isFinal(m) || f.isSynthetic()) {
                 continue;
             }
-            if (f.getType().isPrimitive() || f.getType().isEnum()) {
+            if (f.getType().isPrimitive() || f.getType().isEnum() || f.getType() == String.class) {
                 f.setAccessible(true);
                 out.add(f);
             }
