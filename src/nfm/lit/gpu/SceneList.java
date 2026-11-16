@@ -29,6 +29,12 @@ public final class SceneList {
     public static final int DRAW_POLYGON_EXACT = 7;
     /** Names what the next polygons belong to; only written for tests, drawn as nothing. */
     public static final int TAG = 8;
+    /**
+     * level 0-255: how much the next polygons glow, as a flame, a lamp or
+     * the sky in a lightning flash does; drawn brighter than white on an HDR
+     * display, and as nothing anywhere else.
+     */
+    public static final int GLOW = 9;
 
     private int[] data = new int[1 << 16];
     private int size;
@@ -95,6 +101,12 @@ public final class SceneList {
         ensure(2);
         data[size++] = TAG;
         data[size++] = value;
+    }
+
+    public void glow(int level) {
+        ensure(2);
+        data[size++] = GLOW;
+        data[size++] = Math.max(0, Math.min(255, level));
     }
 
     public void fillRect(int x, int y, int width, int height) {

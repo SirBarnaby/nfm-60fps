@@ -432,7 +432,9 @@ public class Plane {
                 }
 
                 rd.setColor(new Color(230, 230, 230));
+                Glow.set(Glow.FLAME);
                 rd.fillPolygon(ai3, ai5, n);
+                Glow.off();
             }
             float f = 1.0F;
             if (embos <= 4)/// explode outward a little + white flame
@@ -563,7 +565,9 @@ public class Plane {
                     k9 = 0;
                 }
                 rd.setColor(new Color(k8, i9, k9));
+                Glow.set(Glow.FLAME);
                 rd.fillPolygon(ai12, ai13, 3);
+                Glow.off();
                 ai[0] = ox[pa] + i;
                 ai2[0] = oy[pa] + j;
                 ai1[0] = oz[pa] + k;
@@ -623,7 +627,9 @@ public class Plane {
                     k9 = 0;
                 }
                 rd.setColor(new Color(k8, i9, k9));
+                Glow.set(Glow.FLAME);
                 rd.fillPolygon(ai12, ai13, 3);
+                Glow.off();
             }
             for (int k3 = 0; k3 < n; k3++) {
                 if (typ == 1) {
@@ -1121,6 +1127,10 @@ public class Plane {
             if (exact) {
                 Precise.plane(ox, oy, oz, mirrored, n, i, j, k, l, i1, j1, k1, l1, wx, wy, wz, ai14, ai15);
             }
+            boolean lamp = Medium.lightson && light != 0 && !blackout;
+            if (lamp) {
+                Glow.set(Glow.LAMP);
+            }
             rd.fillPolygon(ai14, ai15, n);
             if (Medium.trk && gr == -10) {
                 flag = false;
@@ -1181,6 +1191,7 @@ public class Plane {
                             k14 = 0;
                         }
                         rd.setColor(new Color(l11, j13, k14));
+                        Glow.set(Glow.REPAIR);
                         rd.drawPolygon(ai14, ai15, n);
                         flx = 2;
                     }
@@ -1201,6 +1212,7 @@ public class Plane {
                             k14 = 0;
                         }
                         rd.setColor(new Color(l11, j13, k14));
+                        Glow.set(Glow.REPAIR);
                         rd.drawPolygon(ai14, ai15, n);
                         flx = 2;
                     }
@@ -1218,6 +1230,7 @@ public class Plane {
                 rd.setColor(new Color(l11, j13, k14));
                 rd.drawPolygon(ai14, ai15, n);
             }
+            Glow.off(); // a lamp's glow, or the repair flash's, ends with its polygon
             if (gr == -10) {
                 if (!Medium.trk) {
                     int i12 = c[0];

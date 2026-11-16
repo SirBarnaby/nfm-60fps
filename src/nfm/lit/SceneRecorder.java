@@ -40,6 +40,8 @@ final class SceneRecorder extends NullGraphics {
     private RetainedScene retained;
     private float[] screenX = new float[16];
     private float[] screenY = new float[16];
+    /** The glow of the polygons being recorded, see {@link #glow}. */
+    private int glow;
 
     /** Starts recording a frame that would have been drawn into {@code target}. */
     SceneRecorder begin(Graphics2D target) {
@@ -47,6 +49,7 @@ final class SceneRecorder extends NullGraphics {
         list.clear();
         unsupported = false;
         unbind();
+        glow = 0;
         startColor = target.getColor();
         startAntialias = target.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
         super.setColor(startColor);
@@ -89,7 +92,7 @@ final class SceneRecorder extends NullGraphics {
                     g.fillRect(data[i + 1], data[i + 2], data[i + 3], data[i + 4]);
                     i += 5;
                 }
-                case SceneList.TAG -> i += 2;
+                case SceneList.TAG, SceneList.GLOW -> i += 2;
                 case SceneList.FILL_POLYGON, SceneList.DRAW_POLYGON,
                         SceneList.FILL_POLYGON_EXACT, SceneList.DRAW_POLYGON_EXACT -> {
                     int op = data[i];
@@ -187,6 +190,17 @@ final class SceneRecorder extends NullGraphics {
     void tag(int id) {
         if (tagging) {
             list.tag(-1 - id);
+        }
+    }
+
+    /**
+     * How much the polygons from now on glow, 0 (not at all) to 255; only
+     * an HDR display shows it, software draws them as before.
+     */
+    void glow(int level) {
+        if (level != glow) {
+            glow = level;
+            list.glow(level);
         }
     }
 

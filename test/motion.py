@@ -37,7 +37,7 @@ def polygons(data):
         if op == 8:
             tag = int(data[i + 1])
             i += 2
-        elif op in (1, 5):
+        elif op in (1, 5, 9):
             i += 2
         elif op == 4:
             i += 5

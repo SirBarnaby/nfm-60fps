@@ -598,10 +598,14 @@ public class ContO {
             int j1 = Medium.cy + (int) ((y - Medium.y - Medium.cy) * RadicalMath.cos(Medium.zy) - (j - Medium.cz) * RadicalMath.sin(Medium.zy));
             if (Utility.cYs(j1 + maxR, k) > -Medium.cullY && Utility.cYs(j1 - maxR, k) < Medium.h + Medium.cullY) {
                 if (elec) {
+                    Glow.set(Glow.ELECTRIC);
                     electrify(rd);
+                    Glow.off();
                 }
                 if (fix) {
+                    Glow.set(Glow.REPAIR);
                     fixit(rd);
+                    Glow.off();
                 }
                 if (checkpoint != 0 && checkpoint - 1 == Medium.checkpoint) {
                     l = -1;

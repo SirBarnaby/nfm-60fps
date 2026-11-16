@@ -55,6 +55,7 @@ final class SceneGeometry {
     private int[] drawKind = new int[256];
     private int[] drawStart = new int[256];
     private int[] drawCount = new int[256];
+    private int[] drawGlow = new int[256];
     private int draws;
     private int open;
 
@@ -66,6 +67,8 @@ final class SceneGeometry {
     private float[] px = new float[16];
     private float[] py = new float[16];
     private int abgr;
+    /** How much the polygons being built glow, see {@link SceneList#GLOW}. */
+    private int glow;
     private int evenOddPolygons;
     private int antialiased;
 
@@ -92,6 +95,11 @@ final class SceneGeometry {
 
     int count(int draw) {
         return drawCount[draw];
+    }
+
+    /** How much the draw's polygons glow, 0 to 255. */
+    int glow(int draw) {
+        return drawGlow[draw];
     }
 
     /** Polygons in the last frame that needed the stencil. */
@@ -126,6 +134,7 @@ final class SceneGeometry {
         scaleX = 2F / width;
         scaleY = 2F / height;
         abgr = 0xff000000;
+        glow = 0;
         boolean antialias = false;
         int[] data = list.data();
         int size = list.size();
@@ -141,6 +150,10 @@ final class SceneGeometry {
                     i += 2;
                 }
                 case SceneList.TAG -> i += 2;
+                case SceneList.GLOW -> {
+                    glow = data[i + 1];
+                    i += 2;
+                }
                 case SceneList.FILL_RECT -> {
                     int x = data[i + 1];
                     int y = data[i + 2];
@@ -578,7 +591,7 @@ final class SceneGeometry {
      * starts one; every even-odd polygon is a draw call of its own.
      */
     private void begin(int kind) {
-        if (kind == PLAIN && draws > 0 && drawKind[draws - 1] == PLAIN) {
+        if (kind == PLAIN && draws > 0 && drawKind[draws - 1] == PLAIN && drawGlow[draws - 1] == glow) {
             open = draws - 1;
             return;
         }
@@ -586,8 +599,10 @@ final class SceneGeometry {
             drawKind = Arrays.copyOf(drawKind, draws * 2);
             drawStart = Arrays.copyOf(drawStart, draws * 2);
             drawCount = Arrays.copyOf(drawCount, draws * 2);
+            drawGlow = Arrays.copyOf(drawGlow, draws * 2);
         }
         drawKind[draws] = kind;
+        drawGlow[draws] = glow;
         drawStart[draws] = vertexCount;
         drawCount[draws] = 0;
         open = draws++;

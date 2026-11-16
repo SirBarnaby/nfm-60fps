@@ -408,6 +408,8 @@ public class GameSparker extends Panel implements Runnable {
     private BufferedImage gpuSceneHud;
     /** The scene read back from the graphics card, at the size it drew it; for tests. */
     private volatile BufferedImage capturedGpuScene;
+    /** In HDR, how much each pixel of capturedGpuScene glows. */
+    private volatile BufferedImage capturedGlow;
 
     public static String gameState = "None";
     public static int gameStateID;
@@ -2815,6 +2817,8 @@ public class GameSparker extends Panel implements Runnable {
             }
             boolean smooth = place.width != GameFacts.screenWidth || place.height != GameFacts.screenHeight;
             gpu.setVsync(fpsLimit == FPS_MATCH_DISPLAY);
+            gpu.setHdr(hdrMode);
+            hdrInUse = gpu.hdrStatus();
             Dimension size = new Dimension(width, height);
             boolean shown;
             try {
@@ -2835,6 +2839,7 @@ public class GameSparker extends Panel implements Runnable {
                 if (capture) {
                     capturedGpu = gpu.presentAndCapture(picture, size, place, smooth);
                     capturedGpuScene = picture == null ? gpu.takeSceneCapture() : null;
+                    capturedGlow = picture == null ? gpu.takeGlowCapture() : null;
                     shown = true;
                 } else {
                     shown = gpu.present(picture, size, place, smooth);
@@ -3004,7 +3009,6 @@ public class GameSparker extends Panel implements Runnable {
         };
     }
 
-    /** -Dnfm.msaa, else off in hidden test runs (their pictures are compared pixel for pixel), else the saved choice. */
     private static final String GAMEPAD_COOKIE = "gamepad";
     private static final String RUMBLE_COOKIE = "rumble";
     private static volatile boolean gamepadChanged;
@@ -3071,6 +3075,69 @@ public class GameSparker extends Panel implements Runnable {
         });
     }
 
+    private static final String HDR_COOKIE = "hdr";
+    /** GpuDisplay.HDR_OFF, HDR_AUTO or HDR_FORCE. */
+    private static volatile int hdrMode = nfm.lit.gpu.GpuDisplay.HDR_AUTO;
+    private static volatile boolean hdrChanged;
+    /** What the graphics card made of hdrMode, for the console. */
+    private static volatile String hdrInUse = "";
+
+    /** HDR_OFF, HDR_AUTO or HDR_FORCE for "off", "auto" or "force", or -1 if it is none of those. */
+    public static int parseHdr(String text) {
+        return switch (text.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "off", "false" -> nfm.lit.gpu.GpuDisplay.HDR_OFF;
+            case "auto", "on", "true" -> nfm.lit.gpu.GpuDisplay.HDR_AUTO;
+            case "force" -> nfm.lit.gpu.GpuDisplay.HDR_FORCE;
+            default -> -1;
+        };
+    }
+
+    /** HDR_OFF or HDR_AUTO, saved. */
+    public static void setHdr(int mode) {
+        hdrMode = mode;
+        hdrChanged = true;
+    }
+
+    /** The HDR setting in words, with what it does on this monitor. */
+    public static String describeHdr() {
+        String words = switch (hdrMode) {
+            case nfm.lit.gpu.GpuDisplay.HDR_OFF -> "off";
+            case nfm.lit.gpu.GpuDisplay.HDR_FORCE -> "forced";
+            default -> "auto";
+        };
+        if (!gpuRenderer) {
+            return words + " (only with the gpu renderer)";
+        }
+        String inUse = hdrInUse;
+        return inUse.isEmpty() || hdrMode == nfm.lit.gpu.GpuDisplay.HDR_OFF ? words : words + ": " + inUse;
+    }
+
+    /** -Dnfm.hdr, else off in hidden test runs (their pictures are compared pixel for pixel), else the saved choice. */
+    private void loadHdr() {
+        String property = System.getProperty("nfm.hdr");
+        int mode = nfm.lit.gpu.GpuDisplay.HDR_AUTO;
+        if (property != null) {
+            mode = parseHdr(property);
+            if (mode < 0) {
+                HLogger.warn("Ignoring invalid nfm.hdr value: " + property);
+                mode = nfm.lit.gpu.GpuDisplay.HDR_AUTO;
+            }
+        } else if (System.getProperty("nfm.autotest") != null || RaceSession.runsHidden()) {
+            mode = nfm.lit.gpu.GpuDisplay.HDR_OFF;
+        } else if (readcookie(HDR_COOKIE) == 0) {
+            mode = nfm.lit.gpu.GpuDisplay.HDR_OFF;
+        }
+        hdrMode = mode;
+        hdrChanged = false;
+    }
+
+    private void saveHdrIfChanged() {
+        if (hdrChanged) {
+            hdrChanged = false;
+            savecookie(HDR_COOKIE, hdrMode == nfm.lit.gpu.GpuDisplay.HDR_OFF ? "0" : "1");
+        }
+    }
+
     private void saveGamepadIfChanged() {
         if (gamepadChanged) {
             gamepadChanged = false;
@@ -3079,6 +3146,7 @@ public class GameSparker extends Panel implements Runnable {
         }
     }
 
+    /** -Dnfm.msaa, else off in hidden test runs (their pictures are compared pixel for pixel), else the saved choice. */
     private void loadMultisample() {
         String property = System.getProperty("nfm.msaa");
         int samples = 1;
@@ -3308,6 +3376,7 @@ public class GameSparker extends Panel implements Runnable {
         capturedWindow = null;
         capturedGpu = null;
         capturedGpuScene = null;
+        capturedGlow = null;
         captureRequested = true;
         long deadline = System.currentTimeMillis() + 2_000L;
         while (captureRequested && System.currentTimeMillis() < deadline) {
@@ -3333,6 +3402,11 @@ public class GameSparker extends Panel implements Runnable {
             if (gpuScene != null) {
                 // the scene as the graphics card drew it (1280x720 unless the window is larger), to compare with the picture
                 ImageIO.write(gpuScene, "png", new File(directory, name.replace(".png", "-gpuscene.png")));
+            }
+            BufferedImage glow = capturedGlow;
+            if (glow != null) {
+                // in HDR, what of the scene glows (white glows most)
+                ImageIO.write(glow, "png", new File(directory, name.replace(".png", "-glow.png")));
             }
             BufferedImage gpuWindow = capturedGpu;
             if (gpuWindow != null) {
@@ -3612,6 +3686,7 @@ public class GameSparker extends Panel implements Runnable {
         loadScaleToWindow();
         loadRenderer();
         loadMultisample();
+        loadHdr();
         startAutoTest();
         session = RaceSession.fromCommandLine(new SessionHost());
         startGamepads();
@@ -3690,6 +3765,7 @@ public class GameSparker extends Panel implements Runnable {
                 saveScaleToWindowIfChanged();
                 saveRendererIfChanged();
                 saveMultisampleIfChanged();
+                saveHdrIfChanged();
                 saveGamepadIfChanged();
                 if (session != null) {
                     session.beforeTick();

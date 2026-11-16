@@ -1494,6 +1494,9 @@ public class Medium {
                 csky[2] = 0;
             }
         }
+        if (lightn != -1 && lton) {
+            Glow.set((lilo - 217) * Glow.LIGHTNING_STEP); // the sky lit by the storm
+        }
         i = csky[0];
         j = csky[1];
         k = csky[2];
@@ -1618,12 +1621,16 @@ public class Medium {
                 exactGradient = exactStep;
             }
 
+            Glow.off();
             if (lightson) {
+                Glow.set(Glow.STAR);
                 drawstars(graphics2d);
+                Glow.off();
             }
             drawmountains(graphics2d);
             drawclouds(graphics2d);
         }
+        Glow.off();
         groundpolys(graphics2d);
         if (noelec != 0) {
             noelec--;

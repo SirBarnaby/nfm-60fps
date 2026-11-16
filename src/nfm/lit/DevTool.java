@@ -401,6 +401,16 @@ public class DevTool {
                 }
                 break;
             }
+            case "hdr": {
+                int mode = args.length == 1 ? GameSparker.parseHdr(args[0]) : -1;
+                if (mode == nfm.lit.gpu.GpuDisplay.HDR_OFF || mode == nfm.lit.gpu.GpuDisplay.HDR_AUTO) {
+                    GameSparker.setHdr(mode);
+                    print("HDR " + GameSparker.describeHdr() + " (saved).");
+                } else {
+                    print("HDR is " + GameSparker.describeHdr() + ".\nUsage: hdr <auto|off>");
+                }
+                break;
+            }
             case "gamepad":
                 if (args.length == 1 && (args[0].equalsIgnoreCase("on") || args[0].equalsIgnoreCase("off"))) {
                     GameSparker.setGamepad(args[0].equalsIgnoreCase("on"));
@@ -451,6 +461,7 @@ public class DevTool {
         commandDescriptions.put("stagesubdir", "Sets the stage subdirectory. Usage: stagesubdir <subdir>");
         commandDescriptions.put("status", "Displays the current game state.");
         commandDescriptions.put("scale", "fit scales the picture to fill the window, keeping its shape; off shows it pixel for pixel. Usage: scale <fit|off>");
+        commandDescriptions.put("hdr", "HDR output on a monitor that has HDR turned on in Windows: the game looks as it does in SDR, at the brightness Windows shows SDR white at, and flames, lamps, sparks, stars and lightning shine brighter than white. Needs the gpu renderer. Usage: hdr <auto|off>");
         commandDescriptions.put("gamepad", "Game controllers (Xbox, PlayStation, Switch and others): RT or A accelerates, LT or X brakes, the left stick or d-pad steers, B is the handbrake, LB/RB look back, Y changes the view, Start pauses; in menus the stick moves and A selects. Hard hits shake the pad. Usage: gamepad <on|off>, gamepad rumble <on|off>");
         commandDescriptions.put("msaa", "Smooths the edges of the polygons in races drawn on the graphics card by taking 2, 4 or 8 samples per pixel (multisampling); off keeps the game's own hard edges. Usage: msaa <off|2|4|8>");
         commandDescriptions.put("renderer", "gpu puts frames on screen through the graphics card (Direct3D 11), which scales them for free; software draws them with Java2D. Usage: renderer <gpu|software>");
