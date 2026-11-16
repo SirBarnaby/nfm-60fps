@@ -28,6 +28,8 @@ final class SceneRecorder extends NullGraphics {
     private Color startColor;
     private Object startAntialias;
     private boolean unsupported;
+    /** How much the current composite lets a colour cover: 1 but while something see-through is drawn. */
+    private float opacity = 1F;
     /* exact corners for the next polygon drawn at boundX/boundY, see bind */
     private int[] boundX;
     private int[] boundY;
@@ -46,6 +48,7 @@ final class SceneRecorder extends NullGraphics {
         this.target = target;
         list.clear();
         unsupported = false;
+        opacity = 1F;
         unbind();
         startColor = target.getColor();
         startAntialias = target.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
@@ -77,7 +80,7 @@ final class SceneRecorder extends NullGraphics {
         for (int i = 0; i < size;) {
             switch (data[i]) {
                 case SceneList.SET_COLOR -> {
-                    g.setColor(new Color(data[i + 1]));
+                    g.setColor(new Color(data[i + 1], true));
                     i += 2;
                 }
                 case SceneList.ANTIALIAS -> {
@@ -121,10 +124,30 @@ final class SceneRecorder extends NullGraphics {
         if (c != null) {
             super.setColor(c);
             target.setColor(c);
-            list.setColor(c.getRGB());
-            if (c.getAlpha() != 255) {
-                unsupported = true; // the scene is opaque; translucency would need blending
-            }
+            list.setColor(coverage(c));
+        }
+    }
+
+    /** The colour as drawn under the current composite: its alpha times the composite's. */
+    private int coverage(Color c) {
+        int alpha = opacity == 1F ? c.getAlpha() : Math.round(c.getAlpha() * opacity);
+        return alpha << 24 | (c.getRGB() & 0xffffff);
+    }
+
+    /**
+     * Source-over at some opacity (how the ghost car is drawn) is recorded
+     * as see-through colours, which the card blends as Java2D would; any
+     * other composite is drawn in software.
+     */
+    @Override
+    public void setComposite(java.awt.Composite comp) {
+        super.setComposite(comp);
+        target.setComposite(comp);
+        if (comp instanceof java.awt.AlphaComposite ac && ac.getRule() == java.awt.AlphaComposite.SRC_OVER) {
+            opacity = ac.getAlpha();
+            list.setColor(coverage(getColor()));
+        } else {
+            unsupported = true;
         }
     }
 

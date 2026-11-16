@@ -401,6 +401,14 @@ public class DevTool {
                 }
                 break;
             }
+            case "ghost":
+                if (args.length == 1 && (args[0].equalsIgnoreCase("on") || args[0].equalsIgnoreCase("off"))) {
+                    GameSparker.setGhost(args[0].equalsIgnoreCase("on"));
+                    print("Ghost car " + (GameSparker.isGhost() ? "on" : "off") + " (saved).");
+                } else {
+                    print("Ghost car is " + (GameSparker.isGhost() ? "on" : "off") + ".\nUsage: ghost <on|off>");
+                }
+                break;
             case "clear":
                 textArea.setText("");
                 break;
@@ -439,6 +447,7 @@ public class DevTool {
         commandDescriptions.put("stagesubdir", "Sets the stage subdirectory. Usage: stagesubdir <subdir>");
         commandDescriptions.put("status", "Displays the current game state.");
         commandDescriptions.put("scale", "fit scales the picture to fill the window, keeping its shape; off shows it pixel for pixel. Usage: scale <fit|off>");
+        commandDescriptions.put("ghost", "Shows your fastest finish on the stage as a see-through car that races with you; it is only drawn and never touches the race. Takes effect from the next race. Usage: ghost <on|off>");
         commandDescriptions.put("msaa", "Smooths the edges of the polygons in races drawn on the graphics card by taking 2, 4 or 8 samples per pixel (multisampling); off keeps the game's own hard edges. Usage: msaa <off|2|4|8>");
         commandDescriptions.put("renderer", "gpu puts frames on screen through the graphics card (Direct3D 11), which scales them for free; software draws them with Java2D. Usage: renderer <gpu|software>");
         commandDescriptions.put("runahead", "Shows race frames one tick ahead with the keys held now, for 53 ms less input lag. Usage: runahead <on|off>");

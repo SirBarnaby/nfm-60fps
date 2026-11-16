@@ -414,7 +414,7 @@ public final class GpuDisplay {
             }
             if (geometry.kind(d) == SceneGeometry.PLAIN) {
                 bgfx_set_transient_vertex_buffer(0, transientBuffer, start, count);
-                bgfx_set_state(OPAQUE | BGFX_STATE_BLEND_ALPHA, 0); // only antialiased lines are not opaque
+                bgfx_set_state(OPAQUE | BGFX_STATE_BLEND_ALPHA, 0); // only antialiased lines and the ghost car are not opaque
                 bgfx_submit(SCENE_VIEW, colorProgram, 0, BGFX_DISCARD_ALL);
             } else {
                 // flip the stencil where the fan covers, then colour where it is odd and clear it again
@@ -424,7 +424,7 @@ public final class GpuDisplay {
                 bgfx_submit(SCENE_VIEW, colorProgram, 0, BGFX_DISCARD_ALL);
                 bgfx_set_transient_vertex_buffer(0, transientBuffer, start, count);
                 bgfx_set_stencil(stencilOdd, BGFX_STENCIL_NONE);
-                bgfx_set_state(OPAQUE, 0);
+                bgfx_set_state(OPAQUE | BGFX_STATE_BLEND_ALPHA, 0); // see-through only for the ghost car
                 bgfx_submit(SCENE_VIEW, colorProgram, 0, BGFX_DISCARD_ALL);
             }
         }

@@ -133,7 +133,7 @@ final class SceneGeometry {
             switch (data[i]) {
                 case SceneList.SET_COLOR -> {
                     int rgb = data[i + 1];
-                    abgr = 0xff000000 | (rgb & 0xff) << 16 | (rgb & 0xff00) | (rgb >> 16 & 0xff);
+                    abgr = (rgb & 0xff000000) | (rgb & 0xff) << 16 | (rgb & 0xff00) | (rgb >> 16 & 0xff);
                     i += 2;
                 }
                 case SceneList.ANTIALIAS -> {

@@ -216,6 +216,23 @@ public class GameSparker extends Panel implements Runnable {
     private final Poses prevPoses = new Poses();
     /** Real race ticks so far: a run-ahead tick is good until the next one, or until a key changes. */
     private int raceTicks;
+
+    private static final String GHOST_COOKIE = "ghost";
+    /** Show the player's fastest finish on the stage as a see-through car (on unless turned off). */
+    private static volatile boolean ghostOn = true;
+    private static volatile boolean ghostOnChanged;
+    /** The ghost for the stage being raced, or null; see {@link Ghost}. */
+    private Ghost ghost;
+    /** {@link #raceTicks} when the countdown started, as the ghost's run counts its ticks; -1 before it. */
+    private int ghostStartTick = -1;
+    /** The ghost is on the track this tick: posed between ghostFrom and ghostTo, run ahead to ghostAhead. */
+    private boolean ghostShown;
+    private final int[] ghostFrom = new int[RaceLog.POSE];
+    private final int[] ghostTo = new int[RaceLog.POSE];
+    private final int[] ghostAhead = new int[RaceLog.POSE];
+    /* the two poses frames are drawn between: ghostFrom and ghostTo, or for the run-ahead tick ghostTo and ghostAhead */
+    private int[] ghostDrawFrom = ghostFrom;
+    private int[] ghostDrawTo = ghostTo;
     private boolean aheadValid;
     private int aheadTick;
     private int aheadKeys;
@@ -1430,6 +1447,9 @@ public class GameSparker extends Panel implements Runnable {
         if (session != null) {
             session.stageLoaded();
         }
+        ghostShown = false;
+        ghostStartTick = -1;
+        ghost = ghostOn && !custom ? Ghost.load(checkpoints.stage, aconto1, carModels.length) : null;
         System.gc();
     }
 
@@ -1558,6 +1578,89 @@ public class GameSparker extends Panel implements Runnable {
         HLogger.info("[motiontest] wrote " + file);
     }
 
+    /**
+     * After a race tick: where the ghost was after the same tick of its run,
+     * and after the next one for the run-ahead tick. It leaves the track when
+     * its run ends.
+     */
+    private void moveGhost() {
+        int tick = raceTicks - 1 - ghostStartTick;
+        boolean was = ghostShown;
+        ghostShown = ghostOn && ghost != null && ghostStartTick >= 0 && ghost.has(tick);
+        if (!ghostShown) {
+            return;
+        }
+        System.arraycopy(ghostTo, 0, ghostFrom, 0, RaceLog.POSE);
+        ghost.pose(tick, ghostTo);
+        if (!was) {
+            System.arraycopy(ghostTo, 0, ghostFrom, 0, RaceLog.POSE); // its first tick: nowhere to come from
+        }
+        if (ghost.has(tick + 1)) {
+            ghost.pose(tick + 1, ghostAhead);
+        } else {
+            System.arraycopy(ghostTo, 0, ghostAhead, 0, RaceLog.POSE);
+        }
+    }
+
+    /** True if frames of this race show the ghost. */
+    private boolean ghostOnTrack() {
+        return ghostShown && ghostOn && ui.fase == Phase.INGAME;
+    }
+
+    /**
+     * Poses the ghost's car for {@code alpha} between the two poses frames
+     * are drawn between, as {@link #renderIngameScene} poses the cars, and
+     * gives a frame for the graphics card its exact position as car
+     * {@code slot}.
+     *
+     * @return the ghost's car, or null if this frame has no ghost
+     */
+    private ContO placeGhost(float alpha, int slot) {
+        if (!ghostOnTrack()) {
+            return null;
+        }
+        ContO c = ghost.car;
+        int[] a = ghostDrawFrom;
+        int[] b = ghostDrawTo;
+        if (teleported(b[0] - a[0], b[1] - a[1], b[2] - a[2])) {
+            c.x = b[0];
+            c.y = b[1];
+            c.z = b[2];
+            c.xz = b[3];
+            c.xy = b[4];
+            c.zy = b[5];
+            c.wxz = b[6];
+            c.wzy = b[7];
+            return c;
+        }
+        c.x = mix(a[0], b[0], alpha);
+        c.y = mix(a[1], b[1], alpha);
+        c.z = mix(a[2], b[2], alpha);
+        c.xz = mixAngle(a[3], b[3], alpha);
+        c.xy = mixAngle(a[4], b[4], alpha);
+        c.zy = mixAngle(a[5], b[5], alpha);
+        c.wxz = mix(a[6], b[6], alpha);
+        c.wzy = mixPeriodic(a[7], b[7], alpha, 45);
+        if (Precise.on) {
+            Precise.car(slot, c, fraction(a[0], b[0], alpha), fraction(a[1], b[1], alpha),
+                    fraction(a[2], b[2], alpha), periodicFraction(a[3], b[3], alpha, 360),
+                    periodicFraction(a[4], b[4], alpha, 360), periodicFraction(a[5], b[5], alpha, 360),
+                    fraction(a[6], b[6], alpha), periodicFraction(a[7], b[7], alpha, 45));
+        }
+        return c;
+    }
+
+    /** Draws the ghost's car see-through. */
+    private static void drawGhost(Graphics2D g, ContO car) {
+        java.awt.Composite before = g.getComposite();
+        g.setComposite(AlphaComposite.SrcOver.derive(Ghost.OPACITY));
+        try {
+            car.d(g);
+        } finally {
+            g.setComposite(before);
+        }
+    }
+
     /** How far the exact value between a and b is past {@link #mix}'s whole one. */
     private static float fraction(int a, int b, float t) {
         float exact = (b - a) * t;
@@ -1607,8 +1710,13 @@ public class GameSparker extends Panel implements Runnable {
      * pair.
      */
     private void drawWorldObjects(Graphics2D g) {
-        if (drawKeys.length < nob) {
-            drawKeys = new long[nob];
+        drawWorldObjects(g, null);
+    }
+
+    /** As {@link #drawWorldObjects(Graphics2D)}, with the ghost's car (if not null) sorted in after the scene's objects. */
+    private void drawWorldObjects(Graphics2D g, ContO ghostCar) {
+        if (drawKeys.length < nob + 1) {
+            drawKeys = new long[nob + 1];
         }
         int count = 0;
         for (int i = 0; i < nob; i++) {
@@ -1620,9 +1728,21 @@ public class GameSparker extends Panel implements Runnable {
                 sceneObjects[i].d(g);
             }
         }
+        if (ghostCar != null) {
+            if (ghostCar.dist != 0) {
+                drawKeys[count++] = ((long) ghostCar.dist << 32) | nob;
+            } else {
+                drawGhost(g, ghostCar);
+            }
+        }
         Arrays.sort(drawKeys, 0, count);
         for (int k = count - 1; k >= 0; k--) {
-            sceneObjects[(int) drawKeys[k]].d(g);
+            int i = (int) drawKeys[k];
+            if (i == nob) {
+                drawGhost(g, ghostCar);
+            } else {
+                sceneObjects[i].d(g);
+            }
         }
     }
 
@@ -1716,6 +1836,8 @@ public class GameSparker extends Panel implements Runnable {
             }
         }
 
+        ContO ghostCar = placeGhost(alpha, np);
+
         saveSceneDrawState();
         try {
             Graphics2D target = retainedRecording ? recordingRecorder.begin(rd)
@@ -1723,7 +1845,7 @@ public class GameSparker extends Panel implements Runnable {
             Precise.cameraAngles();
             Medium.d(target);
             Precise.cameraAngles();
-            drawWorldObjects(target);
+            drawWorldObjects(target, ghostCar);
         } finally {
             restoreSceneDrawState();
             Precise.end();
@@ -1852,6 +1974,7 @@ public class GameSparker extends Panel implements Runnable {
                 if (session != null) {
                     session.countdownStarting();
                 }
+                ghostStartTick = raceTicks;
                 Medium.startCountdown();
                 mouses = 0;
                 Medium.vert = false;
@@ -2042,6 +2165,17 @@ public class GameSparker extends Panel implements Runnable {
                 out.setCarStart(i, prevCarX[i], prevCarY[i], prevCarZ[i], prevCarXZ[i], prevCarXY[i], prevCarZY[i],
                         prevCarWXZ[i], prevCarWZY[i]);
                 out.setCar(i, PoseSpan.MOVING, c.x, c.y, c.z, c.xz, c.xy, c.zy, c.wxz, c.wzy);
+            }
+        }
+        if (ghostOnTrack() && np < FramePose.SLOTS) {
+            int[] a = ahead ? ghostTo : ghostFrom;
+            int[] b = ahead ? ghostAhead : ghostTo;
+            out.slots = np + 1;
+            if (teleported(b[0] - a[0], b[1] - a[1], b[2] - a[2])) {
+                out.setCar(np, PoseSpan.AT_END, b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]);
+            } else {
+                out.setCarStart(np, a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7]);
+                out.setCar(np, PoseSpan.MOVING, b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]);
             }
         }
         int[] from = out.cameraStart;
@@ -2491,11 +2625,15 @@ public class GameSparker extends Panel implements Runnable {
         prevPoses.takePrev(np);
         nowPoses.putPrev(np);
         aheadPoses.putLive(np);
+        ghostDrawFrom = ghostTo;
+        ghostDrawTo = ghostAhead;
         try {
             renderIngameScene(alpha);
         } finally {
             nowPoses.putLive(np);
             prevPoses.putPrev(np);
+            ghostDrawFrom = ghostFrom;
+            ghostDrawTo = ghostTo;
         }
     }
 
@@ -3174,6 +3312,36 @@ public class GameSparker extends Panel implements Runnable {
     }
 
     /** -Dnfm.runahead=true|false, else the saved choice, else on. */
+    /** Turns the ghost car on or off, and saves the choice. */
+    public static void setGhost(boolean on) {
+        ghostOn = on;
+        ghostOnChanged = true;
+    }
+
+    public static boolean isGhost() {
+        return ghostOn;
+    }
+
+    /** -Dnfm.ghost=on|off, else off in hidden test runs (whose pictures are compared), else the saved choice. */
+    private void loadGhost() {
+        String property = System.getProperty("nfm.ghost");
+        if (property != null) {
+            ghostOn = !property.trim().equalsIgnoreCase("off") && !property.trim().equalsIgnoreCase("false");
+        } else if (System.getProperty("nfm.autotest") != null || RaceSession.runsHidden()) {
+            ghostOn = false;
+        } else {
+            ghostOn = readcookie(GHOST_COOKIE) != 0;
+        }
+        ghostOnChanged = false;
+    }
+
+    private void saveGhostIfChanged() {
+        if (ghostOnChanged) {
+            ghostOnChanged = false;
+            savecookie(GHOST_COOKIE, ghostOn ? "1" : "0");
+        }
+    }
+
     private void loadRunAhead() {
         String property = System.getProperty("nfm.runahead");
         if (property != null) {
@@ -3537,6 +3705,7 @@ public class GameSparker extends Panel implements Runnable {
         loadScaleToWindow();
         loadRenderer();
         loadMultisample();
+        loadGhost();
         startAutoTest();
         session = RaceSession.fromCommandLine(new SessionHost());
         final boolean unpaced = session != null && session.unpaced();
@@ -3614,6 +3783,7 @@ public class GameSparker extends Panel implements Runnable {
                 saveScaleToWindowIfChanged();
                 saveRendererIfChanged();
                 saveMultisampleIfChanged();
+                saveGhostIfChanged();
                 if (session != null) {
                     session.beforeTick();
                 }
@@ -3953,6 +4123,7 @@ public class GameSparker extends Panel implements Runnable {
                     }
                 }
                 raceTicks++;
+                moveGhost();
 
                 if (session != null) {
                     session.ingameTickEnded();
