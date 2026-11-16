@@ -3,7 +3,7 @@
 #   madness.jar  - the game, launched by madness64.exe (see madness64.ini)
 #   runtime\     - a private Java runtime made with jlink, so no Java install is needed to play
 #
-# Needs a JDK 21 or newer to build. It is found via -Jdk, then JAVA_HOME, then %USERPROFILE%\.jdks.
+# Needs a JDK 25 or newer to build. It is found via -Jdk, then JAVA_HOME, then %USERPROFILE%\.jdks.
 
 param(
     [string]$Jdk
@@ -23,7 +23,7 @@ function Find-Jdk {
     foreach ($c in $candidates) {
         if ((Test-Path "$c\bin\javac.exe") -and (Test-Path "$c\bin\jlink.exe")) { return $c }
     }
-    throw 'No JDK 21+ found. Install one (e.g. winget install EclipseAdoptium.Temurin.21.JDK) or pass -Jdk <path>.'
+    throw 'No JDK 25+ found. Install one (e.g. winget install EclipseAdoptium.Temurin.25.JDK) or pass -Jdk <path>.'
 }
 
 $jdkHome = Find-Jdk
@@ -38,7 +38,7 @@ $libJars = Get-ChildItem lib\*.jar | ForEach-Object { "lib/$($_.Name)" }
 $sources = Get-ChildItem src -Recurse -Filter *.java | ForEach-Object FullName
 $sources | Set-Content "$build\sources.txt" -Encoding ascii
 
-& "$jdkHome\bin\javac.exe" -nowarn -encoding UTF-8 --release 21 -cp ($libJars -join ';') -d $classes "@$build\sources.txt"
+& "$jdkHome\bin\javac.exe" -nowarn -encoding UTF-8 --release 25 -cp ($libJars -join ';') -d $classes "@$build\sources.txt"
 if ($LASTEXITCODE -ne 0) { throw 'Compilation failed.' }
 
 # Images loaded with getResource() live next to the classes
@@ -53,9 +53,31 @@ Copy-Item src\nfm\lit\aimg "$classes\nfm\lit\aimg" -Recurse
 & "$jdkHome\bin\jar.exe" --create --file madness.jar --manifest "$build\manifest.txt" -C $classes .
 if ($LASTEXITCODE -ne 0) { throw 'Packaging madness.jar failed.' }
 
-if (Test-Path runtime) { Remove-Item runtime -Recurse -Force }
-& "$jdkHome\bin\jlink.exe" --add-modules java.base,java.desktop,java.logging --strip-debug --no-header-files --no-man-pages --output runtime
-if ($LASTEXITCODE -ne 0) { throw 'Creating the runtime failed.' }
+# The private runtime. Madness.drive and Control.preform (the car physics and
+# the AI) are over HotSpot's 8000-byte limit for compiling a method, so without
+# -XX:-DontCompileHugeMethods they stay interpreted: about 9% of a race frame's
+# CPU time, 2% compiled. Options given to jlink are stored in the runtime, so
+# madness64.exe and java.exe both get them.
+$jlinkArgs = @('--add-modules', 'java.base,java.desktop,java.logging', '--strip-debug', '--no-header-files',
+    '--no-man-pages', '--add-options=-XX:-DontCompileHugeMethods')
+# Rebuilt only when the JDK or these arguments change: a runtime just written
+# is often held by the antivirus for a while, so it cannot be deleted at once.
+$stampFile = 'runtime\nfm-runtime.txt'
+$stamp = "$((Get-FileHash "$jdkHome\release").Hash) $($jlinkArgs -join ' ')"
+if ((Test-Path $stampFile) -and (Get-Content $stampFile -Raw).Trim() -eq $stamp) {
+    Write-Host 'Runtime is up to date.'
+} else {
+    foreach ($attempt in 1..15) {
+        if (-not (Test-Path runtime)) { break }
+        try { Remove-Item runtime -Recurse -Force -ErrorAction Stop } catch {
+            if ($attempt -eq 15) { throw "Cannot remove the old runtime folder: $_" }
+            Start-Sleep -Seconds 2
+        }
+    }
+    & "$jdkHome\bin\jlink.exe" @jlinkArgs --output runtime
+    if ($LASTEXITCODE -ne 0) { throw 'Creating the runtime failed.' }
+    Set-Content $stampFile $stamp -Encoding ascii
+}
 
 Remove-Item $build -Recurse -Force
 Write-Host 'Done. Start the game with madness64.exe.'

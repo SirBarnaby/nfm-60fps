@@ -293,6 +293,8 @@ public class GameSparker extends Panel implements Runnable {
     private volatile int apy = 0;
     private volatile double presentScale = 1D;
     private final FrameScaler frameScaler = new FrameScaler();
+    /** Waits between ticks and frames; used only by the game thread. */
+    private final PreciseSleep frameSleep = new PreciseSleep();
     private static final String SCALING_COOKIE = "scaling";
     /**
      * Fill the window (on unless turned off): the 1280x720 picture is scaled
@@ -335,7 +337,9 @@ public class GameSparker extends Panel implements Runnable {
                     liveLookback = -1;
                 if (i == 122 || i == 90)
                     liveLookback = 1;
-                boolean fullscreenKey = i == Event.F11 || i == 10 && (event.modifiers & Event.ALT_MASK) != 0;
+                // the autopilot and recorded races press keys with no event
+                boolean alt = event != null && (event.modifiers & Event.ALT_MASK) != 0;
+                boolean fullscreenKey = i == Event.F11 || i == 10 && alt;
                 if (fullscreenKey) {
                     RunApp.toggleFullscreen();
                 } else if (i == 10 || i == 80 || i == 112 || i == 27)
@@ -3212,10 +3216,9 @@ public class GameSparker extends Panel implements Runnable {
             }
 
             /*
-             * Sleep until the next tick or frame is due. Short sleeps keep the
-             * cadence accurate: Thread.sleep() can overshoot by a millisecond or
-             * more, so the last stretch is spent yielding. With no frame limit a
-             * race redraws continuously and only yields.
+             * Sleep until the next tick or frame is due, on the high-resolution
+             * timer where Windows has one (see PreciseSleep). With no frame
+             * limit a race redraws continuously and only yields.
              */
             if (unpaced) {
                 continue; // a verify or corpus run: next tick right away
@@ -3223,20 +3226,16 @@ public class GameSparker extends Panel implements Runnable {
             long wakeAt = nextTickNanos;
             if (isScenePhase(xtgraphics.fase)) {
                 if (renderNanos == 0L) {
-                    wakeAt = System.nanoTime();
+                    Thread.yield();
+                    continue;
                 } else if (nextRenderNanos - wakeAt < 0L) {
                     wakeAt = nextRenderNanos;
                 }
             }
-            long sleepNanos = wakeAt - System.nanoTime();
-            if (sleepNanos > 2_000_000L) {
-                try {
-                    Thread.sleep(sleepNanos / 1_000_000L - 1L);
-                } catch (InterruptedException _ex) {
-                    // shutdown is signalled through exwist, not interrupts
-                }
-            } else {
-                Thread.yield();
+            try {
+                frameSleep.sleepUntil(wakeAt);
+            } catch (InterruptedException _ex) {
+                // shutdown is signalled through exwist, not interrupts
             }
         } while (true);
     }

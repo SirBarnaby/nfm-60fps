@@ -26,8 +26,8 @@ Need for Madness 2 (c) Radicalplay.com.
 All changes and improvements (c) their original authors. See @author documentation fields or other comments where appropriate.
 ## Building and running on Windows
 
-1. Install a JDK 21 or newer (any vendor). `build.ps1` finds it via `JAVA_HOME` or `%USERPROFILE%\.jdks`, or pass `-Jdk <path>`.
-2. Run `powershell -ExecutionPolicy Bypass -File build.ps1`. It produces `madness.jar` and a private Java runtime in `runtime\`.
+1. Install a JDK 25 or newer (any vendor). `build.ps1` finds it via `JAVA_HOME` or `%USERPROFILE%\.jdks`, or pass `-Jdk <path>`.
+2. Run `powershell -ExecutionPolicy Bypass -File build.ps1`. It produces `madness.jar` and a private Java runtime in `runtime\`. The runtime is made again only when the JDK or its settings change (`runtime\nfm-runtime.txt` records them); delete the folder to force it.
 3. Double-click `madness64.exe`. No system-wide Java install is needed to play once `runtime\` exists.
 
 `madness.exe` is the 32-bit launcher and needs a 32-bit runtime, so use `madness64.exe` on 64-bit Windows.
@@ -39,6 +39,10 @@ The game no longer depends on the Applet API (removed in Java 26) or `Thread.sto
 Simulation and presentation are decoupled. The world is stepped at the original cadence (one tick per 53 ms during races, replays and highlights, one per 40 ms in menus), so physics, AI and every frame-counted timer behave exactly as before. Races, instant replays and the post-race highlights are redrawn as often as the frame limit allows, using car, wheel and camera transforms interpolated between the last two ticks. The HUD and replay captions are rendered once per tick into their own layer and composited on top, keeping their blink and pause timers on the legacy cadence.
 
 If drawing a frame takes longer than a tick, the loop runs the ticks it owes before drawing again, so a slow frame lowers the frame rate but never slows the race down.
+
+Between frames the game thread sleeps on Windows' high-resolution waitable timer (Windows 10 1803 and later), which wakes it within a fraction of a millisecond. `Thread.sleep()` wakes on the system timer tick, up to 2 ms late, so the loop used to spin through the last 2 ms before every frame, keeping a core busy and taking turbo power from the thread that draws. Where the timer is not available the old way is used.
+
+The car physics (`Madness.drive`) and the AI (`Control.preform`) are each over HotSpot's 8,000-byte limit for compiling a method, so by default they would only ever be interpreted. The runtime that `build.ps1` makes carries `-XX:-DontCompileHugeMethods`, which lets them be compiled: in a profile of two races their share of CPU time fell from about 9% to 2%. The race results are the same either way, since compiled and interpreted Java compute identical results.
 
 Drawing is not free of side effects in this engine: it advances the repair hoop sequence, dust, wreck flames, flying debris and the checkpoint flicker, and the race reads the distances it works out (a car out of view is repaired at once, a car in view waits for the hoop). So every tick draws the scene once into an invisible surface, at the point where the original drew it, and every frame that reaches the screen is drawn and then rolled back. The frame rate, a minimised window or a run with no window at all therefore never speeds up an animation or changes how a race plays out. Cosmetic effects take their random numbers from a stream of their own, so they cannot shift the AI's choices either.
 

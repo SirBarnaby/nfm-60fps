@@ -1,5 +1,6 @@
 package nfm.lit;
 import java.awt.*;
+import java.util.Arrays;
 
 public class Plane {
     private final Trackers t;
@@ -359,7 +360,25 @@ public class Plane {
         deltaf = deltaf / 3F;
     }
 
+    /**
+     * Vertex arrays reused by {@link #d} and {@link #s} instead of new ones for
+     * every polygon drawn, one set per drawing thread. {@link #scratch} hands
+     * each out zeroed, exactly like a new array.
+     */
+    private static final ThreadLocal<int[][]> SCRATCH = ThreadLocal.withInitial(() -> new int[16][16]);
+
+    private static int[] scratch(int[][] slots, int slot, int length) {
+        int[] array = slots[slot];
+        if (array.length < length) {
+            array = new int[Math.max(length, array.length * 2)];
+            slots[slot] = array;
+        }
+        Arrays.fill(array, 0, length, 0);
+        return array;
+    }
+
     public void d(Graphics2D rd, int i, int j, int k, int l, int i1, int j1, int k1, int l1, boolean flag, int i2, boolean blackout) {
+        int[][] slots = SCRATCH.get();
         if (master != 0) {
             if (av > 1500) {
                 n = 8;
@@ -367,9 +386,9 @@ public class Plane {
                 n = 16;
             }
         }
-        int ai[] = new int[n];
-        int ai1[] = new int[n];
-        int ai2[] = new int[n];
+        int ai[] = scratch(slots, 0, n);
+        int ai1[] = scratch(slots, 1, n);
+        int ai2[] = scratch(slots, 2, n);
         if (embos == 0) {
             for (int j2 = 0; j2 < n; j2++) {
                 ai[j2] = ox[j2] + i;
@@ -398,8 +417,8 @@ public class Plane {
                 Utility.rot(ai, ai1, i, k, l, n);
                 Utility.rot(ai, ai1, Medium.cx, Medium.cz, Medium.xz, n);
                 Utility.rot(ai2, ai1, Medium.cy, Medium.cz, Medium.zy, n);
-                int ai3[] = new int[n];
-                int ai5[] = new int[n];
+                int ai3[] = scratch(slots, 3, n);
+                int ai5[] = scratch(slots, 5, n);
                 for (int i4 = 0; i4 < n; i4++) {
                     ai3[i4] = Utility.xs(ai[i4], ai1[i4]);
                     ai5[i4] = Utility.ys(ai2[i4], ai1[i4], 0);
@@ -473,8 +492,8 @@ public class Plane {
                 if (i5 > 90) {
                     byte1 = -1;
                 }
-                int ai12[] = new int[3];
-                int ai13[] = new int[3];
+                int ai12[] = scratch(slots, 12, 3);
+                int ai13[] = scratch(slots, 13, 3);
                 ai[0] = ox[pa] + i;
                 ai2[0] = oy[pa] + j;
                 ai1[0] = oz[pa] + k;
@@ -670,9 +689,9 @@ public class Plane {
                 }
                 chip = 2;
             }
-            int ai4[] = new int[3];
-            int ai6[] = new int[3];
-            int ai8[] = new int[3];
+            int ai4[] = scratch(slots, 4, 3);
+            int ai6[] = scratch(slots, 6, 3);
+            int ai8[] = scratch(slots, 8, 3);
             int k4 = 0;
             do {
                 ai4[k4] = cox[k4] + i;
@@ -697,8 +716,8 @@ public class Plane {
             }
             Utility.rot(ai4, ai6, Medium.cx, Medium.cz, Medium.xz, 3);
             Utility.rot(ai8, ai6, Medium.cy, Medium.cz, Medium.zy, 3);
-            int ai10[] = new int[3];
-            int ai11[] = new int[3];
+            int ai10[] = scratch(slots, 10, 3);
+            int ai11[] = scratch(slots, 11, 3);
             int l5 = 0;
             do {
                 ai10[l5] = Utility.xs(ai4[l5], ai6[l5]);
@@ -747,8 +766,8 @@ public class Plane {
         }
         Utility.rot(ai, ai1, Medium.cx, Medium.cz, Medium.xz, n);
         boolean flag1 = false;
-        int ai7[] = new int[n];
-        int ai9[] = new int[n];
+        int ai7[] = scratch(slots, 7, n);
+        int ai9[] = scratch(slots, 9, n);
         int l4 = 500;
         for (int j5 = 0; j5 < n; j5++) {
             ai7[j5] = Utility.xs(ai[j5], ai1[j5]);
@@ -790,8 +809,8 @@ public class Plane {
         }
         Utility.rot(ai2, ai1, Medium.cy, Medium.cz, Medium.zy, n);
         boolean flag2 = true;
-        int ai14[] = new int[n];
-        int ai15[] = new int[n];
+        int ai14[] = scratch(slots, 14, n);
+        int ai15[] = scratch(slots, 15, n);
         int j8 = 0;
         int l8 = 0;
         int j9 = 0;
@@ -1290,9 +1309,10 @@ public class Plane {
 
 
     public void s(Graphics2D rd, int i, int j, int k, int l, int i1, int j1, int k1) {
-        int ai[] = new int[n];
-        int ai1[] = new int[n];
-        int ai2[] = new int[n];
+        int[][] slots = SCRATCH.get();
+        int ai[] = scratch(slots, 0, n);
+        int ai1[] = scratch(slots, 1, n);
+        int ai2[] = scratch(slots, 2, n);
         for (int l1 = 0; l1 < n; l1++) {
             ai[l1] = ox[l1] + i;
             ai2[l1] = oy[l1] + j;
@@ -1379,8 +1399,8 @@ public class Plane {
 
         }
         boolean flag = true;
-        int ai3[] = new int[n];
-        int ai4[] = new int[n];
+        int ai3[] = scratch(slots, 3, n);
+        int ai4[] = scratch(slots, 4, n);
         if (k1 == 2) {
             i2 = 80;
             j2 = 80;
