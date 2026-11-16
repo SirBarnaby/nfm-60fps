@@ -99,6 +99,10 @@ The setting is saved with the rest of the game's settings. Adding `vm.arg.2=-Dnf
 
 All drawing is done on the CPU by Java2D, so the ceiling depends on the processor: on a laptop i7-8550U it is roughly 100-170 FPS mid-race and 25-40 FPS during the opening fly-over of the whole track.
 
+## Replays
+
+Every race you play is kept in the `replays` folder next to the game, as the same kind of recording the determinism check uses (see below): the set-up, your input on every tick and where your car was after it. Each file is named for when the race was played, its stage and, if you finished it, in how many ticks (`race-20261116-221500-123-stage08-t01234.nfmr`, 1234 ticks of 53 ms). The 50 newest races are kept, and on every stage the fastest finish however old, so a best run is never lost. A race is about 200 KB. Hidden test runs and the smoke test keep nothing.
+
 ## Developer options
 
 | Property | Meaning |

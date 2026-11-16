@@ -1,5 +1,6 @@
 package nfm.lit;
 
+import fallk.logmaster.HLogger;
 import nfm.lit.audio.SoundManager;
 
 import java.awt.image.BufferedImage;
@@ -33,6 +34,10 @@ import java.util.Set;
  * differed first, and the exact fields, and exits with 0 when every race
  * matched, 1 when one did not and 2 when one could not be run.</li>
  * </ul>
+ * A normal game keeps its races too, as replays in the {@code replays} folder
+ * next to the game (see {@link Replays}): every race until there are
+ * {@link Replays#KEEP_LATEST} of them, and the fastest finish on each stage.
+ * <p>
  * Every hook runs on the game thread at a fixed point of the tick, so the
  * session never races the simulation.
  */
@@ -129,6 +134,8 @@ final class RaceSession {
     private final Autopilot autopilot;
     private final Verifier verifier;
     private final boolean unpaced;
+    /** The player's own races, kept as replays rather than for the determinism check. */
+    private boolean replays;
 
     /* Recording. */
     private RaceLog log;
@@ -186,7 +193,11 @@ final class RaceSession {
         });
     }
 
-    /** The session the command line asks for, or null for a normal game. Called on the game thread. */
+    /**
+     * The session the command line asks for or, for a normal game, the one
+     * that keeps its races as replays (null if the folder cannot be made).
+     * Called on the game thread.
+     */
     static RaceSession fromCommandLine(Host host) {
         if (runsHidden()) {
             exitOnCrash(System.getProperty("nfm.verify") != null ? TAG_VERIFY : TAG_RECORD);
@@ -205,7 +216,19 @@ final class RaceSession {
         }
         String record = System.getProperty("nfm.record");
         if (record == null) {
-            return null;
+            if (System.getProperty("nfm.autotest") != null) {
+                return null; // the smoke test's races are nobody's
+            }
+            File folder = Replays.folder();
+            if (!folder.isDirectory() && !folder.mkdirs()) {
+                HLogger.warn("Cannot create " + folder.getAbsolutePath() + ", races are not kept as replays");
+                return null;
+            }
+            RaceSession session = new RaceSession(host, folder, null, null, false);
+            session.replays = true;
+            SoundManager.setListener(session::heard);
+            Runtime.getRuntime().addShutdownHook(new Thread(session::saveOnExit, "nfm-replay-save"));
+            return session;
         }
         File folder = new File(record);
         if (!folder.isDirectory() && !folder.mkdirs()) {
@@ -365,6 +388,12 @@ final class RaceSession {
         int tick = log.ticks();
         log.addTick(pendingKeys, pendingLookback, pendingView, pendingSpectate, RaceState.hashes(race),
                 RaceState.canonicalHash(race));
+        ContO car = race.cars()[0];
+        log.addPose(car.x, car.y, car.z, car.xz, car.xy, car.zy, car.wxz, car.wzy);
+        CheckPoints cp = race.checkpoints();
+        if (log.finishTick < 0 && cp.clear[0] >= cp.nlaps * cp.nsp) {
+            log.finishTick = tick;
+        }
         if (tick % RaceLog.DUMP_INTERVAL == 0) {
             log.addDump(tick, RaceState.dump(race), RaceState.canonical(race));
         }
@@ -392,15 +421,24 @@ final class RaceSession {
         RaceLog done = log;
         log = null;
         done.end = end;
-        String name = String.format(Locale.ROOT, "race-%s-stage%02d.nfmr",
-                new SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.ROOT).format(new Date()), done.stage);
+        String time = new SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.ROOT).format(new Date());
+        String name = replays ? Replays.fileName(time, done.stage, done.finishTick)
+                : String.format(Locale.ROOT, "race-%s-stage%02d.nfmr", time, done.stage);
         File file = new File(recordFolder, name);
         try {
             done.write(file);
-            System.out.println(TAG_RECORD + file.getName() + ": stage " + done.stage + ", " + done.players
-                    + " cars, " + done.ticks() + " ticks, " + end.name().toLowerCase(Locale.ROOT));
+            if (replays) {
+                Replays.tidy(recordFolder);
+            } else {
+                System.out.println(TAG_RECORD + file.getName() + ": stage " + done.stage + ", " + done.players
+                        + " cars, " + done.ticks() + " ticks, " + end.name().toLowerCase(Locale.ROOT));
+            }
         } catch (IOException ex) {
-            System.out.println(TAG_RECORD + "could not save " + file + ": " + ex);
+            if (replays) {
+                HLogger.warn("Could not save the replay " + file + ": " + ex);
+            } else {
+                System.out.println(TAG_RECORD + "could not save " + file + ": " + ex);
+            }
         }
         if (autopilot != null) {
             autopilot.raceRecorded();

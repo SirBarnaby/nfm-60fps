@@ -29,14 +29,19 @@ import java.util.zip.GZIPOutputStream;
  * mismatch can be traced to the exact fields. The full state depends on how
  * the classes are laid out, so {@link #layout} records that; the canonical
  * state is meant to stay comparable when the code is reorganised. Each tick
- * also keeps the sound commands it gave, in order.
+ * also keeps the sound commands it gave, in order, and where the player's car
+ * was after it, which is what a ghost car of the race drives along.
  */
 final class RaceLog {
 
     private static final int MAGIC = 0x4E464D52; // "NFMR"
-    private static final int VERSION = 4;
+    private static final int VERSION = 5;
+    /** The last format without the player's car per tick; still read, without a ghost. */
+    private static final int VERSION_WITHOUT_POSES = 4;
     /** The last format without sound commands; still read, without the sound check. */
     private static final int VERSION_WITHOUT_SOUND = 3;
+    /** Values per pose: x, y, z, xz, xy, zy and the wheels' wxz, wzy. */
+    static final int POSE = 8;
     /** Ticks between full state dumps: about two seconds of racing. */
     static final int DUMP_INTERVAL = 40;
 
@@ -107,6 +112,8 @@ final class RaceLog {
      */
     int mountains;
     End end = End.CLOSED;
+    /** The tick on which the player passed the last checkpoint of the last lap, or -1. */
+    int finishTick = -1;
 
     /* Ticks. */
     private int ticks;
@@ -122,6 +129,9 @@ final class RaceLog {
     /** The sound commands each tick gave, see {@link nfm.lit.audio.SoundManager.Listener}. */
     private final List<List<String>> sounds = new ArrayList<>();
     private boolean hasSounds = true;
+    /* the player's car after each tick, POSE values a tick */
+    private int[] poses = new int[POSE * 4096];
+    private int poseCount;
     private final List<int[]> dumps = new ArrayList<>();
     private final List<int[]> canonicalDumps = new ArrayList<>();
     private final List<Integer> dumpTicks = new ArrayList<>();
@@ -176,6 +186,33 @@ final class RaceLog {
 
     int canonicalHash(int tick) {
         return canonical[tick];
+    }
+
+    /** Where the player's car was after the tick just added. */
+    void addPose(int x, int y, int z, int xz, int xy, int zy, int wxz, int wzy) {
+        if ((poseCount + 1) * POSE > poses.length) {
+            poses = Arrays.copyOf(poses, poses.length * 2);
+        }
+        int at = poseCount * POSE;
+        poses[at] = x;
+        poses[at + 1] = y;
+        poses[at + 2] = z;
+        poses[at + 3] = xz;
+        poses[at + 4] = xy;
+        poses[at + 5] = zy;
+        poses[at + 6] = wxz;
+        poses[at + 7] = wzy;
+        poseCount++;
+    }
+
+    /** How many ticks have the player's car, see {@link #pose}: none in recordings older than format 5. */
+    int poseCount() {
+        return poseCount;
+    }
+
+    /** Value {@code k} (see {@link #POSE}) of where the player's car was after {@code tick}. */
+    int pose(int tick, int k) {
+        return poses[tick * POSE + k];
     }
 
     /** A sound command given during the tick being recorded. */
@@ -326,6 +363,18 @@ final class RaceLog {
                 previous = dumps.get(i);
                 previousCanonical = canonicalDumps.get(i);
             }
+
+            // the player's car, each value as the change from the tick before: small numbers, which compress
+            out.writeInt(finishTick);
+            out.writeInt(poseCount);
+            for (int k = 0; k < POSE; k++) {
+                int previousValue = 0;
+                for (int t = 0; t < poseCount; t++) {
+                    int v = poses[t * POSE + k];
+                    out.writeInt(v - previousValue);
+                    previousValue = v;
+                }
+            }
         }
         Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
     }
@@ -337,7 +386,7 @@ final class RaceLog {
                 throw new IOException(file + " is not a recorded race");
             }
             int version = in.readInt();
-            if (version != VERSION && version != VERSION_WITHOUT_SOUND) {
+            if (version != VERSION && version != VERSION_WITHOUT_POSES && version != VERSION_WITHOUT_SOUND) {
                 throw new IOException(file + " was recorded by format " + version + ", this build reads " + VERSION);
             }
             RaceLog log = new RaceLog();
@@ -407,6 +456,23 @@ final class RaceLog {
                 previousCanonical = xor(readInts(in), previousCanonical);
                 log.dumps.add(previous);
                 log.canonicalDumps.add(previousCanonical);
+            }
+
+            if (version >= VERSION) {
+                log.finishTick = in.readInt();
+                int count = in.readInt();
+                if (count < 0 || count > n) {
+                    throw new IOException("corrupt race file");
+                }
+                log.poseCount = count;
+                log.poses = new int[Math.max(POSE, count * POSE)];
+                for (int k = 0; k < POSE; k++) {
+                    int last = 0;
+                    for (int t = 0; t < count; t++) {
+                        last += in.readInt();
+                        log.poses[t * POSE + k] = last;
+                    }
+                }
             }
             return log;
         }
