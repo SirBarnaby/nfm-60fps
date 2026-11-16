@@ -42,6 +42,20 @@ If drawing a frame takes longer than a tick, the loop runs the ticks it owes bef
 
 Drawing is not free of side effects in this engine: it advances the repair hoop sequence, dust, wreck flames, flying debris and the checkpoint flicker, and the race reads the distances it works out (a car out of view is repaired at once, a car in view waits for the hoop). So every tick draws the scene once into an invisible surface, at the point where the original drew it, and every frame that reaches the screen is drawn and then rolled back. The frame rate, a minimised window or a run with no window at all therefore never speeds up an animation or changes how a race plays out. Cosmetic effects take their random numbers from a stream of their own, so they cannot shift the AI's choices either.
 
+## Run-ahead: one tick less input lag
+
+Drawing between the last two ticks is smooth, but it shows the race as it was up to one tick (53 ms) ago. With run-ahead, which is on by default, every race frame is drawn between the last tick and the next one instead: when a tick lands or a driving key changes, the game plays the next tick ahead of time with the keys held at that moment, notes where the cars and the camera end up, and puts the whole race back exactly as it was (see "Rewinding a race" below). The real tick then reads the same keys and lands on the same spot, because the race is deterministic, so a key press shows on screen a full tick sooner and nothing jumps.
+
+The tick played ahead is never heard, never recorded and never drawn into the HUD, and it cannot change the race: races recorded in real time with run-ahead firing about 19 times a second replay tick for tick, sounds included. A run-ahead costs about 5 ms on a laptop i7-8550U (capture, one tick, restore), once per tick and once per key change. Only a press between two ticks that the prediction could not know (Enter, for example) makes a frame correct itself; in testing, 1 of 3,506 predictions missed.
+
+It applies while racing, not in the intro, the countdown, replays or menus. Turn it off or on in the developer console with `runahead off` / `runahead on` (saved), or for one run with `-Dnfm.runahead=false`.
+
+## Window size and fullscreen
+
+The window can be resized freely, down to half of 1280x720. The game still draws at 1280x720 and the picture is scaled to the largest size that fits the window, keeping its shape, with black bars where the shape differs. The mouse follows the scaled picture. **F11** or **Alt+Enter** switches between the window and borderless fullscreen on the monitor the window is on.
+
+Scaling uses a smooth (bilinear) filter computed on all CPU cores: about 2 ms a frame for 1920x1080 and under 4 ms for 3840x2160 on a laptop i7-8550U. Java's own filter would do the same picture in about 25 ms, because its Direct3D path refuses Intel graphics and falls back to software. To show the picture pixel for pixel in the middle of the window instead, type `scale off` in the developer console (`scale fit` to undo; saved), or start with `-Dnfm.scale=off`.
+
 ## Frame rate limit
 
 By default the frame rate matches the refresh rate of the monitor the window is on. To change it, open the developer console (it appears on the main menu) and type:
@@ -61,9 +75,12 @@ All drawing is done on the CPU by Java2D, so the ceiling depends on the processo
 
 | Property | Meaning |
 | --- | --- |
-| `-Dnfm.profile=true` | Print simulation rate, render rate, time per tick and per frame, the frame limit and the current phase every two seconds. |
+| `-Dnfm.profile=true` | Print simulation rate, render rate, time per tick and per frame, run-ahead ticks (their cost, and how many real ticks were checked against the prediction and missed it), the frame limit and the current phase every two seconds. |
+| `-Dnfm.runahead=<true or false>` | Run-ahead for this run, see above. |
 | `-Dnfm.debug=false` | Do not open the developer console on the main menu. |
 | `-Dnfm.fps=<auto, unlimited or a number>` | Frame rate limit for this run, see above. |
+| `-Dnfm.scale=<fit or off>` | Window scaling for this run, see above. |
+| `-Dnfm.window=<width>x<height>` | Size of the window's inside at start, for example `1920x1080` (default 1280x720). Also sets the size of hidden test runs, which then save each screenshot twice when the size is not 1280x720: the picture itself and `<name>-window.png`, the window as shown. |
 | `-Dnfm.autotest=<dir>` | Run the scripted smoke test and write screenshots to `<dir>`. The window is never shown and the test drives the game through its own controls, so it is safe to run while using the machine. |
 
 For example:

@@ -512,6 +512,30 @@ public class ContO {
         } while (++l1 < 4);
     }
 
+    /** Scratch for {@link #polygonOrder}: objects are drawn one at a time, on the game thread. */
+    private static long[] polygonKeys = new long[64];
+
+    /**
+     * Sorts the polygons for drawing back to front: by depth ({@code Plane.av})
+     * from the farthest, and of two at the same depth the earlier one first,
+     * the order the original's pairwise ranking produced. Each key holds the
+     * depth and {@code npl - 1 - index}, sorted ascending, so walking the keys
+     * from the last gives that order.
+     *
+     * @return {@code npl} sorted keys; the low 32 bits of each are {@code npl - 1 - index}
+     */
+    private long[] polygonOrder() {
+        if (polygonKeys.length < npl) {
+            polygonKeys = new long[Math.max(npl, polygonKeys.length * 2)];
+        }
+        long[] keys = polygonKeys;
+        for (int k = 0; k < npl; k++) {
+            keys[k] = ((long) p[k].av << 32) | (npl - 1 - k);
+        }
+        Arrays.sort(keys, 0, npl);
+        return keys;
+    }
+
     public void d(Graphics2D rd) {
         if (dist != 0) {
             dist = 0;
@@ -576,40 +600,18 @@ public class ContO {
                 if (checkpoint != 0 && checkpoint - 1 == Medium.checkpoint) {
                     l = -1;
                 }
-                int ai[] = new int[npl];
-                int ai1[] = new int[npl];
                 int i3 = 0;
                 do {
                     if (stg[i3] != 0) {
                         pdust(i3, rd, -1);
                     }
                 } while (++i3 < 4);
-                for (int j3 = 0; j3 < npl; j3++) {
-                    ai[j3] = 0;
-                }
-
-                for (int k3 = 0; k3 < npl; k3++) {
-                    for (int i4 = k3 + 1; i4 < npl; i4++) {
-                        if (p[k3].av != p[i4].av) {
-                            if (p[k3].av < p[i4].av) {
-                                ai[k3]++;
-                            } else {
-                                ai[i4]++;
-                            }
-                        } else if (k3 > i4) {
-                            ai[k3]++;
-                        } else {
-                            ai[i4]++;
-                        }
-                    }
-
-                    ai1[ai[k3]] = k3;
-                }
-
-                for (int l3 = 0; l3 < npl; l3++) {
-                    p[ai1[l3]].d(rd, x - Medium.x, y - Medium.y, z - Medium.z, xz, xy, zy, wxz, wzy, noline, l, blackout);
-                    if (p[ai1[l3]].master != 0 && stg[p[ai1[l3]].master - 1] != 0) {
-                        pdust(p[ai1[l3]].master - 1, rd, 1);
+                long[] order = polygonOrder();
+                for (int l3 = npl - 1; l3 >= 0; l3--) {
+                    Plane plane = p[npl - 1 - (int) order[l3]];
+                    plane.d(rd, x - Medium.x, y - Medium.y, z - Medium.z, xz, xy, zy, wxz, wzy, noline, l, blackout);
+                    if (plane.master != 0 && stg[plane.master - 1] != 0) {
+                        pdust(plane.master - 1, rd, 1);
                     }
                 }
 

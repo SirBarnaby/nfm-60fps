@@ -1,6 +1,9 @@
 package nfm.lit;
+
+import java.util.Arrays;
 import fallk.logmaster.HLogger;
 import nfm.lit.audio.BASSLoader;
+import nfm.lit.audio.SoundManager;
 
 import java.awt.*;
 import java.awt.geom.Rectangle2D;
@@ -153,12 +156,22 @@ public class GameSparker extends Panel implements Runnable {
     private static final int FPS_COOKIE_MATCH_DISPLAY = 1;
     private static volatile int fpsLimit = FPS_MATCH_DISPLAY;
     private static volatile boolean fpsLimitChanged;
+    private static final String RUN_AHEAD_COOKIE = "runahead";
+    /**
+     * Run-ahead (on unless turned off): race frames show where the race will
+     * be one tick from now with the keys held now, instead of where it was
+     * one tick ago, which takes a tick (53 ms) off the input lag.
+     */
+    private static volatile boolean runAhead = true;
+    private static volatile boolean runAheadChanged;
 
     private Image hudImage;
     private Graphics2D hudG;
 
     /** Objects rendered by the in-game pass (was a local: aconto1). */
     private ContO[] sceneObjects;
+    /** Every loaded model, cars first: a car that is replaced after a crash is copied from here. */
+    private ContO[] modelObjects;
     /** Simulation state per car (was a local: amadness). */
     private Madness[] racers;
     private xtGraphics ui;
@@ -191,6 +204,25 @@ public class GameSparker extends Panel implements Runnable {
      * with the transform of the object it replaced.
      */
     private final ContO[] prevCarRef = new ContO[51];
+
+    /** The race as it was before a run-ahead tick, put back right after it. */
+    private final RaceSnapshot aheadSnapshot = new RaceSnapshot();
+    /** Where the cars and the camera will be after the next tick, by the run-ahead tick. */
+    private final Poses aheadPoses = new Poses();
+    private final Poses nowPoses = new Poses();
+    private final Poses prevPoses = new Poses();
+    /** Real race ticks so far: a run-ahead tick is good until the next one, or until a key changes. */
+    private int raceTicks;
+    private boolean aheadValid;
+    private int aheadTick;
+    private int aheadKeys;
+    private long profileAheadNanos;
+    private int profileAheads;
+    /** The keys the current real tick latched, to check the run-ahead tick against it. */
+    private int latchedKeys;
+    /** Real ticks that ran with the keys a run-ahead tick used, and how many of them landed elsewhere. */
+    private int profileAheadChecked;
+    private int profileAheadMissed;
 
     /** Real back-buffer graphics while a tick draws its overlays into the HUD layer. */
     private Graphics2D sceneGraphics;
@@ -247,17 +279,28 @@ public class GameSparker extends Panel implements Runnable {
     private volatile boolean autotestRepairRequested;
     /** Set by the autotest thread; the render pass fulfils it with a complete frame. */
     private volatile boolean captureRequested;
-    private BufferedImage capturedFrame;
+    private volatile BufferedImage capturedFrame;
+    private volatile BufferedImage capturedWindow;
 
-    private final int[] drawOrder = new int[200];
-    private final int[] drawRank = new int[200];
-    private final int[] drawIndices = new int[200];
+    /** Draw order of the scene objects in view, see {@link #drawWorldObjects}; grows with the stage. */
+    private long[] drawKeys = new long[200];
 
     /* variables for screen shake */
 
     private int shaka = 0;
-    private int apx = 0;
-    private int apy = 0;
+    /** Where the picture sits in the window, and how much it is scaled: set by {@link #paint}. */
+    private volatile int apx = 0;
+    private volatile int apy = 0;
+    private volatile double presentScale = 1D;
+    private final FrameScaler frameScaler = new FrameScaler();
+    private static final String SCALING_COOKIE = "scaling";
+    /**
+     * Fill the window (on unless turned off): the 1280x720 picture is scaled
+     * to the largest size that fits, keeping its shape, with a smooth filter.
+     * Off, it is shown pixel for pixel in the middle of the window.
+     */
+    private static volatile boolean scaleToWindow = true;
+    private static volatile boolean scaleToWindowChanged;
 
     public static String gameState = "None";
     public static int gameStateID;
@@ -292,7 +335,10 @@ public class GameSparker extends Panel implements Runnable {
                     liveLookback = -1;
                 if (i == 122 || i == 90)
                     liveLookback = 1;
-                if (i == 10 || i == 80 || i == 112 || i == 27)
+                boolean fullscreenKey = i == Event.F11 || i == 10 && (event.modifiers & Event.ALT_MASK) != 0;
+                if (fullscreenKey) {
+                    RunApp.toggleFullscreen();
+                } else if (i == 10 || i == 80 || i == 112 || i == 27)
                     liveEnter = true;
                 if (i == 118 || i == 86) {
                     liveView++;
@@ -302,13 +348,14 @@ public class GameSparker extends Panel implements Runnable {
                 if (!latching) {
                     applyLiveKeys();
                 }
+                // under the lock too: a run-ahead tick puts the controls back as they were
+                if (i == 77 || i == 109)
+                    u[0].mutem = !u[0].mutem;
+                if (i == 78 || i == 110)
+                    u[0].mutes = !u[0].mutes;
+                if (i == 97 || i == 65)
+                    u[0].arrace = !u[0].arrace;
             }
-            if (i == 77 || i == 109)
-                u[0].mutem = !u[0].mutem;
-            if (i == 78 || i == 110)
-                u[0].mutes = !u[0].mutes;
-            if (i == 97 || i == 65)
-                u[0].arrace = !u[0].arrace;
         }
         return false;
     }
@@ -343,6 +390,7 @@ public class GameSparker extends Panel implements Runnable {
     private void latchRaceInput() {
         synchronized (inputLock) {
             latching = true;
+            latchedKeys = heldKeys();
             applyLiveKeys();
         }
     }
@@ -503,27 +551,11 @@ public class GameSparker extends Panel implements Runnable {
         }
     }
 
-    private void cropit(final Graphics2D graphics2d, final int i, final int i_98_) {
-        if (i != 0 || i_98_ != 0) {
-            graphics2d.setComposite(AlphaComposite.getInstance(3, 1.0F));
-            graphics2d.setColor(new Color(0, 0, 0));
-        }
-        if (i != 0) {
-            if (i < 0) {
-                graphics2d.fillRect(apx + i, apy - (int) (25.0F), Math.abs(i), (int) (720.0F));
-            } else {
-                graphics2d.fillRect(apx + (int) (1280.0F), apy - (int) (25.0F), i, (int) (720.0F));
-            }
-        }
-        if (i_98_ != 0) {
-            if (i_98_ < 0) {
-                graphics2d.fillRect(apx - (int) (25.0F), apy + i_98_, (int) (1280.0F + 50.F), Math.abs(i_98_));
-            } else {
-                graphics2d.fillRect(apx - (int) (25.0F), apy + (int) (720.0F + 50.0F), (int) (1280.0F + 50.0F), i_98_);
-            }
-        }
-    }
-
+    /**
+     * Puts the finished frame in the window: scaled to fit, keeping its shape,
+     * or pixel for pixel when scaling is off or the window is exactly the
+     * picture's size. What the picture does not cover is black.
+     */
     @Override
     public void paint(Graphics g) {
         Graphics2D graphics2d = (Graphics2D) g;
@@ -535,11 +567,91 @@ public class GameSparker extends Panel implements Runnable {
             this.shaka -= 5;
         }
 
-        this.apx = (int) ((float) (this.getWidth() / 2) - GameFacts.screenWidth/2);
-        this.apy = (int) ((float) (this.getHeight() / 2) - GameFacts.screenHeight/2);
+        int width = getWidth();
+        int height = getHeight();
+        double scale = scaleToWindow
+                ? Math.min(width / (double) GameFacts.screenWidth, height / (double) GameFacts.screenHeight)
+                : 1D;
+        if (scale <= 0D) {
+            return;
+        }
+        int w = (int) Math.round(GameFacts.screenWidth * scale);
+        int h = (int) Math.round(GameFacts.screenHeight * scale);
+        int x = (width - w) / 2;
+        int y = (height - h) / 2;
+        apx = x;
+        apy = y;
+        presentScale = scale;
+        x += (int) Math.round(i * scale);
+        y += (int) Math.round(i_97_ * scale);
+        if (w == GameFacts.screenWidth && h == GameFacts.screenHeight) {
+            graphics2d.drawImage(this.offImage, x, y, this);
+        } else {
+            drawScaled(graphics2d, x, y, w, h);
+        }
+        // the borders, and the strip a screen shake uncovers
+        graphics2d.setComposite(AlphaComposite.Src);
+        graphics2d.setColor(Color.BLACK);
+        graphics2d.fillRect(0, 0, width, Math.max(0, y));
+        graphics2d.fillRect(0, y + h, width, Math.max(0, height - y - h));
+        graphics2d.fillRect(0, y, Math.max(0, x), h);
+        graphics2d.fillRect(x + w, y, Math.max(0, width - x - w), h);
+    }
+
+    /**
+     * Draws the frame smoothly resized. The frame is scaled by {@link #frameScaler}
+     * and then copied as is, which is several times faster than letting Java
+     * filter it while drawing. The lock keeps a paint from the event thread
+     * from reusing the scaled image while the game thread is drawing it.
+     */
+    private void drawScaled(Graphics2D graphics2d, int x, int y, int w, int h) {
+        synchronized (frameScaler) {
+            BufferedImage scaled = offImage instanceof BufferedImage frame ? frameScaler.scale(frame, w, h) : null;
+            if (scaled != null) {
+                graphics2d.drawImage(scaled, x, y, null);
+                return;
+            }
+        }
         graphics2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-        graphics2d.drawImage(this.offImage, this.apx + i, this.apy + i_97_, this);
-        this.cropit(graphics2d, i, i_97_);
+        graphics2d.drawImage(this.offImage, x, y, w, h, this);
+    }
+
+    /** A window x coordinate in the picture's 1280x720 coordinates. */
+    private int toPictureX(int windowX) {
+        return (int) Math.floor((windowX - apx) / presentScale);
+    }
+
+    /** A window y coordinate in the picture's 1280x720 coordinates. */
+    private int toPictureY(int windowY) {
+        return (int) Math.floor((windowY - apy) / presentScale);
+    }
+
+    /** Turns filling the window on or off, and saves the choice. */
+    public static void setScaleToWindow(boolean on) {
+        scaleToWindow = on;
+        scaleToWindowChanged = true;
+    }
+
+    public static boolean isScaleToWindow() {
+        return scaleToWindow;
+    }
+
+    /** -Dnfm.scale=fit|off, else the saved choice, else fit. */
+    private void loadScaleToWindow() {
+        String property = System.getProperty("nfm.scale");
+        if (property != null) {
+            scaleToWindow = !property.trim().equalsIgnoreCase("off");
+        } else {
+            scaleToWindow = readcookie(SCALING_COOKIE) != 0;
+        }
+        scaleToWindowChanged = false;
+    }
+
+    private void saveScaleToWindowIfChanged() {
+        if (scaleToWindowChanged) {
+            scaleToWindowChanged = false;
+            savecookie(SCALING_COOKIE, scaleToWindow ? "1" : "0");
+        }
     }
 
     public GameSparker() {
@@ -708,8 +820,8 @@ public class GameSparker extends Panel implements Runnable {
     @Override
     public boolean mouseDown(Event event, int i, int j) {
         if (!exwist && mouses == 0) {
-            xm = i;
-            ym = j;
+            xm = toPictureX(i);
+            ym = toPictureY(j);
             mouses = 1;
         }
         return false;
@@ -1270,38 +1382,31 @@ public class GameSparker extends Panel implements Runnable {
      * resolved on the previous pass (newly reset cars, track pieces) is drawn
      * first so it ends up behind everything else.
      */
+    /**
+     * Draws the scene back to front. Objects out of view (distance 0) are
+     * drawn first, in scene order; they update their distance as they draw.
+     * The rest go from the farthest to the nearest, and of two at the same
+     * distance the later one in the scene first: the order the original's
+     * pairwise ranking produced, found by one sort instead of comparing every
+     * pair.
+     */
     private void drawWorldObjects(Graphics2D g) {
+        if (drawKeys.length < nob) {
+            drawKeys = new long[nob];
+        }
         int count = 0;
         for (int i = 0; i < nob; i++) {
-            if (sceneObjects[i].dist != 0) {
-                drawOrder[count++] = i;
+            int dist = sceneObjects[i].dist;
+            if (dist != 0) {
+                // ascending by distance, then by index; walked backwards below
+                drawKeys[count++] = ((long) dist << 32) | i;
             } else {
                 sceneObjects[i].d(g);
             }
         }
-
-        for (int i = 0; i < count; i++) {
-            drawRank[i] = 0;
-        }
-        for (int i = 0; i < count; i++) {
-            for (int j = i + 1; j < count; j++) {
-                if (sceneObjects[drawOrder[i]].dist != sceneObjects[drawOrder[j]].dist) {
-                    if (sceneObjects[drawOrder[i]].dist < sceneObjects[drawOrder[j]].dist) {
-                        drawRank[i]++;
-                    } else {
-                        drawRank[j]++;
-                    }
-                } else if (j > i) {
-                    drawRank[i]++;
-                } else {
-                    drawRank[j]++;
-                }
-            }
-            drawIndices[drawRank[i]] = i;
-        }
-
-        for (int i = 0; i < count; i++) {
-            sceneObjects[drawOrder[drawIndices[i]]].d(g);
+        Arrays.sort(drawKeys, 0, count);
+        for (int k = count - 1; k >= 0; k--) {
+            sceneObjects[(int) drawKeys[k]].d(g);
         }
     }
 
@@ -1398,6 +1503,320 @@ public class GameSparker extends Panel implements Runnable {
         Medium.z = camZ;
         Medium.xz = camXZ;
         Medium.zy = camZY;
+    }
+
+    /**
+     * One tick of a race: replaced cars, the invisible draw step the race
+     * reads back, collisions, physics, the replay buffer, standings, the AI,
+     * the camera and the HUD. The real tick runs it with the latched keys; the
+     * speculative tick (see {@link #speculate}) runs it ahead with the keys held
+     * now and puts everything back.
+     */
+    private void advanceRace() {
+        int k3 = 0;
+        do {
+            if (racers[k3].newcar) {
+                int j5 = sceneObjects[k3].xz;
+                int j6 = sceneObjects[k3].xy;
+                int l8 = sceneObjects[k3].zy;
+                sceneObjects[k3] = new ContO(modelObjects[racers[k3].cn], sceneObjects[k3].x, sceneObjects[k3].y, sceneObjects[k3].z,
+                        0);
+                sceneObjects[k3].xz = j5;
+                sceneObjects[k3].xy = j6;
+                sceneObjects[k3].zy = l8;
+                racers[k3].newcar = false;
+            }
+        } while (++k3 < GameFacts.numberOfPlayers);
+
+        drawSimulationStep();
+
+        if (ui.starcnt == 0) {
+            int l12 = 0;
+            do {
+                int j14 = 0;
+                do {
+                    if (j14 != l12) {
+                        racers[l12].colide(sceneObjects[l12], racers[j14], sceneObjects[j14]);
+                    }
+                } while (++j14 < GameFacts.numberOfPlayers);
+            } while (++l12 < GameFacts.numberOfPlayers);
+            l12 = 0;
+            do
+                racers[l12].drive(u[l12], sceneObjects[l12], raceTrackers, raceCheckpoints);
+            while (++l12 < GameFacts.numberOfPlayers);
+            l12 = 0;
+            do
+                raceRecord.rec(sceneObjects[l12], l12, racers[l12].squash, racers[l12].lastcolido,
+                        racers[l12].cntdest);
+            while (++l12 < GameFacts.numberOfPlayers);
+            raceCheckpoints.checkstat(racers, sceneObjects, raceRecord, GameFacts.numberOfPlayers);
+
+            // This starts the AI code for all the cars.
+            l12 = 1;
+            do
+                u[l12].preform(racers[l12], sceneObjects[l12], raceCheckpoints, raceTrackers, GameFacts.numberOfPlayers);
+            while (++l12 < GameFacts.numberOfPlayers);
+        } else {
+            if (ui.starcnt == 130) {
+                Medium.adv = 1900;
+                Medium.zy = 40;
+                Medium.vxz = 70;
+                pendingWhiteFlash = true;
+            }
+            if (ui.starcnt != 0)
+                ui.starcnt--;
+        }
+        if (ui.starcnt < 38) {
+            if (view == 0) {
+                Medium.follow(sceneObjects[ui.spectate], racers[ui.spectate].cxz,
+                        u[ui.spectate].lookback);
+                renderHud(u[ui.spectate], true);
+                initMoto(racers, 2, 5);
+            }
+            if (view == 1) {
+                Medium.around(sceneObjects[ui.spectate], false);
+                renderHud(u[ui.spectate], false);
+            }
+            if (view == 2) {
+                Medium.watch(sceneObjects[ui.spectate], racers[0].mxz);
+                renderHud(u[ui.spectate], false);
+            }
+            if (mouses == 1) {
+                u[0].enter = true;
+                mouses = 0;
+            }
+            if (ui.starcnt == 36) {
+                /*
+                 * Tints the countdown portrait with the picture behind it.
+                 * The back buffer holds the last presented frame, scene and
+                 * HUD, which is what the original grabbed here too. It must
+                 * run in this tick: the portrait is drawn from the next one,
+                 * and a slow frame can let both ticks run back to back.
+                 */
+                ui.blendude(offImage);
+            }
+        } else {
+            if (GameFacts.numberOfPlayers < 5)
+                Medium.around(sceneObjects[0], true);
+            else
+                Medium.around(sceneObjects[3], true);
+            if (u[0].enter || u[0].handb) {
+                ui.starcnt = 38;
+                u[0].enter = false;
+                u[0].handb = false;
+            }
+            if (ui.starcnt == 38) {
+                if (session != null) {
+                    session.countdownStarting();
+                }
+                Medium.startCountdown();
+                mouses = 0;
+                Medium.vert = false;
+                Medium.adv = GameFacts.screenWidth;
+                Medium.vxz = 180;
+                raceCheckpoints.checkstat(racers, sceneObjects, raceRecord, GameFacts.numberOfPlayers);
+                Medium.follow(sceneObjects[0], racers[0].cxz, 0);
+                renderHud(u[0], true);
+                pendingWhiteFlash = true;
+            }
+        }
+    }
+
+    /** Run-ahead applies while the player is racing: not in the intro, countdown, replays or menus. */
+    private boolean aheadPossible() {
+        return runAhead && prevFrameValid && ui.fase == Phase.INGAME && ui.starcnt == 0;
+    }
+
+    /** The driving keys held right now and the chosen camera, as one number; call under {@link #inputLock}. */
+    private int heldKeys() {
+        return (liveUp ? 1 : 0) | (liveDown ? 2 : 0) | (liveLeft ? 4 : 0) | (liveRight ? 8 : 0)
+                | (liveHandb ? 16 : 0) | ((liveLookback + 1) << 5) | (liveView << 7);
+    }
+
+    /**
+     * Plays the next race tick ahead of time with the keys held now, keeps
+     * where it leaves the cars and the camera, and puts the whole race back.
+     * The real tick then reads the same keys and, the race being
+     * deterministic, lands exactly there; only a key changed in between makes
+     * the next frame correct itself. Nothing of it is heard, recorded or
+     * drawn: the HUD draws into a copy of its layer that is clipped to nothing. The input lock is held throughout, so a key cannot
+     * change the controls while they are being put back.
+     *
+     * @return false if the last run-ahead still holds: no tick since and the same keys
+     */
+    private boolean runAheadTick() {
+        int np = Math.min(GameFacts.numberOfPlayers, prevCarX.length);
+        synchronized (inputLock) {
+            int keys = heldKeys();
+            if (aheadValid && aheadTick == raceTicks && aheadKeys == keys) {
+                return false;
+            }
+            int mousesBefore = mouses;
+            int viewBefore = view;
+            int shakaBefore = shaka;
+            boolean flashBefore = pendingWhiteFlash;
+            Graphics2D hud = hudG;
+            FontMetrics metrics = FontHandler.fMetrics;
+            // the HUD measures its text, so it needs real font metrics: a copy of its layer clipped to nothing
+            Graphics2D blind = (Graphics2D) hud.create();
+            blind.setClip(0, 0, 0, 0);
+            aheadSnapshot.capture(new RaceState.View(world, racers, u, sceneObjects, raceCheckpoints, raceRecord, ui,
+                    raceTrackers, GameFacts.numberOfPlayers), nob);
+            SoundManager.setDiscarding(true);
+            hudG = blind;
+            try {
+                applyHeldKeys();
+                view = liveView;
+                advanceRace();
+                aheadPoses.takeLive(np);
+            } finally {
+                aheadSnapshot.restore();
+                SoundManager.setDiscarding(false);
+                hudG = hud;
+                blind.dispose();
+                FontHandler.fMetrics = metrics;
+                mouses = mousesBefore;
+                view = viewBefore;
+                shaka = shakaBefore;
+                pendingWhiteFlash = flashBefore;
+            }
+            aheadTick = raceTicks;
+            aheadKeys = keys;
+            aheadValid = true;
+            return true;
+        }
+    }
+
+    /**
+     * Draws the race between the last real tick ({@code alpha} 0) and the
+     * run-ahead tick (1), the same way {@link #renderIngameScene} draws
+     * between the two ticks before. A car the run-ahead tick replaced, after
+     * a wreck, stays where it is.
+     */
+    private void renderAheadScene(float alpha) {
+        int np = Math.min(GameFacts.numberOfPlayers, prevCarX.length);
+        nowPoses.takeLive(np);
+        prevPoses.takePrev(np);
+        nowPoses.putPrev(np);
+        aheadPoses.putLive(np);
+        try {
+            renderIngameScene(alpha);
+        } finally {
+            nowPoses.putLive(np);
+            prevPoses.putPrev(np);
+        }
+    }
+
+    /** The cars' transforms and the camera, as the presentation pass interpolates them. */
+    private final class Poses {
+        private final int[] x = new int[51];
+        private final int[] y = new int[51];
+        private final int[] z = new int[51];
+        private final int[] xz = new int[51];
+        private final int[] xy = new int[51];
+        private final int[] zy = new int[51];
+        private final int[] wxz = new int[51];
+        private final int[] wzy = new int[51];
+        private final ContO[] ref = new ContO[51];
+        private int camX;
+        private int camY;
+        private int camZ;
+        private int camXZ;
+        private int camZY;
+
+        void takeLive(int np) {
+            for (int i = 0; i < np; i++) {
+                ContO c = sceneObjects[i];
+                x[i] = c.x;
+                y[i] = c.y;
+                z[i] = c.z;
+                xz[i] = c.xz;
+                xy[i] = c.xy;
+                zy[i] = c.zy;
+                wxz[i] = c.wxz;
+                wzy[i] = c.wzy;
+                ref[i] = c;
+            }
+            camX = Medium.x;
+            camY = Medium.y;
+            camZ = Medium.z;
+            camXZ = Medium.xz;
+            camZY = Medium.zy;
+        }
+
+        /** Only onto the same car objects these were taken from. */
+        void putLive(int np) {
+            for (int i = 0; i < np; i++) {
+                ContO c = sceneObjects[i];
+                if (c != ref[i]) {
+                    continue;
+                }
+                c.x = x[i];
+                c.y = y[i];
+                c.z = z[i];
+                c.xz = xz[i];
+                c.xy = xy[i];
+                c.zy = zy[i];
+                c.wxz = wxz[i];
+                c.wzy = wzy[i];
+            }
+            Medium.x = camX;
+            Medium.y = camY;
+            Medium.z = camZ;
+            Medium.xz = camXZ;
+            Medium.zy = camZY;
+        }
+
+        /** True if the cars and the camera are exactly where these were taken. */
+        boolean matchLive(int np) {
+            for (int i = 0; i < np; i++) {
+                ContO c = sceneObjects[i];
+                if (c != ref[i] || c.x != x[i] || c.y != y[i] || c.z != z[i] || c.xz != xz[i] || c.xy != xy[i]
+                        || c.zy != zy[i] || c.wxz != wxz[i] || c.wzy != wzy[i]) {
+                    return false;
+                }
+            }
+            return Medium.x == camX && Medium.y == camY && Medium.z == camZ && Medium.xz == camXZ
+                    && Medium.zy == camZY;
+        }
+
+        void takePrev(int np) {
+            for (int i = 0; i < np; i++) {
+                x[i] = prevCarX[i];
+                y[i] = prevCarY[i];
+                z[i] = prevCarZ[i];
+                xz[i] = prevCarXZ[i];
+                xy[i] = prevCarXY[i];
+                zy[i] = prevCarZY[i];
+                wxz[i] = prevCarWXZ[i];
+                wzy[i] = prevCarWZY[i];
+                ref[i] = prevCarRef[i];
+            }
+            camX = prevCamX;
+            camY = prevCamY;
+            camZ = prevCamZ;
+            camXZ = prevCamXZ;
+            camZY = prevCamZY;
+        }
+
+        void putPrev(int np) {
+            for (int i = 0; i < np; i++) {
+                prevCarX[i] = x[i];
+                prevCarY[i] = y[i];
+                prevCarZ[i] = z[i];
+                prevCarXZ[i] = xz[i];
+                prevCarXY[i] = xy[i];
+                prevCarZY[i] = zy[i];
+                prevCarWXZ[i] = wxz[i];
+                prevCarWZY[i] = wzy[i];
+                prevCarRef[i] = ref[i];
+            }
+            prevCamX = camX;
+            prevCamY = camY;
+            prevCamZ = camZ;
+            prevCamXZ = camXZ;
+            prevCamZY = camZY;
+        }
     }
 
     /**
@@ -1606,6 +2025,34 @@ public class GameSparker extends Panel implements Runnable {
         }
     }
 
+    /** Turns run-ahead on or off, and saves the choice. */
+    public static void setRunAhead(boolean on) {
+        runAhead = on;
+        runAheadChanged = true;
+    }
+
+    public static boolean isRunAhead() {
+        return runAhead;
+    }
+
+    /** -Dnfm.runahead=true|false, else the saved choice, else on. */
+    private void loadRunAhead() {
+        String property = System.getProperty("nfm.runahead");
+        if (property != null) {
+            runAhead = !property.trim().equalsIgnoreCase("false");
+        } else {
+            runAhead = readcookie(RUN_AHEAD_COOKIE) != 0;
+        }
+        runAheadChanged = false;
+    }
+
+    private void saveRunAheadIfChanged() {
+        if (runAheadChanged) {
+            runAheadChanged = false;
+            savecookie(RUN_AHEAD_COOKIE, runAhead ? "1" : "0");
+        }
+    }
+
     private void saveFpsLimitIfChanged() {
         if (fpsLimitChanged) {
             fpsLimitChanged = false;
@@ -1633,8 +2080,19 @@ public class GameSparker extends Panel implements Runnable {
      * mid-draw, which produces torn screenshots. The request is fulfilled at the
      * end of a presentation pass instead.
      */
+    /** The window's inside as {@link #paint} fills it: the picture scaled, and the borders. */
+    private BufferedImage captureWindow() {
+        BufferedImage image = new BufferedImage(Math.max(1, getWidth()), Math.max(1, getHeight()),
+                BufferedImage.TYPE_INT_RGB);
+        Graphics2D graphics2d = image.createGraphics();
+        paint(graphics2d);
+        graphics2d.dispose();
+        return image;
+    }
+
     private void saveFrame(File directory, String name) {
         capturedFrame = null;
+        capturedWindow = null;
         captureRequested = true;
         long deadline = System.currentTimeMillis() + 2_000L;
         while (captureRequested && System.currentTimeMillis() < deadline) {
@@ -1651,6 +2109,11 @@ public class GameSparker extends Panel implements Runnable {
         }
         try {
             ImageIO.write(image, "png", new File(directory, name));
+            BufferedImage window = capturedWindow;
+            if (window != null) {
+                // the picture as the window shows it, when the window is not 1280x720
+                ImageIO.write(window, "png", new File(directory, name.replace(".png", "-window.png")));
+            }
         } catch (IOException ex) {
             System.out.println("[autotest] screenshot failed: " + ex);
         }
@@ -1913,12 +2376,15 @@ public class GameSparker extends Panel implements Runnable {
         System.gc();
         sceneObjects = aconto1;
         racers = amadness;
+        modelObjects = aconto;
         ui = xtgraphics;
         raceCheckpoints = checkpoints;
         raceRecord = record;
         raceTrackers = trackers;
 
         loadFpsLimit();
+        loadRunAhead();
+        loadScaleToWindow();
         startAutoTest();
         session = RaceSession.fromCommandLine(new SessionHost());
         final boolean unpaced = session != null && session.unpaced();
@@ -1971,6 +2437,8 @@ public class GameSparker extends Panel implements Runnable {
                 ticksThisFrame++;
                 profileTicks++;
                 saveFpsLimitIfChanged();
+                saveRunAheadIfChanged();
+                saveScaleToWindowIfChanged();
                 if (session != null) {
                     session.beforeTick();
                 }
@@ -2249,41 +2717,7 @@ public class GameSparker extends Panel implements Runnable {
             }
             if (xtgraphics.fase == Phase.DRAWENVIRONMENT) {
                 Medium.d(rd);
-                int j3 = 0;
-                int ai1[] = new int[200];
-                for (int i6 = 0; i6 < nob; i6++)
-                    if (aconto1[i6].dist != 0) {
-                        ai1[j3] = i6;
-                        j3++;
-                    } else {
-                        aconto1[i6].d(rd);
-                    }
-
-                int ai6[] = new int[j3];
-                for (int i8 = 0; i8 < j3; i8++)
-                    ai6[i8] = 0;
-
-                for (int j8 = 0; j8 < j3; j8++) {
-                    for (int k11 = j8 + 1; k11 < j3; k11++)
-                        if (aconto1[ai1[j8]].dist != aconto1[ai1[k11]].dist) {
-                            if (aconto1[ai1[j8]].dist < aconto1[ai1[k11]].dist)
-                                ai6[j8]++;
-                            else
-                                ai6[k11]++;
-                        } else if (k11 > j8)
-                            ai6[j8]++;
-                        else
-                            ai6[k11]++;
-
-                }
-
-                for (int k8 = 0; k8 < j3; k8++) {
-                    for (int l11 = 0; l11 < j3; l11++)
-                        if (ai6[l11] == k8)
-                            aconto1[ai1[l11]].d(rd);
-
-                }
-
+                drawWorldObjects(rd); // aconto1 is sceneObjects
                 Medium.follow(aconto1[0], 0, 0);
                 xtgraphics.hipnoload(checkpoints.stage, false);
                 if (i1 != 0) {
@@ -2333,113 +2767,17 @@ public class GameSparker extends Panel implements Runnable {
                     hudG.setComposite(AlphaComposite.SrcOver);
                 }
 
-                int k3 = 0;
-                do {
-                    if (amadness[k3].newcar) {
-                        int j5 = aconto1[k3].xz;
-                        int j6 = aconto1[k3].xy;
-                        int l8 = aconto1[k3].zy;
-                        aconto1[k3] = new ContO(aconto[amadness[k3].cn], aconto1[k3].x, aconto1[k3].y, aconto1[k3].z,
-                                0);
-                        aconto1[k3].xz = j5;
-                        aconto1[k3].xy = j6;
-                        aconto1[k3].zy = l8;
-                        amadness[k3].newcar = false;
-                    }
-                } while (++k3 < GameFacts.numberOfPlayers);
-
-                drawSimulationStep();
-
-                if (xtgraphics.starcnt == 0) {
-                    int l12 = 0;
-                    do {
-                        int j14 = 0;
-                        do {
-                            if (j14 != l12) {
-                                amadness[l12].colide(aconto1[l12], amadness[j14], aconto1[j14]);
-                            }
-                        } while (++j14 < GameFacts.numberOfPlayers);
-                    } while (++l12 < GameFacts.numberOfPlayers);
-                    l12 = 0;
-                    do
-                        amadness[l12].drive(u[l12], aconto1[l12], trackers, checkpoints);
-                    while (++l12 < GameFacts.numberOfPlayers);
-                    l12 = 0;
-                    do
-                        record.rec(aconto1[l12], l12, amadness[l12].squash, amadness[l12].lastcolido,
-                                amadness[l12].cntdest);
-                    while (++l12 < GameFacts.numberOfPlayers);
-                    checkpoints.checkstat(amadness, aconto1, record, GameFacts.numberOfPlayers);
-
-                    // This starts the AI code for all the cars.
-                    l12 = 1;
-                    do
-                        u[l12].preform(amadness[l12], aconto1[l12], checkpoints, trackers, GameFacts.numberOfPlayers);
-                    while (++l12 < GameFacts.numberOfPlayers);
-                } else {
-                    if (xtgraphics.starcnt == 130) {
-                        Medium.adv = 1900;
-                        Medium.zy = 40;
-                        Medium.vxz = 70;
-                        pendingWhiteFlash = true;
-                    }
-                    if (xtgraphics.starcnt != 0)
-                        xtgraphics.starcnt--;
-                }
-                if (xtgraphics.starcnt < 38) {
-                    if (view == 0) {
-                        Medium.follow(aconto1[xtgraphics.spectate], amadness[xtgraphics.spectate].cxz,
-                                u[xtgraphics.spectate].lookback);
-                        renderHud(u[xtgraphics.spectate], true);
-                        initMoto(amadness, 2, 5);
-                    }
-                    if (view == 1) {
-                        Medium.around(aconto1[xtgraphics.spectate], false);
-                        renderHud(u[xtgraphics.spectate], false);
-                    }
-                    if (view == 2) {
-                        Medium.watch(aconto1[xtgraphics.spectate], amadness[0].mxz);
-                        renderHud(u[xtgraphics.spectate], false);
-                    }
-                    if (mouses == 1) {
-                        u[0].enter = true;
-                        mouses = 0;
-                    }
-                    if (xtgraphics.starcnt == 36) {
-                        /*
-                         * Tints the countdown portrait with the picture behind it.
-                         * The back buffer holds the last presented frame, scene and
-                         * HUD, which is what the original grabbed here too. It must
-                         * run in this tick: the portrait is drawn from the next one,
-                         * and a slow frame can let both ticks run back to back.
-                         */
-                        xtgraphics.blendude(offImage);
-                    }
-                } else {
-                    if (GameFacts.numberOfPlayers < 5)
-                        Medium.around(aconto1[0], true);
-                    else
-                        Medium.around(aconto1[3], true);
-                    if (u[0].enter || u[0].handb) {
-                        xtgraphics.starcnt = 38;
-                        u[0].enter = false;
-                        u[0].handb = false;
-                    }
-                    if (xtgraphics.starcnt == 38) {
-                        if (session != null) {
-                            session.countdownStarting();
-                        }
-                        Medium.startCountdown();
-                        mouses = 0;
-                        Medium.vert = false;
-                        Medium.adv = GameFacts.screenWidth;
-                        Medium.vxz = 180;
-                        checkpoints.checkstat(amadness, aconto1, record, GameFacts.numberOfPlayers);
-                        Medium.follow(aconto1[0], amadness[0].cxz, 0);
-                        renderHud(u[0], true);
-                        pendingWhiteFlash = true;
+                boolean aheadComparable = aheadValid && aheadTick == raceTicks && aheadKeys == latchedKeys;
+                advanceRace();
+                if (aheadComparable) {
+                    // same state, same keys: the race must land where the run-ahead tick did
+                    profileAheadChecked++;
+                    if (!aheadPoses.matchLive(Math.min(GameFacts.numberOfPlayers, prevCarX.length))) {
+                        profileAheadMissed++;
                     }
                 }
+                raceTicks++;
+
                 if (session != null) {
                     session.ingameTickEnded();
                 }
@@ -2813,7 +3151,17 @@ public class GameSparker extends Panel implements Runnable {
                         renderAlpha = (float) elapsed;
                     }
 
-                    renderIngameScene(renderAlpha);
+                    if (aheadPossible()) {
+                        long aheadStart = System.nanoTime();
+                        if (runAheadTick()) {
+                            profileAheadNanos += System.nanoTime() - aheadStart;
+                            profileAheads++;
+                        }
+                        renderAheadScene(renderAlpha);
+                    } else {
+                        aheadValid = false;
+                        renderIngameScene(renderAlpha);
+                    }
 
                     if (hudImage != null) {
                         rd.drawImage(hudImage, 0, 0, null);
@@ -2827,6 +3175,8 @@ public class GameSparker extends Panel implements Runnable {
 
                 if (captureRequested) {
                     capturedFrame = captureFrame();
+                    capturedWindow = getWidth() != GameFacts.screenWidth || getHeight() != GameFacts.screenHeight
+                            ? captureWindow() : null;
                     captureRequested = false;
                 }
 
@@ -2843,10 +3193,17 @@ public class GameSparker extends Panel implements Runnable {
 
             if (PROFILE_LOOP && frameNow - lastProfileFlush >= profileWindowNanos) {
                 double seconds = (frameNow - lastProfileFlush) / 1e9D;
-                System.out.printf("[loop] sim %.1f Hz (%.1f ms/tick) | render %.1f fps (%.1f ms/frame) | limit %s | %s%n",
+                System.out.printf("[loop] sim %.1f Hz (%.1f ms/tick) | render %.1f fps (%.1f ms/frame) | run-ahead %s"
+                        + " (%d, %.1f ms each; %d checked, %d missed) | limit %s | %s%n",
                         profileTicks / seconds, profileTicks == 0 ? 0D : profileTickNanos / 1e6D / profileTicks,
                         profileFrames / seconds, profileFrames == 0 ? 0D : profileRenderNanos / 1e6D / profileFrames,
-                        describeFpsLimit(), xtgraphics.fase);
+                        runAhead ? "on" : "off", profileAheads,
+                        profileAheads == 0 ? 0D : profileAheadNanos / 1e6D / profileAheads,
+                        profileAheadChecked, profileAheadMissed, describeFpsLimit(), xtgraphics.fase);
+                profileAheads = 0;
+                profileAheadChecked = 0;
+                profileAheadMissed = 0;
+                profileAheadNanos = 0L;
                 profileTicks = 0;
                 profileFrames = 0;
                 profileTickNanos = 0L;
@@ -3013,8 +3370,8 @@ public class GameSparker extends Panel implements Runnable {
     @Override
     public boolean mouseMove(Event event, int i, int j) {
         if (!exwist && !lostfcs) {
-            xm = i;
-            ym = j;
+            xm = toPictureX(i);
+            ym = toPictureY(j);
         }
         return false;
     }

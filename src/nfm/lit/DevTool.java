@@ -366,6 +366,23 @@ public class DevTool {
                             + ".\nUsage: fps <auto|unlimited|" + GameSparker.FPS_MIN + "-" + GameSparker.FPS_MAX + ">");
                 }
                 break;
+            case "scale":
+                if (args.length == 1 && (args[0].equalsIgnoreCase("fit") || args[0].equalsIgnoreCase("off"))) {
+                    GameSparker.setScaleToWindow(args[0].equalsIgnoreCase("fit"));
+                    print("Window scaling " + (GameSparker.isScaleToWindow() ? "fit" : "off") + " (saved).");
+                } else {
+                    print("Window scaling is " + (GameSparker.isScaleToWindow() ? "fit" : "off")
+                            + ".\nUsage: scale <fit|off>");
+                }
+                break;
+            case "runahead":
+                if (args.length == 1 && (args[0].equalsIgnoreCase("on") || args[0].equalsIgnoreCase("off"))) {
+                    GameSparker.setRunAhead(args[0].equalsIgnoreCase("on"));
+                    print("Run-ahead " + (GameSparker.isRunAhead() ? "on" : "off") + " (saved).");
+                } else {
+                    print("Run-ahead is " + (GameSparker.isRunAhead() ? "on" : "off") + ".\nUsage: runahead <on|off>");
+                }
+                break;
             case "clear":
                 textArea.setText("");
                 break;
@@ -403,6 +420,8 @@ public class DevTool {
         commandDescriptions.put("map", "Loads a stage from the specified path. Usage: map <path-to-.txt>");
         commandDescriptions.put("stagesubdir", "Sets the stage subdirectory. Usage: stagesubdir <subdir>");
         commandDescriptions.put("status", "Displays the current game state.");
+        commandDescriptions.put("scale", "fit scales the picture to fill the window, keeping its shape; off shows it pixel for pixel. Usage: scale <fit|off>");
+        commandDescriptions.put("runahead", "Shows race frames one tick ahead with the keys held now, for 53 ms less input lag. Usage: runahead <on|off>");
         commandDescriptions.put("fps", "Sets the frame rate limit. auto matches the monitor, unlimited removes the cap. Usage: fps <auto|unlimited|30-1000>");
         commandDescriptions.put("clear", "Clears the console.");
         commandDescriptions.put("connect", "Connects to a test server. Usage: connect <ip:port>");

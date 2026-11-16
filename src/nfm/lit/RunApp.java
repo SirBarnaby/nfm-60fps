@@ -81,11 +81,14 @@ class RunApp extends Panel {
                 exitSequence();
             }
         });
-        applet.setPreferredSize(new Dimension(GameFacts.screenWidth, GameFacts.screenHeight));// The resolution of your game goes here
+        applet.setPreferredSize(startSize());
         frame.add("Center", applet);
-        frame.setResizable(true);// If you plan to make you game support changes in resolution, you can comment out this line.
+        frame.setResizable(true);
         frame.pack();
-        frame.setMinimumSize(frame.getSize());
+        // the picture scales to the window, so it may be smaller than 1280x720
+        Insets insets = frame.getInsets();
+        frame.setMinimumSize(new Dimension(GameFacts.screenWidth / 2 + insets.left + insets.right,
+                GameFacts.screenHeight / 2 + insets.top + insets.bottom));
         if (autoTest) {
             /*
              * Never show the window at all. pack() already created the peer, so
@@ -101,6 +104,54 @@ class RunApp extends Panel {
         }
         applet.init();
         applet.start();
+    }
+
+    /** The window's inside at start: 1280x720, or -Dnfm.window=<width>x<height>. */
+    private static Dimension startSize() {
+        String property = System.getProperty("nfm.window");
+        if (property != null) {
+            String[] parts = property.toLowerCase().split("x");
+            try {
+                if (parts.length == 2) {
+                    return new Dimension(Math.max(GameFacts.screenWidth / 2, Integer.parseInt(parts[0].trim())),
+                            Math.max(GameFacts.screenHeight / 2, Integer.parseInt(parts[1].trim())));
+                }
+            } catch (NumberFormatException ex) {
+                // fall through
+            }
+            HLogger.warn("Ignoring invalid nfm.window value: " + property);
+        }
+        return new Dimension(GameFacts.screenWidth, GameFacts.screenHeight);
+    }
+
+    /** The window's place and size before fullscreen, to go back to. */
+    private static Rectangle windowedBounds;
+
+    /**
+     * Switches between a normal window and borderless fullscreen on the
+     * monitor the window is on (F11 or Alt+Enter). The picture scales to fit
+     * either way. Not in hidden test runs, whose window stays off screen.
+     */
+    static void toggleFullscreen() {
+        if (frame == null || !frame.isVisible()) {
+            return;
+        }
+        EventQueue.invokeLater(() -> {
+            boolean toFullscreen = windowedBounds == null;
+            GraphicsConfiguration screen = frame.getGraphicsConfiguration();
+            frame.dispose(); // decorations can only change while the window is not displayable
+            if (toFullscreen) {
+                windowedBounds = frame.getBounds();
+                frame.setUndecorated(true);
+                frame.setBounds(screen.getBounds());
+            } else {
+                frame.setUndecorated(false);
+                frame.setBounds(windowedBounds);
+                windowedBounds = null;
+            }
+            frame.setVisible(true);
+            applet.requestFocus();
+        });
     }
 
     private static void exitSequence() {
