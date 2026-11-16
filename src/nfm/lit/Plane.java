@@ -826,16 +826,16 @@ public class Plane {
         for (int k10 = 0; k10 < n; k10++) {
             ai14[k10] = Utility.xs(ai[k10], ai1[k10]);
             ai15[k10] = Utility.ys(ai2[k10], ai1[k10], 0);
-            if (ai15[k10] < 0 || ai1[k10] < 10) {
+            if (ai15[k10] < -Medium.cullY || ai1[k10] < 10) {
                 j8++;
             }
-            if (ai15[k10] > Medium.h || ai1[k10] < 10) {
+            if (ai15[k10] > Medium.h + Medium.cullY || ai1[k10] < 10) {
                 l8++;
             }
-            if (ai14[k10] < 0 || ai1[k10] < 10) {
+            if (ai14[k10] < -Medium.cullX || ai1[k10] < 10) {
                 j9++;
             }
-            if (ai14[k10] > Medium.w || ai1[k10] < 10) {
+            if (ai14[k10] > Medium.w + Medium.cullX || ai1[k10] < 10) {
                 l9++;
             }
             if (ai15[k10] < 45 && Medium.flex != 0) {
@@ -1443,16 +1443,16 @@ public class Plane {
             for (int l7 = 0; l7 < n; l7++) {
                 ai3[l7] = Utility.xs(ai[l7], ai1[l7]);
                 ai4[l7] = Utility.ys(ai2[l7], ai1[l7], 0);
-                if (ai4[l7] < 0 || ai1[l7] < 10) {
+                if (ai4[l7] < -Medium.cullY || ai1[l7] < 10) {
                     j4++;
                 }
-                if (ai4[l7] > Medium.h || ai1[l7] < 10) {
+                if (ai4[l7] > Medium.h + Medium.cullY || ai1[l7] < 10) {
                     k5++;
                 }
-                if (ai3[l7] < 0 || ai1[l7] < 10) {
+                if (ai3[l7] < -Medium.cullX || ai1[l7] < 10) {
                     j6++;
                 }
-                if (ai3[l7] > Medium.w || ai1[l7] < 10) {
+                if (ai3[l7] > Medium.w + Medium.cullX || ai1[l7] < 10) {
                     i7++;
                 }
             }

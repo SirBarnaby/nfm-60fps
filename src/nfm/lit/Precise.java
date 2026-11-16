@@ -14,6 +14,11 @@ package nfm.lit;
  * the camera's fractional positions and angles, and hands those to the
  * scene recorder, which the graphics card draws instead.
  * <p>
+ * When a scene is recorded once for a whole tick ({@link RetainedScene}),
+ * each corner is instead kept as a point that frame can place again: where
+ * it is on its car or in the world, and how the game places it. The
+ * recorded corners then hold handles to those points.
+ * <p>
  * Fractions are kept as offsets from the whole values (how far past
  * {@code ContO.x} a car really is), so code that moves a whole value keeps
  * it consistent. Used on the game thread only.
@@ -26,6 +31,8 @@ final class Precise {
     static boolean on;
     /** The recorder of the frame being drawn, which takes the exact corners. */
     static SceneRecorder recorder;
+    /** While a scene is recorded for a whole tick, where its points go; null otherwise. */
+    private static RetainedScene retained;
 
     /** How far the camera really is past {@code Medium.x/y/z/xz/zy}. */
     static float camX;
@@ -64,15 +71,31 @@ final class Precise {
 
     /** Starts a frame recorded into {@code target}, or a software frame with null. */
     static void begin(SceneRecorder target) {
+        begin(target, null);
+    }
+
+    /**
+     * Starts recording into {@code target}; with {@code scene}, a scene kept
+     * for a whole tick, its corners as points in {@code scene}.
+     */
+    static void begin(SceneRecorder target, RetainedScene scene) {
         recorder = target;
         on = target != null;
+        retained = on ? scene : null;
+        if (target != null) {
+            target.retain(retained);
+        }
         objectNone();
     }
 
     /** Ends the frame; until the next {@link #begin} nothing is exact. */
     static void end() {
+        if (recorder != null) {
+            recorder.retain(null);
+        }
         on = false;
         recorder = null;
+        retained = null;
         camX = camY = camZ = camXZ = camZY = 0F;
         clearCars();
         objectNone();
@@ -91,8 +114,14 @@ final class Precise {
     /* the cars placed between two ticks, and how far past their whole values each really is */
     private static final int MAX_CARS = 16;
     private static final ContO[] cars = new ContO[MAX_CARS];
+    private static final int[] carSlots = new int[MAX_CARS];
     private static final float[][] fractions = new float[MAX_CARS][8];
     private static int carCount;
+
+    /* the car being drawn (its place among the cars) or -1, and what a corner worked out on screen moves with */
+    private static int objectSlot = -1;
+    private static ContO anchorObject;
+    private static int anchorPoint = -1;
 
     /** Forgets the cars' fractions. */
     static void clearCars() {
@@ -101,13 +130,15 @@ final class Precise {
     }
 
     /**
-     * Car {@code o} is really {@code x..wzy} past its whole position, angles
-     * and wheel angles in this frame.
+     * Car {@code o}, number {@code slot} among the cars, is really
+     * {@code x..wzy} past its whole position, angles and wheel angles in
+     * this frame.
      */
-    static void car(ContO o, float x, float y, float z, float xz, float xy, float zy, float wxz, float wzy) {
+    static void car(int slot, ContO o, float x, float y, float z, float xz, float xy, float zy, float wxz, float wzy) {
         if (carCount == MAX_CARS) {
             return;
         }
+        carSlots[carCount] = slot;
         cars[carCount] = o;
         float[] f = fractions[carCount++];
         f[0] = x;
@@ -122,8 +153,11 @@ final class Precise {
 
     /** The object being drawn: scenery, at whole positions, has no fractions. */
     static void object(ContO o) {
+        anchorObject = o;
+        anchorPoint = -1;
         for (int c = 0; c < carCount; c++) {
             if (cars[c] == o) {
+                objectSlot = carSlots[c];
                 float[] f = fractions[c];
                 objX = f[0] - camX;
                 objY = f[1] - camY;
@@ -136,11 +170,18 @@ final class Precise {
                 return;
             }
         }
-        objectNone();
+        objectSlot = -1;
+        objX = -camX;
+        objY = -camY;
+        objZ = -camZ;
+        objXZ = objXY = objZY = objWXZ = objWZY = 0F;
     }
 
     /** Something drawn in camera-relative units, not part of an object. */
     static void objectNone() {
+        objectSlot = -1;
+        anchorObject = null;
+        anchorPoint = -1;
         objX = -camX;
         objY = -camY;
         objZ = -camZ;
@@ -186,7 +227,16 @@ final class Precise {
         rotate(xs, ys, fi, fj, roll + objXY, n);
         rotate(ys, zs, fj, fk, pitch + objZY, n);
         rotate(xs, zs, fi, fk, yaw + objXZ, n);
-        project(n, Medium.cz, outX, outY);
+        if (retained != null) {
+            for (int v = 0; v < n; v++) {
+                int point = objectSlot >= 0
+                        ? retained.car(objectSlot, mirror ? -ox[v] : ox[v], oy[v], mirror ? -oz[v] : oz[v], wx, wy, wz)
+                        : retained.camera(xs[v], ys[v], zs[v], 1, Medium.cz);
+                outX[v] = outY[v] = RetainedScene.handle(point);
+            }
+        } else {
+            project(n, Medium.cz, outX, outY);
+        }
         recorder.bind(sx, sy, outX, outY, n);
     }
 
@@ -222,7 +272,16 @@ final class Precise {
         for (int v = 0; v < n; v++) {
             ys[v] = ground[v] - camY;
         }
-        project(n, Medium.cz, outX, outY);
+        if (retained != null) {
+            for (int v = 0; v < n; v++) {
+                int point = objectSlot >= 0
+                        ? retained.shadow(objectSlot, ox[v], oy[v], oz[v], ys[v])
+                        : retained.camera(xs[v], ys[v], zs[v], 1, Medium.cz);
+                outX[v] = outY[v] = RetainedScene.handle(point);
+            }
+        } else {
+            project(n, Medium.cz, outX, outY);
+        }
         recorder.bind(sx, sy, outX, outY, n);
     }
 
@@ -245,7 +304,13 @@ final class Precise {
             ys[v] = y[v] + offY;
             zs[v] = z[v] + offZ;
         }
-        project(n, nearZ, ex, ey);
+        if (retained != null) {
+            for (int v = 0; v < n; v++) {
+                ex[v] = ey[v] = RetainedScene.handle(retained.camera(xs[v], ys[v], zs[v], divisor, nearZ));
+            }
+        } else {
+            project(n, nearZ, ex, ey);
+        }
     }
 
     /** How much further a value the game moved by {@code -whole / divisor} really moves. */
@@ -260,6 +325,9 @@ final class Precise {
      * ground bands, clamped to the picture like them.
      */
     static float horizon(int height, int depth, boolean followsCamera) {
+        if (retained != null) {
+            return RetainedScene.handle(retained.horizon(height - (followsCamera ? camY : 0F), depth, followsCamera));
+        }
         int cy = Medium.cy;
         int cz = Medium.cz;
         float dy = height - (followsCamera ? camY : 0F) - cy;
@@ -279,6 +347,46 @@ final class Precise {
     static void bind(int[] sx, int[] sy, float[] ex, float[] ey, int n, int id) {
         recorder.tag(id);
         recorder.bind(sx, sy, ex, ey, n);
+    }
+
+    /**
+     * While a scene is recorded for a whole tick: the corners of a polygon
+     * the game worked out on screen only, {@code sx/sy}, as points that move
+     * with what they belong to (the dust puff or the object being drawn),
+     * into {@code ex/ey}; kept where they are if they belong to nothing.
+     */
+    static void screen(int[] sx, int[] sy, int n, float[] ex, float[] ey) {
+        int anchor = anchor();
+        for (int v = 0; v < n; v++) {
+            if (anchor < 0) {
+                ex[v] = sx[v];
+                ey[v] = sy[v];
+            } else {
+                ex[v] = ey[v] = RetainedScene.handle(retained.screen(anchor, sx[v], sy[v]));
+            }
+        }
+    }
+
+    /**
+     * What the next corners worked out on screen move with: a point
+     * {@code (x, y, z)} from the camera's whole position (the centre of a
+     * dust puff), until the next {@link #object}.
+     */
+    static void anchor(int x, int y, int z) {
+        if (retained != null) {
+            anchorPoint = retained.camera(x - camX, y - camY, z - camZ, 1, Medium.cz);
+        }
+    }
+
+    /** The point the corners worked out on screen move with, or -1 if none. */
+    private static int anchor() {
+        if (anchorPoint < 0 && anchorObject != null && retained != null) {
+            ContO o = anchorObject;
+            anchorPoint = objectSlot >= 0
+                    ? retained.car(objectSlot, 0F, 0F, 0F, 0, 0, 0)
+                    : retained.camera(o.x - Medium.x + objX, o.y - Medium.y + objY, o.z - Medium.z + objZ, 1, Medium.cz);
+        }
+        return anchorPoint;
     }
 
     /** Turns by the camera and projects like Utility.xs/ys, into {@code ex/ey}. */

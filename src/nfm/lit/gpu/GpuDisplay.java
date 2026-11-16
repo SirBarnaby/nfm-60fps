@@ -261,7 +261,10 @@ public final class GpuDisplay {
         if (hudImage != null && !uploadPicture(hudImage, hud, hudUpload)) {
             return false;
         }
+        long buildStart = System.nanoTime();
         geometry.build(scene, pictureWidth, pictureHeight, sceneWidth / (float) pictureWidth);
+        buildNanos += System.nanoTime() - buildStart;
+        builds++;
         int vertexCount = geometry.vertexCount();
         bgfx_set_view_rect(SCENE_VIEW, 0, 0, sceneWidth, sceneHeight);
         bgfx_touch(SCENE_VIEW);
@@ -297,9 +300,20 @@ public final class GpuDisplay {
 
     /** Draw calls, vertices, stencil-filled polygons and antialiased outlines of the last scene, for the profile. */
     public String sceneStatistics() {
-        return geometry == null ? "" : geometry.draws() + " draws, " + geometry.vertexCount() + " vertices, "
-                + geometry.evenOddPolygons() + " even-odd, " + geometry.antialiased() + " antialiased";
+        if (geometry == null) {
+            return "";
+        }
+        String text = geometry.draws() + " draws, " + geometry.vertexCount() + " vertices, "
+                + geometry.evenOddPolygons() + " even-odd, " + geometry.antialiased() + " antialiased"
+                + String.format(", triangles made in %.2f ms", builds == 0 ? 0D : buildNanos / 1e6D / builds);
+        buildNanos = 0L;
+        builds = 0;
+        return text;
     }
+
+    /* time spent turning scenes into triangles since the last statistics */
+    private long buildNanos;
+    private int builds;
 
     private void fitSceneTarget(int newWidth, int newHeight) {
         if (isValid(sceneBuffer) && newWidth == sceneWidth && newHeight == sceneHeight) {

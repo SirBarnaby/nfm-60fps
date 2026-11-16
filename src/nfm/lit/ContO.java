@@ -100,6 +100,9 @@ public class ContO {
             if (sy[i] > 250) {
                 sy[i] = 250;
             }
+            if (Precise.on) {
+                Precise.anchor(sx[i] - Medium.x, sy[i] - Medium.y, sz[i] - Medium.z); // the puff stays where it is
+            }
             int l1 = Medium.cx
                     + (int) ((sx[i] - Medium.x - Medium.cx) * RadicalMath.cos(Medium.xz) - (sz[i] - Medium.z - Medium.cz) * RadicalMath.sin(Medium.xz));
             int i2 = Medium.cz
@@ -167,16 +170,16 @@ public class ContO {
             int i4 = 0;
             int j4 = 0;
             do {
-                if (ai1[j4] < 0 || i2 < 10) {
+                if (ai1[j4] < -Medium.cullY || i2 < 10) {
                     j3++;
                 }
-                if (ai1[j4] > Medium.h || i2 < 10) {
+                if (ai1[j4] > Medium.h + Medium.cullY || i2 < 10) {
                     k3++;
                 }
-                if (ai[j4] < 0 || i2 < 10) {
+                if (ai[j4] < -Medium.cullX || i2 < 10) {
                     l3++;
                 }
-                if (ai[j4] > Medium.w || i2 < 10) {
+                if (ai[j4] > Medium.w + Medium.cullX || i2 < 10) {
                     i4++;
                 }
                 if (ai1[j4] < 45 && Medium.flex != 0) {
@@ -547,7 +550,7 @@ public class ContO {
         int j = Medium.cz + (int) ((x - Medium.x - Medium.cx) * RadicalMath.sin(Medium.xz) + (z - Medium.z - Medium.cz) * RadicalMath.cos(Medium.xz));
         int k = Medium.cz + (int) ((y - Medium.y - Medium.cy) * RadicalMath.sin(Medium.zy) + (j - Medium.cz) * RadicalMath.cos(Medium.zy));
         int l = Utility.cXs(i + maxR, k) - Utility.cXs(i - maxR, k);
-        if (Utility.cXs(i + maxR * 2, k) > 0 && Utility.cXs(i - maxR * 2, k) < Medium.w && k > -maxR && (k < Medium.fade[disline] + maxR || Medium.trk)
+        if (Utility.cXs(i + maxR * 2, k) > -Medium.cullX && Utility.cXs(i - maxR * 2, k) < Medium.w + Medium.cullX && k > -maxR && (k < Medium.fade[disline] + maxR || Medium.trk)
                 && (l > disp || Medium.trk)) {
             if (shadow) {
                 if (!Medium.crs) {
@@ -574,7 +577,7 @@ public class ContO {
                                     - (j - Medium.cz) * RadicalMath.sin(Medium.zy));
                             int k2 = Medium.cz + (int) ((Medium.ground - Medium.cy) * RadicalMath.sin(Medium.zy)
                                     + (j - Medium.cz) * RadicalMath.cos(Medium.zy));
-                            if (Utility.cYs(j2 + maxR, k2) > 0 && Utility.cYs(j2 - maxR, k2) < Medium.h) {
+                            if (Utility.cYs(j2 + maxR, k2) > -Medium.cullY && Utility.cYs(j2 - maxR, k2) < Medium.h + Medium.cullY) {
                                 for (int l2 = 0; l2 < npl; l2++) {
                                     p[l2].s(rd, x - Medium.x, y - Medium.y, z - Medium.z, xz, xy, zy, 1);
                                 }
@@ -593,7 +596,7 @@ public class ContO {
                 }
             }
             int j1 = Medium.cy + (int) ((y - Medium.y - Medium.cy) * RadicalMath.cos(Medium.zy) - (j - Medium.cz) * RadicalMath.sin(Medium.zy));
-            if (Utility.cYs(j1 + maxR, k) > 0 && Utility.cYs(j1 - maxR, k) < Medium.h) {
+            if (Utility.cYs(j1 + maxR, k) > -Medium.cullY && Utility.cYs(j1 - maxR, k) < Medium.h + Medium.cullY) {
                 if (elec) {
                     electrify(rd);
                 }
@@ -609,12 +612,18 @@ public class ContO {
                         pdust(i3, rd, -1);
                     }
                 } while (++i3 < 4);
+                if (Precise.on) {
+                    Precise.object(this); // what is worked out on screen moves with the object again
+                }
                 long[] order = polygonOrder();
                 for (int l3 = npl - 1; l3 >= 0; l3--) {
                     Plane plane = p[npl - 1 - (int) order[l3]];
                     plane.d(rd, x - Medium.x, y - Medium.y, z - Medium.z, xz, xy, zy, wxz, wzy, noline, l, blackout);
                     if (plane.master != 0 && stg[plane.master - 1] != 0) {
                         pdust(plane.master - 1, rd, 1);
+                        if (Precise.on) {
+                            Precise.object(this);
+                        }
                     }
                 }
 
@@ -851,16 +860,16 @@ public class ContO {
         do {
             ai[j3] = Utility.cXs(ai[j3], ai2[j3]);
             ai1[j3] = Utility.cYs(ai1[j3], ai2[j3]);
-            if (ai1[j3] < 0 || ai2[j3] < 10) {
+            if (ai1[j3] < -Medium.cullY || ai2[j3] < 10) {
                 i2++;
             }
-            if (ai1[j3] > Medium.h || ai2[j3] < 10) {
+            if (ai1[j3] > Medium.h + Medium.cullY || ai2[j3] < 10) {
                 k2++;
             }
-            if (ai[j3] < 0 || ai2[j3] < 10) {
+            if (ai[j3] < -Medium.cullX || ai2[j3] < 10) {
                 l2++;
             }
-            if (ai[j3] > Medium.w || ai2[j3] < 10) {
+            if (ai[j3] > Medium.w + Medium.cullX || ai2[j3] < 10) {
                 i3++;
             }
         } while (++j3 < 4);
@@ -1148,16 +1157,16 @@ public class ContO {
             do {
                 ai3[k2] = Utility.cXs(ai[k2], ai2[k2]);
                 ai4[k2] = Utility.cYs(ai1[k2], ai2[k2]);
-                if (ai4[k2] < 0 || ai2[k2] < 10) {
+                if (ai4[k2] < -Medium.cullY || ai2[k2] < 10) {
                     k1++;
                 }
-                if (ai4[k2] > Medium.h || ai2[k2] < 10) {
+                if (ai4[k2] > Medium.h + Medium.cullY || ai2[k2] < 10) {
                     l1++;
                 }
-                if (ai3[k2] < 0 || ai2[k2] < 10) {
+                if (ai3[k2] < -Medium.cullX || ai2[k2] < 10) {
                     i2++;
                 }
-                if (ai3[k2] > Medium.w || ai2[k2] < 10) {
+                if (ai3[k2] > Medium.w + Medium.cullX || ai2[k2] < 10) {
                     j2++;
                 }
             } while (++k2 < 8);

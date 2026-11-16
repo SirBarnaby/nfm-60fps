@@ -406,7 +406,7 @@ public class Medium {
                 int k2 = cx + (int) ((cgpx[i2] - x - cx) * RadicalMath.cos(xz) - (cgpz[i2] - z - cz) * RadicalMath.sin(xz));
                 int l2 = cz + (int) ((cgpx[i2] - x - cx) * RadicalMath.sin(xz) + (cgpz[i2] - z - cz) * RadicalMath.cos(xz));
                 int i3 = cz + (int) ((250 - y - cy) * RadicalMath.sin(zy) + (l2 - cz) * RadicalMath.cos(zy));
-                if (Utility.xs(k2 + pmx[i2], i3) <= 0 || Utility.xs(k2 - pmx[i2], i3) >= w || i3 <= -pmx[i2] || i3 >= fade[2]) {
+                if (Utility.xs(k2 + pmx[i2], i3) <= -cullX || Utility.xs(k2 - pmx[i2], i3) >= w + cullX || i3 <= -pmx[i2] || i3 >= fade[2]) {
                     continue;
                 }
                 ai[i1 - i][k1 - k] = i3;
@@ -434,16 +434,16 @@ public class Medium {
                 for (int l6 = 0; l6 < 8; l6++) {
                     ai9[l6] = Utility.xs(ai4[l6], ai6[l6]);
                     ai10[l6] = Utility.ys(ai8[l6], ai6[l6], 1);
-                    if (ai10[l6] < 0 || ai6[l6] < 10) {
+                    if (ai10[l6] < -cullY || ai6[l6] < 10) {
                         k4++;
                     }
-                    if (ai10[l6] > h || ai6[l6] < 10) {
+                    if (ai10[l6] > h + cullY || ai6[l6] < 10) {
                         i5++;
                     }
-                    if (ai9[l6] < 0 || ai6[l6] < 10) {
+                    if (ai9[l6] < -cullX || ai6[l6] < 10) {
                         j5++;
                     }
-                    if (ai9[l6] > w || ai6[l6] < 10) {
+                    if (ai9[l6] > w + cullX || ai6[l6] < 10) {
                         i6++;
                     }
                 }
@@ -506,16 +506,16 @@ public class Medium {
                 for (int k5 = 0; k5 < 8; k5++) {
                     ai5[k5] = Utility.xs(ai1[k5], ai2[k5]);
                     ai7[k5] = Utility.ys(ai3[k5], ai2[k5], 1);
-                    if (ai7[k5] < 0 || ai2[k5] < 10) {
+                    if (ai7[k5] < -cullY || ai2[k5] < 10) {
                         k3++;
                     }
-                    if (ai7[k5] > h || ai2[k5] < 10) {
+                    if (ai7[k5] > h + cullY || ai2[k5] < 10) {
                         i4++;
                     }
-                    if (ai5[k5] < 0 || ai2[k5] < 10) {
+                    if (ai5[k5] < -cullX || ai2[k5] < 10) {
                         j4++;
                     }
-                    if (ai5[k5] > w || ai2[k5] < 10) {
+                    if (ai5[k5] > w + cullX || ai2[k5] < 10) {
                         l4++;
                     }
                 }
@@ -767,7 +767,7 @@ public class Medium {
             int l = cz + (int) ((cldd[4] - y / 20 - cy) * RadicalMath.sin(zy) + (k - cz) * RadicalMath.cos(zy));
             int i1 = Utility.xs(j + cmx[i], l);
             int j1 = Utility.xs(j - cmx[i], l);
-            if (i1 <= 0 || j1 >= w || l <= -cmx[i] || i1 - j1 <= 20) {
+            if (i1 <= -cullX || j1 >= w + cullX || l <= -cmx[i] || i1 - j1 <= 20) {
                 continue;
             }
             int ai[][] = new int[3][12];
@@ -849,16 +849,16 @@ public class Medium {
                     l2 += ai[byte0][i6];
                     k2 += ai1[byte0][i6];
                     i3 += ai2[byte0][i6];
-                    if (ai4[l4] < 0 || ai2[0][l4] < 10) {
+                    if (ai4[l4] < -cullY || ai2[0][l4] < 10) {
                         k1++;
                     }
-                    if (ai4[l4] > h || ai2[0][l4] < 10) {
+                    if (ai4[l4] > h + cullY || ai2[0][l4] < 10) {
                         l1++;
                     }
-                    if (ai3[l4] < 0 || ai2[0][l4] < 10) {
+                    if (ai3[l4] < -cullX || ai2[0][l4] < 10) {
                         i2++;
                     }
-                    if (ai3[l4] > w || ai2[0][l4] < 10) {
+                    if (ai3[l4] > w + cullX || ai2[0][l4] < 10) {
                         j2++;
                     }
                 }
@@ -946,16 +946,16 @@ public class Medium {
                     l2 += ai[k7][k6];
                     k2 += ai1[k7][k6];
                     i3 += ai2[k7][k6];
-                    if (ai4[j5] < 0 || ai2[0][j5] < 10) {
+                    if (ai4[j5] < -cullY || ai2[0][j5] < 10) {
                         k1++;
                     }
-                    if (ai4[j5] > h || ai2[0][j5] < 10) {
+                    if (ai4[j5] > h + cullY || ai2[0][j5] < 10) {
                         l1++;
                     }
-                    if (ai3[j5] < 0 || ai2[0][j5] < 10) {
+                    if (ai3[j5] < -cullX || ai2[0][j5] < 10) {
                         i2++;
                     }
-                    if (ai3[j5] > w || ai2[0][j5] < 10) {
+                    if (ai3[j5] > w + cullX || ai2[0][j5] < 10) {
                         j2++;
                     }
                 }
@@ -1005,16 +1005,16 @@ public class Medium {
                 l2 += ai[0][i4];
                 k2 += ai1[0][i4];
                 i3 += ai2[0][i4];
-                if (ai4[i4] < 0 || ai2[0][i4] < 10) {
+                if (ai4[i4] < -cullY || ai2[0][i4] < 10) {
                     k1++;
                 }
-                if (ai4[i4] > h || ai2[0][i4] < 10) {
+                if (ai4[i4] > h + cullY || ai2[0][i4] < 10) {
                     l1++;
                 }
-                if (ai3[i4] < 0 || ai2[0][i4] < 10) {
+                if (ai3[i4] < -cullX || ai2[0][i4] < 10) {
                     i2++;
                 }
-                if (ai3[i4] > w || ai2[0][i4] < 10) {
+                if (ai3[i4] > w + cullX || ai2[0][i4] < 10) {
                     j2++;
                 }
             }
@@ -1165,7 +1165,7 @@ public class Medium {
                     + (mtz[i_185_][nmv[i_185_] - 1] - z / 30 - cz) * RadicalMath.cos(xz));
             int i_191_ = cz + (int) ((mty[i_185_][nmv[i_185_] - 1] - y / 30 - cy) * RadicalMath.sin(zy)
                     + (i_190_ - cz) * RadicalMath.cos(zy));
-            if (Utility.xs(i_189_, i_191_) > 0 && Utility.xs(i_186_, i_188_) < w) {
+            if (Utility.xs(i_189_, i_191_) > -cullX && Utility.xs(i_186_, i_188_) < w + cullX) {
                 int[] is = new int[nmv[i_185_] * 2];
                 int[] is_192_ = new int[nmv[i_185_] * 2];
                 int[] is_193_ = new int[nmv[i_185_] * 2];
@@ -1206,13 +1206,13 @@ public class Medium {
                             EXACT_X[i_207_] = mountainX[i_208_];
                             EXACT_Y[i_207_] = mountainY[i_208_];
                         }
-                        if (is_197_[i_207_] < 0 || is_193_[i_208_] < 10)
+                        if (is_197_[i_207_] < -cullY || is_193_[i_208_] < 10)
                             i_203_++;
-                        if (is_197_[i_207_] > h || is_193_[i_208_] < 10)
+                        if (is_197_[i_207_] > h + cullY || is_193_[i_208_] < 10)
                             i_204_++;
-                        if (is_196_[i_207_] < 0 || is_193_[i_208_] < 10)
+                        if (is_196_[i_207_] < -cullX || is_193_[i_208_] < 10)
                             i_205_++;
-                        if (is_196_[i_207_] > w || is_193_[i_208_] < 10)
+                        if (is_196_[i_207_] > w + cullX || is_193_[i_208_] < 10)
                             i_206_++;
                     }
                     if (i_205_ == 4 || i_203_ == 4 || i_204_ == 4 || i_206_ == 4)
@@ -1357,6 +1357,18 @@ public class Medium {
 
     }
 
+    /*
+     * How far past the picture's edges (in 1280x720 pixels) the scene is
+     * still drawn, and whether every sky and ground band is, even one out of
+     * view: set while a scene is recorded once for a whole tick (see
+     * RetainedScene), which the graphics card then turns and moves for each
+     * frame, so what comes into view during the tick is already there. 0 and
+     * false otherwise, and always for the race's own drawing step.
+     */
+    static int cullX;
+    static int cullY;
+    static boolean allBands;
+
     /* exact corners of scenery polygons, for the graphics card (see Precise); game thread only */
     private static final float[] EXACT_X = new float[16];
     private static final float[] EXACT_Y = new float[16];
@@ -1438,7 +1450,7 @@ public class Medium {
                     k = j1;
                 }
             }
-            if (ai1[0] < h && ai1[1] > ih) {
+            if (allBands || ai1[0] < h && ai1[1] > ih) {
                 graphics2d.setColor(new Color(i, j, k));
                 if (Precise.on) {
                     band(ai, ai1, exactEdge, exactBelow, 1000 + l1);
@@ -1527,7 +1539,7 @@ public class Medium {
                 k2 = j;
                 i3 = k;
             }
-            if (ai1[0] > ih && ai1[1] < h) {
+            if (allBands || ai1[0] > ih && ai1[1] < h) {
                 graphics2d.setColor(new Color(i, j, k));
                 if (Precise.on) {
                     band(ai, ai1, exactSky, exactAbove, 2000 + i4);
@@ -1545,7 +1557,7 @@ public class Medium {
         ai1[2] = k1;
         ai[3] = w;
         ai1[3] = l3;
-        if (ai1[0] < h && ai1[1] > ih) {
+        if (allBands || ai1[0] < h && ai1[1] > ih) {
             float f = (Math.abs(y) - 250F) / (fade[0] * 2);
             if (f < 0.0F) {
                 f = 0.0F;
@@ -1596,7 +1608,7 @@ public class Medium {
                 i2 = (int) (i2 * 0.99099999999999999D);
                 k2 = (int) (k2 * 0.99099999999999999D);
                 i3 = (int) (i3 * 0.998D);
-                if (ai1[1] > ih && ai1[0] < h) {
+                if (allBands || ai1[1] > ih && ai1[0] < h) {
                     graphics2d.setColor(new Color(i2, k2, i3));
                     if (Precise.on) {
                         band(ai, ai1, exactStep, exactGradient, 4000 + j4);

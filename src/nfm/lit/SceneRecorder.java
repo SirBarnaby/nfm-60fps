@@ -36,6 +36,10 @@ final class SceneRecorder extends NullGraphics {
     private float[] exactX = new float[16];
     private float[] exactY = new float[16];
     private int boundN = -1;
+    /* while a scene is recorded for a whole tick, the scene its points go to */
+    private RetainedScene retained;
+    private float[] screenX = new float[16];
+    private float[] screenY = new float[16];
 
     /** Starts recording a frame that would have been drawn into {@code target}. */
     SceneRecorder begin(Graphics2D target) {
@@ -160,6 +164,15 @@ final class SceneRecorder extends NullGraphics {
         System.arraycopy(ys, 0, boundCopyY, 0, n);
     }
 
+    /**
+     * Records the polygons from now on for a scene kept for a whole tick:
+     * every corner as a point of {@code scene} (see {@link Precise}), null
+     * to stop.
+     */
+    void retain(RetainedScene scene) {
+        retained = scene;
+    }
+
     /** Set by tests that follow each polygon from frame to frame, see {@link #tag}. */
     static boolean tagging;
 
@@ -204,11 +217,33 @@ final class SceneRecorder extends NullGraphics {
     }
 
     private void polygon(int op, int[] xPoints, int[] yPoints, int nPoints) {
+        if (retained != null) {
+            retainedPolygon(op, xPoints, yPoints, nPoints);
+            return;
+        }
         if (isBound(xPoints, yPoints, nPoints)) {
             list.polygon(op, xPoints, yPoints, nPoints, exactX, exactY);
         } else {
             list.polygon(op, xPoints, yPoints, nPoints);
         }
+    }
+
+    private void retainedPolygon(int op, int[] xPoints, int[] yPoints, int nPoints) {
+        int n = Math.max(0, Math.min(nPoints, Math.min(xPoints.length, yPoints.length)));
+        float[] ex = exactX;
+        float[] ey = exactY;
+        if (!isBound(xPoints, yPoints, nPoints)) {
+            if (screenX.length < n) {
+                screenX = new float[n];
+                screenY = new float[n];
+            }
+            Precise.screen(xPoints, yPoints, n, screenX, screenY);
+            ex = screenX;
+            ey = screenY;
+        }
+        int at = list.size() + 2 + 2 * n;
+        list.polygon(op, xPoints, yPoints, n, ex, ey);
+        retained.polygon(at, n, ex, ey);
     }
 
     @Override

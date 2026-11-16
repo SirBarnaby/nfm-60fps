@@ -172,6 +172,9 @@ final class SceneGeometry {
             return;
         }
         boolean convex = isConvex(px, py, n);
+        if (!convex && earClip(n)) {
+            return; // concave but not crossing itself: plain triangles cover what even-odd would
+        }
         if (!convex) {
             evenOddPolygons++;
         }
@@ -183,6 +186,138 @@ final class SceneGeometry {
             vertex(px[k] + FILL_SHIFT, py[k] + FILL_SHIFT);
             vertex(px[k + 1] + FILL_SHIFT, py[k + 1] + FILL_SHIFT);
         }
+    }
+
+    /* the polygon's corners still to be cut off, and the triangles cut off so far */
+    private int[] ring = new int[16];
+    private int[] cut = new int[48];
+
+    /**
+     * Fills a polygon that does not cross itself with plain triangles, cut
+     * off one corner (an "ear") at a time: what they cover is exactly what
+     * the even-odd rule fills, without the stencil and in the same draw
+     * call as the plain polygons around it.
+     *
+     * @return false if the polygon crosses or touches itself, or no ear was
+     *         found; nothing has been drawn then
+     */
+    private boolean earClip(int n) {
+        if (!isSimple(px, py, n)) {
+            return false;
+        }
+        double area = 0D;
+        for (int k = 0, j = n - 1; k < n; j = k++) {
+            area += (double) px[j] * py[k] - (double) px[k] * py[j];
+        }
+        if (area == 0D) {
+            return true; // covers nothing
+        }
+        int sign = area > 0D ? 1 : -1;
+        if (ring.length < n) {
+            ring = new int[n];
+            cut = new int[3 * n];
+        }
+        for (int k = 0; k < n; k++) {
+            ring[k] = k;
+        }
+        int m = n;
+        int cuts = 0;
+        int k = 0;
+        int tried = 0;
+        while (m > 3) {
+            if (tried > m) {
+                return false; // rounding left no clean ear
+            }
+            int a = ring[(k + m - 1) % m];
+            int b = ring[k];
+            int c = ring[(k + 1) % m];
+            double turn = cross(a, b, c);
+            boolean ear = turn == 0D;
+            if (!ear && (turn > 0D ? 1 : -1) == sign) {
+                ear = true;
+                for (int q = 0; q < m && ear; q++) {
+                    int v = ring[q];
+                    if (v != a && v != b && v != c && inside(v, a, b, c, sign)) {
+                        ear = false;
+                    }
+                }
+            }
+            if (!ear) {
+                k = (k + 1) % m;
+                tried++;
+                continue;
+            }
+            if (turn != 0D) { // a straight corner is just dropped
+                cut[cuts++] = a;
+                cut[cuts++] = b;
+                cut[cuts++] = c;
+            }
+            System.arraycopy(ring, k + 1, ring, k, m - k - 1);
+            m--;
+            k %= m;
+            tried = 0;
+        }
+        cut[cuts++] = ring[0];
+        cut[cuts++] = ring[1];
+        cut[cuts++] = ring[2];
+        begin(PLAIN);
+        for (int t = 0; t < cuts; t++) {
+            vertex(px[cut[t]] + FILL_SHIFT, py[cut[t]] + FILL_SHIFT);
+        }
+        return true;
+    }
+
+    /** Which way the path a, b, c turns at b: positive, negative or 0 for straight on. */
+    private double cross(int a, int b, int c) {
+        return ((double) px[b] - px[a]) * ((double) py[c] - py[b]) - ((double) py[b] - py[a]) * ((double) px[c] - px[b]);
+    }
+
+    /** True if corner v lies in or on the triangle a, b, c that winds the way {@code sign} says. */
+    private boolean inside(int v, int a, int b, int c, int sign) {
+        if (px[v] == px[a] && py[v] == py[a] || px[v] == px[b] && py[v] == py[b]
+                || px[v] == px[c] && py[v] == py[c]) {
+            return false; // the same point again: not in the way
+        }
+        return cross(a, b, v) * sign >= 0D && cross(b, c, v) * sign >= 0D && cross(c, a, v) * sign >= 0D;
+    }
+
+    /** True if no two edges that do not share a corner meet, so the polygon has an inside and an outside. */
+    static boolean isSimple(float[] xs, float[] ys, int n) {
+        for (int i = 0; i < n; i++) {
+            int i1 = i + 1 < n ? i + 1 : 0;
+            for (int j = i + 2; j < n; j++) {
+                int j1 = j + 1 < n ? j + 1 : 0;
+                if (j1 == i) {
+                    continue; // the edge before i: they share corner i
+                }
+                if (meet(xs[i], ys[i], xs[i1], ys[i1], xs[j], ys[j], xs[j1], ys[j1])) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /** True if segments a-b and c-d have a point in common. */
+    private static boolean meet(float ax, float ay, float bx, float by, float cx, float cy, float dx, float dy) {
+        double d1 = side(cx, cy, dx, dy, ax, ay);
+        double d2 = side(cx, cy, dx, dy, bx, by);
+        double d3 = side(ax, ay, bx, by, cx, cy);
+        double d4 = side(ax, ay, bx, by, dx, dy);
+        if ((d1 > 0D && d2 < 0D || d1 < 0D && d2 > 0D) && (d3 > 0D && d4 < 0D || d3 < 0D && d4 > 0D)) {
+            return true;
+        }
+        return d1 == 0D && within(cx, cy, dx, dy, ax, ay) || d2 == 0D && within(cx, cy, dx, dy, bx, by)
+                || d3 == 0D && within(ax, ay, bx, by, cx, cy) || d4 == 0D && within(ax, ay, bx, by, dx, dy);
+    }
+
+    private static double side(float ax, float ay, float bx, float by, float px, float py) {
+        return ((double) bx - ax) * ((double) py - ay) - ((double) by - ay) * ((double) px - ax);
+    }
+
+    /** For p on the line through a and b: true if it is between them. */
+    private static boolean within(float ax, float ay, float bx, float by, float px, float py) {
+        return Math.min(ax, bx) <= px && px <= Math.max(ax, bx) && Math.min(ay, by) <= py && py <= Math.max(ay, by);
     }
 
     /**

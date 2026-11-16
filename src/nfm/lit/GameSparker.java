@@ -342,6 +342,32 @@ public class GameSparker extends Panel implements Runnable {
     private int motionTestDone;
     /** Records the scene of a frame drawn on the graphics card, see {@link #renderIngameScene}. */
     private final SceneRecorder sceneRecorder = new SceneRecorder();
+
+    /*
+     * The scene recorded once per tick and moved to each frame on the
+     * graphics card (see RetainedScene). -Dnfm.retained=false draws the
+     * whole scene again for every frame instead.
+     */
+    private static final boolean RETAINED = !"false".equalsIgnoreCase(System.getProperty("nfm.retained"));
+    /** Where in the tick the scene is recorded: halfway, so it is never more than half a tick off. */
+    private static final float RETAINED_AT = 0.5F;
+    /** How far past the picture's sides and its top and bottom the kept scene reaches, in 1280x720 pixels. */
+    private static final int RETAINED_MARGIN_X = 480;
+    private static final int RETAINED_MARGIN_Y = 270;
+    private final SceneRecorder retainedRecorder = new SceneRecorder();
+    private final RetainedScene retainedScene = new RetainedScene();
+    private final FramePose framePose = new FramePose();
+    /** The kept scene still holds for the frames to come: no tick nor run-ahead since it was recorded. */
+    private boolean retainedValid;
+    private boolean retainedAhead;
+    /** True while the kept scene is being recorded. */
+    private boolean retainedRecording;
+    /** The recording the last frame drawn on the graphics card came from. */
+    private SceneRecorder shownRecorder = sceneRecorder;
+    private long profileRecordNanos;
+    private int profileRecords;
+    private long profilePlaceNanos;
+    private int profilePlaces;
     /** The frame being drawn goes to the graphics card as a recorded scene. */
     private boolean gpuSceneFrame;
     private boolean gpuSceneFlash;
@@ -1464,6 +1490,9 @@ public class GameSparker extends Panel implements Runnable {
                 }
             }
             HLogger.info("[motiontest] wrote " + file);
+            if (RETAINED) {
+                writeKeptMotion(steps);
+            }
         } catch (java.io.IOException ex) {
             HLogger.warn("[motiontest] " + ex);
         } finally {
@@ -1471,6 +1500,35 @@ public class GameSparker extends Panel implements Runnable {
             SceneRecorder.tagging = false;
             motionTestDone++;
         }
+    }
+
+    /**
+     * For the motion test: the scene kept for this tick (see
+     * {@link RetainedScene}), moved to the same moments as the scenes drawn
+     * the whole way, into {@code kept-<tick>.bin}.
+     */
+    private void writeKeptMotion(int steps) throws java.io.IOException {
+        java.io.File file = new java.io.File(MOTION_TEST, "kept-" + raceTicks + ".bin");
+        recordRetained(false);
+        retainedValid = false;
+        if (retainedRecorder.unsupported()) {
+            HLogger.warn("[motiontest] the kept scene could not be recorded");
+            return;
+        }
+        try (java.io.DataOutputStream out = new java.io.DataOutputStream(
+                new java.io.BufferedOutputStream(new java.io.FileOutputStream(file)))) {
+            for (int k = 0; k <= steps; k++) {
+                framePose(k / (float) steps, false, framePose);
+                nfm.lit.gpu.SceneList list = retainedRecorder.list();
+                retainedScene.realize(framePose, list.data());
+                out.writeInt(list.size());
+                int[] data = list.data();
+                for (int i = 0; i < list.size(); i++) {
+                    out.writeInt(data[i]);
+                }
+            }
+        }
+        HLogger.info("[motiontest] wrote " + file);
     }
 
     /** How far the exact value between a and b is past {@link #mix}'s whole one. */
@@ -1584,7 +1642,8 @@ public class GameSparker extends Panel implements Runnable {
         int camXZ = Medium.xz;
         int camZY = Medium.zy;
         // a frame for the graphics card also gets the exact positions between the whole ones
-        Precise.begin(gpuSceneFrame ? sceneRecorder : null);
+        Precise.begin(retainedRecording ? retainedRecorder : gpuSceneFrame ? sceneRecorder : null,
+                retainedRecording ? retainedScene : null);
 
         if (prevFrameValid && alpha < 1F) {
             for (int i = 0; i < np; i++) {
@@ -1603,7 +1662,7 @@ public class GameSparker extends Panel implements Runnable {
                 conto.wxz = mix(prevCarWXZ[i], savedCarWXZ[i], alpha);
                 conto.wzy = mixPeriodic(prevCarWZY[i], savedCarWZY[i], alpha, 45);
                 if (Precise.on) {
-                    Precise.car(conto,
+                    Precise.car(i, conto,
                             fraction(prevCarX[i], savedCarX[i], alpha),
                             fraction(prevCarY[i], savedCarY[i], alpha),
                             fraction(prevCarZ[i], savedCarZ[i], alpha),
@@ -1632,7 +1691,8 @@ public class GameSparker extends Panel implements Runnable {
 
         saveSceneDrawState();
         try {
-            Graphics2D target = gpuSceneFrame ? sceneRecorder.begin(rd) : rd;
+            Graphics2D target = retainedRecording ? retainedRecorder.begin(rd)
+                    : gpuSceneFrame ? sceneRecorder.begin(rd) : rd;
             Precise.cameraAngles();
             Medium.d(target);
             Precise.cameraAngles();
@@ -1775,6 +1835,109 @@ public class GameSparker extends Panel implements Runnable {
                 renderHud(u[0], true);
                 pendingWhiteFlash = true;
             }
+        }
+    }
+
+    /**
+     * Draws this frame from the scene kept for the tick, recording it first
+     * if a tick or a new run-ahead came since: the cars and the camera
+     * {@code alpha} of the way between the two poses that
+     * {@link #renderIngameScene} (or, with {@code ahead},
+     * {@link #renderAheadScene}) draws between.
+     *
+     * @return false if this frame has to be drawn the whole way instead
+     */
+    private boolean drawRetained(boolean ahead, float alpha) {
+        if (!RETAINED || !gpuSceneFrame || captureRequested || MOTION_TEST != null) {
+            return false;
+        }
+        if (!retainedValid || retainedAhead != ahead) {
+            recordRetained(ahead);
+            if (!retainedValid) {
+                return false;
+            }
+        }
+        long start = System.nanoTime();
+        framePose(alpha, ahead, framePose);
+        retainedScene.realize(framePose, retainedRecorder.list().data());
+        shownRecorder = retainedRecorder;
+        profilePlaceNanos += System.nanoTime() - start;
+        profilePlaces++;
+        return true;
+    }
+
+    /** Records the scene kept for the frames until the next tick or run-ahead, see {@link RetainedScene}. */
+    private void recordRetained(boolean ahead) {
+        long start = System.nanoTime();
+        Medium.cullX = RETAINED_MARGIN_X;
+        Medium.cullY = RETAINED_MARGIN_Y;
+        Medium.allBands = true;
+        retainedRecording = true;
+        try {
+            framePose(RETAINED_AT, ahead, retainedScene.recorded);
+            retainedScene.begin();
+            if (ahead) {
+                renderAheadScene(RETAINED_AT);
+            } else {
+                renderIngameScene(RETAINED_AT);
+            }
+        } finally {
+            Medium.cullX = 0;
+            Medium.cullY = 0;
+            Medium.allBands = false;
+            retainedRecording = false;
+        }
+        retainedValid = !retainedRecorder.unsupported();
+        retainedAhead = ahead;
+        profileRecordNanos += System.nanoTime() - start;
+        profileRecords++;
+    }
+
+    /**
+     * Where {@link #renderIngameScene} puts the cars and the camera for
+     * {@code alpha}, without rounding: between the last two ticks, or with
+     * {@code ahead} between the last tick and the run-ahead one, as
+     * {@link #renderAheadScene} arranges it. A car that was replaced or
+     * jumped stays where it is, as there.
+     */
+    private void framePose(float alpha, boolean ahead, FramePose out) {
+        int np = Math.min(GameFacts.numberOfPlayers, Math.min(prevCarX.length, FramePose.SLOTS));
+        boolean moving = prevFrameValid && alpha < 1F;
+        out.slots = np;
+        for (int i = 0; i < np; i++) {
+            ContO c = sceneObjects[i];
+            if (ahead) {
+                Poses b = aheadPoses;
+                if (b.ref[i] != c) {
+                    out.car(i, c.x, c.y, c.z, c.xz, c.xy, c.zy, c.wxz, c.wzy); // replaced in the run-ahead tick
+                } else if (!moving || teleported(b.x[i] - c.x, b.y[i] - c.y, b.z[i] - c.z)) {
+                    out.car(i, b.x[i], b.y[i], b.z[i], b.xz[i], b.xy[i], b.zy[i], b.wxz[i], b.wzy[i]);
+                } else {
+                    out.car(i, alpha, c.x, c.y, c.z, c.xz, c.xy, c.zy, c.wxz, c.wzy,
+                            b.x[i], b.y[i], b.z[i], b.xz[i], b.xy[i], b.zy[i], b.wxz[i], b.wzy[i]);
+                }
+            } else if (!moving || c != prevCarRef[i]
+                    || teleported(c.x - prevCarX[i], c.y - prevCarY[i], c.z - prevCarZ[i])) {
+                out.car(i, c.x, c.y, c.z, c.xz, c.xy, c.zy, c.wxz, c.wzy);
+            } else {
+                out.car(i, alpha, prevCarX[i], prevCarY[i], prevCarZ[i], prevCarXZ[i], prevCarXY[i], prevCarZY[i],
+                        prevCarWXZ[i], prevCarWZY[i], c.x, c.y, c.z, c.xz, c.xy, c.zy, c.wxz, c.wzy);
+            }
+        }
+        int ax = ahead ? Medium.x : prevCamX;
+        int ay = ahead ? Medium.y : prevCamY;
+        int az = ahead ? Medium.z : prevCamZ;
+        int axz = ahead ? Medium.xz : prevCamXZ;
+        int azy = ahead ? Medium.zy : prevCamZY;
+        int bx = ahead ? aheadPoses.camX : Medium.x;
+        int by = ahead ? aheadPoses.camY : Medium.y;
+        int bz = ahead ? aheadPoses.camZ : Medium.z;
+        int bxz = ahead ? aheadPoses.camXZ : Medium.xz;
+        int bzy = ahead ? aheadPoses.camZY : Medium.zy;
+        if (!moving || teleported(bx - ax, by - ay, bz - az)) {
+            out.camera(bx, by, bz, bxz, bzy);
+        } else {
+            out.camera(alpha, ax, ay, az, axz, azy, bx, by, bz, bxz, bzy);
         }
     }
 
@@ -2113,7 +2276,7 @@ public class GameSparker extends Panel implements Runnable {
         }
         backBufferStale = false;
         Color color = rd.getColor();
-        sceneRecorder.replay(rd);
+        shownRecorder.replay(rd);
         if (gpuSceneHud != null) {
             rd.drawImage(gpuSceneHud, 0, 0, null);
         }
@@ -2164,7 +2327,7 @@ public class GameSparker extends Panel implements Runnable {
                 BufferedImage picture = (BufferedImage) offImage;
                 if (gpuSceneFrame) {
                     picture = null; // show the scene drawn on the card
-                    if (!gpu.drawScene(sceneRecorder.list(), gpuSceneHud, gpuSceneFlash, capture,
+                    if (!gpu.drawScene(shownRecorder.list(), gpuSceneHud, gpuSceneFlash, capture,
                             sceneTargetSize(place))) {
                         syncBackBuffer();
                         picture = (BufferedImage) offImage;
@@ -2838,6 +3001,10 @@ public class GameSparker extends Panel implements Runnable {
         long profileTickNanos = 0L;
         long profileRenderNanos = 0L;
         long profilePresentNanos = 0L;
+        // gaps between frames reaching the screen, for the pacing figures in the profile
+        long[] profileGaps = new long[4096];
+        int profileGapCount = 0;
+        long lastShownAt = 0L;
 
         do {
             boolean ticked = false;
@@ -2861,6 +3028,7 @@ public class GameSparker extends Panel implements Runnable {
                 tickStartNanos = nextTickNanos;
                 nextTickNanos += currentTickNanos;
                 ticked = true;
+                retainedValid = false; // the next frame records the scene for this tick
                 ticksThisFrame++;
                 profileTicks++;
                 if (backBufferStale && !isScenePhase(xtgraphics.fase)) {
@@ -3590,20 +3758,26 @@ public class GameSparker extends Panel implements Runnable {
                     if (MOTION_TEST != null) {
                         motionTest();
                     }
+                    shownRecorder = sceneRecorder;
                     if (aheadPossible()) {
                         long aheadStart = System.nanoTime();
                         if (runAheadTick()) {
                             profileAheadNanos += System.nanoTime() - aheadStart;
                             profileAheads++;
+                            retainedValid = false;
                         }
-                        renderAheadScene(renderAlpha);
+                        if (!drawRetained(true, renderAlpha)) {
+                            renderAheadScene(renderAlpha);
+                        }
                     } else {
                         aheadValid = false;
-                        renderIngameScene(renderAlpha);
+                        if (!drawRetained(false, renderAlpha)) {
+                            renderIngameScene(renderAlpha);
+                        }
                     }
 
-                    if (gpuSceneFrame && sceneRecorder.unsupported()) {
-                        sceneRecorder.replay(rd); // drawing the card does not do: this frame in software
+                    if (gpuSceneFrame && shownRecorder.unsupported()) {
+                        shownRecorder.replay(rd); // drawing the card does not do: this frame in software
                         gpuSceneFrame = false;
                     }
                     if (gpuSceneFrame) {
@@ -3643,6 +3817,10 @@ public class GameSparker extends Panel implements Runnable {
                     captureRequested = false; // after presenting: the GPU read-back comes from there
                 }
                 long presentEnd = System.nanoTime();
+                if (lastShownAt != 0L && profileGapCount < profileGaps.length) {
+                    profileGaps[profileGapCount++] = presentEnd - lastShownAt;
+                }
+                lastShownAt = presentEnd;
                 profilePresentNanos += presentEnd - presentStart;
                 profileRenderNanos += presentEnd - frameNow;
             }
@@ -3659,6 +3837,32 @@ public class GameSparker extends Panel implements Runnable {
                         runAhead ? "on" : "off", profileAheads,
                         profileAheads == 0 ? 0D : profileAheadNanos / 1e6D / profileAheads,
                         profileAheadChecked, profileAheadMissed, describeFpsLimit(), xtgraphics.fase);
+                if (profileGapCount > 0) {
+                    long[] gaps = Arrays.copyOf(profileGaps, profileGapCount);
+                    Arrays.sort(gaps);
+                    long median = gaps[gaps.length / 2];
+                    int hitches = 0;
+                    for (long gap : gaps) {
+                        if (gap > median * 3 / 2 + 2_000_000L) {
+                            hitches++;
+                        }
+                    }
+                    if (profileRecords > 0) {
+                        System.out.printf("[kept] scene recorded %d times (%.1f ms each), %d points, %d polygons;"
+                                + " placed for %d frames (%.2f ms each)%n",
+                                profileRecords, profileRecordNanos / 1e6D / profileRecords, retainedScene.points(),
+                                retainedScene.polygons(), profilePlaces,
+                                profilePlaces == 0 ? 0D : profilePlaceNanos / 1e6D / profilePlaces);
+                    }
+                    System.out.printf("[pace] frame gaps: median %.1f ms, 99%% %.1f ms, longest %.1f ms; %d of %d frames came late%n",
+                            median / 1e6D, gaps[Math.min(gaps.length - 1, gaps.length * 99 / 100)] / 1e6D,
+                            gaps[gaps.length - 1] / 1e6D, hitches, gaps.length);
+                }
+                profileGapCount = 0;
+                profileRecords = 0;
+                profileRecordNanos = 0L;
+                profilePlaces = 0;
+                profilePlaceNanos = 0L;
                 profileAheads = 0;
                 profileAheadChecked = 0;
                 profileAheadMissed = 0;
