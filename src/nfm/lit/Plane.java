@@ -379,6 +379,13 @@ public class Plane {
 
     public void d(Graphics2D rd, int i, int j, int k, int l, int i1, int j1, int k1, int l1, boolean flag, int i2, boolean blackout) {
         int[][] slots = SCRATCH.get();
+        // for the graphics card, the corners again without rounding (not while the plane is breaking up)
+        boolean exact = Precise.on && embos == 0;
+        boolean mirrored = (gr == -11 || gr == -13) && Medium.lastmaf == 1;
+        if (Precise.on) {
+            Precise.recorder.unbind();
+            Precise.recorder.tag(this, 0);
+        }
         if (master != 0) {
             if (av > 1500) {
                 n = 8;
@@ -1111,6 +1118,9 @@ public class Plane {
             } else {
                 rd.setColor(new Color(l11, j13, k14));
             }
+            if (exact) {
+                Precise.plane(ox, oy, oz, mirrored, n, i, j, k, l, i1, j1, k1, l1, wx, wy, wz, ai14, ai15);
+            }
             rd.fillPolygon(ai14, ai15, n);
             if (Medium.trk && gr == -10) {
                 flag = false;
@@ -1310,6 +1320,10 @@ public class Plane {
 
     public void s(Graphics2D rd, int i, int j, int k, int l, int i1, int j1, int k1) {
         int[][] slots = SCRATCH.get();
+        if (Precise.on) {
+            Precise.recorder.unbind();
+            Precise.recorder.tag(this, 1);
+        }
         int ai[] = scratch(slots, 0, n);
         int ai1[] = scratch(slots, 1, n);
         int ai2[] = scratch(slots, 2, n);
@@ -1417,6 +1431,9 @@ public class Plane {
 
         }
         if (flag) {
+            if (Precise.on) {
+                Precise.keepGround(ai2, n);
+            }
             Utility.rot(ai, ai1, Medium.cx, Medium.cz, Medium.xz, n);
             Utility.rot(ai2, ai1, Medium.cy, Medium.cz, Medium.zy, n);
             int j4 = 0;
@@ -1454,6 +1471,9 @@ public class Plane {
                 }
             } while (++k4 < 8);
             rd.setColor(new Color(i2, j2, k2));
+            if (Precise.on) {
+                Precise.shadow(ox, oy, oz, n, i, j, k, l, i1, j1, ai3, ai4);
+            }
             rd.fillPolygon(ai3, ai4, n);
         }
     }

@@ -28,12 +28,21 @@ final class SceneRecorder extends NullGraphics {
     private Color startColor;
     private Object startAntialias;
     private boolean unsupported;
+    /* exact corners for the next polygon drawn at boundX/boundY, see bind */
+    private int[] boundX;
+    private int[] boundY;
+    private int[] boundCopyX = new int[16];
+    private int[] boundCopyY = new int[16];
+    private float[] exactX = new float[16];
+    private float[] exactY = new float[16];
+    private int boundN = -1;
 
     /** Starts recording a frame that would have been drawn into {@code target}. */
     SceneRecorder begin(Graphics2D target) {
         this.target = target;
         list.clear();
         unsupported = false;
+        unbind();
         startColor = target.getColor();
         startAntialias = target.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
         super.setColor(startColor);
@@ -76,7 +85,10 @@ final class SceneRecorder extends NullGraphics {
                     g.fillRect(data[i + 1], data[i + 2], data[i + 3], data[i + 4]);
                     i += 5;
                 }
-                case SceneList.FILL_POLYGON, SceneList.DRAW_POLYGON -> {
+                case SceneList.TAG -> i += 2;
+                case SceneList.FILL_POLYGON, SceneList.DRAW_POLYGON,
+                        SceneList.FILL_POLYGON_EXACT, SceneList.DRAW_POLYGON_EXACT -> {
+                    int op = data[i];
                     int n = data[i + 1];
                     if (xs.length < n) {
                         xs = new int[n];
@@ -84,12 +96,14 @@ final class SceneRecorder extends NullGraphics {
                     }
                     System.arraycopy(data, i + 2, xs, 0, n);
                     System.arraycopy(data, i + 2 + n, ys, 0, n);
-                    if (data[i] == SceneList.FILL_POLYGON) {
+                    if (op == SceneList.FILL_POLYGON || op == SceneList.FILL_POLYGON_EXACT) {
                         g.fillPolygon(xs, ys, n);
                     } else {
                         g.drawPolygon(xs, ys, n);
                     }
-                    i += 2 + 2 * n;
+                    // software draws the whole pixels; the exact corners are for the graphics card
+                    boolean exact = op == SceneList.FILL_POLYGON_EXACT || op == SceneList.DRAW_POLYGON_EXACT;
+                    i += 2 + (exact ? 4 : 2) * n;
                 }
                 default -> throw new IllegalStateException("bad scene command " + data[i]);
             }
@@ -124,14 +138,77 @@ final class SceneRecorder extends NullGraphics {
         return target.getRenderingHint(key);
     }
 
+    /**
+     * Gives the exact corners {@code ex/ey} of the polygon the game is about
+     * to draw at whole pixels {@code xs/ys}, which already hold them. Every
+     * fill or outline of that same polygon, the same arrays holding the
+     * same corners, is then recorded with them, until {@link #unbind}.
+     */
+    void bind(int[] xs, int[] ys, float[] ex, float[] ey, int n) {
+        if (boundCopyX.length < n) {
+            boundCopyX = new int[n];
+            boundCopyY = new int[n];
+            exactX = new float[n];
+            exactY = new float[n];
+        }
+        boundX = xs;
+        boundY = ys;
+        boundN = n;
+        System.arraycopy(ex, 0, exactX, 0, n);
+        System.arraycopy(ey, 0, exactY, 0, n);
+        System.arraycopy(xs, 0, boundCopyX, 0, n);
+        System.arraycopy(ys, 0, boundCopyY, 0, n);
+    }
+
+    /** Set by tests that follow each polygon from frame to frame, see {@link #tag}. */
+    static boolean tagging;
+
+    /** When {@link #tagging}, marks the next polygons as drawn by {@code owner} in pass {@code kind}. */
+    void tag(Object owner, int kind) {
+        if (tagging) {
+            list.tag(System.identityHashCode(owner) * 4 + kind);
+        }
+    }
+
+    /** When {@link #tagging}, marks the next polygons as scenery number {@code id}. */
+    void tag(int id) {
+        if (tagging) {
+            list.tag(-1 - id);
+        }
+    }
+
+    /** Forgets the exact corners: the next polygons are recorded at whole pixels. */
+    void unbind() {
+        boundX = null;
+        boundY = null;
+        boundN = -1;
+    }
+
+    /** True if {@code xs/ys} is the bound polygon, still holding the corners it had when bound. */
+    private boolean isBound(int[] xs, int[] ys, int n) {
+        if (xs != boundX || ys != boundY || n != boundN) {
+            return false;
+        }
+        return java.util.Arrays.equals(xs, 0, n, boundCopyX, 0, n)
+                && java.util.Arrays.equals(ys, 0, n, boundCopyY, 0, n);
+    }
+
     @Override
     public void fillPolygon(int[] xPoints, int[] yPoints, int nPoints) {
-        list.polygon(SceneList.FILL_POLYGON, xPoints, yPoints, nPoints);
+        polygon(SceneList.FILL_POLYGON, xPoints, yPoints, nPoints);
     }
 
     @Override
     public void drawPolygon(int[] xPoints, int[] yPoints, int nPoints) {
-        list.polygon(SceneList.DRAW_POLYGON, xPoints, yPoints, nPoints);
+        polygon(SceneList.DRAW_POLYGON, xPoints, yPoints, nPoints);
+    }
+
+    private void polygon(int op, int[] xPoints, int[] yPoints, int nPoints) {
+        if (isBound(xPoints, yPoints, nPoints)) {
+            list.polygon(op, xPoints, yPoints, nPoints, exactX, exactY);
+        } else {
+            list.polygon(op, xPoints, yPoints, nPoints);
+        }
     }
 
     @Override

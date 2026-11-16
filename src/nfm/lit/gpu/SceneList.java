@@ -23,6 +23,12 @@ public final class SceneList {
     public static final int FILL_RECT = 4;
     /** 1 = antialiasing on, 0 = off */
     public static final int ANTIALIAS = 5;
+    /** As FILL_POLYGON, followed by the exact corners as float bits, x then y. */
+    public static final int FILL_POLYGON_EXACT = 6;
+    /** As DRAW_POLYGON, followed by the exact corners as float bits, x then y. */
+    public static final int DRAW_POLYGON_EXACT = 7;
+    /** Names what the next polygons belong to; only written for tests, drawn as nothing. */
+    public static final int TAG = 8;
 
     private int[] data = new int[1 << 16];
     private int size;
@@ -62,6 +68,33 @@ public final class SceneList {
         size += n;
         System.arraycopy(ys, 0, data, size, n);
         size += n;
+    }
+
+    /**
+     * A polygon drawn at whole pixels {@code xs/ys} in software, with the
+     * exact corners {@code ex/ey} for the graphics card.
+     */
+    public void polygon(int op, int[] xs, int[] ys, int n, float[] ex, float[] ey) {
+        n = Math.max(0, Math.min(n, Math.min(xs.length, ys.length)));
+        ensure(2 + 4 * n);
+        data[size++] = op == FILL_POLYGON ? FILL_POLYGON_EXACT : DRAW_POLYGON_EXACT;
+        data[size++] = n;
+        System.arraycopy(xs, 0, data, size, n);
+        size += n;
+        System.arraycopy(ys, 0, data, size, n);
+        size += n;
+        for (int k = 0; k < n; k++) {
+            data[size++] = Float.floatToRawIntBits(ex[k]);
+        }
+        for (int k = 0; k < n; k++) {
+            data[size++] = Float.floatToRawIntBits(ey[k]);
+        }
+    }
+
+    public void tag(int value) {
+        ensure(2);
+        data[size++] = TAG;
+        data[size++] = value;
     }
 
     public void fillRect(int x, int y, int width, int height) {

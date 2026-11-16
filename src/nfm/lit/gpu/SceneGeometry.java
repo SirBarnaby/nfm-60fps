@@ -54,6 +54,9 @@ final class SceneGeometry {
     private float scaleY;
     /** Target pixels per picture pixel: lines are drawn this thick. */
     private float pixelScale = 1F;
+    /* the corners of the polygon being built */
+    private float[] px = new float[16];
+    private float[] py = new float[16];
     private int abgr;
     private int evenOddPolygons;
     private int antialiased;
@@ -120,6 +123,7 @@ final class SceneGeometry {
                     antialias = data[i + 1] != 0;
                     i += 2;
                 }
+                case SceneList.TAG -> i += 2;
                 case SceneList.FILL_RECT -> {
                     int x = data[i + 1];
                     int y = data[i + 2];
@@ -131,38 +135,53 @@ final class SceneGeometry {
                     }
                     i += 5;
                 }
-                case SceneList.FILL_POLYGON -> {
+                case SceneList.FILL_POLYGON, SceneList.DRAW_POLYGON,
+                        SceneList.FILL_POLYGON_EXACT, SceneList.DRAW_POLYGON_EXACT -> {
+                    int op = data[i];
                     int n = data[i + 1];
-                    fillPolygon(data, i + 2, i + 2 + n, n);
+                    boolean exact = op == SceneList.FILL_POLYGON_EXACT || op == SceneList.DRAW_POLYGON_EXACT;
+                    corners(data, i + 2, n, exact);
+                    if (op == SceneList.FILL_POLYGON || op == SceneList.FILL_POLYGON_EXACT) {
+                        fillPolygon(n);
+                    } else {
+                        outline(n, antialias);
+                    }
                     antialiased += antialias ? 1 : 0;
-                    i += 2 + 2 * n;
-                }
-                case SceneList.DRAW_POLYGON -> {
-                    int n = data[i + 1];
-                    outline(data, i + 2, i + 2 + n, n, antialias);
-                    antialiased += antialias ? 1 : 0;
-                    i += 2 + 2 * n;
+                    i += 2 + (exact ? 4 : 2) * n;
                 }
                 default -> throw new IllegalStateException("bad scene command " + data[i]);
             }
         }
     }
 
-    private void fillPolygon(int[] data, int xs, int ys, int n) {
+    /** Loads a polygon's corners into {@link #px}/{@link #py}: the exact ones when it has them. */
+    private void corners(int[] data, int at, int n, boolean exact) {
+        if (px.length < n) {
+            px = new float[n];
+            py = new float[n];
+        }
+        int from = exact ? at + 2 * n : at;
+        for (int k = 0; k < n; k++) {
+            px[k] = exact ? Float.intBitsToFloat(data[from + k]) : data[from + k];
+            py[k] = exact ? Float.intBitsToFloat(data[from + n + k]) : data[from + n + k];
+        }
+    }
+
+    private void fillPolygon(int n) {
         if (n < 3) {
             return;
         }
-        boolean convex = isConvex(data, xs, ys, n);
+        boolean convex = isConvex(px, py, n);
         if (!convex) {
             evenOddPolygons++;
         }
         begin(convex ? PLAIN : EVEN_ODD);
-        float x0 = data[xs] + FILL_SHIFT;
-        float y0 = data[ys] + FILL_SHIFT;
+        float x0 = px[0] + FILL_SHIFT;
+        float y0 = py[0] + FILL_SHIFT;
         for (int k = 1; k + 1 < n; k++) {
             vertex(x0, y0);
-            vertex(data[xs + k] + FILL_SHIFT, data[ys + k] + FILL_SHIFT);
-            vertex(data[xs + k + 1] + FILL_SHIFT, data[ys + k + 1] + FILL_SHIFT);
+            vertex(px[k] + FILL_SHIFT, py[k] + FILL_SHIFT);
+            vertex(px[k + 1] + FILL_SHIFT, py[k + 1] + FILL_SHIFT);
         }
     }
 
@@ -171,7 +190,7 @@ final class SceneGeometry {
      * way and its edges change direction at most twice in x and twice in y.
      * Straight runs and repeated points do not count as turns.
      */
-    static boolean isConvex(int[] data, int xs, int ys, int n) {
+    static boolean isConvex(float[] xs, float[] ys, int n) {
         int sign = 0;
         int flipsX = 0;
         int flipsY = 0;
@@ -179,36 +198,36 @@ final class SceneGeometry {
         int lastDy = 0;
         int firstDx = 0;
         int firstDy = 0;
-        int px = data[xs + n - 1];
-        int py = data[ys + n - 1];
-        int prevEdgeX = 0;
-        int prevEdgeY = 0;
+        float px = xs[n - 1];
+        float py = ys[n - 1];
+        float prevEdgeX = 0F;
+        float prevEdgeY = 0F;
         // the last real edge before the first point, to measure the first turn
-        for (int k = n - 1; k > 0 && prevEdgeX == 0 && prevEdgeY == 0; k--) {
-            prevEdgeX = px - data[xs + k - 1];
-            prevEdgeY = py - data[ys + k - 1];
+        for (int k = n - 1; k > 0 && prevEdgeX == 0F && prevEdgeY == 0F; k--) {
+            prevEdgeX = px - xs[k - 1];
+            prevEdgeY = py - ys[k - 1];
         }
         for (int k = 0; k < n; k++) {
-            int x = data[xs + k];
-            int y = data[ys + k];
-            int ex = x - px;
-            int ey = y - py;
+            float x = xs[k];
+            float y = ys[k];
+            float ex = x - px;
+            float ey = y - py;
             px = x;
             py = y;
-            if (ex == 0 && ey == 0) {
+            if (ex == 0F && ey == 0F) {
                 continue;
             }
-            long cross = (long) prevEdgeX * ey - (long) prevEdgeY * ex;
-            if (cross != 0) {
-                int s = cross > 0 ? 1 : -1;
+            double cross = (double) prevEdgeX * ey - (double) prevEdgeY * ex;
+            if (cross != 0D) {
+                int s = cross > 0D ? 1 : -1;
                 if (sign == 0) {
                     sign = s;
                 } else if (s != sign) {
                     return false;
                 }
             }
-            int dx = Integer.signum(ex);
-            int dy = Integer.signum(ey);
+            int dx = (int) Math.signum(ex);
+            int dy = (int) Math.signum(ey);
             if (dx != 0) {
                 if (lastDx != 0 && dx != lastDx) {
                     flipsX++;
@@ -240,7 +259,7 @@ final class SceneGeometry {
         return flipsX <= 2 && flipsY <= 2;
     }
 
-    private void outline(int[] data, int xs, int ys, int n, boolean antialias) {
+    private void outline(int n, boolean antialias) {
         if (n <= 0) {
             return;
         }
@@ -248,9 +267,9 @@ final class SceneGeometry {
         for (int k = 0; k < n; k++) {
             int next = k + 1 < n ? k + 1 : 0;
             if (antialias) {
-                smoothSegment(data[xs + k], data[ys + k], data[xs + next], data[ys + next]);
+                smoothSegment(px[k], py[k], px[next], py[next]);
             } else {
-                segment(data[xs + k], data[ys + k], data[xs + next], data[ys + next]);
+                segment(px[k], py[k], px[next], py[next]);
             }
         }
     }
@@ -260,9 +279,9 @@ final class SceneGeometry {
      * centres, half a pixel past each end, and fading over the pixel either
      * side, a pixel at distance d from its middle getting 1 - |d| of the colour.
      */
-    private void smoothSegment(int x0, int y0, int x1, int y1) {
-        float dx = (float) x1 - x0;
-        float dy = (float) y1 - y0;
+    private void smoothSegment(float x0, float y0, float x1, float y1) {
+        float dx = x1 - x0;
+        float dy = y1 - y0;
         float length = (float) Math.sqrt(dx * dx + dy * dy);
         if (length == 0F) {
             segment(x0, y0, x1, y1);
@@ -288,9 +307,9 @@ final class SceneGeometry {
     }
 
     /** A one-pixel line from pixel (x0, y0) to pixel (x1, y1), both ends included. */
-    private void segment(int x0, int y0, int x1, int y1) {
-        float dx = (float) x1 - x0;
-        float dy = (float) y1 - y0;
+    private void segment(float x0, float y0, float x1, float y1) {
+        float dx = x1 - x0;
+        float dy = y1 - y0;
         float ax = x0 + 0.5F;
         float ay = y0 + 0.5F;
         float bx = x1 + 0.5F;

@@ -337,6 +337,9 @@ public class GameSparker extends Panel implements Runnable {
     private static final boolean GPU_SCENE = !"false".equalsIgnoreCase(System.getProperty("nfm.gpuscene"));
     /** Draw those scenes at the window's resolution rather than the picture's, see {@link #sceneTargetSize}. */
     private static final boolean GPU_SCENE_NATIVE = !"picture".equalsIgnoreCase(System.getProperty("nfm.gpuscene"));
+    /** -Dnfm.motiontest=<dir>: write the scene at many points between two ticks, for checking smoothness. */
+    private static final String MOTION_TEST = System.getProperty("nfm.motiontest");
+    private int motionTestDone;
     /** Records the scene of a frame drawn on the graphics card, see {@link #renderIngameScene}. */
     private final SceneRecorder sceneRecorder = new SceneRecorder();
     /** The frame being drawn goes to the graphics card as a recorded scene. */
@@ -1432,6 +1435,58 @@ public class GameSparker extends Panel implements Runnable {
     }
 
     /**
+     * For -Dnfm.motiontest: at a few race ticks, records the scene for the
+     * graphics card at 49 points between the last two ticks and writes the
+     * lists to {@code motion-<tick>.bin} (per point: the list's length, then
+     * the list), so a script can check every corner moves smoothly.
+     */
+    private void motionTest() {
+        int[] at = {200, 250, 300, 350, 400, 450};
+        if (motionTestDone >= at.length || ui.fase != Phase.INGAME || raceTicks != at[motionTestDone]
+                || !prevFrameValid) {
+            return;
+        }
+        boolean wasScene = gpuSceneFrame;
+        java.io.File file = new java.io.File(MOTION_TEST, "motion-" + raceTicks + ".bin");
+        file.getParentFile().mkdirs();
+        try (java.io.DataOutputStream out = new java.io.DataOutputStream(
+                new java.io.BufferedOutputStream(new java.io.FileOutputStream(file)))) {
+            gpuSceneFrame = true;
+            SceneRecorder.tagging = true;
+            int steps = 48;
+            for (int k = 0; k <= steps; k++) {
+                renderIngameScene(k / (float) steps);
+                nfm.lit.gpu.SceneList list = sceneRecorder.list();
+                out.writeInt(list.size());
+                int[] data = list.data();
+                for (int i = 0; i < list.size(); i++) {
+                    out.writeInt(data[i]);
+                }
+            }
+            HLogger.info("[motiontest] wrote " + file);
+        } catch (java.io.IOException ex) {
+            HLogger.warn("[motiontest] " + ex);
+        } finally {
+            gpuSceneFrame = wasScene;
+            SceneRecorder.tagging = false;
+            motionTestDone++;
+        }
+    }
+
+    /** How far the exact value between a and b is past {@link #mix}'s whole one. */
+    private static float fraction(int a, int b, float t) {
+        float exact = (b - a) * t;
+        return exact - Math.round(exact);
+    }
+
+    /** How far the exact value is past {@link #mixPeriodic}'s whole one. */
+    private static float periodicFraction(int a, int b, float t, int period) {
+        int half = period / 2;
+        float exact = (Math.floorMod(b - a + half, period) - half) * t;
+        return exact - Math.round(exact);
+    }
+
+    /**
      * Interpolates an angle along the shortest arc so a wrap from 359 to 1 does
      * not spin the car all the way around between two ticks.
      */
@@ -1528,6 +1583,8 @@ public class GameSparker extends Panel implements Runnable {
         int camZ = Medium.z;
         int camXZ = Medium.xz;
         int camZY = Medium.zy;
+        // a frame for the graphics card also gets the exact positions between the whole ones
+        Precise.begin(gpuSceneFrame ? sceneRecorder : null);
 
         if (prevFrameValid && alpha < 1F) {
             for (int i = 0; i < np; i++) {
@@ -1545,6 +1602,17 @@ public class GameSparker extends Panel implements Runnable {
                 conto.zy = mixAngle(prevCarZY[i], savedCarZY[i], alpha);
                 conto.wxz = mix(prevCarWXZ[i], savedCarWXZ[i], alpha);
                 conto.wzy = mixPeriodic(prevCarWZY[i], savedCarWZY[i], alpha, 45);
+                if (Precise.on) {
+                    Precise.car(conto,
+                            fraction(prevCarX[i], savedCarX[i], alpha),
+                            fraction(prevCarY[i], savedCarY[i], alpha),
+                            fraction(prevCarZ[i], savedCarZ[i], alpha),
+                            periodicFraction(prevCarXZ[i], savedCarXZ[i], alpha, 360),
+                            periodicFraction(prevCarXY[i], savedCarXY[i], alpha, 360),
+                            periodicFraction(prevCarZY[i], savedCarZY[i], alpha, 360),
+                            fraction(prevCarWXZ[i], savedCarWXZ[i], alpha),
+                            periodicFraction(prevCarWZY[i], savedCarWZY[i], alpha, 45));
+                }
             }
             if (!teleported(camX - prevCamX, camY - prevCamY, camZ - prevCamZ)) {
                 Medium.x = mix(prevCamX, camX, alpha);
@@ -1552,16 +1620,26 @@ public class GameSparker extends Panel implements Runnable {
                 Medium.z = mix(prevCamZ, camZ, alpha);
                 Medium.xz = mixAngle(prevCamXZ, camXZ, alpha);
                 Medium.zy = mixAngle(prevCamZY, camZY, alpha);
+                if (Precise.on) {
+                    Precise.camX = fraction(prevCamX, camX, alpha);
+                    Precise.camY = fraction(prevCamY, camY, alpha);
+                    Precise.camZ = fraction(prevCamZ, camZ, alpha);
+                    Precise.camXZ = periodicFraction(prevCamXZ, camXZ, alpha, 360);
+                    Precise.camZY = periodicFraction(prevCamZY, camZY, alpha, 360);
+                }
             }
         }
 
         saveSceneDrawState();
         try {
             Graphics2D target = gpuSceneFrame ? sceneRecorder.begin(rd) : rd;
+            Precise.cameraAngles();
             Medium.d(target);
+            Precise.cameraAngles();
             drawWorldObjects(target);
         } finally {
             restoreSceneDrawState();
+            Precise.end();
         }
 
         for (int i = 0; i < np; i++) {
@@ -3509,6 +3587,9 @@ public class GameSparker extends Panel implements Runnable {
                         renderAlpha = (float) elapsed;
                     }
 
+                    if (MOTION_TEST != null) {
+                        motionTest();
+                    }
                     if (aheadPossible()) {
                         long aheadStart = System.nanoTime();
                         if (runAheadTick()) {

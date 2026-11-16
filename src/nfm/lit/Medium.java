@@ -136,14 +136,14 @@ public class Medium {
     private static int[][][] clay;
     private static int[][][] claz;
     private static int[][][][] clc;
-    private static int iw;
+    static int iw;
     private static int nst;
     private static int[] stx;
     private static int[] stz;
     private static int[][][] stc;
     private static boolean[] bst;
     private static int[] twn;
-    private static int ih;
+    static int ih;
     private static int fvect;
 
     public static int detailtype = 2;
@@ -418,6 +418,9 @@ public class Medium {
                     ai6[l3] = (int) ((ogpz[i2][l3] * pvr[i2][l3] + cgpz[i2]) - z);
                     ai8[l3] = ground;
                 }
+                if (Precise.on) {
+                    Precise.camera(ai4, ai8, ai6, 8, 1, 10, EXACT_X, EXACT_Y);
+                }
 
                 Utility.rot(ai4, ai6, cx, cz, xz, 8);
                 Utility.rot(ai8, ai6, cy, cz, zy, 8);
@@ -465,6 +468,9 @@ public class Medium {
                     k7 = (k7 * 7 + cfade[2]) / 8;
                 }
                 graphics2d.setColor(new Color(i7, j7, k7));
+                if (Precise.on) {
+                    Precise.bind(ai9, ai10, EXACT_X, EXACT_Y, 8, 10_000_000 + i2);
+                }
                 graphics2d.fillPolygon(ai9, ai10, 8);
             }
 
@@ -483,6 +489,9 @@ public class Medium {
                     ai1[j3] = (ogpx[j2][j3] + cgpx[j2]) - x;
                     ai2[j3] = (ogpz[j2][j3] + cgpz[j2]) - z;
                     ai3[j3] = ground;
+                }
+                if (Precise.on) {
+                    Precise.camera(ai1, ai3, ai2, 8, 1, 10, EXACT_X, EXACT_Y);
                 }
 
                 Utility.rot(ai1, ai2, cx, cz, xz, 8);
@@ -531,6 +540,9 @@ public class Medium {
                     k6 = (k6 * 7 + cfade[2]) / 8;
                 }
                 graphics2d.setColor(new Color(l5, j6, k6));
+                if (Precise.on) {
+                    Precise.bind(ai5, ai7, EXACT_X, EXACT_Y, 8, 20_000_000 + j2);
+                }
                 graphics2d.fillPolygon(ai5, ai7, 8);
             }
         }
@@ -778,6 +790,9 @@ public class Medium {
                     ai1[j3][k4] = (clay[i][j3][k4] + cldd[4]) - y / 20;
                 }
 
+                if (Precise.on) {
+                    Precise.camera(ai[j3], ai1[j3], ai2[j3], 12, 20, 10, CLOUD_X[j3], CLOUD_Y[j3]);
+                }
                 Utility.rot(ai[j3], ai2[j3], cx, cz, xz, 12);
                 Utility.rot(ai1[j3], ai2[j3], cy, cz, zy, 12);
             }
@@ -829,6 +844,8 @@ public class Medium {
                     }
                     ai3[l4] = Utility.xs(ai[byte0][i6], ai2[byte0][i6]);
                     ai4[l4] = Utility.ys(ai1[byte0][i6], ai2[byte0][i6], 1);
+                    EXACT_X[l4] = CLOUD_X[byte0][i6];
+                    EXACT_Y[l4] = CLOUD_Y[byte0][i6];
                     l2 += ai[byte0][i6];
                     k2 += ai1[byte0][i6];
                     i3 += ai2[byte0][i6];
@@ -871,6 +888,9 @@ public class Medium {
                 }
 
                 graphics2d.setColor(new Color(j6, j7, j8));
+                if (Precise.on) {
+                    Precise.bind(ai3, ai4, EXACT_X, EXACT_Y, 6, 30_000_000 + i * 100 + k3);
+                }
                 graphics2d.fillPolygon(ai3, ai4, 6);
             }
 
@@ -921,6 +941,8 @@ public class Medium {
                     }
                     ai3[j5] = Utility.xs(ai[k7][k6], ai2[k7][k6]);
                     ai4[j5] = Utility.ys(ai1[k7][k6], ai2[k7][k6], 1);
+                    EXACT_X[j5] = CLOUD_X[k7][k6];
+                    EXACT_Y[j5] = CLOUD_Y[k7][k6];
                     l2 += ai[k7][k6];
                     k2 += ai1[k7][k6];
                     i3 += ai2[k7][k6];
@@ -963,6 +985,9 @@ public class Medium {
                 }
 
                 graphics2d.setColor(new Color(l6, l7, k8));
+                if (Precise.on) {
+                    Precise.bind(ai3, ai4, EXACT_X, EXACT_Y, 6, 40_000_000 + i * 100 + l3);
+                }
                 graphics2d.fillPolygon(ai3, ai4, 6);
             }
 
@@ -1019,6 +1044,9 @@ public class Medium {
             }
 
             graphics2d.setColor(new Color(l5, i7, i8));
+            if (Precise.on) {
+                Precise.bind(ai3, ai4, CLOUD_X[0], CLOUD_Y[0], 12, 50_000_000 + i);
+            }
             graphics2d.fillPolygon(ai3, ai4, 12);
         }
 
@@ -1148,6 +1176,13 @@ public class Medium {
                 }
                 int i_195_ = (int) Math.sqrt(is[nmv[i_185_] / 4] * is[nmv[i_185_] / 4]
                         + is_193_[nmv[i_185_] / 4] * is_193_[nmv[i_185_] / 4]);
+                float[] mountainX = null;
+                float[] mountainY = null;
+                if (Precise.on) {
+                    mountainX = new float[nmv[i_185_] * 2];
+                    mountainY = new float[nmv[i_185_] * 2];
+                    Precise.camera(is, is_192_, is_193_, nmv[i_185_] * 2, 30, 10, mountainX, mountainY);
+                }
                 Utility.rot(is, is_193_, cx, cz, xz, nmv[i_185_] * 2);
                 Utility.rot(is_192_, is_193_, cy, cz, zy, nmv[i_185_] * 2);
                 int[] is_196_ = new int[4];
@@ -1167,6 +1202,10 @@ public class Medium {
                             i_208_ = i_202_ + nmv[i_185_];
                         is_196_[i_207_] = Utility.xs(is[i_208_], is_193_[i_208_]);
                         is_197_[i_207_] = Utility.ys(is_192_[i_208_], is_193_[i_208_], 1);
+                        if (mountainX != null) {
+                            EXACT_X[i_207_] = mountainX[i_208_];
+                            EXACT_Y[i_207_] = mountainY[i_208_];
+                        }
                         if (is_197_[i_207_] < 0 || is_193_[i_208_] < 10)
                             i_203_++;
                         if (is_197_[i_207_] > h || is_193_[i_208_] < 10)
@@ -1191,6 +1230,9 @@ public class Medium {
                             int i_211_ = (int) ((mtc[i_185_][i_202_][2] + cgrnd[2] + csky[2] * f
                                     + cfade[2] * f) / (2.0F + f * 2.0F));
                             rd.setColor(new Color(i_209_, i_210_, i_211_)); // Mountain Color, should make this editable in the stage code
+                            if (mountainX != null) {
+                                Precise.bind(is_196_, is_197_, EXACT_X, EXACT_Y, 4, 60_000_000 + i_185_ * 1000 + i_202_);
+                            }
                             rd.fillPolygon(is_196_, is_197_, 4);
                         }
                     }
@@ -1315,9 +1357,35 @@ public class Medium {
 
     }
 
+    /* exact corners of scenery polygons, for the graphics card (see Precise); game thread only */
+    private static final float[] EXACT_X = new float[16];
+    private static final float[] EXACT_Y = new float[16];
+    private static final float[][] CLOUD_X = new float[3][12];
+    private static final float[][] CLOUD_Y = new float[3][12];
+
+    /**
+     * Gives a full-width band of the sky or ground ({@code ai/ai1}: corner 0
+     * at the edge just worked out, 1 and 2 at the edge before, 3 back at the
+     * first) its exact edges {@code edge} and {@code before}.
+     */
+    private static void band(int[] ai, int[] ai1, float edge, float before, int id) {
+        EXACT_X[0] = iw;
+        EXACT_Y[0] = edge;
+        EXACT_X[1] = iw;
+        EXACT_Y[1] = before;
+        EXACT_X[2] = w;
+        EXACT_Y[2] = before;
+        EXACT_X[3] = w;
+        EXACT_Y[3] = edge;
+        Precise.bind(ai, ai1, EXACT_X, EXACT_Y, 4, id);
+    }
+
     public static void d(Graphics2D graphics2d) {
         nsp = 0;
         clampView();
+        if (Precise.on) {
+            Precise.cameraAngles(); // after any clamp of the camera
+        }
 
         float t_cos = RadicalMath.cos(zy);
         float t_sin = RadicalMath.sin(zy);
@@ -1332,6 +1400,7 @@ public class Medium {
         int i1 = crgrnd[1];
         int j1 = crgrnd[2];
         int k1 = h;
+        float exactBelow = h; // the exact edge of the band drawn last, for the graphics card
         for (int l1 = 0; l1 < 16; l1++) {
             int j2 = fade[l1];
             int l2 = ground;
@@ -1354,6 +1423,7 @@ public class Medium {
             ai[3] = w;
             ai1[3] = ai1[0];
             k1 = ai1[0];
+            float exactEdge = Precise.on ? Precise.horizon(ground, fade[l1], true) : 0F;
             if (l1 > 0) {
                 l = (l * 7 + cfade[0]) / 8;
                 i1 = (i1 * 7 + cfade[1]) / 8;
@@ -1370,8 +1440,12 @@ public class Medium {
             }
             if (ai1[0] < h && ai1[1] > ih) {
                 graphics2d.setColor(new Color(i, j, k));
+                if (Precise.on) {
+                    band(ai, ai1, exactEdge, exactBelow, 1000 + l1);
+                }
                 graphics2d.fillPolygon(ai, ai1, 4);
             }
+            exactBelow = exactEdge;
         }
 
         if (lightn != -1 && lton) {
@@ -1417,7 +1491,9 @@ public class Medium {
         int j3 = cy + (int) ((skyline - 700 - cy) * t_cos - (7000 - cz) * t_sin);
         int k3 = cz + (int) ((skyline - 700 - cy) * t_sin + (7000 - cz) * t_cos);
         j3 = Utility.ys(j3, k3, 1);
+        float exactGradient = Precise.on ? Precise.horizon(skyline - 700, 7000, false) : 0F;
         int l3 = ih;
+        float exactAbove = ih;
         for (int i4 = 0; i4 < 16; i4++) {
             int k4 = fade[i4];
             int i5 = skyline;
@@ -1440,6 +1516,7 @@ public class Medium {
             ai[3] = w;
             ai1[3] = ai1[0];
             l3 = ai1[0];
+            float exactSky = Precise.on ? Precise.horizon(skyline, fade[i4], false) : 0F;
             if (i4 > 0) {
                 i = (i * 7 + cfade[0]) / 8;
                 j = (j * 7 + cfade[1]) / 8;
@@ -1452,8 +1529,12 @@ public class Medium {
             }
             if (ai1[0] > ih && ai1[1] < h) {
                 graphics2d.setColor(new Color(i, j, k));
+                if (Precise.on) {
+                    band(ai, ai1, exactSky, exactAbove, 2000 + i4);
+                }
                 graphics2d.fillPolygon(ai, ai1, 4);
             }
+            exactAbove = exactSky;
         }
 
         ai[0] = iw;
@@ -1476,6 +1557,9 @@ public class Medium {
             j = (int) ((j * (1.0F - f) + i1 * (1.0F + f)) / 2.0F);
             k = (int) ((k * (1.0F - f) + j1 * (1.0F + f)) / 2.0F);
             graphics2d.setColor(new Color(i, j, k));
+            if (Precise.on) {
+                band(ai, ai1, exactAbove, exactBelow, 3000);
+            }
             graphics2d.fillPolygon(ai, ai1, 4);
         }
         if (resdown != 2) {
@@ -1498,6 +1582,10 @@ public class Medium {
                 } else {
                     ai1[0] = ih;
                 }
+                float exactStep = 0F;
+                if (Precise.on) {
+                    exactStep = j4 != 19 ? Precise.horizon(skyline - 700 - j4 * 70, 7000, false) : ih;
+                }
                 ai[1] = iw;
                 ai1[1] = j3;
                 ai[2] = w;
@@ -1510,8 +1598,12 @@ public class Medium {
                 i3 = (int) (i3 * 0.998D);
                 if (ai1[1] > ih && ai1[0] < h) {
                     graphics2d.setColor(new Color(i2, k2, i3));
+                    if (Precise.on) {
+                        band(ai, ai1, exactStep, exactGradient, 4000 + j4);
+                    }
                     graphics2d.fillPolygon(ai, ai1, 4);
                 }
+                exactGradient = exactStep;
             }
 
             if (lightson) {
