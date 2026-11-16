@@ -29,9 +29,9 @@ final class Replays {
     private Replays() {
     }
 
-    /** The folder the replays are kept in: {@code replays} in the game's folder. */
+    /** The folder the replays are kept in: {@code replays} in the game's folder, or {@code -Dnfm.replays}. */
     static File folder() {
-        return new File("replays");
+        return new File(System.getProperty("nfm.replays", "replays"));
     }
 
     /** The file name of a race played at {@code time} on {@code stage}, finished in {@code finishTick} (or -1). */

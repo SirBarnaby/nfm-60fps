@@ -216,7 +216,7 @@ final class RaceSession {
         }
         String record = System.getProperty("nfm.record");
         if (record == null) {
-            if (System.getProperty("nfm.autotest") != null) {
+            if (System.getProperty("nfm.autotest") != null && System.getProperty("nfm.replays") == null) {
                 return null; // the smoke test's races are nobody's
             }
             File folder = Replays.folder();
