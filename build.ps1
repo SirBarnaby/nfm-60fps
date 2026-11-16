@@ -2,11 +2,14 @@
 #
 #   madness.jar  - the game, launched by madness64.exe (see madness64.ini)
 #   runtime\     - a private Java runtime made with jlink, so no Java install is needed to play
+#   madness.aot  - the runtime's ahead-of-time cache for the game, from a training run (see below)
 #
 # Needs a JDK 25 or newer to build. It is found via -Jdk, then JAVA_HOME, then %USERPROFILE%\.jdks.
 
 param(
-    [string]$Jdk
+    [string]$Jdk,
+    # Skip the AOT training run (about two minutes): for quick builds while working on the game.
+    [switch]$Quick
 )
 
 $ErrorActionPreference = 'Stop'
@@ -60,10 +63,13 @@ if ($LASTEXITCODE -ne 0) { throw 'Packaging madness.jar failed.' }
 # branches it has not seen taken yet: otherwise the first wreck, say, throws
 # Plane.d back to the interpreter, and ticks take 15-40 ms instead of 3-5 for
 # seconds while it is compiled again. Options given to jlink are stored in the
-# runtime, so madness64.exe and java.exe both get them.
+# runtime, so madness64.exe and java.exe both get them. Generational ZGC
+# collects while the game runs: G1 stops every thread for about 4 ms every half
+# minute of racing, which at 300 frames a second is a frame missed; ZGC's pauses
+# are under 0.1 ms.
 $jlinkArgs = @('--add-modules', 'java.base,java.desktop,java.logging', '--strip-debug', '--no-header-files',
     '--no-man-pages',
-    '--add-options=-XX:-DontCompileHugeMethods -XX:PerMethodTrapLimit=0 -XX:PerBytecodeTrapLimit=0')
+    '--add-options=-XX:+UseZGC -XX:-DontCompileHugeMethods -XX:PerMethodTrapLimit=0 -XX:PerBytecodeTrapLimit=0')
 # Rebuilt only when the JDK or these arguments change: a runtime just written
 # is often held by the antivirus for a while, so it cannot be deleted at once.
 $stampFile = 'runtime\nfm-runtime.txt'
@@ -84,4 +90,29 @@ if ((Test-Path $stampFile) -and (Get-Content $stampFile -Raw).Trim() -eq $stamp)
 }
 
 Remove-Item $build -Recurse -Force
+
+# The AOT cache (JDK 25+): a training run, the hidden smoke test, records the
+# classes the game loads, already parsed and linked, and how often each method
+# ran, so the game starts faster and its JIT compiles the hot code sooner on the
+# first race. madness64.ini points the game at it. It belongs to this exact
+# madness.jar and runtime: the JVM ignores it after any change, so a quick build
+# deletes it rather than leave one that no longer fits.
+if (Test-Path madness.aot) { Remove-Item madness.aot -Force }
+if ($Quick) {
+    Write-Host 'Quick build: no AOT cache.'
+} else {
+    Write-Host 'Training the AOT cache (the hidden smoke test, about two minutes)...'
+    $training = Join-Path ([IO.Path]::GetTempPath()) "nfm-aot-training-$PID"
+    New-Item -ItemType Directory $training -Force | Out-Null
+    $trainingLog = Join-Path $training 'training.log'
+    $p = Start-Process runtime\bin\java.exe -ArgumentList '--enable-native-access=ALL-UNNAMED',
+        '-XX:AOTCacheOutput=madness.aot', '-Dnfm.debug=false', '-Dnfm.renderer=gpu', "-Dnfm.autotest=$training",
+        '-jar', 'madness.jar' -WorkingDirectory $PSScriptRoot -RedirectStandardOutput $trainingLog -WindowStyle Hidden -PassThru -Wait
+    if ($p.ExitCode -ne 0 -or -not (Test-Path madness.aot)) {
+        Write-Warning "The AOT training run failed (exit $($p.ExitCode)); the game runs without the cache. Log: $trainingLog"
+    } else {
+        Remove-Item $training -Recurse -Force
+        Write-Host "AOT cache: madness.aot, $([int]((Get-Item madness.aot).Length / 1MB)) MB."
+    }
+}
 Write-Host 'Done. Start the game with madness64.exe.'

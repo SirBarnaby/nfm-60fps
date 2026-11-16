@@ -15,4 +15,5 @@
 *.log
 /runtime/
 /madness.jar
+/madness.aot
 /replays/
