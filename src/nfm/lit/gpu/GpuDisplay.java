@@ -84,8 +84,12 @@ public final class GpuDisplay {
             """;
     /**
      * Shows the picture on an scRGB swap chain, whose 1.0 is 80 nits: its
-     * sRGB colours made linear and scaled to where Windows puts SDR white
-     * (u_hdr.x), and the glow in its alpha brightened by up to u_hdr.y more.
+     * sRGB colours made linear and scaled to paper white (u_hdr.x), and the
+     * glow in its alpha brightened by up to u_hdr.y more. When the brightest
+     * glow would pass the display's peak (u_hdr.z nits, 0 for unknown), the
+     * highlights roll off into it along the BT.2390 curve, in PQ, on the
+     * brightest of the three channels so the hue stays; nothing at or below
+     * paper white changes.
      */
     private static final String HDR_FS = """
             Texture2D s_pictureTexture : register(t0);
@@ -95,10 +99,39 @@ public final class GpuDisplay {
             {
                 return c <= 0.04045 ? c / 12.92 : pow(max((c + 0.055) / 1.055, 0.0), 2.4);
             }
+            float pq(float nits)
+            {
+                float y = pow(max(nits, 0.0) / 10000.0, 0.1593017578125);
+                return pow((0.8359375 + 18.8515625 * y) / (1.0 + 18.6875 * y), 78.84375);
+            }
+            float pqNits(float e)
+            {
+                float p = pow(max(e, 0.0), 1.0 / 78.84375);
+                return 10000.0 * pow(max(p - 0.8359375, 0.0) / (18.8515625 - 18.6875 * p), 1.0 / 0.1593017578125);
+            }
             float4 main(float4 pos : SV_POSITION, float2 uv : TEXCOORD0) : SV_TARGET
             {
                 float4 c = s_pictureTexture.Sample(s_pictureSampler, uv);
-                return float4(toLinear(c.rgb) * u_hdr.x * (1.0 + c.a * u_hdr.y), 1.0);
+                float3 rgb = toLinear(c.rgb) * u_hdr.x * (1.0 + c.a * u_hdr.y);
+                float brightest = u_hdr.x * 80.0 * (1.0 + u_hdr.y);
+                float m = max(rgb.r, max(rgb.g, rgb.b)) * 80.0;
+                if (u_hdr.z > 0.0 && brightest > u_hdr.z && m > u_hdr.x * 80.0)
+                {
+                    float source = pq(brightest);
+                    float e = pq(m) / source;
+                    float top = pq(u_hdr.z) / source;
+                    float knee = clamp(1.5 * top - 0.5, pq(u_hdr.x * 80.0) / source, top);
+                    if (e > knee)
+                    {
+                        float t = (e - knee) / (1.0 - knee);
+                        float t2 = t * t;
+                        float t3 = t2 * t;
+                        float p = (2.0 * t3 - 3.0 * t2 + 1.0) * knee + (t3 - 2.0 * t2 + t) * (1.0 - knee)
+                                + (3.0 * t2 - 2.0 * t3) * top;
+                        rgb *= pqNits(min(p, top) * source) / m;
+                    }
+                }
+                return float4(rgb, 1.0);
             }
             """;
     private static final String OVERLAY_FS = """
@@ -252,6 +285,50 @@ public final class GpuDisplay {
         }
     }
 
+    /** Lowest and highest paper white, in nits. */
+    public static final int PAPER_WHITE_MIN = 80;
+    public static final int PAPER_WHITE_MAX = 500;
+    /** Lowest and highest peak brightness, in nits. */
+    public static final int PEAK_MIN = 200;
+    public static final int PEAK_MAX = 10000;
+
+    private int paperWhiteNits;
+    private int peakNits;
+
+    /**
+     * In HDR, how bright the game's white is, in nits: the original palette
+     * and the HUD are drawn at it; 0 follows Windows' SDR content brightness,
+     * so the game matches the desktop.
+     */
+    public void setPaperWhite(int nits) {
+        if (nits != paperWhiteNits) {
+            paperWhiteNits = nits;
+            hdrStatus = describeHdr();
+        }
+    }
+
+    /**
+     * In HDR, the brightest the display shows, in nits, which the glow rolls
+     * off into; 0 takes what the monitor tells Windows.
+     */
+    public void setPeak(int nits) {
+        if (nits != peakNits) {
+            peakNits = nits;
+            hdrStatus = describeHdr();
+        }
+    }
+
+    /** Paper white in nits: the setting, or Windows' SDR white. */
+    private float paperWhite() {
+        return paperWhiteNits > 0 ? paperWhiteNits : displayColor.whiteNits;
+    }
+
+    /** The display's peak in nits, never below paper white; 0 if neither the setting nor the monitor says. */
+    private float peak() {
+        float peak = peakNits > 0 ? peakNits : displayColor.peakNits;
+        return peak > 0F ? Math.max(peak, paperWhite()) : 0F;
+    }
+
     /** Whether frames go out in HDR, and at what SDR white, for the console. */
     public String hdrStatus() {
         return hdrStatus;
@@ -259,7 +336,13 @@ public final class GpuDisplay {
 
     private String describeHdr() {
         if (hdr) {
-            return "on, SDR white at " + Math.round(displayColor.whiteNits) + " nits"
+            float peak = peak();
+            float brightest = paperWhite() * (1F + GLOW_BOOST);
+            String highlights = peak <= 0F ? ", peak unknown: highlights up to " + Math.round(brightest) + " nits"
+                    : ", peak " + Math.round(peak) + " nits" + (peakNits > 0 ? " (set)" : " (the monitor's)")
+                    + (brightest > peak ? ", highlights roll off into it" : "");
+            return "on, paper white " + Math.round(paperWhite()) + " nits"
+                    + (paperWhiteNits > 0 ? " (set)" : " (Windows' SDR white)") + highlights
                     + (monitorHdr ? "" : " (forced on an SDR monitor)");
         }
         if (hdrMode == HDR_OFF) {
@@ -734,6 +817,7 @@ public final class GpuDisplay {
         }
         hdrValues[0] = whiteScale();
         hdrValues[1] = glowBoost;
+        hdrValues[2] = peak();
         bgfx_set_uniform(hdrUniform, hdrValues, 1);
         return drawRectangle(view, hdrProgram, source, width, height, place, smooth, OPAQUE, sourcePart());
     }
@@ -770,9 +854,9 @@ public final class GpuDisplay {
         return targetWidth == 0 ? 1F : sceneWidth / (float) targetWidth;
     }
 
-    /** SDR white in scRGB, where 1.0 is 80 nits. */
+    /** Paper white in scRGB, where 1.0 is 80 nits. */
     private float whiteScale() {
-        return displayColor.whiteNits / DisplayColor.SDR_WHITE_NITS;
+        return paperWhite() / DisplayColor.SDR_WHITE_NITS;
     }
 
     /** Copies an image into a texture; false if it is not a packed-int image of the picture's size. */
@@ -827,8 +911,7 @@ public final class GpuDisplay {
         DisplayColor wanted = hdrMode == HDR_FORCE ? DisplayColor.forced(monitor) : monitor;
         boolean on = wanted != null && wanted.hdr && hdrBackBuffer;
         if (on != hdr || on && !wanted.equals(displayColor)) {
-            HLogger.info(on ? "HDR output on, SDR white at " + Math.round(wanted.whiteNits) + " nits"
-                    : "HDR output off");
+            HLogger.info(on ? "HDR output on: " + wanted : "HDR output off");
         }
         hdr = on;
         displayColor = wanted;

@@ -32,6 +32,17 @@ final class GpuAdapter {
     private static final int RELEASE = 2;
     private static final int ENUM_ADAPTER_BY_GPU_PREFERENCE = 29; // IDXGIFactory6
     private static final int GET_DESC1 = 10; // IDXGIAdapter1
+    private static final int QUERY_INTERFACE = 0;
+    private static final int ENUM_ADAPTERS1 = 12; // IDXGIFactory1
+    private static final int ENUM_OUTPUTS = 7; // IDXGIAdapter
+    private static final int OUTPUT6_GET_DESC1 = 27; // IDXGIOutput6
+    /** IID_IDXGIFactory1 {770aae78-f26f-4dba-a829-253c83d1b387}, IID_IDXGIOutput6 {068346e8-aaec-4b84-add7-137f513f77a1}. */
+    private static final long[] IID_FACTORY1 = {0x4dbaf26f770aae78L, 0x87b3d1833c2529a8L};
+    private static final long[] IID_OUTPUT6 = {0x4b84aaec068346e8L, 0xa1773f517f13d7adL};
+    /* DXGI_OUTPUT_DESC1: Monitor (HMONITOR) and MaxLuminance (nits) */
+    private static final int DESC1_SIZE = 152;
+    private static final int DESC1_MONITOR = 88;
+    private static final int DESC1_MAX_LUMINANCE = 140;
     /** IID_IDXGIFactory6 {c1b6694f-ff09-44a9-b03c-77900a0a1d17}, IID_IDXGIAdapter1 {29038f61-3839-4626-91fd-086879011a05}. */
     private static final long[] IID_FACTORY6 = {0x44a9ff09c1b6694fL, 0x171d0a0a90773cb0L};
     private static final long[] IID_ADAPTER1 = {0x4626383929038f61L, 0x051a01796808fd91L};
@@ -82,6 +93,82 @@ final class GpuAdapter {
         } catch (Throwable ex) {
             return DEFAULT;
         }
+    }
+
+    /**
+     * The brightest the monitor {@code monitor} (an HMONITOR) shows, in nits,
+     * as it tells DXGI (IDXGIOutput6, Windows 10 1703 and later): from its
+     * EDID, or from the Windows HDR Calibration app's profile. 0 if it does
+     * not say.
+     */
+    static float peakNits(long monitor) {
+        try (Arena arena = Arena.ofConfined()) {
+            Linker linker = Linker.nativeLinker();
+            SymbolLookup dxgi = SymbolLookup.libraryLookup("dxgi", arena);
+            MethodHandle createFactory = linker.downcallHandle(dxgi.findOrThrow("CreateDXGIFactory1"),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+            MemorySegment out = arena.allocate(ValueLayout.ADDRESS);
+            if ((int) createFactory.invokeExact(guid(arena, IID_FACTORY1), out) < 0) {
+                return 0F;
+            }
+            MemorySegment factory = out.get(ValueLayout.ADDRESS, 0);
+            try {
+                MethodHandle enumAdapters = method(linker, factory, ENUM_ADAPTERS1,
+                        FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT,
+                                ValueLayout.ADDRESS));
+                for (int a = 0; (int) enumAdapters.invokeExact(factory, a, out) >= 0; a++) {
+                    MemorySegment adapter = out.get(ValueLayout.ADDRESS, 0);
+                    try {
+                        float peak = peakOnAdapter(linker, arena, adapter, monitor);
+                        if (peak >= 0F) {
+                            return peak;
+                        }
+                    } finally {
+                        release(linker, adapter);
+                    }
+                }
+                return 0F;
+            } finally {
+                release(linker, factory);
+            }
+        } catch (Throwable ex) {
+            return 0F;
+        }
+    }
+
+    /** The monitor's peak if one of this adapter's outputs drives it, else -1. */
+    private static float peakOnAdapter(Linker linker, Arena arena, MemorySegment adapter, long monitor)
+            throws Throwable {
+        MemorySegment out = arena.allocate(ValueLayout.ADDRESS);
+        MethodHandle enumOutputs = method(linker, adapter, ENUM_OUTPUTS,
+                FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT,
+                        ValueLayout.ADDRESS));
+        for (int o = 0; (int) enumOutputs.invokeExact(adapter, o, out) >= 0; o++) {
+            MemorySegment output = out.get(ValueLayout.ADDRESS, 0);
+            try {
+                MethodHandle query = method(linker, output, QUERY_INTERFACE,
+                        FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                                ValueLayout.ADDRESS));
+                if ((int) query.invokeExact(output, guid(arena, IID_OUTPUT6), out) < 0) {
+                    continue; // before Windows 10 1703
+                }
+                MemorySegment output6 = out.get(ValueLayout.ADDRESS, 0);
+                try {
+                    MethodHandle getDesc1 = method(linker, output6, OUTPUT6_GET_DESC1,
+                            FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+                    MemorySegment desc = arena.allocate(DESC1_SIZE, 8);
+                    if ((int) getDesc1.invokeExact(output6, desc) >= 0
+                            && desc.get(ValueLayout.JAVA_LONG, DESC1_MONITOR) == monitor) {
+                        return Math.max(0F, desc.get(ValueLayout.JAVA_FLOAT, DESC1_MAX_LUMINANCE));
+                    }
+                } finally {
+                    release(linker, output6);
+                }
+            } finally {
+                release(linker, output);
+            }
+        }
+        return -1F;
     }
 
     /** A COM method: slot {@code slot} of the object's vtable. */

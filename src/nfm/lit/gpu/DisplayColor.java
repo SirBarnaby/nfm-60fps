@@ -25,36 +25,44 @@ public final class DisplayColor {
     public final boolean hdr;
     /** How bright Windows shows SDR white on the monitor, in nits. */
     public final float whiteNits;
+    /** The brightest the monitor shows, in nits, as it tells Windows; 0 if it does not say. */
+    public final float peakNits;
 
-    private DisplayColor(boolean hdr, float whiteNits) {
+    private DisplayColor(boolean hdr, float whiteNits, float peakNits) {
         this.hdr = hdr;
         this.whiteNits = whiteNits;
+        this.peakNits = peakNits;
     }
 
     @Override
     public boolean equals(Object o) {
-        return o instanceof DisplayColor d && d.hdr == hdr && d.whiteNits == whiteNits;
+        return o instanceof DisplayColor d && d.hdr == hdr && d.whiteNits == whiteNits && d.peakNits == peakNits;
     }
 
     @Override
     public int hashCode() {
-        return Boolean.hashCode(hdr) * 31 + Float.hashCode(whiteNits);
+        return (Boolean.hashCode(hdr) * 31 + Float.hashCode(whiteNits)) * 31 + Float.hashCode(peakNits);
     }
 
     @Override
     public String toString() {
-        return hdr ? "HDR on, SDR white " + Math.round(whiteNits) + " nits" : "SDR";
+        return hdr ? "HDR on, SDR white " + Math.round(whiteNits) + " nits, peak "
+                + (peakNits > 0F ? Math.round(peakNits) + " nits" : "unknown") : "SDR";
     }
 
-    private static final DisplayColor SDR = new DisplayColor(false, SDR_WHITE_NITS);
+    private static final DisplayColor SDR = new DisplayColor(false, SDR_WHITE_NITS, 0F);
 
     /**
      * HDR as {@code monitor} has it, or on an SDR monitor HDR with white at
      * 80 nits, which Windows shows exactly as SDR: for tests.
      */
     static DisplayColor forced(DisplayColor monitor) {
-        return monitor.hdr ? monitor : new DisplayColor(true, SDR_WHITE_NITS);
+        return monitor.hdr ? monitor : new DisplayColor(true, SDR_WHITE_NITS, 0F);
     }
+
+    /* the last monitor whose peak was asked for, and its answer: asking DXGI takes a few milliseconds */
+    private static long peakMonitor;
+    private static float peakOfMonitor;
 
     private static final int MONITOR_DEFAULTTONEAREST = 2;
     private static final int QDC_ONLY_ACTIVE_PATHS = 2;
@@ -110,7 +118,9 @@ public final class DisplayColor {
             return SDR;
         }
         try (Arena arena = Arena.ofConfined()) {
-            String device = monitorDevice(arena, window);
+            MemorySegment monitor = (MemorySegment) monitorFromWindow.invokeExact(MemorySegment.ofAddress(window),
+                    MONITOR_DEFAULTTONEAREST);
+            String device = monitorDevice(arena, monitor);
             if (device == null) {
                 return SDR;
             }
@@ -137,12 +147,13 @@ public final class DisplayColor {
                     MemorySegment color = header(arena, GET_ADVANCED_COLOR_INFO, 32, adapter, target);
                     if ((int) getDeviceInfo.invokeExact(color) != 0
                             || (color.get(ValueLayout.JAVA_INT, 20) & ADVANCED_COLOR_ENABLED) == 0) {
+                        forgetPeak(); // DXGI's answer can differ once HDR is on again
                         return SDR;
                     }
                     MemorySegment white = header(arena, GET_SDR_WHITE_LEVEL, 24, adapter, target);
                     float nits = (int) getDeviceInfo.invokeExact(white) == 0
                             ? white.get(ValueLayout.JAVA_INT, 20) / 1000F * SDR_WHITE_NITS : SDR_WHITE_NITS;
-                    return new DisplayColor(true, Math.max(SDR_WHITE_NITS, nits));
+                    return new DisplayColor(true, Math.max(SDR_WHITE_NITS, nits), peakOf(monitor.address()));
                 }
             }
             return SDR;
@@ -151,10 +162,17 @@ public final class DisplayColor {
         }
     }
 
-    /** The GDI name of the monitor the window is on, such as \\.\DISPLAY1. */
-    private static String monitorDevice(Arena arena, long window) throws Throwable {
-        MemorySegment monitor = (MemorySegment) monitorFromWindow.invokeExact(MemorySegment.ofAddress(window),
-                MONITOR_DEFAULTTONEAREST);
+    /** The peak of an HDR monitor, asked for once while it stays the window's monitor in HDR. */
+    private static synchronized float peakOf(long monitor) {
+        if (monitor != peakMonitor) {
+            peakMonitor = monitor;
+            peakOfMonitor = GpuAdapter.peakNits(monitor);
+        }
+        return peakOfMonitor;
+    }
+
+    /** The GDI name of a monitor (HMONITOR), such as \\.\DISPLAY1. */
+    private static String monitorDevice(Arena arena, MemorySegment monitor) throws Throwable {
         if (monitor.equals(MemorySegment.NULL)) {
             return null;
         }
@@ -164,6 +182,10 @@ public final class DisplayColor {
             return null;
         }
         return wide(info.asSlice(40, 64));
+    }
+
+    private static synchronized void forgetPeak() {
+        peakMonitor = 0L;
     }
 
     private static String sourceName(Arena arena, long adapter, int source) throws Throwable {

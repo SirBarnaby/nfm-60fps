@@ -2909,6 +2909,8 @@ public class GameSparker extends Panel implements Runnable {
             boolean smooth = place.width != GameFacts.screenWidth || place.height != GameFacts.screenHeight;
             gpu.setVsync(fpsLimit == FPS_MATCH_DISPLAY || fpsLimit == FPS_VRR);
             gpu.setHdr(hdrMode);
+            gpu.setPaperWhite(paperWhite);
+            gpu.setPeak(peakNits);
             hdrInUse = gpu.hdrStatus();
             Dimension size = new Dimension(width, height);
             boolean shown;
@@ -3384,7 +3386,85 @@ public class GameSparker extends Panel implements Runnable {
         if (hdrChanged) {
             hdrChanged = false;
             savecookie(HDR_COOKIE, hdrMode == nfm.lit.gpu.GpuDisplay.HDR_OFF ? "0" : "1");
+            savecookie(PAPER_WHITE_COOKIE, String.valueOf(paperWhite));
+            savecookie(PEAK_COOKIE, String.valueOf(peakNits));
         }
+    }
+
+    private static final String PAPER_WHITE_COOKIE = "paperwhite";
+    private static final String PEAK_COOKIE = "peaknits";
+    /** In HDR, the game's white in nits; 0 follows Windows' SDR content brightness. */
+    private static volatile int paperWhite;
+    /** In HDR, the display's peak in nits; 0 takes what the monitor tells Windows. */
+    private static volatile int peakNits;
+
+    /**
+     * Nits for "auto" (0) or a number from {@code min} to {@code max}, also
+     * with "nits" after it; -1 if it is none of those.
+     */
+    public static int parseNits(String text, int min, int max) {
+        String t = text.trim().toLowerCase(java.util.Locale.ROOT);
+        if (t.equals("auto")) {
+            return 0;
+        }
+        if (t.endsWith("nits")) {
+            t = t.substring(0, t.length() - 4).trim();
+        }
+        try {
+            int nits = Integer.parseInt(t);
+            return nits >= min && nits <= max ? nits : -1;
+        } catch (NumberFormatException ex) {
+            return -1;
+        }
+    }
+
+    /** Paper white in nits, or 0 for Windows' SDR white; saved. */
+    public static void setPaperWhite(int nits) {
+        paperWhite = nits;
+        hdrChanged = true;
+    }
+
+    /** The display's peak in nits, or 0 for what the monitor says; saved. */
+    public static void setPeak(int nits) {
+        peakNits = nits;
+        hdrChanged = true;
+    }
+
+    /** A saved or given brightness: 0 (auto) or within range, else 0. */
+    private static int nitsOrAuto(int nits, int min, int max) {
+        return nits >= min && nits <= max ? nits : 0;
+    }
+
+    /** -Dnfm.hdr.white and -Dnfm.hdr.peak, else the saved values (hidden runs: Windows' and the monitor's). */
+    private void loadHdrBrightness() {
+        int white = 0;
+        int peak = 0;
+        if (!runsHidden()) {
+            white = nitsOrAuto(readcookie(PAPER_WHITE_COOKIE), nfm.lit.gpu.GpuDisplay.PAPER_WHITE_MIN,
+                    nfm.lit.gpu.GpuDisplay.PAPER_WHITE_MAX);
+            peak = nitsOrAuto(readcookie(PEAK_COOKIE), nfm.lit.gpu.GpuDisplay.PEAK_MIN,
+                    nfm.lit.gpu.GpuDisplay.PEAK_MAX);
+        }
+        String property = System.getProperty("nfm.hdr.white");
+        if (property != null) {
+            int nits = parseNits(property, nfm.lit.gpu.GpuDisplay.PAPER_WHITE_MIN, nfm.lit.gpu.GpuDisplay.PAPER_WHITE_MAX);
+            if (nits < 0) {
+                HLogger.warn("Ignoring invalid nfm.hdr.white value: " + property);
+            } else {
+                white = nits;
+            }
+        }
+        property = System.getProperty("nfm.hdr.peak");
+        if (property != null) {
+            int nits = parseNits(property, nfm.lit.gpu.GpuDisplay.PEAK_MIN, nfm.lit.gpu.GpuDisplay.PEAK_MAX);
+            if (nits < 0) {
+                HLogger.warn("Ignoring invalid nfm.hdr.peak value: " + property);
+            } else {
+                peak = nits;
+            }
+        }
+        paperWhite = white;
+        peakNits = peak;
     }
 
     private static final String VOLUME_COOKIE = "vol";
@@ -4448,6 +4528,7 @@ public class GameSparker extends Panel implements Runnable {
         loadSupersample();
         loadDynamicResolution();
         loadHdr();
+        loadHdrBrightness();
         loadSound();
         loadMusicSeparation();
         loadVolumes();

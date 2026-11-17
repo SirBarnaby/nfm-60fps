@@ -482,11 +482,27 @@ public class DevTool {
             }
             case "hdr": {
                 int mode = args.length == 1 ? GameSparker.parseHdr(args[0]) : -1;
+                boolean white = args.length == 2 && args[0].equalsIgnoreCase("white");
+                boolean peak = args.length == 2 && args[0].equalsIgnoreCase("peak");
+                int nits = white ? GameSparker.parseNits(args[1], nfm.lit.gpu.GpuDisplay.PAPER_WHITE_MIN,
+                        nfm.lit.gpu.GpuDisplay.PAPER_WHITE_MAX)
+                        : peak ? GameSparker.parseNits(args[1], nfm.lit.gpu.GpuDisplay.PEAK_MIN,
+                        nfm.lit.gpu.GpuDisplay.PEAK_MAX) : -1;
                 if (mode == nfm.lit.gpu.GpuDisplay.HDR_OFF || mode == nfm.lit.gpu.GpuDisplay.HDR_AUTO) {
                     GameSparker.setHdr(mode);
                     print("HDR " + GameSparker.describeHdr() + " (saved).");
+                } else if (nits >= 0) {
+                    if (white) {
+                        GameSparker.setPaperWhite(nits);
+                    } else {
+                        GameSparker.setPeak(nits);
+                    }
+                    print("HDR " + GameSparker.describeHdr() + " (saved; shown from the next frame).");
                 } else {
-                    print("HDR is " + GameSparker.describeHdr() + ".\nUsage: hdr <auto|off>");
+                    print("HDR is " + GameSparker.describeHdr() + ".\nUsage: hdr <auto|off>, hdr white <auto|"
+                            + nfm.lit.gpu.GpuDisplay.PAPER_WHITE_MIN + "-" + nfm.lit.gpu.GpuDisplay.PAPER_WHITE_MAX
+                            + ">, hdr peak <auto|" + nfm.lit.gpu.GpuDisplay.PEAK_MIN + "-"
+                            + nfm.lit.gpu.GpuDisplay.PEAK_MAX + ">");
                 }
                 break;
             }
@@ -540,7 +556,7 @@ public class DevTool {
         commandDescriptions.put("stagesubdir", "Sets the stage subdirectory. Usage: stagesubdir <subdir>");
         commandDescriptions.put("status", "Displays the current game state.");
         commandDescriptions.put("scale", "fit scales the picture to fill the window, keeping its shape; off shows it pixel for pixel. Usage: scale <fit|off>");
-        commandDescriptions.put("hdr", "HDR output on a monitor that has HDR turned on in Windows: the game looks as it does in SDR, at the brightness Windows shows SDR white at, and flames, lamps, sparks, stars and lightning shine brighter than white. Needs the gpu renderer. Usage: hdr <auto|off>");
+        commandDescriptions.put("hdr", "HDR output on a monitor that has HDR turned on in Windows: the game looks as it does in SDR, at the brightness Windows shows SDR white at, and flames, lamps, sparks, stars and lightning shine brighter than white, rolling off smoothly into the display's peak. hdr white sets how bright the game's white is in nits (auto: Windows' SDR content brightness); hdr peak sets the display's peak in nits (auto: what the monitor tells Windows). Needs the gpu renderer. Usage: hdr <auto|off>, hdr white <auto|80-500>, hdr peak <auto|200-10000>");
         commandDescriptions.put("gamepad", "Game controllers (Xbox, PlayStation, Switch and others): RT or A accelerates, LT or X brakes, the left stick or d-pad steers, B is the handbrake, LB/RB look back, Y changes the view, Start pauses; in menus the stick moves and A selects. Hard hits shake the pad. Usage: gamepad <on|off>, gamepad rumble <on|off>");
         commandDescriptions.put("msaa", "Smooths the edges of the polygons in races drawn on the graphics card by taking 2, 4 or 8 samples per pixel (multisampling); off keeps the game's own hard edges. Usage: msaa <off|2|4|8>");
         commandDescriptions.put("volume", "The 3D sound's volumes, in percent: master, engines, effects (crashes, skids, the wreck, the repair, the wind), music and interface (countdown, checkpoints, menus). Classic plays at its own levels. Usage: volume <bus> <0-100>");
