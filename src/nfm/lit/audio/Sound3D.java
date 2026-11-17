@@ -141,6 +141,14 @@ public final class Sound3D implements Runnable {
     /** A car that moved further than this in one tick was put somewhere else, not driven there. */
     private static final float JUMP = 2_000F;
     private static final int RENDER_RATE = 48_000;
+    private static final int MAX_CARS = 8;
+    /** Occlusion is traced every this many updates (30 ms) and eased in over this long. */
+    private static final int TRACE_EVERY = 3;
+    private static final float OCCLUSION_SMOOTHING = 0.12F;
+    /** How quickly the reverb follows the place, in seconds: moving from a canyon into the open. */
+    private static final float REVERB_SMOOTHING = 1F;
+    /** The reverb's level where the track closes in all round; open ground stays dry. */
+    private static final float REVERB_LEVEL = 0.6F;
     /** -Dnfm.sound.debug prints each engine's state once a second. */
     private static final boolean DEBUG = Boolean.getBoolean("nfm.sound.debug");
 
@@ -285,6 +293,28 @@ public final class Sound3D implements Runnable {
         }
     }
 
+    private static volatile SteamAcoustics.Stage stage;
+
+    /** What a stage triangle is made of, for how it muffles and reflects sound. */
+    public static final byte SURFACE_HARD = 0;
+    public static final byte SURFACE_GROUND = 1;
+    public static final byte SURFACE_FOLIAGE = 2;
+    public static final byte SURFACE_GLASS = 3;
+
+    /**
+     * The stage just loaded, as triangles in the game's world, for the sound
+     * to be muffled and to ring by: from the game thread when a stage loads.
+     *
+     * @param kinds one per triangle, a SURFACE kind
+     */
+    public static void setStage(float[] vertices, int[] triangles, byte[] kinds) {
+        stage = new SteamAcoustics.Stage(vertices, triangles, kinds);
+        Sound3D sound = instance;
+        if (sound != null) {
+            sound.stageWanted = true;
+        }
+    }
+
     /** Where everything is at the end of this tick; from the game thread, once a tick. */
     public static void publish(Moment moment) {
         Sound3D sound = instance;
@@ -307,6 +337,22 @@ public final class Sound3D implements Runnable {
     private final Voice[] effects = new Voice[EFFECT_VOICES];
     private final CarEffects[] carEffects = new CarEffects[64];
     private final Random random = new Random();
+    /** Steam Audio, when its library is there: null otherwise, and nothing is muffled. */
+    private SteamAcoustics acoustics;
+    private volatile boolean stageWanted = true;
+    /* each car's share of sound reaching the listener through the stage, low, mid and high: traced and smoothed */
+    private final float[] traced = new float[3 * MAX_CARS];
+    private final float[] through = new float[3 * MAX_CARS];
+    private final float[] carPlaces = new float[3 * MAX_CARS];
+    private final boolean[] carTraced = new boolean[MAX_CARS];
+    private int tracedAt;
+    private int reverbSlot;
+    private int reverbEffect;
+    private boolean eaxReverb;
+    private final float[] reverbNow = new float[3];
+    private final float[] reverbApplied = {-1F, -1F, -1F};
+    private float enclosed;
+    private float enclosedApplied = -1F;
     private Moment previous;
     private Moment current;
     private ShortBuffer rendered;
@@ -321,8 +367,11 @@ public final class Sound3D implements Runnable {
                 return;
             }
             for (int i = 0; i < effects.length; i++) {
-                effects[i] = new Voice(alGenSources());
+                effects[i] = new Voice(alGenSources(), efx ? EXTEfx.alGenFilters() : 0);
             }
+            Arrays.fill(through, 1F);
+            Arrays.fill(traced, 1F);
+            acoustics = SteamAcoustics.open(MAX_CARS);
             long next = System.nanoTime();
             while (running) {
                 long now = System.nanoTime();
@@ -386,6 +435,7 @@ public final class Sound3D implements Runnable {
         AL11.alSpeedOfSound(343.3F * UNITS_PER_METRE);
         if (efx) {
             alListenerf(EXTEfx.AL_METERS_PER_UNIT, 1F / UNITS_PER_METRE);
+            openReverb();
         }
         if (renderTo != null) {
             openRenderFile();
@@ -471,7 +521,15 @@ public final class Sound3D implements Runnable {
 
     private void close() {
         stopEverything();
+        if (acoustics != null) {
+            acoustics.close();
+            acoustics = null;
+        }
         if (context != 0L) {
+            if (reverbSlot != 0) {
+                EXTEfx.alDeleteAuxiliaryEffectSlots(reverbSlot);
+                EXTEfx.alDeleteEffects(reverbEffect);
+            }
             for (int source : named.values()) {
                 alDeleteSources(source);
             }
@@ -481,6 +539,9 @@ public final class Sound3D implements Runnable {
             for (Voice v : effects) {
                 if (v != null) {
                     alDeleteSources(v.source);
+                    if (v.filter != 0) {
+                        EXTEfx.alDeleteFilters(v.filter);
+                    }
                 }
             }
             for (int buffer : buffers.values()) {
@@ -627,7 +688,124 @@ public final class Sound3D implements Runnable {
         alSourcef(s, AL_ROLLOFF_FACTOR, 1F);
         if (efx) {
             alSourcef(s, EXTEfx.AL_AIR_ABSORPTION_FACTOR, AIR_ABSORPTION);
+            // the track's reverb, fainter with distance as the direct sound is
+            alSourcef(s, EXTEfx.AL_ROOM_ROLLOFF_FACTOR, 1F);
+            AL11.alSource3i(s, EXTEfx.AL_AUXILIARY_SEND_FILTER, reverbSlot, 0, EXTEfx.AL_FILTER_NULL);
         }
+    }
+
+    /**
+     * One reverb for the whole track, set from the reverb times Steam Audio
+     * traces where the listener is; silent until it has some, and always
+     * without Steam Audio.
+     */
+    private void openReverb() {
+        reverbEffect = EXTEfx.alGenEffects();
+        alGetError();
+        EXTEfx.alEffecti(reverbEffect, EXTEfx.AL_EFFECT_TYPE, EXTEfx.AL_EFFECT_EAXREVERB);
+        eaxReverb = alGetError() == AL_NO_ERROR;
+        if (!eaxReverb) {
+            EXTEfx.alEffecti(reverbEffect, EXTEfx.AL_EFFECT_TYPE, EXTEfx.AL_EFFECT_REVERB);
+        }
+        reverbSlot = EXTEfx.alGenAuxiliaryEffectSlots();
+        EXTEfx.alAuxiliaryEffectSlotf(reverbSlot, EXTEfx.AL_EFFECTSLOT_GAIN, 0F);
+        EXTEfx.alAuxiliaryEffectSloti(reverbSlot, EXTEfx.AL_EFFECTSLOT_EFFECT, reverbEffect);
+    }
+
+    /** Eases the reverb toward the place's reverb times and sets it when it has moved enough to hear. */
+    private void updateReverb(float dt) {
+        if (reverbSlot == 0 || acoustics == null) {
+            return;
+        }
+        float[] target = acoustics.reverbTimes();
+        float k = 1F - (float) Math.exp(-dt / REVERB_SMOOTHING);
+        enclosed += (acoustics.enclosure() - enclosed) * k;
+        boolean moved = Math.abs(enclosed - enclosedApplied) > 0.02F;
+        if (moved) {
+            enclosedApplied = enclosed;
+        }
+        for (int b = 0; b < 3; b++) {
+            reverbNow[b] += (target[b] - reverbNow[b]) * k;
+            moved |= Math.abs(reverbNow[b] - reverbApplied[b]) > 0.03F * Math.max(0.1F, reverbApplied[b]);
+        }
+        if (!moved) {
+            return;
+        }
+        System.arraycopy(reverbNow, 0, reverbApplied, 0, 3);
+        float mid = Math.max(0.1F, Math.min(20F, reverbNow[1]));
+        float hf = Math.max(0.1F, Math.min(2F, reverbNow[2] / mid));
+        if (eaxReverb) {
+            EXTEfx.alEffectf(reverbEffect, EXTEfx.AL_EAXREVERB_DECAY_TIME, mid);
+            EXTEfx.alEffectf(reverbEffect, EXTEfx.AL_EAXREVERB_DECAY_HFRATIO, hf);
+            EXTEfx.alEffectf(reverbEffect, EXTEfx.AL_EAXREVERB_DECAY_LFRATIO,
+                    Math.max(0.1F, Math.min(2F, reverbNow[0] / mid)));
+        } else {
+            EXTEfx.alEffectf(reverbEffect, EXTEfx.AL_REVERB_DECAY_TIME, mid);
+            EXTEfx.alEffectf(reverbEffect, EXTEfx.AL_REVERB_DECAY_HFRATIO, hf);
+        }
+        // open ground stays dry; walls and a half-pipe around bring the reverb in
+        EXTEfx.alAuxiliaryEffectSlotf(reverbSlot, EXTEfx.AL_EFFECTSLOT_GAIN, enclosed * REVERB_LEVEL);
+        EXTEfx.alAuxiliaryEffectSloti(reverbSlot, EXTEfx.AL_EFFECTSLOT_EFFECT, reverbEffect);
+    }
+
+    /**
+     * Asks Steam Audio how much of each car gets through the stage to the
+     * listener, and eases each car toward it. Your own car is never muffled:
+     * the chase camera is not where you would hear it from.
+     */
+    private void updateOcclusion(float dt) {
+        if (acoustics == null) {
+            return;
+        }
+        SteamAcoustics.Stage s = stage;
+        if (stageWanted && s != null) {
+            stageWanted = false;
+            acoustics.stage(s);
+        }
+        Moment m = current;
+        int cars = m == null || m.cars == null ? 0 : Math.min(MAX_CARS, m.cars.length);
+        if (++tracedAt >= TRACE_EVERY && cars > 0) {
+            tracedAt = 0;
+            acoustics.listener(camX, camY, camZ, yawSin, yawCos, pitchSin, pitchCos);
+            for (int i = 0; i < cars; i++) {
+                Car c = m.cars[i];
+                carTraced[i] = c.running && i != m.player;
+                carPlaces[3 * i] = c.x;
+                carPlaces[3 * i + 1] = c.y;
+                carPlaces[3 * i + 2] = c.z;
+            }
+            acoustics.direct(carPlaces, carTraced, cars, traced);
+        }
+        float k = 1F - (float) Math.exp(-dt / OCCLUSION_SMOOTHING);
+        for (int i = 0; i < 3 * MAX_CARS; i++) {
+            float target = i / 3 < cars && carTraced[i / 3] ? traced[i] : 1F;
+            through[i] += (target - through[i]) * k;
+        }
+    }
+
+    /*
+     * Rays straight through a hill say nearly nothing gets through, but sound
+     * bends over a crest and around the ends of a wall (Steam Audio's pathing,
+     * which needs baked probes, would trace that). So a car fully behind
+     * something is muffled, not cut: 9 dB quieter and losing most of its
+     * treble; foliage and glass, which let sound through, muffle less.
+     */
+    private static final float BLOCKED_GAIN = 0.35F;
+    private static final float BLOCKED_TREBLE = 0.15F;
+
+    /** How much of a car the stage hides, 0 in the clear to 1 fully behind something. */
+    private float hidden(int car) {
+        return car >= 0 && car < MAX_CARS ? 1F - Math.max(0F, Math.min(1F, through[3 * car + 1])) : 0F;
+    }
+
+    /** A car's overall level as the stage lets it through. */
+    private float throughGain(int car) {
+        return 1F - (1F - BLOCKED_GAIN) * hidden(car);
+    }
+
+    /** A car's treble as the stage lets it through, relative to {@link #throughGain}. */
+    private float throughTreble(int car) {
+        return 1F - (1F - BLOCKED_TREBLE) * hidden(car);
     }
 
     private void stopEverything() {
@@ -723,11 +901,26 @@ public final class Sound3D implements Runnable {
     /** One effect voice: a source, and the car it follows (-1 for none). */
     private static final class Voice {
         final int source;
+        /** Muffles the voice as its car is muffled; 0 without EFX. */
+        final int filter;
         int car = -1;
         float gain;
 
-        Voice(int source) {
+        Voice(int source, int filter) {
             this.source = source;
+            this.filter = filter;
+            if (filter != 0) {
+                EXTEfx.alFilteri(filter, EXTEfx.AL_FILTER_TYPE, EXTEfx.AL_FILTER_LOWPASS);
+            }
+        }
+    }
+
+    /** Sets a voice's filter from its car's occlusion. */
+    private void muffle(Voice v) {
+        if (v.filter != 0) {
+            EXTEfx.alFilterf(v.filter, EXTEfx.AL_LOWPASS_GAIN, throughGain(v.car));
+            EXTEfx.alFilterf(v.filter, EXTEfx.AL_LOWPASS_GAINHF, throughTreble(v.car));
+            alSourcei(v.source, EXTEfx.AL_DIRECT_FILTER, v.filter);
         }
     }
 
@@ -760,6 +953,7 @@ public final class Sound3D implements Runnable {
         alSourcef(voice.source, AL_PITCH, pitch);
         voice.car = car;
         voice.gain = gain;
+        muffle(voice);
         placeAtCar(voice.source, car);
         alSourcePlay(voice.source);
     }
@@ -784,12 +978,15 @@ public final class Sound3D implements Runnable {
             engines.add(new EngineVoices());
         }
         float dt = UPDATE_NANOS / 1e9F;
+        updateOcclusion(dt);
+        updateReverb(dt);
         for (int i = 0; i < engines.size(); i++) {
             engines.get(i).update(i < cars ? m.cars[i] : null, i, ahead, dt, m.muted);
         }
         for (Voice v : effects) {
             if (v.car >= 0 && alGetSourcei(v.source, AL_SOURCE_STATE) == AL_PLAYING) {
                 placeAtCar(v.source, v.car);
+                muffle(v);
             }
         }
         for (int source : namedAtPlayer.values()) {
@@ -806,11 +1003,24 @@ public final class Sound3D implements Runnable {
                         e.position[0], e.position[1], e.position[2], e.gain[0], e.gain[1], e.gain[2], e.gain[3],
                         e.gain[4]));
             }
+            if (acoustics != null) {
+                b.append(String.format(Locale.ROOT, "through[%s] rt[%.2f %.2f %.2f] closed %.2f %s",
+                        throughList(cars), reverbNow[0], reverbNow[1], reverbNow[2], enclosed,
+                        acoustics.describe()));
+            }
             System.out.println(b);
         }
     }
 
     private long debugAt;
+
+    private String throughList(int cars) {
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < Math.min(cars, MAX_CARS); i++) {
+            b.append(String.format(Locale.ROOT, "%s%.2f", i == 0 ? "" : " ", through[3 * i + 1]));
+        }
+        return b.toString();
+    }
 
     /** A new tick: count down each car's crash and skid waits, as the game does once a tick. */
     private void tick() {
@@ -952,6 +1162,7 @@ public final class Sound3D implements Runnable {
         int filter;
         float throttle;
         float appliedHf = -1F;
+        float appliedLf = -1F;
         final float[] position = new float[3];
         final float[] velocity = new float[3];
 
@@ -987,14 +1198,17 @@ public final class Sound3D implements Runnable {
             float k = 1F - (float) Math.exp(-dt / ENGINE_SMOOTHING);
             float kt = 1F - (float) Math.exp(-dt / THROTTLE_SMOOTHING);
             throttle += ((car.throttle ? 1F : 0F) - throttle) * kt;
-            float hf = 0.3F + 0.7F * throttle;
-            if (efx && Math.abs(hf - appliedHf) > 0.01F) {
-                EXTEfx.alFilterf(filter, EXTEfx.AL_LOWPASS_GAIN, 1F);
+            // duller off the throttle, and muffled by whatever of the stage is in the way
+            float hf = (0.3F + 0.7F * throttle) * throughTreble(index);
+            float lf = throughGain(index);
+            if (efx && (Math.abs(hf - appliedHf) > 0.01F || Math.abs(lf - appliedLf) > 0.01F)) {
+                EXTEfx.alFilterf(filter, EXTEfx.AL_LOWPASS_GAIN, lf);
                 EXTEfx.alFilterf(filter, EXTEfx.AL_LOWPASS_GAINHF, hf);
                 for (int s : sources) {
                     alSourcei(s, EXTEfx.AL_DIRECT_FILTER, filter);
                 }
                 appliedHf = hf;
+                appliedLf = lf;
             }
             for (int i = 0; i < 5; i++) {
                 gain[i] += (targetGain[i] - gain[i]) * k;

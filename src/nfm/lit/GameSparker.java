@@ -1457,6 +1457,7 @@ public class GameSparker extends Panel implements Runnable {
             amadness[j1].reseto(xtgraphics.sc[j1], aconto[j1], checkpoints);
         } while (++j1 < GameFacts.numberOfPlayers);
         record.reset(aconto);
+        sendSoundStage(aconto);
         if (session != null) {
             session.stageLoaded();
         }
@@ -3359,6 +3360,110 @@ public class GameSparker extends Panel implements Runnable {
      * this tick, and what each engine is doing, judged the way the game
      * judges the player's engine (see xtGraphics.playsounds).
      */
+    /** How far the ground the 3D sound traces against reaches past the stage's pieces. */
+    private static final int SOUND_GROUND_MARGIN = 20_000;
+
+    /**
+     * Hands the stage's pieces to the 3D sound as triangles in the world,
+     * with the ground under them, so cars behind a hill or a wall are
+     * muffled and the track rings as its shape makes it. Each piece is
+     * placed and turned as the renderer turns it; green faces are taken for
+     * foliage, glass for glass, the rest for concrete and rock. Reads the
+     * pieces only, so the race is untouched.
+     */
+    private void sendSoundStage(ContO[] pieces) {
+        int vertices = 4;
+        int triangles = 2;
+        for (int i = GameFacts.numberOfPlayers; i < nob; i++) {
+            ContO c = pieces[i];
+            for (int j = 0; c != null && j < c.npl; j++) {
+                int n = Math.min(c.p[j].n, c.p[j].ox.length);
+                if (n >= 3) {
+                    vertices += n;
+                    triangles += n - 2;
+                }
+            }
+        }
+        float[] v = new float[3 * vertices];
+        int[] t = new int[3 * triangles];
+        byte[] kinds = new byte[triangles];
+        int vi = 0;
+        int ti = 0;
+        float minX = -SOUND_GROUND_MARGIN;
+        float maxX = SOUND_GROUND_MARGIN;
+        float minZ = -SOUND_GROUND_MARGIN;
+        float maxZ = SOUND_GROUND_MARGIN;
+        for (int i = GameFacts.numberOfPlayers; i < nob; i++) {
+            ContO c = pieces[i];
+            if (c == null) {
+                continue;
+            }
+            double xy = Math.toRadians(c.xy);
+            double zy = Math.toRadians(c.zy);
+            double xz = Math.toRadians(c.xz);
+            float sxy = (float) Math.sin(xy);
+            float cxy = (float) Math.cos(xy);
+            float szy = (float) Math.sin(zy);
+            float czy = (float) Math.cos(zy);
+            float sxz = (float) Math.sin(xz);
+            float cxz = (float) Math.cos(xz);
+            for (int j = 0; j < c.npl; j++) {
+                Plane plane = c.p[j];
+                int n = Math.min(plane.n, plane.ox.length);
+                if (n < 3) {
+                    continue;
+                }
+                int first = vi;
+                for (int k = 0; k < n; k++) {
+                    // as Plane.d turns it: by xy, then zy, then xz, about the piece's middle
+                    float x = plane.ox[k];
+                    float y = plane.oy[k];
+                    float z = plane.oz[k];
+                    float x1 = x * cxy - y * sxy;
+                    float y1 = x * sxy + y * cxy;
+                    float y2 = y1 * czy - z * szy;
+                    float z2 = y1 * szy + z * czy;
+                    float x3 = x1 * cxz - z2 * sxz;
+                    float z3 = x1 * sxz + z2 * cxz;
+                    v[3 * vi] = c.x + x3;
+                    v[3 * vi + 1] = c.y + y2;
+                    v[3 * vi + 2] = c.z + z3;
+                    minX = Math.min(minX, v[3 * vi] - SOUND_GROUND_MARGIN);
+                    maxX = Math.max(maxX, v[3 * vi] + SOUND_GROUND_MARGIN);
+                    minZ = Math.min(minZ, v[3 * vi + 2] - SOUND_GROUND_MARGIN);
+                    maxZ = Math.max(maxZ, v[3 * vi + 2] + SOUND_GROUND_MARGIN);
+                    vi++;
+                }
+                int[] rgb = plane.c;
+                byte kind = plane.glass ? nfm.lit.audio.Sound3D.SURFACE_GLASS
+                        : rgb[1] > rgb[0] * 1.15F && rgb[1] > rgb[2] * 1.15F ? nfm.lit.audio.Sound3D.SURFACE_FOLIAGE
+                        : nfm.lit.audio.Sound3D.SURFACE_HARD;
+                for (int k = 1; k < n - 1; k++) {
+                    t[3 * ti] = first;
+                    t[3 * ti + 1] = first + k;
+                    t[3 * ti + 2] = first + k + 1;
+                    kinds[ti++] = kind;
+                }
+            }
+        }
+        float[][] corners = {{minX, minZ}, {maxX, minZ}, {maxX, maxZ}, {minX, maxZ}};
+        int ground = vi;
+        for (float[] corner : corners) {
+            v[3 * vi] = corner[0];
+            v[3 * vi + 1] = Medium.ground;
+            v[3 * vi + 2] = corner[1];
+            vi++;
+        }
+        int[][] halves = {{0, 1, 2}, {0, 2, 3}};
+        for (int[] half : halves) {
+            for (int k = 0; k < 3; k++) {
+                t[3 * ti + k] = ground + half[k];
+            }
+            kinds[ti++] = nfm.lit.audio.Sound3D.SURFACE_GROUND;
+        }
+        nfm.lit.audio.Sound3D.setStage(v, t, kinds);
+    }
+
     private void publishSound() {
         if (!nfm.lit.audio.Sound3D.isActive() || racers == null || sceneObjects == null) {
             return;
