@@ -194,7 +194,7 @@ public class GameSparker extends Panel implements Runnable {
     private ContO[] modelObjects;
     /** Simulation state per car: run()'s drivers. */
     private Madness[] racers;
-    private xtGraphics ui;
+    private GameUi ui;
     private CheckPoints raceCheckpoints;
     private Record raceRecord;
     private Trackers raceTrackers;
@@ -937,7 +937,7 @@ public class GameSparker extends Panel implements Runnable {
      * @param gameUi   the menus, HUD and loading bar
      * @author Kaffeinated, Omar Waly
      */
-    private void loadbase(final ContO models[], Trackers trackers, xtGraphics gameUi) {
+    private void loadbase(final ContO models[], Trackers trackers, GameUi gameUi) {
         gameUi.addLoaded(6);
         try {
             for (GameFiles.Entry zipentry : GameFiles.archive("models")) {
@@ -1033,7 +1033,7 @@ public class GameSparker extends Panel implements Runnable {
      */
 
     private void loadstage(ContO scene[], ContO models[], Trackers trackers, CheckPoints checkpoints,
-            xtGraphics gameUi, Madness drivers[], Record record, boolean custom) {
+            GameUi gameUi, Madness drivers[], Record record, boolean custom) {
         /*
          * Every race starts its random streams from one seed, before anything
          * of the stage draws a number, so the race can be played again exactly.
@@ -1325,7 +1325,7 @@ public class GameSparker extends Panel implements Runnable {
                     CheckPoints.customTrack = true;
                     CheckPoints.trackname = Utility.getstring("soundtrack", line, 0);
                     CheckPoints.trackformat = Utility.getstring("soundtrack", line, 1);
-                    // xtGraphics.sndsize[18] = Utility.getint("soundtrack", string, 2);
+                    // GameUi.sndsize[18] = Utility.getint("soundtrack", string, 2);
                 }
 
                 int wall_id = getModel(wallmodel);
@@ -3309,7 +3309,7 @@ public class GameSparker extends Panel implements Runnable {
 
             @Override
             public boolean racing() {
-                xtGraphics x = ui;
+                GameUi x = ui;
                 return x != null && x.fase == Phase.INGAME;
             }
 
@@ -3644,7 +3644,7 @@ public class GameSparker extends Panel implements Runnable {
     /**
      * Tells the new sound where every car and the camera are at the end of
      * this tick, and what each engine is doing, judged the way the game
-     * judges the player's engine (see xtGraphics.playsounds).
+     * judges the player's engine (see GameUi.playsounds).
      */
     /** How far the ground the 3D sound traces against reaches past the stage's pieces. */
     private static final int SOUND_GROUND_MARGIN = 20_000;
@@ -3836,7 +3836,7 @@ public class GameSparker extends Panel implements Runnable {
         car.grounded = true;
     }
 
-    /** One wheel slides against the others, as xtGraphics.playsounds tells wheelspin. */
+    /** One wheel slides against the others, as GameUi.playsounds tells wheelspin. */
     private static boolean slipping(float[] wheels) {
         return Math.abs(wheels[0] - (wheels[1] + wheels[0] + wheels[2] + wheels[3]) / 4F) > 1.0F;
     }
@@ -4466,7 +4466,7 @@ public class GameSparker extends Panel implements Runnable {
         }
         Trackers trackers = new Trackers();
         CheckPoints checkpoints = new CheckPoints();
-        xtGraphics gameUi = new xtGraphics(rd, this);
+        GameUi gameUi = new GameUi(rd, this);
         ContO models[] = new ContO[carModels.length + trackModels.length + extraModels.length]; // be sure all your
                                                                                                 // arrays get in here
         /*
@@ -5630,12 +5630,12 @@ public class GameSparker extends Panel implements Runnable {
         return opener;
     }
 
-    private void catchlink(int screen, xtGraphics xtg) {
+    private void catchlink(int screen, GameUi gameUi) {
         if (!lostfcs) {
             if (screen == 0)
                 if (xm > 0 && xm < GameFacts.screenWidth && ym > 110 && ym < 169
-                        || xm > Utility.centeredImageX(xtg.rpro)
-                                && xm < Utility.centeredImageX(xtg.rpro) + xtg.rpro.getWidth(null) && ym > 240
+                        || xm > Utility.centeredImageX(gameUi.rpro)
+                                && xm < Utility.centeredImageX(gameUi.rpro) + gameUi.rpro.getWidth(null) && ym > 240
                                 && ym < 259) {
                     setCursor(new Cursor(12));
                     if (mouses == 2)
@@ -5681,7 +5681,7 @@ public class GameSparker extends Panel implements Runnable {
         }
 
         @Override
-        public xtGraphics ui() {
+        public GameUi ui() {
             return ui;
         }
 

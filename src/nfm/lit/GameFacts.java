@@ -7,7 +7,7 @@ package nfm.lit;
  **/
 public class GameFacts
 {
-     public static final int numberOfStages = 17; //make sure to change xtg loadmusic, xtg hipno, and xtg sndsize
+     public static final int numberOfStages = 17; //make sure to change GameUi.loadmusic, GameUi.hipnoload and GameUi.sndsize
 
      public static final int numberOfCars = 16;
 

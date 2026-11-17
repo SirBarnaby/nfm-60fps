@@ -53,11 +53,11 @@ final class RaceSnapshot {
      * wasted) lives there, and a stunt finished in an undone tick must not
      * leave its caption behind.
      */
-    private static final Field[] UI_FIELDS = scalarFields(xtGraphics.class);
+    private static final Field[] UI_FIELDS = scalarFields(GameUi.class);
 
     /** The HUD's own copy of who is wasted, and which engine loop it believes is playing. */
-    private static final Field[] UI_ARRAYS = {StateCopy.field(xtGraphics.class, "dested"),
-            StateCopy.field(xtGraphics.class, "pengs")};
+    private static final Field[] UI_ARRAYS = {StateCopy.field(GameUi.class, "dested"),
+            StateCopy.field(GameUi.class, "pengs")};
 
     /**
      * Medium's statics a race can change: all but the stage's mountains,

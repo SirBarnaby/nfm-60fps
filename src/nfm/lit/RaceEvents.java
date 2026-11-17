@@ -3,7 +3,7 @@ package nfm.lit;
 /**
  * What the race tells the rest of the game while it runs. The cars' physics
  * calls these instead of the HUD or the sound code, so the race itself never
- * draws or plays anything; {@link xtGraphics} listens and decides, exactly as
+ * draws or plays anything; {@link GameUi} listens and decides, exactly as
  * the original did, which clip plays and what the checkpoints look like.
  * Calls happen inside the race tick, in the original order.
  */

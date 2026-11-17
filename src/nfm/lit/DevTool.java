@@ -54,7 +54,7 @@ public class DevTool {
         }
     }
 
-    public DevTool(CheckPoints checkpoints, Madness madness[], ContO conto[], ContO conto1[], xtGraphics xt) {
+    public DevTool(CheckPoints checkpoints, Madness madness[], ContO conto[], ContO conto1[], GameUi xt) {
         commandHistory = new ArrayList<>();
         historyIndex = -1;
 
@@ -119,7 +119,7 @@ public class DevTool {
         textArea.append(s + "\n");
     }
 
-    private void executeCommand(String command, CheckPoints checkpoints, Madness madness[], ContO conto[], ContO conto1[], xtGraphics xt) {
+    private void executeCommand(String command, CheckPoints checkpoints, Madness madness[], ContO conto[], ContO conto1[], GameUi xt) {
         textArea.append("> " + command + "\n");
 
         String[] parts = command.split(" ");
@@ -139,7 +139,7 @@ public class DevTool {
                                 print("Numbers of players set to " + nplayers + ", overriden for all stages.");
                             } else if (nplayers == 0) {
                                 xt.nplayers_debug = false;
-                                print("Number of players are now determined by stage\n(xtGraphics, public void carspergame)");
+                                print("Number of players are now determined by stage\n(GameUi, public void carspergame)");
                             } else {
                                 print("Invalid player number.");
                             }
@@ -226,12 +226,12 @@ public class DevTool {
                     try {
                         int n = Integer.parseInt(args[0]);
                         xt.unlocked = n;
-                        print("xtGraphics.unlocked set to " + n);
+                        print("GameUi.unlocked set to " + n);
                     } catch (NumberFormatException e) {
                         print("Invalid argument.");
                     }
                 } else {
-                    print("xtGraphics.unlocked is " + xt.unlocked + "\nUsage: unlocked <n>");
+                    print("GameUi.unlocked is " + xt.unlocked + "\nUsage: unlocked <n>");
                 }
                 break;
             case "fase":
@@ -239,7 +239,7 @@ public class DevTool {
                     try {
                         int n = Integer.parseInt(args[0]);
                         xt.fase = Phase.valueOfValue(n);
-                        print("Set xtGraphics.fase to " + n);
+                        print("Set GameUi.fase to " + n);
                     } catch (NumberFormatException e) {
                         print("Invalid argument.");
                     }
@@ -575,7 +575,7 @@ public class DevTool {
         commandDescriptions.put("fix", "Fixes a specified car. Usage: fix <n>");
         commandDescriptions.put("spectate", "Spectates a specified car. Usage: spectate <n>");
         commandDescriptions.put("god", "Toggles god mode.");
-        commandDescriptions.put("unlocked", "Sets the unlocked value in xtGraphics. Usage: unlocked <n>");
+        commandDescriptions.put("unlocked", "Sets the unlocked value in GameUi. Usage: unlocked <n>");
         commandDescriptions.put("fase", "Sets the game state (phase). Usage: fase <n>");
         commandDescriptions.put("nfm", "Sets the NFM mode. Usage: nfm <n>");
         commandDescriptions.put("map", "Loads a stage from the specified path. Usage: map <path-to-.txt>");

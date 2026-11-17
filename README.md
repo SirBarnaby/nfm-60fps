@@ -269,7 +269,7 @@ The rollback self-test proves nothing is left out. At every rewind it also takes
 
 ### The race and the rest of the game
 
-The race code (`Madness` for a car's physics, `Control` for a driver, `CheckPoints`, `Trackers`, `Stat`, `Wheels`) no longer reaches into the renderer's globals. Its random stream lives in a `World` object that the cars and drivers are given, and it reports what the HUD and the sound code react to (crashes, skids, a repair, the next checkpoint, the run to the finish) through `RaceEvents`, which `xtGraphics` implements with the original decision code. So the race can be captured, run ahead or rewound without the screen or the speakers taking part. The camera is still shared: the race reads back which cars are on screen.
+The race code (`Madness` for a car's physics, `Control` for a driver, `CheckPoints`, `Trackers`, `Stat`, `Wheels`) no longer reaches into the renderer's globals. Its random stream lives in a `World` object that the cars and drivers are given, and it reports what the HUD and the sound code react to (crashes, skids, a repair, the next checkpoint, the run to the finish) through `RaceEvents`, which `GameUi` (the menus and HUD, `xtGraphics` in the original source) implements with the original decision code. So the race can be captured, run ahead or rewound without the screen or the speakers taking part. The camera is still shared: the race reads back which cars are on screen.
 
 ### The corpus
 

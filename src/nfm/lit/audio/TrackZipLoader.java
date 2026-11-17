@@ -9,7 +9,7 @@ import java.util.function.Consumer;
 import java.util.zip.ZipInputStream;
 
 import nfm.lit.GameSparker;
-import nfm.lit.xtGraphics;
+import nfm.lit.GameUi;
 
 /**
  * This class is used to load music files for NativeBASS from a .zip by
@@ -221,9 +221,9 @@ public final class TrackZipLoader {
     // XXX ---- VERY HACKY WAY TO DELETE FILES WHEN FILE.DELETEONEXIT CAN'T DO
     // IT
     public static void deletetempfiles() throws IOException {
-        if (xtGraphics.loadedt) {
-            xtGraphics.strack.setPaused(true); // potentially unnecessary
-            xtGraphics.strack.unload();
+        if (GameUi.loadedt) {
+            GameUi.strack.setPaused(true); // potentially unnecessary
+            GameUi.strack.unload();
         }
 
         Files.walk(Paths.get("./data/music/")).forEach(new Consumer<Path>() {

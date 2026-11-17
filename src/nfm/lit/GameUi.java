@@ -23,14 +23,16 @@ import java.util.zip.ZipInputStream;
 // Original resolution: 670x400
 
 /**
- * Handles all 2D graphics.
+ * The menus, the HUD, the loading screens, and the sounds and music that go
+ * with them: everything drawn in 2D. It was called xtGraphics in the
+ * original source.
  * 
  * Layout overhauls by Jacherr
  * 
  * @author Omar Waly
  * @author Jacherr
  */
-public class xtGraphics extends Panel implements Runnable, RaceEvents {
+public class GameUi extends Panel implements Runnable, RaceEvents {
     public Metrics gameMetrics = new Metrics();
 
     /**
@@ -3935,7 +3937,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         return rd;
     }
 
-    public xtGraphics(Graphics2D target, GameSparker applet) {
+    public GameUi(Graphics2D target, GameSparker applet) {
         fase = Phase.LOADING;
         oldfase = Phase.INGAME;
         starcnt = 0;
@@ -4044,19 +4046,19 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         app = applet;
         rd = target;
         MediaTracker tracker = new MediaTracker(app);
-        hello = Toolkit.getDefaultToolkit().getImage(xtGraphics.class.getResource("aimg/hello.gif"));
+        hello = Toolkit.getDefaultToolkit().getImage(GameUi.class.getResource("aimg/hello.gif"));
         tracker.addImage(hello, 0);
         try {
             tracker.waitForID(0);
         } catch (Exception ignored) {
         }
-        sign = Toolkit.getDefaultToolkit().getImage(xtGraphics.class.getResource("aimg/sign.gif"));
+        sign = Toolkit.getDefaultToolkit().getImage(GameUi.class.getResource("aimg/sign.gif"));
         tracker.addImage(sign, 0);
         try {
             tracker.waitForID(0);
         } catch (Exception ignored) {
         }
-        loadbar = Toolkit.getDefaultToolkit().getImage(xtGraphics.class.getResource("aimg/loadbar.gif"));
+        loadbar = Toolkit.getDefaultToolkit().getImage(GameUi.class.getResource("aimg/loadbar.gif"));
         tracker.addImage(loadbar, 0);
         try {
             tracker.waitForID(0);

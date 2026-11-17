@@ -51,7 +51,7 @@ final class RaceSession {
 
         RaceState.View race();
 
-        xtGraphics ui();
+        GameUi ui();
 
         CheckPoints checkpoints();
 
@@ -305,7 +305,7 @@ final class RaceSession {
 
     /** The stage is set up and the opponents are chosen. */
     void stageLoaded() {
-        xtGraphics ui = host.ui();
+        GameUi ui = host.ui();
         int players = GameFacts.numberOfPlayers;
         if (verifier != null) {
             verifier.stageLoaded(Arrays.copyOf(ui.sc, players));
@@ -456,7 +456,7 @@ final class RaceSession {
 
     /** Sets up a race from the main menu without going through the menus' screens. */
     static void setUpRace(Host host, int stage, int nfmmode, int players, int unlocked, int[] cars) {
-        xtGraphics ui = host.ui();
+        GameUi ui = host.ui();
         ui.unlocked = unlocked;
         ui.nfmmode = nfmmode;
         ui.nplayers_debug = true;
@@ -609,7 +609,7 @@ final class RaceSession {
         }
 
         private void pauseMenu() {
-            xtGraphics ui = host.ui();
+            GameUi ui = host.ui();
             if (quitting) {
                 ui.opselect = MENU_QUIT;
             } else if (!replayDone && replayAt > 0) {
@@ -975,7 +975,7 @@ final class RaceSession {
                 replaysAtTick = tick;
                 replaysDone = 0;
             }
-            xtGraphics ui = host.ui();
+            GameUi ui = host.ui();
             if (replaysDone < log.countEvents(tick, RaceLog.Event.REPLAY)) {
                 ui.opselect = MENU_REPLAY;
                 replaysDone++;

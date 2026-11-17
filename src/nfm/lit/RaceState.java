@@ -23,7 +23,7 @@ import java.util.function.BiConsumer;
  * ({@link CheckPoints}) by reflection. To those it adds the few fields of other
  * classes that the race reads back: the car models' pose and repair state, the
  * camera (what is on screen decides some outcomes), the race-flow fields of
- * {@link xtGraphics} and {@link Record}, and the random streams.
+ * {@link GameUi} and {@link Record}, and the random streams.
  * <p>
  * The values are walked in a fixed order, split into groups: one per car, then
  * the race, the camera and the random streams. A hash per group per tick tells
@@ -75,13 +75,13 @@ final class RaceState {
     private static final Field[] RECORD = fieldsOf(Record.class, Set.of(), false);
     private static final Field[] CAR = named(ContO.class, CAR_FIELDS);
     private static final Field[] CAMERA = named(Medium.class, CAMERA_FIELDS);
-    private static final Field[] FLOW = named(xtGraphics.class, FLOW_FIELDS);
-    private static final Field[] SOUND = named(xtGraphics.class, SOUND_FIELDS);
-    private static final Field[] HUD = named(xtGraphics.class, HUD_FIELDS);
+    private static final Field[] FLOW = named(GameUi.class, FLOW_FIELDS);
+    private static final Field[] SOUND = named(GameUi.class, SOUND_FIELDS);
+    private static final Field[] HUD = named(GameUi.class, HUD_FIELDS);
 
     /** The live objects of one race. */
     record View(World world, Madness[] racers, Control[] drivers, ContO[] cars, CheckPoints checkpoints,
-            Record record, xtGraphics ui, Trackers track, int players) {
+            Record record, GameUi ui, Trackers track, int players) {
     }
 
     /** One named slice of the state: some fields of one object. */
@@ -279,8 +279,8 @@ final class RaceState {
         put(sink, "random.race.high", (int) (r >>> 32));
     }
 
-    /** xtGraphics keeps "the race is over and the result is on screen" private. */
-    private static boolean raceOver(xtGraphics ui) {
+    /** GameUi keeps "the race is over and the result is on screen" private. */
+    private static boolean raceOver(GameUi ui) {
         try {
             return FLOW[FLOW_FIELDS.indexOf("holdit")].getBoolean(ui);
         } catch (IllegalAccessException ex) {
