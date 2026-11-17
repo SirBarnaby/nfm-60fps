@@ -433,9 +433,9 @@ public class DevTool {
                 int samples = args.length == 1 ? GameSparker.parseMultisample(args[0]) : 0;
                 if (samples != 0) {
                     GameSparker.setMultisample(samples);
-                    print("Smooth edges " + GameSparker.describeMultisample() + " (saved).");
+                    print("MSAA " + GameSparker.describeMultisample() + " (saved).");
                 } else {
-                    print("Smooth edges are " + GameSparker.describeMultisample() + ".\nUsage: msaa <off|2|4|8>");
+                    print("MSAA is " + GameSparker.describeMultisample() + ".\nUsage: msaa <off|2|4|8|16>");
                 }
                 break;
             }
@@ -452,7 +452,7 @@ public class DevTool {
                     GameSparker.setSupersample(factor);
                     print("Supersampling " + GameSparker.describeSupersample() + " (saved).");
                 } else {
-                    print("Supersampling is " + GameSparker.describeSupersample() + ".\nUsage: ssaa <on|off>");
+                    print("Supersampling is " + GameSparker.describeSupersample() + ".\nUsage: ssaa <off|2x|4x|8x>");
                 }
                 break;
             }
@@ -594,12 +594,12 @@ public class DevTool {
         commandDescriptions.put("scale", "fit scales the picture to fill the window, keeping its shape; off shows it pixel for pixel. Usage: scale <fit|off>");
         commandDescriptions.put("hdr", "HDR output on a monitor that has HDR turned on in Windows: the game looks as it does in SDR, at the brightness Windows shows SDR white at, and flames, lamps, sparks, stars and lightning shine brighter than white, rolling off smoothly into the display's peak. hdr white sets how bright the game's white is in nits (auto: Windows' SDR content brightness); hdr peak sets the display's peak in nits (auto: what the monitor tells Windows). Needs the gpu renderer. Usage: hdr <auto|off>, hdr white <auto|80-500>, hdr peak <auto|200-10000>");
         commandDescriptions.put("gamepad", "Game controllers (Xbox, PlayStation, Switch and others): RT or A accelerates, LT or X brakes, the left stick or d-pad steers, B is the handbrake, LB/RB look back, Y changes the view, Start pauses; in menus the stick moves and A selects. Hard hits shake the pad. Usage: gamepad <on|off>, gamepad rumble <on|off>");
-        commandDescriptions.put("msaa", "Smooths the edges of the polygons in races drawn on the graphics card by taking 2, 4 or 8 samples per pixel (multisampling); off keeps the game's own hard edges. Usage: msaa <off|2|4|8>");
+        commandDescriptions.put("msaa", "Smooths the edges of the polygons in races drawn on the graphics card by taking 2, 4, 8 or 16 samples per pixel (multisampling, MSAA); off keeps the game's own hard edges. A card that cannot do as many does the most it can. Usage: msaa <off|2|4|8|16>");
         commandDescriptions.put("volume", "The 3D sound's volumes, in percent: master, engines, effects (crashes, skids, the wreck, the repair, the wind), music and interface (countdown, checkpoints, menus). Classic plays at its own levels. Usage: volume <bus> <0-100>");
         commandDescriptions.put("music", "In 3d sound the stage and menu music plays through libopenmpt; separation sets how far apart its left and right are, 0 (mono) to 200, 100 being an Amiga's hard left and right (default 70). Usage: music separation <0-200>");
         commandDescriptions.put("sound", "3d (the default) hears every car where it is, with smooth engines, HRTF on headphones, Doppler and distance; classic plays the game's own sound exactly as before; mono mixes the 3D sound to one channel, the same in both ears. Usage: sound <3d|classic>, sound mono <on|off>");
         commandDescriptions.put("mods", "Lists the mods in the mods folder in the order they apply; a mod is a folder that mirrors data (models, images and sounds for the .radq archives, stages and music as they are) and replaces the game's files of the same name. mods/load-order.txt sets the order (a later mod wins, -name turns one off). mods reload reads the folder again: models at the main menu, stages and music with the next race, images and sounds at the next start. Usage: mods, mods reload");
-        commandDescriptions.put("ssaa", "Ultra quality for races drawn on the graphics card: draws the scene at twice the width and height it is shown at (four times the pixels) and scales it down, which smooths every edge and outline and stops thin lines shimmering. Works with msaa. With dynres on, it gives way first when the card cannot keep up. Off by default. Usage: ssaa <on|off>");
+        commandDescriptions.put("ssaa", "Ultra quality for races drawn on the graphics card: draws the scene with 2, 4 or 8 times the pixels it is shown with (4x: twice the width and height, so 4K on a 1080p screen) and averages them down, which smooths every edge and outline and stops thin lines shimmering. Works with msaa. With dynres on, it gives way first when the card cannot keep up. Off by default. Usage: ssaa <off|2x|4x|8x>");
         commandDescriptions.put("dynres", "When the graphics card cannot draw a race at the window's full size in time for the next frame, draws it smaller (down to the given percent of the window, never below the game's own 1280x720) and scales it up smoothly; the HUD stays sharp. Steps down at once and back up slowly, so the picture does not pump. On by default, down to 50%. Usage: dynres <on|off|25-100>");
         commandDescriptions.put("renderer", "gpu puts frames on screen through the graphics card (Direct3D 11), which scales them for free; software draws them with Java2D. Usage: renderer <gpu|software>");
         commandDescriptions.put("effects", "Dust and flying debris move on every frame (smooth) or once a game tick, as the original drew them. Usage: effects smooth <on|off>");

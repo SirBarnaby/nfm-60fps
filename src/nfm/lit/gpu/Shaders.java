@@ -23,12 +23,50 @@ final class Shaders {
             struct Out { float4 pos : SV_POSITION; float2 uv : TEXCOORD0; };
             Out main(In i) { Out o; o.pos = float4(i.pos, 0.0, 1.0); o.uv = i.uv; return o; }
             """;
+    /**
+     * The picture's colour at {@code uv}: sampled, or, while u_down[1].z is
+     * on, the exact average of the texels under the window's pixel, for a
+     * scene drawn larger than it is shown (supersampling). u_down[0] is the
+     * texture's size in texels (xy) and how many texels across and down one
+     * pixel covers (zw); u_down[1].xy is the part of the texture the scene
+     * was drawn in. Each texel counts by how much of it the pixel covers, so
+     * 1.41 or 2.83 texels a pixel are averaged as cleanly as 2.
+     */
+    private static final String FETCH = """
+            float4 fetch(float2 uv)
+            {
+                if (u_down[1].z <= 0.0)
+                {
+                    return s_pictureTexture.Sample(s_pictureSampler, uv);
+                }
+                float2 centre = uv * u_down[0].xy;
+                float2 lo = centre - 0.5 * u_down[0].zw;
+                float2 hi = centre + 0.5 * u_down[0].zw;
+                int2 first = max(int2(floor(lo)), int2(0, 0));
+                int2 last = min(int2(ceil(hi)) - 1, int2(u_down[1].xy) - 1);
+                float4 sum = 0.0;
+                float total = 0.0;
+                [loop] for (int y = first.y; y <= min(last.y, first.y + 7); y++)
+                {
+                    float wy = min(y + 1.0, hi.y) - max((float) y, lo.y);
+                    [loop] for (int x = first.x; x <= min(last.x, first.x + 7); x++)
+                    {
+                        float w = wy * (min(x + 1.0, hi.x) - max((float) x, lo.x));
+                        sum += s_pictureTexture.Load(int3(x, y, 0)) * w;
+                        total += w;
+                    }
+                }
+                return total > 0.0 ? sum / total : s_pictureTexture.Sample(s_pictureSampler, uv);
+            }
+            """;
     static final String PICTURE_FS = """
             Texture2D s_pictureTexture : register(t0);
             SamplerState s_pictureSampler : register(s0);
+            cbuffer Uniforms : register(b0) { float4 u_down[2]; };
+            """ + FETCH + """
             float4 main(float4 pos : SV_POSITION, float2 uv : TEXCOORD0) : SV_TARGET
             {
-                return float4(s_pictureTexture.Sample(s_pictureSampler, uv).rgb, 1.0);
+                return float4(fetch(uv).rgb, 1.0);
             }
             """;
     /**
@@ -43,7 +81,8 @@ final class Shaders {
     static final String HDR_FS = """
             Texture2D s_pictureTexture : register(t0);
             SamplerState s_pictureSampler : register(s0);
-            cbuffer Uniforms : register(b0) { float4 u_hdr; };
+            cbuffer Uniforms : register(b0) { float4 u_hdr; float4 u_down[2]; };
+            """ + FETCH + """
             float3 toLinear(float3 c)
             {
                 return c <= 0.04045 ? c / 12.92 : pow(max((c + 0.055) / 1.055, 0.0), 2.4);
@@ -60,7 +99,7 @@ final class Shaders {
             }
             float4 main(float4 pos : SV_POSITION, float2 uv : TEXCOORD0) : SV_TARGET
             {
-                float4 c = s_pictureTexture.Sample(s_pictureSampler, uv);
+                float4 c = fetch(uv);
                 float3 rgb = toLinear(c.rgb) * u_hdr.x * (1.0 + c.a * u_hdr.y);
                 float brightest = u_hdr.x * 80.0 * (1.0 + u_hdr.y);
                 float m = max(rgb.r, max(rgb.g, rgb.b)) * 80.0;

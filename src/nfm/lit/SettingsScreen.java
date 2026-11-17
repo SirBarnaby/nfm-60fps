@@ -1,6 +1,7 @@
 package nfm.lit;
 
 import java.awt.BasicStroke;
+import java.awt.Dimension;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.Graphics2D;
@@ -16,6 +17,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.BooleanSupplier;
 import java.util.function.IntConsumer;
 import java.util.function.IntFunction;
@@ -38,7 +40,7 @@ final class SettingsScreen {
 
     /* the box, in the 1280x720 picture */
     private static final int BOX_W = 900;
-    private static final int BOX_H = 530;
+    private static final int BOX_H = 620;
     private static final int BOX_X = (GameFacts.screenWidth - BOX_W) / 2;
     private static final int BOX_Y = (GameFacts.screenHeight - BOX_H) / 2;
     private static final int COLUMN_W = 400;
@@ -67,6 +69,9 @@ final class SettingsScreen {
 
     /** A key that went down which only this screen tells apart from Enter. */
     private static volatile boolean escapePressed;
+    /** A size is being typed: every key goes to it (see {@link #typeKey}). */
+    private static volatile boolean typing;
+    private static final ConcurrentLinkedQueue<Integer> TYPED = new ConcurrentLinkedQueue<>();
 
     private final Image[] back;
     private final List<Row> rows = new ArrayList<>();
@@ -110,12 +115,36 @@ final class SettingsScreen {
         escapePressed = true;
     }
 
+    /**
+     * A key went down (on the window's thread): while a size is being typed
+     * it is the screen's, and the game does not see it.
+     *
+     * @return true if the key was taken
+     */
+    static boolean typeKey(int key) {
+        if (!typing || key == GameInput.F11) {
+            return false;
+        }
+        TYPED.add(key);
+        return true;
+    }
+
     /** Called as the screen opens. */
     void open() {
         selected = 0;
         pressed = false;
         backPressed = 0;
         escapePressed = false;
+        windowSize.stopTyping();
+    }
+
+    /** For the smoke test: chooses the row with this label. */
+    void select(String label) {
+        for (int i = 0; i < rows.size(); i++) {
+            if (rows.get(i).label.equals(label)) {
+                selected = i;
+            }
+        }
     }
 
     /* ------------------------------------------------------------- the rows */
@@ -129,6 +158,9 @@ final class SettingsScreen {
         String gpuOnly = "Only when the graphics card draws (Renderer).";
         String sound3dOnly = "Only with the 3D sound.";
 
+        BooleanSupplier windowed = () -> !RunApp.isFullscreen();
+        String windowOnly = "Only in a window: in fullscreen the game fills the monitor.";
+
         section("Picture", 0);
         rows.add(new Choice("Renderer",
                 "Graphics card: the GPU draws, with the smoothing below. Software: the game's own drawing.",
@@ -136,6 +168,14 @@ final class SettingsScreen {
                         ? "The graphics card cannot draw here, so the game draws in software." : null,
                 new int[] {1, 0}, v -> v == 1 ? "Graphics card" : "Software",
                 () -> GameSparker.isGpuRenderer() ? 1 : 0, v -> GameSparker.setGpuRenderer(v == 1)));
+        rows.add(new Choice("Fullscreen", "Borderless fullscreen on this monitor. F11 or Alt+Enter switch it too.",
+                null, new int[] {0, 1}, SettingsScreen::onOff, () -> RunApp.isFullscreen() ? 1 : 0,
+                v -> RunApp.setFullscreen(v == 1)));
+        rows.add(new Choice("Aspect ratio",
+                "The window's shape. The race and the menus are drawn 16:9, so other shapes show them with bars.",
+                () -> "Now: " + describeWindow() + ".", aspectChoices(), SettingsScreen::aspectName,
+                SettingsScreen::currentAspect, SettingsScreen::setAspect).when(windowed, windowOnly));
+        rows.add(windowSize.when(windowed, windowOnly));
         rows.add(new Choice("Frame rate",
                 "Frames a second. Variable refresh stays just under the monitor's rate, for G-Sync and FreeSync.",
                 null, fpsLimits, SettingsScreen::fpsName, GameSparker::getFpsLimit, GameSparker::setFpsLimit));
@@ -144,45 +184,45 @@ final class SettingsScreen {
                 () -> "Now: " + GameSparker.describeBatteryFps() + ".",
                 new int[] {0, 30, 40, 60, 90, 120}, v -> v == 0 ? "No cap" : v + " fps",
                 GameSparker::getBatteryFps, GameSparker::setBatteryFps));
-        rows.add(new Choice("Fullscreen", "Borderless fullscreen on this monitor. F11 or Alt+Enter switch it too.",
-                null, new int[] {0, 1}, SettingsScreen::onOff, () -> RunApp.isFullscreen() ? 1 : 0,
-                v -> RunApp.setFullscreen(v == 1)));
         rows.add(new Choice("Fill the window",
                 "Scales the picture to the window, keeping its shape. Off shows it pixel for pixel.",
                 null, new int[] {0, 1}, SettingsScreen::onOff, () -> GameSparker.isScaleToWindow() ? 1 : 0,
                 v -> GameSparker.setScaleToWindow(v == 1)));
-        rows.add(new Choice("Smooth edges", "Multisampling: smooths the edges of the cars and the track.",
+        rows.add(new Choice("MSAA",
+                "Multisampling: smooths the edges of the cars and the track. Off keeps the game's hard edges.",
                 () -> "Now: " + GameSparker.describeMultisample() + ".",
-                new int[] {1, 2, 4, 8}, v -> v <= 1 ? "Off" : v + "x",
+                new int[] {1, 2, 4, 8, 16}, v -> v <= 1 ? "Off" : v + "x",
                 GameSparker::getMultisample, GameSparker::setMultisample).when(gpu, gpuOnly));
         rows.add(new Choice("Supersampling",
-                "Draws races at twice the width and height and scales them down: the smoothest, and the dearest.",
+                "Draws races with 2, 4 or 8 times the pixels and averages them down. 4x on a 1080p screen is 4K.",
                 () -> "Now: " + GameSparker.describeSupersample() + ".",
-                new int[] {1, 2}, v -> v <= 1 ? "Off" : "On",
+                new int[] {1, 2, 4, 8}, v -> v <= 1 ? "Off" : v + "x",
                 GameSparker::getSupersample, GameSparker::setSupersample).when(gpu, gpuOnly));
         rows.add(new Choice("Dynamic resolution",
                 "Draws races smaller while the graphics card cannot keep up, to hold the frame rate.",
                 () -> "Now: " + GameSparker.describeDynamicResolution() + ".",
                 new int[] {0, 90, 75, 50, 25}, v -> v == 0 ? "Off" : "Down to " + v + "%",
                 GameSparker::getDynamicResolution, GameSparker::setDynamicResolution).when(gpu, gpuOnly));
+        rows.add(new Choice("Smooth effects",
+                "Dust and flying debris move every frame. Off: once a game tick, as the original drew them.",
+                null, new int[] {0, 1}, SettingsScreen::onOff, () -> GameSparker.isSmoothEffects() ? 1 : 0,
+                v -> GameSparker.setSmoothEffects(v == 1)));
+
+        section("HDR", 0);
         rows.add(new Choice("HDR", "Brighter highlights on an HDR monitor, when Windows has HDR on.",
                 () -> "Now: " + GameSparker.describeHdr() + ".",
                 new int[] {GpuDisplay.HDR_OFF, GpuDisplay.HDR_AUTO},
                 v -> v == GpuDisplay.HDR_OFF ? "Off" : v == GpuDisplay.HDR_FORCE ? "Forced" : "Auto",
                 GameSparker::getHdr, GameSparker::setHdr).when(gpu, gpuOnly));
-        rows.add(new Choice("HDR white",
+        rows.add(new Choice("Paper white",
                 "How bright the game's white is in HDR. Windows: as its SDR content brightness slider.", null,
                 new int[] {0, 80, 100, 120, 160, 200, 240, 280, 320, 400, 500},
                 v -> v == 0 ? "Windows" : v + " nits", GameSparker::getPaperWhite, GameSparker::setPaperWhite)
                 .when(hdr, "Only with HDR on."));
-        rows.add(new Choice("HDR peak", "The brightest the monitor can show. Monitor: what it tells Windows.", null,
+        rows.add(new Choice("Peak brightness", "The brightest the monitor can show. Monitor: what it tells Windows.", null,
                 new int[] {0, 400, 600, 800, 1000, 1400, 2000, 4000, 10000},
                 v -> v == 0 ? "Monitor" : v + " nits", GameSparker::getPeak, GameSparker::setPeak)
                 .when(hdr, "Only with HDR on."));
-        rows.add(new Choice("Smooth effects",
-                "Dust and flying debris move every frame. Off: once a game tick, as the original drew them.",
-                null, new int[] {0, 1}, SettingsScreen::onOff, () -> GameSparker.isSmoothEffects() ? 1 : 0,
-                v -> GameSparker.setSmoothEffects(v == 1)));
 
         section("Sound", 1);
         rows.add(new Choice("Sound",
@@ -237,6 +277,94 @@ final class SettingsScreen {
         return limit == GameSparker.FPS_UNLIMITED ? "Unlimited" : limit + " fps";
     }
 
+    /* ------------------------------------------------------- window size */
+
+    /** The window shapes on offer: width and height of each. */
+    private static final int[][] ASPECTS = {{16, 9}, {16, 10}, {4, 3}, {5, 4}, {21, 9}, {32, 9}};
+    /** The common sizes of each shape, smallest first. */
+    private static final int[][][] SIZES = {
+        {{1280, 720}, {1366, 768}, {1600, 900}, {1920, 1080}, {2560, 1440}, {3200, 1800}, {3840, 2160},
+            {5120, 2880}, {7680, 4320}},
+        {{1280, 800}, {1440, 900}, {1680, 1050}, {1920, 1200}, {2560, 1600}, {2880, 1800}, {3840, 2400}},
+        {{1024, 768}, {1280, 960}, {1400, 1050}, {1600, 1200}, {2048, 1536}, {2880, 2160}},
+        {{1280, 1024}, {1800, 1440}, {2560, 2048}},
+        {{2560, 1080}, {3440, 1440}, {3840, 1600}, {5120, 2160}},
+        {{3840, 1080}, {5120, 1440}, {7680, 2160}},
+    };
+    /** "Other" for the shape of a window sized by hand. */
+    private static final int OTHER_ASPECT = -1;
+
+    private final WindowSize windowSize = new WindowSize();
+
+    private static int[] aspectChoices() {
+        int[] choices = new int[ASPECTS.length];
+        for (int i = 0; i < choices.length; i++) {
+            choices[i] = i;
+        }
+        return choices;
+    }
+
+    private static String aspectName(int aspect) {
+        return aspect == OTHER_ASPECT ? "Other" : ASPECTS[aspect][0] + ":" + ASPECTS[aspect][1];
+    }
+
+    /** The shape the window has, within a hundredth, or OTHER_ASPECT. */
+    private static int aspectOf(int width, int height) {
+        for (int i = 0; i < ASPECTS.length; i++) {
+            float ratio = ASPECTS[i][0] / (float) ASPECTS[i][1];
+            if (Math.abs(width / (float) height - ratio) < ratio * 0.01F) {
+                return i;
+            }
+        }
+        return OTHER_ASPECT;
+    }
+
+    private static int currentAspect() {
+        Dimension now = RunApp.windowPixels();
+        return aspectOf(now.width, now.height);
+    }
+
+    /** The common sizes of a shape that fit on the monitor, or the largest of that shape that does. */
+    private static List<int[]> sizesFor(int aspect) {
+        Dimension screen = RunApp.screenPixels();
+        List<int[]> sizes = new ArrayList<>();
+        for (int[] size : SIZES[aspect]) {
+            if (size[0] <= screen.width && size[1] <= screen.height) {
+                sizes.add(size);
+            }
+        }
+        if (sizes.isEmpty()) {
+            int w = ASPECTS[aspect][0];
+            int h = ASPECTS[aspect][1];
+            int width = screen.width;
+            int height = Math.round(width * h / (float) w);
+            if (height > screen.height) {
+                height = screen.height;
+                width = Math.round(height * w / (float) h);
+            }
+            sizes.add(new int[] {width, height});
+        }
+        return sizes;
+    }
+
+    /** Changes the window's shape, keeping its height as near as the shape's sizes allow. */
+    private static void setAspect(int aspect) {
+        Dimension now = RunApp.windowPixels();
+        int[] best = null;
+        for (int[] size : sizesFor(aspect)) {
+            if (best == null || Math.abs(size[1] - now.height) < Math.abs(best[1] - now.height)) {
+                best = size;
+            }
+        }
+        RunApp.setWindowPixels(best[0], best[1]);
+    }
+
+    private static String describeWindow() {
+        Dimension now = RunApp.windowPixels();
+        Dimension screen = RunApp.screenPixels();
+        return now.width + "x" + now.height + " window, on a " + screen.width + "x" + screen.height + " monitor";
+    }
+
     private Section open;
 
     private void section(String title, int column) {
@@ -272,6 +400,15 @@ final class SettingsScreen {
     }
 
     private boolean handleKeys(Control control) {
+        if (windowSize.typing()) {
+            for (Integer key; (key = TYPED.poll()) != null;) {
+                windowSize.type(key);
+            }
+            control.up = control.down = control.left = control.right = false;
+            control.enter = control.handb = false;
+            escapePressed = false;
+            return false;
+        }
         int count = rows.size() + 1;
         if (control.up) {
             selected = (selected + count - 1) % count;
@@ -280,6 +417,9 @@ final class SettingsScreen {
         if (control.down) {
             selected = (selected + 1) % count;
             control.down = false;
+        }
+        if (selected >= rows.size() || rows.get(selected) != windowSize) {
+            windowSize.leave();
         }
         if (selected < rows.size()) {
             if (control.left) {
@@ -299,7 +439,9 @@ final class SettingsScreen {
             escapePressed = false;
             leave = true;
         } else if (control.enter || control.handb) {
-            if (selected < rows.size()) {
+            if (selected < rows.size() && rows.get(selected) == windowSize) {
+                windowSize.enter();
+            } else if (selected < rows.size()) {
                 rows.get(selected).change(1, true);
             } else {
                 leave = true;
@@ -321,19 +463,30 @@ final class SettingsScreen {
         lastMouseY = y;
         int row = rowAt(x, y);
         boolean overBack = overBack(x, y);
-        if (moved && state == 0) {
+        if (moved && state == 0 && !windowSize.typing()) {
             if (row >= 0) {
                 selected = row;
             } else if (overBack) {
                 selected = rows.size();
             }
         }
+        if (state == 1 && windowSize.typing()) {
+            if (row >= 0 && rows.get(row) == windowSize) {
+                return; // a click on the size being typed
+            }
+            windowSize.stopTyping();
+        }
+        if (moved && state == 0 && windowSize.typing()) {
+            return; // the typing keeps its row
+        }
         if (state == 1) {
             if (row >= 0) {
                 selected = row;
                 Row r = rows.get(row);
                 int left = valueLeft(rowColumn[row]);
-                if (r instanceof Slider slider && x >= left + 16 && x <= left + VALUE_W - 16) {
+                if (r == windowSize && windowSize.custom() && x >= left + 16 && x <= left + VALUE_W - 16) {
+                    windowSize.enter();
+                } else if (r instanceof Slider slider && x >= left + 16 && x <= left + VALUE_W - 16) {
                     slider.setAt((x - (left + 20)) / (float) (VALUE_W - 40));
                 } else if (x >= left - 4 && x < left + 16) {
                     r.change(-1, false);
@@ -415,7 +568,7 @@ final class SettingsScreen {
         // the line between the two columns
         rd.setColor(new Color(0xde, 0x84, 0x39, 90));
         int middle = GameFacts.screenWidth / 2;
-        rd.drawLine(middle, BOX_Y + 66, middle, BOX_Y + 402);
+        rd.drawLine(middle, BOX_Y + 66, middle, BOX_Y + 482);
     }
 
     private void drawRow(Graphics2D rd, int i) {
@@ -446,6 +599,15 @@ final class SettingsScreen {
         } else {
             String value = row.value();
             Font f = shape(font, value).getBounds2D().getWidth() > VALUE_W - 40 ? smallFont : font;
+            if (row == windowSize && windowSize.typing()) {
+                rd.setColor(new Color(0, 0, 0, 120));
+                rd.fillRect(left + 18, y + 2, VALUE_W - 36, ROW_H - 7);
+                rd.setColor(ARROWS);
+                rd.drawRect(left + 18, y + 2, VALUE_W - 37, ROW_H - 8);
+                value = windowSize.typed(System.currentTimeMillis() / 400L % 2L == 0L);
+                f = font;
+                letters = Color.WHITE;
+            }
             menuLetters(rd, f, value, left + VALUE_W / 2F, y + 17, letters, null);
         }
     }
@@ -462,10 +624,10 @@ final class SettingsScreen {
     }
 
     private void drawFooter(Graphics2D rd) {
-        int helpY = BOX_Y + 428;
+        int helpY = BOX_Y + BOX_H - 110;
         if (selected < rows.size()) {
             Row row = rows.get(selected);
-            menuLetters(rd, smallFont, row.help, GameFacts.screenWidth / 2F, helpY, HELP, null);
+            menuLetters(rd, smallFont, row.help(), GameFacts.screenWidth / 2F, helpY, HELP, null);
             String status = row.enabled() ? row.status() : row.disabledWhy;
             if (status != null) {
                 menuLetters(rd, smallFont, status, GameFacts.screenWidth / 2F, helpY + 22, LETTERS, null);
@@ -482,7 +644,9 @@ final class SettingsScreen {
             }
             rd.drawImage(b, bx, BACK_Y, null);
         }
-        menuLetters(rd, smallFont, "Arrows choose and change a setting, Enter or Escape goes back.",
+        menuLetters(rd, smallFont, windowSize.typing()
+                ? "Type the width, then x and the height. Enter sets it, Escape keeps the size as it is."
+                : "Arrows choose and change a setting, Enter or Escape goes back.",
                 GameFacts.screenWidth / 2F, BOX_Y + BOX_H - 14, DIMMED, null);
     }
 
@@ -632,6 +796,10 @@ final class SettingsScreen {
             return status == null ? null : status.get();
         }
 
+        String help() {
+            return help;
+        }
+
         void change(int direction, boolean wrap) {
             if (enabled()) {
                 step(direction, wrap);
@@ -686,6 +854,186 @@ final class SettingsScreen {
         @Override
         String value() {
             return names.apply(get.getAsInt());
+        }
+    }
+
+    /**
+     * The window's size: the common sizes of its shape that fit on the
+     * monitor, the size it has if that is none of them, and Custom, where
+     * Enter (or a click) lets the player type a size of their own.
+     */
+    private final class WindowSize extends Row {
+        /** Custom is chosen: the window keeps its size until one is typed. */
+        private boolean custom;
+        private boolean typingNow;
+        private final StringBuilder width = new StringBuilder();
+        private final StringBuilder height = new StringBuilder();
+        private boolean onHeight;
+        /** Why the last typed size was not used, until the next key. */
+        private String problem;
+
+        WindowSize() {
+            super("Window size", "The size of the window's inside, in the monitor's pixels.",
+                    null);
+        }
+
+        boolean custom() {
+            return custom;
+        }
+
+        boolean typing() {
+            return typingNow;
+        }
+
+        /** The common sizes of the window's shape that fit, and its own size among them if it is not one. */
+        private List<int[]> choices() {
+            Dimension now = RunApp.windowPixels();
+            int aspect = aspectOf(now.width, now.height);
+            List<int[]> sizes = new ArrayList<>(sizesFor(aspect == OTHER_ASPECT ? 0 : aspect));
+            int at = 0;
+            boolean listed = false;
+            for (int[] size : sizes) {
+                if (size[0] == now.width && size[1] == now.height) {
+                    listed = true;
+                }
+                if (size[0] * size[1] < now.width * now.height) {
+                    at++;
+                }
+            }
+            if (!listed) {
+                sizes.add(Math.min(at, sizes.size()), new int[] {now.width, now.height});
+            }
+            return sizes;
+        }
+
+        @Override
+        void step(int direction, boolean wrap) {
+            List<int[]> sizes = choices();
+            Dimension now = RunApp.windowPixels();
+            int at = sizes.size(); // Custom, after the sizes
+            if (!custom) {
+                for (int i = 0; i < sizes.size(); i++) {
+                    if (sizes.get(i)[0] == now.width && sizes.get(i)[1] == now.height) {
+                        at = i;
+                    }
+                }
+            }
+            int next = at + direction;
+            if (next < 0 || next > sizes.size()) {
+                if (!wrap) {
+                    return;
+                }
+                next = (next + sizes.size() + 1) % (sizes.size() + 1);
+            }
+            custom = next == sizes.size();
+            if (!custom) {
+                RunApp.setWindowPixels(sizes.get(next)[0], sizes.get(next)[1]);
+            }
+        }
+
+        /** Enter: on Custom it starts typing, otherwise it steps on. */
+        void enter() {
+            if (!enabled()) {
+                return;
+            }
+            if (custom) {
+                Dimension now = RunApp.windowPixels();
+                width.setLength(0);
+                width.append(now.width);
+                height.setLength(0);
+                height.append(now.height);
+                onHeight = false;
+                problem = null;
+                typingNow = true;
+                typing = true;
+                TYPED.clear();
+            } else {
+                step(1, true);
+            }
+        }
+
+        /** The row is no longer chosen: Custom goes back to showing the size. */
+        void leave() {
+            if (!typingNow) {
+                custom = false;
+                problem = null;
+            }
+        }
+
+        void stopTyping() {
+            typingNow = false;
+            typing = false;
+            custom = false;
+            TYPED.clear();
+        }
+
+        /** A key while typing: digits, Backspace, x (or Tab, Space, the arrows) between the two, Enter, Escape. */
+        void type(int key) {
+            problem = null;
+            StringBuilder field = onHeight ? height : width;
+            if (key >= '0' && key <= '9') {
+                if (field.length() < 5 && !(field.length() == 0 && key == '0')) {
+                    field.append((char) key);
+                }
+            } else if (key == 8 || key == 127) { // Backspace, Delete
+                if (field.length() > 0) {
+                    field.setLength(field.length() - 1);
+                } else if (onHeight) {
+                    onHeight = false;
+                }
+            } else if (key == 'x' || key == 'X' || key == '*' || key == 9 || key == ' ' || key == 1007) {
+                onHeight = true;
+            } else if (key == 1006) {
+                onHeight = false;
+            } else if (key == 10) {
+                apply();
+            } else if (key == 27) {
+                stopTyping();
+            }
+        }
+
+        private void apply() {
+            int w = width.length() == 0 ? 0 : Integer.parseInt(width.toString());
+            int h = height.length() == 0 ? 0 : Integer.parseInt(height.toString());
+            Dimension screen = RunApp.screenPixels();
+            int minW = GameFacts.screenWidth / 2;
+            int minH = GameFacts.screenHeight / 2;
+            if (w < minW || h < minH) {
+                problem = "At least " + minW + "x" + minH + ".";
+            } else if (w > screen.width || h > screen.height) {
+                problem = "At most the monitor's " + screen.width + "x" + screen.height + ".";
+            } else {
+                stopTyping();
+                RunApp.setWindowPixels(w, h);
+            }
+        }
+
+        /** The size as typed so far, with a blinking mark on the number being typed. */
+        String typed(boolean blink) {
+            String mark = blink ? "|" : " ";
+            return width + (onHeight ? "" : mark) + " x " + height + (onHeight ? mark : "");
+        }
+
+        @Override
+        String value() {
+            if (custom) {
+                return "Custom...";
+            }
+            Dimension now = RunApp.windowPixels();
+            return now.width + "x" + now.height;
+        }
+
+        @Override
+        String help() {
+            if (typingNow) {
+                return problem != null ? problem : "Type a size of your own, up to the monitor's.";
+            }
+            return custom ? "Press Enter, or click, to type a size of your own." : super.help();
+        }
+
+        @Override
+        String status() {
+            return "Now: " + describeWindow() + ".";
         }
     }
 

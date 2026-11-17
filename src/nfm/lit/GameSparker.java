@@ -355,10 +355,14 @@ public class GameSparker extends Panel implements Runnable {
     public static String describeMods() {
         return GameFiles.describe();
     }
-    private static final String SUPERSAMPLE_COOKIE = "ssaa";
+    /** Supersampling, as samples per pixel (2, 4 or 8). */
+    private static final String SUPERSAMPLE_COOKIE = "supersamples";
+    /** Supersampling as the game first saved it: 2 was twice the width and height, now 4x. */
+    private static final String OLD_SUPERSAMPLE_COOKIE = "ssaa";
     /**
-     * Supersampling for races drawn on the graphics card: 2 draws the scene at
-     * twice the width and height it is shown at and scales it down, which
+     * Supersampling for races drawn on the graphics card, in samples per
+     * pixel: 2, 4 or 8 draw the scene with that many times the pixels it is
+     * shown with (4: twice the width and height) and average them down, which
      * smooths every edge and line and stops thin outlines shimmering; 1 is off.
      */
     private static volatile int supersample = 1;
@@ -493,6 +497,9 @@ public class GameSparker extends Panel implements Runnable {
      * and gamepads press keys here too, with no age.
      */
     void pressKey(int key, boolean alt, long age) {
+        if (SettingsScreen.typeKey(key)) {
+            return; // a size being typed on the settings screen takes every key
+        }
         if (!exwist) {
             synchronized (inputLock) {
                 if (key == 1004)
@@ -714,7 +721,7 @@ public class GameSparker extends Panel implements Runnable {
      * @param string name to match
      * @return value
      */
-    private int readcookie(String name) {
+    private static int readcookie(String name) {
         try {
             ZipFile zipFile = new ZipFile(cookieDirZip);
             Enumeration<? extends ZipEntry> entries = zipFile.entries();
@@ -2489,12 +2496,12 @@ public class GameSparker extends Panel implements Runnable {
             }
             System.out.printf("[draw] own thread: %.1f fps (placing %.2f ms, showing %.2f ms; %d carried on past"
                     + " the tick; corrections at new ticks: %s)%s%s; last scene %s, %d points, %d polygons kept;"
-                    + " card %.2f ms a frame, races drawn at %d%%%n",
+                    + " card %.2f ms a frame, races drawn at %d%%, msaa %dx%n",
                     statFrames / seconds, statFrames == 0 ? 0D : statPlaceNanos / 1e6D / statFrames,
                     statFrames == 0 ? 0D : statShowNanos / 1e6D / statFrames, statCarried, corrections, pace, keys,
                     gpu != null ? gpu.sceneStatistics() : "", shown == null ? 0 : shown.scene.points(),
                     shown == null ? 0 : shown.scene.polygons(), gpuFrameNanos / 1e6D,
-                    Math.round(sceneScaleInUse * 100F));
+                    Math.round(sceneScaleInUse * 100F), multisampleInUse);
             statCorrectionCount = 0;
             statKeyCount = 0;
             statFrames = 0;
@@ -2924,6 +2931,8 @@ public class GameSparker extends Panel implements Runnable {
                     multisampleInUse = gpu.multisample();
                     float across = supersample > 1 ? target.width / (float) Math.max(GameFacts.screenWidth, place.width) : 1F;
                     supersampleInUse = across;
+                    supersampleWidth = target.width;
+                    supersampleHeight = target.height;
                     sceneScaleInUse = gpu.sceneScale() * across;
                     if (!drawn) {
                         if (presenterFrame) {
@@ -2980,7 +2989,7 @@ public class GameSparker extends Panel implements Runnable {
             h = GameFacts.screenHeight;
         }
         if (supersample > 1) {
-            float factor = Math.min(supersample, Math.min(maxSide / (float) w, maxSide / (float) h));
+            float factor = Math.min(supersampleAcross(), Math.min(maxSide / (float) w, maxSide / (float) h));
             if (factor > 1F) {
                 w = Math.round(w * factor);
                 h = Math.round(h * factor);
@@ -3117,9 +3126,14 @@ public class GameSparker extends Panel implements Runnable {
         return multisample;
     }
 
-    /** 2 for supersampling on, 1 for off. */
+    /** Supersampling in samples per pixel: 2, 4 or 8, or 1 for off. */
     public static int getSupersample() {
         return supersample;
+    }
+
+    /** How many times the shown width and height supersampling draws at: the square root of the samples. */
+    private static float supersampleAcross() {
+        return (float) Math.sqrt(supersample);
     }
 
     /** The lowest share of the window races may be drawn at, in percent; 0 for off. */
@@ -3141,37 +3155,51 @@ public class GameSparker extends Panel implements Runnable {
         return words;
     }
 
-    /** Turns supersampling on (2, twice the width and height) or off (1), saved on the next tick. */
-    public static void setSupersample(int factor) {
-        supersample = factor;
+    /** Sets supersampling, in samples per pixel (2, 4 or 8; 1 is off), saved on the next tick. */
+    public static void setSupersample(int samples) {
+        supersample = samples;
         supersampleChanged = true;
     }
 
-    /** The supersampling setting in words, with what the card made of it when that differs. */
+    /** The size races were last drawn at with supersampling, for the settings; 0 before the first. */
+    private static volatile int supersampleWidth;
+    private static volatile int supersampleHeight;
+
+    /** The supersampling setting in words, with the size it draws at and what the card made of it. */
     public static String describeSupersample() {
         if (supersample <= 1) {
             return "off";
         }
+        String words = supersample + "x";
         if (!gpuRenderer) {
-            return "on (only with the gpu renderer)";
+            return words + " (only with the gpu renderer)";
         }
         float used = supersampleInUse;
-        if (used > 1F && used < supersample - 0.01F) {
-            return String.format("on (%.2fx across at this window size: the graphics card's largest texture)", used);
+        int w = supersampleWidth;
+        int h = supersampleHeight;
+        String size = w > 0 && used > 1F ? ", races drawn at " + w + "x" + h : "";
+        if (used > 1F && used < supersampleAcross() - 0.01F) {
+            return words + size + String.format(" (%.2fx across: the graphics card's largest texture)", used);
         }
-        return "on (twice the width and height)";
+        return words + size;
     }
 
-    /** 2 for "on" or "2" (also "2x", or "4x" for four times the pixels), 1 for "off" or "1", else 0. */
+    /** 2, 4 or 8 for those (also with an "x"; "on" is 4), 1 for "off" or "1", else 0. */
     public static int parseSupersample(String text) {
-        return switch (text.trim().toLowerCase(java.util.Locale.ROOT)) {
-            case "on", "2", "2x", "4x" -> 2;
-            case "off", "1", "1x" -> 1;
+        String t = text.trim().toLowerCase(java.util.Locale.ROOT);
+        if (t.endsWith("x")) {
+            t = t.substring(0, t.length() - 1);
+        }
+        return switch (t) {
+            case "on", "4" -> 4;
+            case "2" -> 2;
+            case "8" -> 8;
+            case "off", "1" -> 1;
             default -> 0;
         };
     }
 
-    /** 1, 2, 4 or 8 for "off", "1", "2", "4" or "8" (also with an "x"), or 0 if it is none of those. */
+    /** 1, 2, 4, 8 or 16 for "off", "1", "2", "4", "8" or "16" (also with an "x"), or 0 if it is none of those. */
     public static int parseMultisample(String text) {
         String t = text.trim().toLowerCase(java.util.Locale.ROOT);
         if (t.endsWith("x")) {
@@ -3182,6 +3210,7 @@ public class GameSparker extends Panel implements Runnable {
             case "2" -> 2;
             case "4" -> 4;
             case "8" -> 8;
+            case "16" -> 16;
             default -> 0;
         };
     }
@@ -3903,7 +3932,7 @@ public class GameSparker extends Panel implements Runnable {
             }
         } else if (!runsHidden()) {
             int saved = readcookie(MSAA_COOKIE);
-            samples = saved == 2 || saved == 4 || saved == 8 ? saved : 1;
+            samples = saved == 2 || saved == 4 || saved == 8 || saved == 16 ? saved : 1;
         }
         multisample = samples;
         multisampleChanged = false;
@@ -3920,7 +3949,12 @@ public class GameSparker extends Panel implements Runnable {
                 factor = 1;
             }
         } else if (!runsHidden()) {
-            factor = readcookie(SUPERSAMPLE_COOKIE) == 2 ? 2 : 1;
+            int saved = readcookie(SUPERSAMPLE_COOKIE);
+            if (saved == 2 || saved == 4 || saved == 8) {
+                factor = saved;
+            } else if (saved < 0 && readcookie(OLD_SUPERSAMPLE_COOKIE) == 2) {
+                factor = 4; // "on" before the levels: twice the width and height
+            }
         }
         supersample = factor;
         supersampleChanged = false;
@@ -4232,6 +4266,28 @@ public class GameSparker extends Panel implements Runnable {
         }
     }
 
+    /* the window's inside as the player left it, in the monitor's pixels */
+    private static final String WINDOW_WIDTH_COOKIE = "winwidth";
+    private static final String WINDOW_HEIGHT_COOKIE = "winheight";
+
+    /** The window's size as last left, in the monitor's pixels; null if none was saved (or in hidden runs). */
+    static Dimension savedWindowSize() {
+        if (runsHidden()) {
+            return null;
+        }
+        int w = readcookie(WINDOW_WIDTH_COOKIE);
+        int h = readcookie(WINDOW_HEIGHT_COOKIE);
+        return w >= GameFacts.screenWidth / 2 && h >= GameFacts.screenHeight / 2 ? new Dimension(w, h) : null;
+    }
+
+    private void saveWindowSizeIfChanged() {
+        if (RunApp.takeWindowSizeChanged() && !runsHidden() && !RunApp.isFullscreen()) {
+            Dimension size = RunApp.windowPixels();
+            savecookie(WINDOW_WIDTH_COOKIE, String.valueOf(size.width));
+            savecookie(WINDOW_HEIGHT_COOKIE, String.valueOf(size.height));
+        }
+    }
+
     /** The frame rate limit: FPS_MATCH_DISPLAY, FPS_VRR, FPS_UNLIMITED or a cap. */
     public static int getFpsLimit() {
         return fpsLimit;
@@ -4437,13 +4493,21 @@ public class GameSparker extends Panel implements Runnable {
                 System.out.println("[autotest] opening the settings from the pause menu");
             }
             if (phase == Phase.SETTINGS && (settingsStep == 1 || settingsStep == 4) && now - phaseSettledAt >= 700L) {
-                if (settingsDowns < 12) {
-                    u[0].down = true;
-                    settingsDowns++;
-                } else {
+                // a few settings chosen in turn, each shown for a moment (the main menu's, then the pause menu's)
+                String[] shown = settingsStep == 1 ? new String[] {"Supersampling", "Window size"}
+                        : new String[] {"Sound"};
+                int at = settingsDowns / 4;
+                if (at >= shown.length) {
                     settingsStep++;
                     settingsDowns = 0;
-                    saveFrame(directory, String.format("%02d-settings-sound.png", shots++));
+                } else {
+                    if (settingsDowns % 4 == 0) {
+                        ui.selectSetting(shown[at]);
+                    } else if (settingsDowns % 4 == 3) {
+                        saveFrame(directory, String.format("%02d-settings-%s.png", shots++,
+                                shown[at].toLowerCase(java.util.Locale.ROOT).replace(' ', '-')));
+                    }
+                    settingsDowns++;
                 }
             } else if (phase == Phase.SETTINGS && (settingsStep == 2 || settingsStep == 5)) {
                 SettingsScreen.noteEscape();
@@ -4785,6 +4849,7 @@ public class GameSparker extends Panel implements Runnable {
                 saveGamepadIfChanged();
                 saveSmoothEffectsIfChanged();
                 saveFullscreenIfChanged();
+                saveWindowSizeIfChanged();
                 if (modelReloadWanted && gameUi.fase == Phase.MAINMENU) {
                     modelReloadWanted = false;
                     loadbase(models, trackers, gameUi); // the next race and car select use them

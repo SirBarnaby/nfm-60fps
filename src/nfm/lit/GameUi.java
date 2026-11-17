@@ -814,6 +814,13 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         fase = Phase.SETTINGS;
     }
 
+    /** For the smoke test: chooses a setting on the open settings screen by its name. */
+    void selectSetting(String label) {
+        if (settingsScreen != null) {
+            settingsScreen.select(label);
+        }
+    }
+
     /** The settings screen, over the main menu's moving background or the paused race. */
     public void settings(Control control) {
         SettingsScreen screen = settingsScreen;

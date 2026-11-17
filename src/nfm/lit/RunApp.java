@@ -2,6 +2,8 @@ package nfm.lit;
 import fallk.logmaster.HLogger;
 
 import java.awt.*;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.PrintWriter;
@@ -81,8 +83,16 @@ class RunApp extends Panel {
                 exitSequence();
             }
         });
-        applet.setPreferredSize(startSize());
+        applet.setPreferredSize(startSize(autoTest));
         frame.add("Center", applet);
+        applet.addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentResized(ComponentEvent e) {
+                if (!fullscreen && frame.isVisible() && windowedBounds == null) {
+                    windowChangedAt = System.currentTimeMillis();
+                }
+            }
+        });
         frame.setResizable(true);
         frame.pack();
         // the picture scales to the window, so it may be smaller than 1280x720
@@ -106,9 +116,26 @@ class RunApp extends Panel {
         applet.start();
     }
 
-    /** The window's inside at start: 1280x720, or -Dnfm.window=<width>x<height>. */
-    private static Dimension startSize() {
+    /**
+     * The window's inside at start: -Dnfm.window=<width>x<height>, else the
+     * size the player last had (in the monitor's pixels, so Windows' display
+     * scaling is taken out), else 1280x720.
+     */
+    private static Dimension startSize(boolean hidden) {
         String property = System.getProperty("nfm.window");
+        if (property == null && !hidden) {
+            Dimension saved = GameSparker.savedWindowSize();
+            if (saved != null) {
+                GraphicsConfiguration screen = GraphicsEnvironment.getLocalGraphicsEnvironment()
+                        .getDefaultScreenDevice().getDefaultConfiguration();
+                double scale = screen.getDefaultTransform().getScaleX();
+                Rectangle area = screen.getBounds();
+                return new Dimension(
+                        Math.max(GameFacts.screenWidth / 2, Math.min(area.width, (int) Math.round(saved.width / scale))),
+                        Math.max(GameFacts.screenHeight / 2,
+                                Math.min(area.height, (int) Math.round(saved.height / scale))));
+            }
+        }
         if (property != null) {
             String[] parts = property.toLowerCase().split("x");
             try {
@@ -177,6 +204,85 @@ class RunApp extends Panel {
             }
             frame.setVisible(true);
             applet.requestFocus();
+        });
+    }
+
+    /** When the window's size last changed (0 once saved), for saving it once the player lets go. */
+    private static volatile long windowChangedAt;
+
+    /**
+     * True once when the window's size changed and has stayed for a second,
+     * for the game to save it (not while a window edge is being dragged).
+     */
+    static boolean takeWindowSizeChanged() {
+        long at = windowChangedAt;
+        if (at != 0L && System.currentTimeMillis() - at > 1000L) {
+            windowChangedAt = 0L;
+            return true;
+        }
+        return false;
+    }
+
+    /** Windows' display scaling for the window's monitor: 1.5 at 150%. */
+    private static double scale() {
+        GraphicsConfiguration screen = frame != null ? frame.getGraphicsConfiguration() : null;
+        if (screen == null) {
+            screen = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice()
+                    .getDefaultConfiguration();
+        }
+        return screen.getDefaultTransform().getScaleX();
+    }
+
+    /** The monitor the window is on, in its own pixels. */
+    static Dimension screenPixels() {
+        GraphicsConfiguration screen = frame != null ? frame.getGraphicsConfiguration() : null;
+        if (screen == null) {
+            screen = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice()
+                    .getDefaultConfiguration();
+        }
+        double s = screen.getDefaultTransform().getScaleX();
+        Rectangle area = screen.getBounds();
+        return new Dimension((int) Math.round(area.width * s), (int) Math.round(area.height * s));
+    }
+
+    /** The inside of the window in the monitor's pixels (what the game draws into). */
+    static Dimension windowPixels() {
+        if (applet == null) {
+            return new Dimension(GameFacts.screenWidth, GameFacts.screenHeight);
+        }
+        double s = scale();
+        return new Dimension((int) Math.round(applet.getWidth() * s), (int) Math.round(applet.getHeight() * s));
+    }
+
+    /**
+     * Makes the inside of the window {@code width} by {@code height} of the
+     * monitor's pixels, keeping its centre where it fits on the monitor.
+     * Only for a window on screen: not in fullscreen, nor in hidden runs.
+     */
+    static void setWindowPixels(int width, int height) {
+        if (frame == null || !frame.isVisible() || fullscreen) {
+            return;
+        }
+        EventQueue.invokeLater(() -> {
+            if (!frame.isVisible() || windowedBounds != null) {
+                return;
+            }
+            if ((frame.getExtendedState() & Frame.MAXIMIZED_BOTH) != 0) {
+                frame.setExtendedState(Frame.NORMAL);
+            }
+            double s = scale();
+            Insets insets = frame.getInsets();
+            int w = (int) Math.round(width / s) + insets.left + insets.right;
+            int h = (int) Math.round(height / s) + insets.top + insets.bottom;
+            Rectangle old = frame.getBounds();
+            Rectangle area = frame.getGraphicsConfiguration().getBounds();
+            int x = old.x + (old.width - w) / 2;
+            int y = old.y + (old.height - h) / 2;
+            x = Math.max(area.x, Math.min(x, area.x + area.width - w));
+            y = Math.max(area.y, Math.min(y, area.y + area.height - h));
+            frame.setBounds(x, y, w, h);
+            frame.validate();
+            windowChangedAt = System.currentTimeMillis();
         });
     }
 

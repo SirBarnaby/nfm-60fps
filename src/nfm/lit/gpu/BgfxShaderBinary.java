@@ -36,26 +36,31 @@ final class BgfxShaderBinary {
 
     /** A vertex shader that reads the given attributes and uses no uniforms. */
     static byte[] vertex(byte[] bytecode, int... attributes) {
-        return pack('V', 0, STAGE_HASH, bytecode, attributes, null, null);
+        return pack('V', 0, STAGE_HASH, bytecode, attributes, null, new Vec4[0]);
     }
 
     /** A fragment shader using no uniforms, or one 2D texture sampler at register 0. */
     static byte[] fragment(byte[] bytecode, String samplerName) {
-        return pack('F', STAGE_HASH, 0, bytecode, new int[0], samplerName, null);
+        return pack('F', STAGE_HASH, 0, bytecode, new int[0], samplerName, new Vec4[0]);
     }
 
     /**
-     * A fragment shader using a 2D texture sampler at register 0 and one
-     * float4, the first and only thing in its constant buffer at b0. bgfx
-     * finds the float4 by name, so it must have been made with
-     * bgfx_create_uniform under the same name before the shader is.
+     * A fragment shader using a 2D texture sampler at register 0 and the
+     * given float4s (or arrays of them), in that order the whole of its
+     * constant buffer at b0. bgfx finds each by name, so each must have been
+     * made with bgfx_create_uniform under the same name and count before the
+     * shader is.
      */
-    static byte[] fragment(byte[] bytecode, String samplerName, String vec4Name) {
-        return pack('F', STAGE_HASH, 0, bytecode, new int[0], samplerName, vec4Name);
+    static byte[] fragment(byte[] bytecode, String samplerName, Vec4... vec4s) {
+        return pack('F', STAGE_HASH, 0, bytecode, new int[0], samplerName, vec4s);
+    }
+
+    /** A float4 uniform, or an array of {@code count} of them. */
+    record Vec4(String name, int count) {
     }
 
     private static byte[] pack(char type, int hashIn, int hashOut, byte[] bytecode, int[] attributes,
-            String samplerName, String vec4Name) {
+            String samplerName, Vec4[] vec4s) {
         ByteArrayOutputStream out = new ByteArrayOutputStream(bytecode.length + 64);
         ByteBuffer word = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
         out.writeBytes(new byte[] {(byte) type, 'S', 'H', VERSION});
@@ -63,14 +68,17 @@ final class BgfxShaderBinary {
         writeInt(out, word, hashOut);
         writeInt(out, word, 0); // raw shader resource views
         writeInt(out, word, 0); // raw unordered access views
-        writeShort(out, word, (samplerName == null ? 0 : 1) + (vec4Name == null ? 0 : 1));
+        writeShort(out, word, (samplerName == null ? 0 : 1) + vec4s.length);
         if (samplerName != null) {
             // register s0 / t0, one register
-            writeUniform(out, word, samplerName, UNIFORM_SAMPLER_BIT | UNIFORM_SAMPLER, TEXTURE_DIMENSION_2D);
+            writeUniform(out, word, samplerName, UNIFORM_SAMPLER_BIT | UNIFORM_SAMPLER, 1, 0, 1,
+                    TEXTURE_DIMENSION_2D);
         }
-        if (vec4Name != null) {
-            // byte 0 of the constant buffer, one register
-            writeUniform(out, word, vec4Name, UNIFORM_VEC4, 0);
+        int bytes = 0;
+        for (Vec4 vec4 : vec4s) {
+            // at this byte of the constant buffer, one register each
+            writeUniform(out, word, vec4.name(), UNIFORM_VEC4, vec4.count(), bytes, vec4.count(), 0);
+            bytes += 16 * vec4.count();
         }
         writeInt(out, word, bytecode.length);
         out.writeBytes(bytecode);
@@ -79,20 +87,23 @@ final class BgfxShaderBinary {
         for (int attribute : attributes) {
             writeShort(out, word, attribute);
         }
-        writeShort(out, word, vec4Name == null ? 0 : 16); // constant buffer size
+        writeShort(out, word, bytes); // constant buffer size
         return out.toByteArray();
     }
 
-    /** An entry of the uniform table: one of its kind at register 0. */
+    /**
+     * An entry of the uniform table: {@code count} of its kind at
+     * {@code index} (a sampler's register, a constant's byte in the buffer).
+     */
     private static void writeUniform(ByteArrayOutputStream out, ByteBuffer word, String uniformName, int kind,
-            int textureDimension) {
+            int count, int index, int registers, int textureDimension) {
         byte[] name = uniformName.getBytes(StandardCharsets.US_ASCII);
         out.write(name.length);
         out.writeBytes(name);
         out.write(kind);
-        out.write(1); // count
-        writeShort(out, word, 0); // register index
-        writeShort(out, word, 1); // registers used
+        out.write(count);
+        writeShort(out, word, index); // register index
+        writeShort(out, word, registers); // registers used
         out.write(TEXTURE_COMPONENT_FLOAT);
         out.write(textureDimension);
         writeShort(out, word, 0); // texture format: any

@@ -87,6 +87,9 @@ public final class GpuDisplay {
     private short sampler = BGFX_INVALID_HANDLE;
     private short hdrUniform = BGFX_INVALID_HANDLE;
     private final float[] hdrValues = new float[4];
+    /** The present shaders' area-average downscale, see {@link Shaders}: u_down[0] and u_down[1]. */
+    private short downUniform = BGFX_INVALID_HANDLE;
+    private final float[] downValues = new float[8];
     private short picture = BGFX_INVALID_HANDLE;
     private IntBuffer upload;
     private BGFXTransientVertexBuffer transientBuffer;
@@ -320,8 +323,12 @@ public final class GpuDisplay {
         }
 
         int[] pictureAttributes = {BgfxShaderBinary.ATTRIB_POSITION, BgfxShaderBinary.ATTRIB_TEXCOORD0};
+        BgfxShaderBinary.Vec4 down = new BgfxShaderBinary.Vec4("u_down", 2);
+        // each uniform before the shaders that read it
+        downUniform = bgfx_create_uniform("u_down", BGFX_UNIFORM_TYPE_VEC4, 2);
+        hdrUniform = bgfx_create_uniform("u_hdr", BGFX_UNIFORM_TYPE_VEC4, 1);
         pictureProgram = program(BgfxShaderBinary.vertex(pictureVs, pictureAttributes),
-                BgfxShaderBinary.fragment(pictureFs, "s_picture"));
+                BgfxShaderBinary.fragment(pictureFs, "s_picture", down));
         overlayProgram = program(BgfxShaderBinary.vertex(pictureVs, pictureAttributes),
                 BgfxShaderBinary.fragment(overlayFs, "s_picture"));
         colorProgram = program(
@@ -329,9 +336,8 @@ public final class GpuDisplay {
                         BgfxShaderBinary.ATTRIB_TEXCOORD0),
                 BgfxShaderBinary.fragment(colorFs, null));
         sampler = bgfx_create_uniform("s_picture", BGFX_UNIFORM_TYPE_SAMPLER, 1);
-        hdrUniform = bgfx_create_uniform("u_hdr", BGFX_UNIFORM_TYPE_VEC4, 1); // before the shader that reads it
         hdrProgram = program(BgfxShaderBinary.vertex(pictureVs, pictureAttributes),
-                BgfxShaderBinary.fragment(hdrFs, "s_picture", "u_hdr"));
+                BgfxShaderBinary.fragment(hdrFs, "s_picture", new BgfxShaderBinary.Vec4("u_hdr", 1), down));
         hdrBackBuffer = (bgfx_get_caps().formats(BGFX_TEXTURE_FORMAT_RGBA16F)
                 & BGFX_CAPS_FORMAT_TEXTURE_BACKBUFFER) != 0;
         pictureLayout = BGFXVertexLayout.calloc();
@@ -347,7 +353,7 @@ public final class GpuDisplay {
         bgfx_vertex_layout_end(colorLayout);
         picture = bgfx_create_texture_2d(pictureWidth, pictureHeight, false, 1, BGFX_TEXTURE_FORMAT_BGRA8,
                 CLAMP, null, 0);
-        if (!isValid(sampler) || !isValid(hdrUniform) || !isValid(picture)) {
+        if (!isValid(sampler) || !isValid(hdrUniform) || !isValid(downUniform) || !isValid(picture)) {
             throw new IllegalStateException("creating GPU resources failed");
         }
         source = picture;
@@ -522,13 +528,14 @@ public final class GpuDisplay {
             case 2 -> BGFX_TEXTURE_RT_MSAA_X2;
             case 4 -> BGFX_TEXTURE_RT_MSAA_X4;
             case 8 -> BGFX_TEXTURE_RT_MSAA_X8;
+            case 16 -> BGFX_TEXTURE_RT_MSAA_X16;
             default -> 0L;
         };
     }
 
     /** The most samples per pixel up to {@code wanted} the card can draw the scene with. */
     private static int supportedSamples(int wanted) {
-        int n = Integer.highestOneBit(Math.max(1, Math.min(8, wanted)));
+        int n = Integer.highestOneBit(Math.max(1, Math.min(16, wanted)));
         for (; n > 1; n /= 2) {
             long msaa = msaaFlag(n);
             if (bgfx_is_texture_valid(0, false, 1, BGFX_TEXTURE_FORMAT_BGRA8, BGFX_TEXTURE_RT | CLAMP | msaa)
@@ -741,6 +748,7 @@ public final class GpuDisplay {
 
     /** Draws the frame into a view as it goes to the screen: as it is, or in HDR brightened by its glow. */
     private boolean drawFrame(int view, Rectangle place, boolean smooth, float glowBoost) {
+        setDownscale(place);
         if (!hdr) {
             return drawRectangle(view, pictureProgram, source, width, height, place, smooth, OPAQUE, sourcePart());
         }
@@ -750,6 +758,35 @@ public final class GpuDisplay {
         bgfx_set_uniform(hdrUniform, hdrValues, 1);
         return drawRectangle(view, hdrProgram, source, width, height, place, smooth, OPAQUE, sourcePart());
     }
+
+    /**
+     * The scene is shown smaller than it was drawn (supersampling, or a
+     * window smaller than the picture): the present shaders then average the
+     * texels under each pixel instead of sampling once.
+     */
+    private boolean downscaling(Rectangle place) {
+        return source == sceneColor && place.width > 0 && place.height > 0
+                && (sceneWidth > place.width * 1.01F || sceneHeight > place.height * 1.01F);
+    }
+
+    private void setDownscale(Rectangle place) {
+        boolean on = downscaling(place);
+        java.util.Arrays.fill(downValues, 0F);
+        if (on) {
+            downValues[0] = targetWidth;
+            downValues[1] = targetHeight;
+            downValues[2] = sceneWidth / (float) place.width;
+            downValues[3] = sceneHeight / (float) place.height;
+            downValues[4] = sceneWidth;
+            downValues[5] = sceneHeight;
+            downValues[6] = 1F;
+        }
+        downNow = on;
+        bgfx_set_uniform(downUniform, downValues, 2);
+    }
+
+    /** The frame being presented is averaged down, see {@link #setDownscale}. */
+    private boolean downNow;
 
     /** Texture coordinates of all of a texture. */
     private static final float[] WHOLE = {0F, 0F, 1F, 1F};
@@ -763,6 +800,14 @@ public final class GpuDisplay {
     private float[] sourcePart() {
         if (source != sceneColor || sceneWidth == targetWidth && sceneHeight == targetHeight) {
             return WHOLE;
+        }
+        if (downNow) {
+            // averaged down: each pixel covers its share of the part, edge to edge
+            part[0] = 0F;
+            part[1] = 0F;
+            part[2] = sceneWidth / (float) targetWidth;
+            part[3] = sceneHeight / (float) targetHeight;
+            return part;
         }
         part[0] = 0.5F / targetWidth;
         part[1] = 0.5F / targetHeight;
@@ -891,7 +936,7 @@ public final class GpuDisplay {
             if (isValid(sceneBuffer)) {
                 bgfx_destroy_frame_buffer(sceneBuffer);
             }
-            for (short uniform : new short[] {sampler, hdrUniform}) {
+            for (short uniform : new short[] {sampler, hdrUniform, downUniform}) {
                 if (isValid(uniform)) {
                     bgfx_destroy_uniform(uniform);
                 }
@@ -910,6 +955,7 @@ public final class GpuDisplay {
         sceneColor = BGFX_INVALID_HANDLE;
         sampler = BGFX_INVALID_HANDLE;
         hdrUniform = BGFX_INVALID_HANDLE;
+        downUniform = BGFX_INVALID_HANDLE;
         hdrProgram = BGFX_INVALID_HANDLE;
         pictureProgram = BGFX_INVALID_HANDLE;
         overlayProgram = BGFX_INVALID_HANDLE;
