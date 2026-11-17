@@ -3281,6 +3281,69 @@ public class GameSparker extends Panel implements Runnable {
         }
     }
 
+    private static final String VOLUME_COOKIE = "vol";
+    private static final String MONO_COOKIE = "soundmono";
+    private static final boolean[] volumeChanged = new boolean[nfm.lit.audio.Sound3D.BUS_NAMES.length];
+    private static volatile boolean monoChanged;
+
+    /** The bus of this name ("master", "engines", "effects", "music", "interface"), or -1. */
+    public static int parseBus(String text) {
+        return java.util.Arrays.asList(nfm.lit.audio.Sound3D.BUS_NAMES)
+                .indexOf(text.trim().toLowerCase(java.util.Locale.ROOT));
+    }
+
+    /** Sets a bus's volume in percent, saved; the 3D sound takes it at once. */
+    public static synchronized void setVolume(int bus, int percent) {
+        nfm.lit.audio.Sound3D.setBusLevel(bus, Math.max(0, Math.min(100, percent)) / 100F);
+        volumeChanged[bus] = true;
+    }
+
+    /** Every bus's volume in words. */
+    public static String describeVolumes() {
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < nfm.lit.audio.Sound3D.BUS_NAMES.length; i++) {
+            b.append(i == 0 ? "" : ", ").append(nfm.lit.audio.Sound3D.BUS_NAMES[i]).append(' ')
+                    .append(Math.round(nfm.lit.audio.Sound3D.busLevel(i) * 100F));
+        }
+        return b.toString();
+    }
+
+    /** Mono output for the 3D sound, saved; at once. */
+    public static void setMono(boolean on) {
+        nfm.lit.audio.Sound3D.setMono(on);
+        monoChanged = true;
+    }
+
+    /** The volumes and mono as saved; hidden runs keep everything at full and in stereo. */
+    private void loadVolumes() {
+        boolean hidden = runsHidden();
+        for (int i = 0; i < nfm.lit.audio.Sound3D.BUS_NAMES.length; i++) {
+            int saved = hidden ? -1 : readcookie(VOLUME_COOKIE + nfm.lit.audio.Sound3D.BUS_NAMES[i]);
+            nfm.lit.audio.Sound3D.setBusLevel(i, saved >= 0 && saved <= 100 ? saved / 100F : 1F);
+            volumeChanged[i] = false;
+        }
+        nfm.lit.audio.Sound3D.setMono(!hidden && readcookie(MONO_COOKIE) == 1);
+        monoChanged = false;
+    }
+
+    private void saveVolumesIfChanged() {
+        for (int i = 0; i < volumeChanged.length; i++) {
+            boolean changed;
+            synchronized (GameSparker.class) {
+                changed = volumeChanged[i];
+                volumeChanged[i] = false;
+            }
+            if (changed) {
+                savecookie(VOLUME_COOKIE + nfm.lit.audio.Sound3D.BUS_NAMES[i],
+                        String.valueOf(Math.round(nfm.lit.audio.Sound3D.busLevel(i) * 100F)));
+            }
+        }
+        if (monoChanged) {
+            monoChanged = false;
+            savecookie(MONO_COOKIE, nfm.lit.audio.Sound3D.isMono() ? "1" : "0");
+        }
+    }
+
     private static final String MUSIC_SEPARATION_COOKIE = "musicsep";
     private static volatile boolean musicSeparationChanged;
 
@@ -4240,6 +4303,7 @@ public class GameSparker extends Panel implements Runnable {
         loadHdr();
         loadSound();
         loadMusicSeparation();
+        loadVolumes();
         startAutoTest();
         session = RaceSession.fromCommandLine(new SessionHost());
         startGamepads();
@@ -4323,6 +4387,7 @@ public class GameSparker extends Panel implements Runnable {
                 saveHdrIfChanged();
                 applySound();
                 saveMusicSeparationIfChanged();
+                saveVolumesIfChanged();
                 saveGamepadIfChanged();
                 if (session != null) {
                     session.beforeTick();

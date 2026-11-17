@@ -422,11 +422,34 @@ public class DevTool {
             }
             case "sound": {
                 Boolean on = args.length == 1 ? GameSparker.parseSound(args[0]) : null;
-                if (on != null) {
+                if (args.length == 2 && args[0].equalsIgnoreCase("mono")
+                        && (args[1].equalsIgnoreCase("on") || args[1].equalsIgnoreCase("off"))) {
+                    GameSparker.setMono(args[1].equalsIgnoreCase("on"));
+                    print("Mono " + args[1].toLowerCase(java.util.Locale.ROOT) + " (saved).");
+                } else if (on != null) {
                     GameSparker.setNewSound(on);
                     print("Sound set to " + (on ? "3d" : "classic") + " (saved).");
                 } else {
-                    print("Sound is " + GameSparker.describeSound() + ".\nUsage: sound <3d|classic>");
+                    print("Sound is " + GameSparker.describeSound() + ".\nUsage: sound <3d|classic>, sound mono <on|off>");
+                }
+                break;
+            }
+            case "volume": {
+                int bus = args.length == 2 ? GameSparker.parseBus(args[0]) : -1;
+                int percent = -1;
+                if (bus >= 0) {
+                    try {
+                        percent = Integer.parseInt(args[1]);
+                    } catch (NumberFormatException ex) {
+                        percent = -1;
+                    }
+                }
+                if (percent >= 0 && percent <= 100) {
+                    GameSparker.setVolume(bus, percent);
+                    print("Volume " + args[0].toLowerCase(java.util.Locale.ROOT) + " " + percent + " (saved).");
+                } else {
+                    print("Volume: " + GameSparker.describeVolumes()
+                            + ".\nUsage: volume <master|engines|effects|music|interface> <0-100>");
                 }
                 break;
             }
@@ -510,8 +533,9 @@ public class DevTool {
         commandDescriptions.put("hdr", "HDR output on a monitor that has HDR turned on in Windows: the game looks as it does in SDR, at the brightness Windows shows SDR white at, and flames, lamps, sparks, stars and lightning shine brighter than white. Needs the gpu renderer. Usage: hdr <auto|off>");
         commandDescriptions.put("gamepad", "Game controllers (Xbox, PlayStation, Switch and others): RT or A accelerates, LT or X brakes, the left stick or d-pad steers, B is the handbrake, LB/RB look back, Y changes the view, Start pauses; in menus the stick moves and A selects. Hard hits shake the pad. Usage: gamepad <on|off>, gamepad rumble <on|off>");
         commandDescriptions.put("msaa", "Smooths the edges of the polygons in races drawn on the graphics card by taking 2, 4 or 8 samples per pixel (multisampling); off keeps the game's own hard edges. Usage: msaa <off|2|4|8>");
+        commandDescriptions.put("volume", "The 3D sound's volumes, in percent: master, engines, effects (crashes, skids, the wreck, the repair, the wind), music and interface (countdown, checkpoints, menus). Classic plays at its own levels. Usage: volume <bus> <0-100>");
         commandDescriptions.put("music", "In 3d sound the stage and menu music plays through libopenmpt; separation sets how far apart its left and right are, 0 (mono) to 200, 100 being an Amiga's hard left and right (default 70). Usage: music separation <0-200>");
-        commandDescriptions.put("sound", "3d (the default) hears every car where it is, with smooth engines, HRTF on headphones, Doppler and distance; classic plays the game's own sound exactly as before. Usage: sound <3d|classic>");
+        commandDescriptions.put("sound", "3d (the default) hears every car where it is, with smooth engines, HRTF on headphones, Doppler and distance; classic plays the game's own sound exactly as before; mono mixes the 3D sound to one channel, the same in both ears. Usage: sound <3d|classic>, sound mono <on|off>");
         commandDescriptions.put("dynres", "When the graphics card cannot draw a race at the window's full size in time for the next frame, draws it smaller (down to the given percent of the window, never below the game's own 1280x720) and scales it up smoothly; the HUD stays sharp. Steps down at once and back up slowly, so the picture does not pump. On by default, down to 50%. Usage: dynres <on|off|25-100>");
         commandDescriptions.put("renderer", "gpu puts frames on screen through the graphics card (Direct3D 11), which scales them for free; software draws them with Java2D. Usage: renderer <gpu|software>");
         commandDescriptions.put("runahead", "Shows race frames one tick ahead with the keys held now, for 53 ms less input lag. Usage: runahead <on|off>");

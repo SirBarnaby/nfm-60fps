@@ -39,6 +39,7 @@ import org.lwjgl.openal.SOFTDirectChannels;
 import org.lwjgl.openal.SOFTHRTF;
 import org.lwjgl.openal.SOFTLoopback;
 import org.lwjgl.openal.SOFTOutputLimiter;
+import org.lwjgl.openal.SOFTOutputMode;
 import org.lwjgl.openal.SOFTReopenDevice;
 import org.lwjgl.openal.SOFTSourceSpatialize;
 import org.lwjgl.openal.SOFTSystemEventProc;
@@ -240,6 +241,51 @@ public final class Sound3D implements Runnable {
 
     public static boolean isWanted() {
         return wanted;
+    }
+
+    /*
+     * The mix's buses, each with a volume of its own from the console
+     * ("volume"), saved: everything, the engines, the effects (crashes,
+     * skids, the wreck, the repair, the wind), the music, and the interface
+     * (countdown, checkpoints, menus). They are the new sound's: Classic
+     * plays at its own levels.
+     */
+    public static final int BUS_MASTER = 0;
+    public static final int BUS_ENGINES = 1;
+    public static final int BUS_EFFECTS = 2;
+    public static final int BUS_MUSIC = 3;
+    public static final int BUS_INTERFACE = 4;
+    public static final String[] BUS_NAMES = {"master", "engines", "effects", "music", "interface"};
+    private static final float[] busLevels = {1F, 1F, 1F, 1F, 1F};
+    private static volatile int busVersion;
+    private static volatile boolean mono;
+
+    /** Sets a bus's volume, 0 to 1; the sound takes it within a hundredth of a second. */
+    public static synchronized void setBusLevel(int bus, float level) {
+        busLevels[bus] = Math.max(0F, Math.min(1F, level));
+        busVersion++;
+    }
+
+    public static synchronized float busLevel(int bus) {
+        return busLevels[bus];
+    }
+
+    /**
+     * Everything mixed down to one channel, the same in both ears, for
+     * hearing in one ear or a single speaker: no HRTF then. Takes effect at
+     * once, without stopping anything.
+     */
+    public static void setMono(boolean on) {
+        mono = on;
+        Sound3D sound = instance;
+        if (sound != null && sound.renderTo == null) {
+            sound.reopenWanted = true;
+            LockSupport.unpark(sound.thread);
+        }
+    }
+
+    public static boolean isMono() {
+        return mono;
     }
 
     /** True while the new sound plays the game's sounds instead of Classic. */
@@ -471,6 +517,7 @@ public final class Sound3D implements Runnable {
                     SOFTDeferredUpdates.alDeferUpdatesSOFT();
                 }
                 handleCommands();
+                applyBuses();
                 update(now);
                 feedMusic();
                 if (deferred) {
@@ -537,6 +584,7 @@ public final class Sound3D implements Runnable {
                 if (deferred) {
                     SOFTDeferredUpdates.alDeferUpdatesSOFT();
                 }
+                applyBuses();
                 update(clock);
                 feedMusic();
                 if (deferred) {
@@ -602,10 +650,15 @@ public final class Sound3D implements Runnable {
 
     private int[] contextAttributes(ALCCapabilities deviceCaps) {
         List<Integer> a = new ArrayList<>();
+        monoOut = mono && renderTo == null && deviceCaps.ALC_SOFT_output_mode;
         if (deviceCaps.ALC_SOFT_HRTF) {
             a.add(SOFTHRTF.ALC_HRTF_SOFT);
-            // on headphones by itself; a test file is always rendered as for headphones
-            a.add(renderTo != null ? ALC_TRUE : SOFTHRTF.ALC_DONT_CARE_SOFT);
+            // on headphones by itself; a test file is always rendered as for headphones; never in mono
+            a.add(renderTo != null ? ALC_TRUE : monoOut ? ALC_FALSE : SOFTHRTF.ALC_DONT_CARE_SOFT);
+        }
+        if (monoOut) {
+            a.add(SOFTOutputMode.ALC_OUTPUT_MODE_SOFT);
+            a.add(SOFTOutputMode.ALC_MONO_SOFT);
         }
         if (deviceCaps.ALC_SOFT_output_limiter) {
             a.add(SOFTOutputLimiter.ALC_OUTPUT_LIMITER_SOFT);
@@ -626,18 +679,50 @@ public final class Sound3D implements Runnable {
     private void describeDevice() {
         String name = renderTo != null ? "a test file" : alcGetString(device, ALC_DEVICE_SPECIFIER);
         int hrtf = alcGetInteger(device, SOFTHRTF.ALC_HRTF_SOFT);
-        status = "on, " + (name == null ? "the default device" : name) + (hrtf == ALC_TRUE ? ", HRTF" : "");
-        float makeup = hrtf == ALC_TRUE ? HRTF_MAKEUP : PANNED_MAKEUP;
-        alListenerf(AL_GAIN, makeup);
+        status = "on, " + (name == null ? "the default device" : name) + (hrtf == ALC_TRUE ? ", HRTF" : "")
+                + (monoOut ? ", mono" : "");
+        makeup = hrtf == ALC_TRUE ? HRTF_MAKEUP : PANNED_MAKEUP;
+        alListenerf(AL_GAIN, makeup * bus[BUS_MASTER]);
         flatGain = 1F / makeup;
-        for (int source : named.values()) {
-            if (!namedAtPlayer.containsValue(source)) {
-                alSourcef(source, AL_GAIN, flatGain);
+        applyNamedGains();
+    }
+
+    /** The listener's gain that makes up for HRTF or panning, before the master volume. */
+    private float makeup = 1F;
+    private boolean monoOut;
+    /* the buses' volumes as the sound thread has them */
+    private final float[] bus = {1F, 1F, 1F, 1F, 1F};
+    private int busApplied;
+
+    /** Takes the buses' volumes when they changed: at once for what plays by name or as an effect. */
+    private void applyBuses() {
+        int version = busVersion;
+        if (version == busApplied) {
+            return;
+        }
+        busApplied = version;
+        synchronized (Sound3D.class) {
+            System.arraycopy(busLevels, 0, bus, 0, bus.length);
+        }
+        alListenerf(AL_GAIN, makeup * bus[BUS_MASTER]);
+        applyNamedGains();
+        for (Voice v : effects) {
+            if (v != null) {
+                alSourcef(v.source, AL_GAIN, v.gain * bus[BUS_EFFECTS]);
             }
         }
-        if (musicSource != 0) {
-            alSourcef(musicSource, AL_GAIN, flatGain * musicLevel);
-        }
+        // the engines and the music take theirs on their next update
+    }
+
+    private void applyNamedGains() {
+        named.forEach(this::namedGain);
+    }
+
+    /* a clip played by name: at the player's car as an effect, the wind as an effect, the rest as interface */
+    private void namedGain(String name, int source) {
+        boolean atCar = namedAtPlayer.containsKey(name);
+        int b = atCar || name.startsWith("air") ? BUS_EFFECTS : BUS_INTERFACE;
+        alSourcef(source, AL_GAIN, (atCar ? 1F : flatGain) * bus[b]);
     }
 
     /** The gain of a clip heard as it is, undoing the listener's makeup. */
@@ -832,7 +917,8 @@ public final class Sound3D implements Runnable {
         musicNow = m;
         musicPaused = false;
         musicLevel = decoder.level();
-        alSourcef(musicSource, AL_GAIN, flatGain * musicLevel);
+        musicGainApplied = -1F;
+        setMusicGain();
         try {
             for (int b : musicBuffers) {
                 fillMusic(b);
@@ -870,6 +956,17 @@ public final class Sound3D implements Runnable {
         musicNow = null;
     }
 
+    private float musicGainApplied = -1F;
+
+    /* the music's level, its bus, and the dip under a big crash, as the engines dip */
+    private void setMusicGain() {
+        float g = flatGain * musicLevel * bus[BUS_MUSIC] * (1F - duck);
+        if (Math.abs(g - musicGainApplied) > 1e-4F) {
+            musicGainApplied = g;
+            alSourcef(musicSource, AL_GAIN, g);
+        }
+    }
+
     /** Decodes the next block into this buffer, as float or, where OpenAL has no float, 16-bit. */
     private void fillMusic(int buffer) {
         decoder.read(musicBlock, MUSIC_FRAMES);
@@ -889,6 +986,7 @@ public final class Sound3D implements Runnable {
         if (decoder == null || musicPaused) {
             return;
         }
+        setMusicGain();
         try {
             int processed = alGetSourcei(musicSource, AL_BUFFERS_PROCESSED);
             for (int i = 0; i < processed; i++) {
@@ -935,6 +1033,7 @@ public final class Sound3D implements Runnable {
         if (atCar) {
             namedAtPlayer.put(name, source);
         }
+        namedGain(name, source);
         switch (kind) {
             case PLAY -> {
                 alSourcei(source, AL_LOOPING, AL_FALSE);
@@ -1234,7 +1333,7 @@ public final class Sound3D implements Runnable {
         alSourceStop(voice.source);
         alSourcei(voice.source, AL_BUFFER, buffer);
         world(voice.source);
-        alSourcef(voice.source, AL_GAIN, gain);
+        alSourcef(voice.source, AL_GAIN, gain * bus[BUS_EFFECTS]);
         alSourcef(voice.source, AL_PITCH, pitch);
         voice.car = car;
         voice.gain = gain;
@@ -1265,7 +1364,7 @@ public final class Sound3D implements Runnable {
         float dt = UPDATE_NANOS / 1e9F;
         updateOcclusion(dt);
         updateReverb(dt);
-        engineLevel = 1F - duck;
+        engineLevel = (1F - duck) * bus[BUS_ENGINES];
         duck *= (float) Math.exp(-dt / DUCK_RELEASE);
         for (int i = 0; i < engines.size(); i++) {
             engines.get(i).update(i < cars ? m.cars[i] : null, i, ahead, dt, m.muted);
@@ -1615,7 +1714,7 @@ public final class Sound3D implements Runnable {
                 if (gain[i] < 0.002F) {
                     alSourcePause(sources[i]);
                 } else {
-                    alSourcef(sources[i], AL_GAIN, gain[i]);
+                    alSourcef(sources[i], AL_GAIN, gain[i] * engineLevel);
                 }
             }
         }
