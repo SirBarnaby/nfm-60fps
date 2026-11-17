@@ -881,7 +881,7 @@ public class Plane {
         if (leftOf == n || above == n || below == n || rightOf == n) {
             visible = false;
         }
-        /*if (Medium.trk && (j9 != 0 || j8 != 0 || l8 != 0 || l9 != 0)) {
+        /*if (Medium.trk && (leftOf != 0 || above != 0 || below != 0 || rightOf != 0)) {
             flag2 = false;
         }*/
         if (behind != 0) {

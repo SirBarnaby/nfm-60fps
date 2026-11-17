@@ -20,13 +20,13 @@ public class SoundClipUnthreaded implements SoundClip {
     public SoundClipUnthreaded(byte[] byteInput) {
         data = byteInput;
         try {
-            ByteArrayInputStream var2 = new ByteArrayInputStream(byteInput);
-            sound = AudioSystem.getAudioInputStream(var2);
+            ByteArrayInputStream in = new ByteArrayInputStream(byteInput);
+            sound = AudioSystem.getAudioInputStream(in);
             sound.mark(byteInput.length);
             clip = (Clip) AudioSystem.getLine(new DataLine.Info(Clip.class, this.sound.getFormat()));
             loaded = true;
-        } catch (Exception var4) {
-            HLogger.error("Loading Clip error: " + var4);
+        } catch (Exception ex) {
+            HLogger.error("Loading Clip error: " + ex);
             loaded = false;
         }
     }
@@ -48,8 +48,8 @@ public class SoundClipUnthreaded implements SoundClip {
 
                 lfrpo = -1;
                 cntcheck = 5;
-            } catch (Exception var3) {
-                HLogger.error(var3);
+            } catch (Exception ex) {
+                HLogger.error(ex);
             }
         }
     }
@@ -69,8 +69,8 @@ public class SoundClipUnthreaded implements SoundClip {
                 clip.loop(70);
                 lfrpo = -2;
                 cntcheck = 0;
-            } catch (Exception var3) {
-                HLogger.error(var3);
+            } catch (Exception ex) {
+                HLogger.error(ex);
             }
         }
     }

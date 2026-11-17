@@ -363,22 +363,22 @@ final class UlawUtils {
             125, 126
     };
 
-    public static byte linear2ulawclip(int i) {
-        if (i < -32767) {
-            i = -32767;
+    public static byte linear2ulawclip(int sample) {
+        if (sample < -32767) {
+            sample = -32767;
         }
-        if (i > 32767) {
-            i = 32767;
+        if (sample > 32767) {
+            sample = 32767;
         }
-        return s2u_lut[i >> 3 & 0x1fff];
+        return s2u_lut[sample >> 3 & 0x1fff];
     }
 
-    public static byte linear2ulaw(byte byte0) {
-        return s2u_lut[((byte0 & 0xff) << 5) + 15];
+    public static byte linear2ulaw(byte sample) {
+        return s2u_lut[((sample & 0xff) << 5) + 15];
     }
 
-    public static byte linear2ulaw(int i) {
-        return s2u_lut[i >> 3];
+    public static byte linear2ulaw(int sample) {
+        return s2u_lut[sample >> 3];
     }
 
 }

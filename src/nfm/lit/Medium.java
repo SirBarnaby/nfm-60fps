@@ -1376,7 +1376,7 @@ public class Medium {
     private static final float[][] CLOUD_Y = new float[3][12];
 
     /**
-     * Gives a full-width band of the sky or ground ({@code ai/ai1}: corner 0
+     * Gives a full-width band of the sky or ground ({@code bandX/bandY}: corner 0
      * at the edge just worked out, 1 and 2 at the edge before, 3 back at the
      * first) its exact edges {@code edge} and {@code before}.
      */
@@ -1963,7 +1963,7 @@ public class Medium {
             vxz += 4;
         }
         /*
-         * c is -180 when the camera is lower than the car, so the pitch turns
+         * offset is -180 when the camera is lower than the car, so the pitch turns
          * up toward it. The decompiler declared these offsets as char, which
          * turned -180 into 65356 and tipped the camera straight down instead;
          * watch(), getaround() and transaround() had the same bug.

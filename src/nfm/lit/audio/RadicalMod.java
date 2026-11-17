@@ -43,29 +43,29 @@ public class RadicalMod implements RadicalMusic {
     /**
      * Instantiates a new radical mod.
      *
-     * @param string the string
-     * @param i      the i
-     * @param i_0    the i_0
-     * @param i_1    the i_1
-     * @param bool   the bool
-     * @param bool_2 the bool_2
+     * @param path   the module file
+     * @param volume how loud to render it
+     * @param rate   playback rate, 8000 being normal
+     * @param level  the module renderer's last setting (125 as a rule)
+     * @param loud   render at the louder level, and remember how loud it came out
+     * @param online fetch it from the multiplayer server instead
      */
-    public RadicalMod(String string, int i, int i_0, final int i_1, final boolean bool, final boolean bool_2) {
+    public RadicalMod(String path, int volume, int rate, final int level, final boolean loud, final boolean online) {
         playing = false;
         loaded = 0;
         rvol = 0;
         imod = "";
         pmod = "";
-        final int i_3 = 22000;
-        i_0 = (int) (i_0 / 8000F * 2.0F * i_3);
-        i = (int) (i * 0.8F);
+        final int sampleRate = 22000;
+        rate = (int) (rate / 8000F * 2.0F * sampleRate);
+        volume = (int) (volume * 0.8F);
         try {
             Module module;
-            if (!bool_2) {
-                module = ModuleLoader.loadMod(string);
+            if (!online) {
+                module = ModuleLoader.loadMod(path);
             } else {
-                string = string.replace(' ', '_');
-                final URL url = new URL("http://multiplayer.needformadness.com/tracks/music/" + string + ".zip");
+                path = path.replace(' ', '_');
+                final URL url = new URL("http://multiplayer.needformadness.com/tracks/music/" + path + ".zip");
                 module = ModuleLoader.loadMod(url);
             }
             if (module.isLoaded()) {
@@ -73,20 +73,20 @@ public class RadicalMod implements RadicalMusic {
                 if (name.trim().equals("")) {
                     name = "Untitled";
                 }
-                final ModuleSlayer moduleslayer = ModuleLoader.prepareSlayer(module, i_0, i, i_1);
-                final byte is[] = moduleslayer.turnbytesNorm(bool);
-                if (bool) {
-                    rvol = moduleslayer.olav;
+                final ModuleSlayer slayer = ModuleLoader.prepareSlayer(module, rate, volume, level);
+                final byte pcm[] = slayer.turnbytesNorm(loud);
+                if (loud) {
+                    rvol = slayer.olav;
                 }
-                sClip = new SuperClip(is, moduleslayer.oln, i_3);
-                sClip.rollBackPos = moduleslayer.rollBackPos;
-                sClip.rollBackTrig = moduleslayer.oln - moduleslayer.rollBackTrig;
+                sClip = new SuperClip(pcm, slayer.oln, sampleRate);
+                sClip.rollBackPos = slayer.rollBackPos;
+                sClip.rollBackTrig = slayer.oln - slayer.rollBackTrig;
                 loaded = 2;
             }
-        } catch (final Exception exception) {
-            exception.printStackTrace();
+        } catch (final Exception ex) {
+            ex.printStackTrace();
             if (GameSparker.DEBUG) {
-                System.out.println("Error downloading and making Mod: " + exception);
+                System.out.println("Error downloading and making Mod: " + ex);
             }
             loaded = 0;
         }
@@ -97,49 +97,49 @@ public class RadicalMod implements RadicalMusic {
     /**
      * Instantiates a new radical mod.
      *
-     * @param string the string
+     * @param path   the module file
      */
-    public RadicalMod(final String string) {
+    public RadicalMod(final String path) {
         playing = false;
         loaded = 0;
         rvol = 0;
         imod = "";
         pmod = "";
         loaded = 1;
-        imod = string;
+        imod = path;
         loadimod(false);
     }
 
     /**
      * Instantiates a new radical mod.
      *
-     * @param string the string
-     * @param bool   the bool
+     * @param path   the module file
+     * @param loud   render at the louder level, and remember how loud it came out
      */
-    public RadicalMod(final String string, final boolean bool) {
+    public RadicalMod(final String path, final boolean loud) {
         playing = false;
         loaded = 0;
         rvol = 0;
         imod = "";
         pmod = "";
         loaded = 1;
-        pmod = string;
+        pmod = path;
         loadpmod(true);
     }
 
     /**
      * Loadimod.
      *
-     * @param bool the bool
+     * @param loud render at the louder level
      */
-    private void loadimod(final boolean bool) {
+    private void loadimod(final boolean loud) {
         if (loaded == 1) {
-            final int i = 44000;
-            int i_6 = 160;
-            if (bool) {
-                i_6 = 300;
+            final int rate = 44000;
+            int volume = 160;
+            if (loud) {
+                volume = 300;
             }
-            final int i_7 = 125;
+            final int level = 125;
             try {
                 final Module module = ModuleLoader.loadMod(imod);
                 if (module.isLoaded()) {
@@ -147,19 +147,19 @@ public class RadicalMod implements RadicalMusic {
                     if (name.trim().equals("")) {
                         name = "Untitled";
                     }
-                    final ModuleSlayer moduleslayer = ModuleLoader.prepareSlayer(module, i, i_6, i_7);
-                    final byte is[] = moduleslayer.turnbytesNorm(bool);
-                    if (bool) {
-                        rvol = moduleslayer.olav;
+                    final ModuleSlayer slayer = ModuleLoader.prepareSlayer(module, rate, volume, level);
+                    final byte pcm[] = slayer.turnbytesNorm(loud);
+                    if (loud) {
+                        rvol = slayer.olav;
                     }
-                    sClip = new SuperClip(is, moduleslayer.oln, 22000);
-                    sClip.rollBackPos = moduleslayer.rollBackPos;
-                    sClip.rollBackTrig = moduleslayer.oln - moduleslayer.rollBackTrig;
+                    sClip = new SuperClip(pcm, slayer.oln, 22000);
+                    sClip.rollBackPos = slayer.rollBackPos;
+                    sClip.rollBackTrig = slayer.oln - slayer.rollBackTrig;
                     loaded = 2;
                 }
-            } catch (final Exception exception) {
+            } catch (final Exception ex) {
                 if (GameSparker.DEBUG) {
-                    System.out.println("Error making a imod: " + exception);
+                    System.out.println("Error making a imod: " + ex);
                 }
                 loaded = 0;
             }
@@ -171,16 +171,16 @@ public class RadicalMod implements RadicalMusic {
     /**
      * Loadpmod.
      *
-     * @param bool the bool
+     * @param loud render at the louder level
      */
-    private void loadpmod(final boolean bool) {
+    private void loadpmod(final boolean loud) {
         if (loaded == 1) {
-            final int i = 44000;
-            int i_10 = 160;
-            if (bool) {
-                i_10 = 300;
+            final int rate = 44000;
+            int volume = 160;
+            if (loud) {
+                volume = 300;
             }
-            final int i_11 = 125;
+            final int level = 125;
             try {
                 final Module module = ModuleLoader.loadMod(pmod);
                 if (module.isLoaded()) {
@@ -188,19 +188,19 @@ public class RadicalMod implements RadicalMusic {
                     if (name.trim().equals("")) {
                         name = "Untitled";
                     }
-                    final ModuleSlayer moduleslayer = ModuleLoader.prepareSlayer(module, i, i_10, i_11);
-                    final byte is[] = moduleslayer.turnbytesNorm(bool);
-                    if (bool) {
-                        rvol = moduleslayer.olav;
+                    final ModuleSlayer slayer = ModuleLoader.prepareSlayer(module, rate, volume, level);
+                    final byte pcm[] = slayer.turnbytesNorm(loud);
+                    if (loud) {
+                        rvol = slayer.olav;
                     }
-                    sClip = new SuperClip(is, moduleslayer.oln, 22000);
-                    sClip.rollBackPos = moduleslayer.rollBackPos;
-                    sClip.rollBackTrig = moduleslayer.oln - moduleslayer.rollBackTrig;
+                    sClip = new SuperClip(pcm, slayer.oln, 22000);
+                    sClip.rollBackPos = slayer.rollBackPos;
+                    sClip.rollBackTrig = slayer.oln - slayer.rollBackTrig;
                     loaded = 2;
                 }
-            } catch (final Exception exception) {
+            } catch (final Exception ex) {
                 if (GameSparker.DEBUG) {
-                    System.out.println("Error making a imod: " + exception);
+                    System.out.println("Error making a imod: " + ex);
                 }
                 loaded = 0;
             }
@@ -238,11 +238,11 @@ public class RadicalMod implements RadicalMusic {
         try {
             sClip.close();
             sClip = null;
-        } catch (final Exception exception) {
+        } catch (final Exception ex) {
         }
         try {
             imod = null;
-        } catch (final Exception exception) {
+        } catch (final Exception ex) {
         }
         System.gc();
         loaded = 0;

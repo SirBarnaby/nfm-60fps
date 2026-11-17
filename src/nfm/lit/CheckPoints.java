@@ -48,80 +48,80 @@ class CheckPoints {
     public int catchfin = 0;
     private int postwo = 0;
 
-    public void checkstat(Madness amadness[], ContO aconto[], Record record, int ncars) {
+    public void checkstat(Madness cars[], ContO models[], Record record, int ncars) {
         if (!haltall) {
-            pcleared = amadness[0].pcleared;
-            int i = 0;
+            pcleared = cars[0].pcleared;
+            int racer = 0;
             do {
-                pos[i] = 0;
-                onscreen[i] = aconto[i].dist;
-                opx[i] = aconto[i].x;
-                opz[i] = aconto[i].z;
-                omxz[i] = amadness[i].mxz;
-                if (dested[i] == 0) {
-                    clear[i] = amadness[i].clear;
+                pos[racer] = 0;
+                onscreen[racer] = models[racer].dist;
+                opx[racer] = models[racer].x;
+                opz[racer] = models[racer].z;
+                omxz[racer] = cars[racer].mxz;
+                if (dested[racer] == 0) {
+                    clear[racer] = cars[racer].clear;
                 } else {
-                    clear[i] = -1;
+                    clear[racer] = -1;
                 }
-            } while (++i < ncars);
-            i = 0;
+            } while (++racer < ncars);
+            racer = 0;
             do {
-                for (int l = i + 1; l < ncars; l++) {
-                    if (clear[i] != clear[l]) {
-                        if (clear[i] < clear[l]) {
-                            pos[i]++;
+                for (int other = racer + 1; other < ncars; other++) {
+                    if (clear[racer] != clear[other]) {
+                        if (clear[racer] < clear[other]) {
+                            pos[racer]++;
                         } else {
-                            pos[l]++;
+                            pos[other]++;
                         }
                     } else {
-                        int j1;
-                        for (j1 = amadness[i].pcleared + 1; typ[j1] <= 0; ) {
-                            if (++j1 == n) {
-                                j1 = 0;
+                        int nextCheck;
+                        for (nextCheck = cars[racer].pcleared + 1; typ[nextCheck] <= 0; ) {
+                            if (++nextCheck == n) {
+                                nextCheck = 0;
                             }
                         }
 
-                        if (Utility.py(aconto[i].x / 100, x[j1] / 100, aconto[i].z / 100, z[j1] / 100) > Utility.py(aconto[l].x / 100,
-                                x[j1] / 100, aconto[l].z / 100, z[j1] / 100)) {
-                            pos[i]++;
+                        if (Utility.py(models[racer].x / 100, x[nextCheck] / 100, models[racer].z / 100, z[nextCheck] / 100) > Utility.py(models[other].x / 100,
+                                x[nextCheck] / 100, models[other].z / 100, z[nextCheck] / 100)) {
+                            pos[racer]++;
                         } else {
-                            pos[l]++;
+                            pos[other]++;
                         }
                     }
                 }
 
-            } while (++i < ncars);
+            } while (++racer < ncars);
             if (stage > 2) {
-                int j = 0;
+                int leader = 0;
                 do {
-                    if (clear[j] == nlaps * nsp && pos[j] == 0) {
-                        if (j == 0) {
-                            int i1 = 0;
+                    if (clear[leader] == nlaps * nsp && pos[leader] == 0) {
+                        if (leader == 0) {
+                            int other = 0;
                             do {
-                                if (pos[i1] == 1) {
-                                    postwo = i1;
+                                if (pos[other] == 1) {
+                                    postwo = other;
                                 }
-                            } while (++i1 < ncars);
+                            } while (++other < ncars);
                             if (Utility.py(opx[0] / 100, opx[postwo] / 100, opz[0] / 100, opz[postwo] / 100) < 14000
                                     && clear[0] - clear[postwo] == 1) {
                                 catchfin = 30;
                             }
-                        } else if (pos[0] == 1 && Utility.py(opx[0] / 100, opx[j] / 100, opz[0] / 100, opz[j] / 100) < 14000
-                                && clear[j] - clear[0] == 1) {
+                        } else if (pos[0] == 1 && Utility.py(opx[0] / 100, opx[leader] / 100, opz[0] / 100, opz[leader] / 100) < 14000
+                                && clear[leader] - clear[0] == 1) {
                             catchfin = 30;
-                            postwo = j;
+                            postwo = leader;
                         }
                     }
-                } while (++j < ncars);
+                } while (++leader < ncars);
             }
         }
         wasted = 0;
-        int k = 1;
+        int opponent = 1;
         do {
-            if (amadness[k].dest) {
+            if (cars[opponent].dest) {
                 wasted++;
             }
-        } while (++k < ncars);
+        } while (++opponent < ncars);
         if (catchfin != 0) {
             catchfin--;
             if (catchfin == 0) {

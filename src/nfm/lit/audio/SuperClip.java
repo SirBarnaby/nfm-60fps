@@ -29,11 +29,11 @@ class SuperClip implements Runnable {
     /**
      * Instantiates a new super clip.
      *
-     * @param abyte0 the abyte0
-     * @param i      the i
-     * @param j      the j
+     * @param data       the sound, 16-bit mono PCM
+     * @param length     how many of its bytes to play
+     * @param sampleRate samples per second
      */
-    SuperClip(final byte abyte0[], final int i, final int j) {
+    SuperClip(final byte data[], final int length, final int sampleRate) {
         skiprate = 0;
         stoped = 1;
         source = null;
@@ -41,8 +41,8 @@ class SuperClip implements Runnable {
         rollBackTrig = 0;
         // changeGain = false;
         stoped = 2;
-        skiprate = j;
-        stream = new ByteArrayInputStream(abyte0, 0, i);
+        skiprate = sampleRate;
+        stream = new ByteArrayInputStream(data, 0, length);
     }
 
     /*
@@ -53,55 +53,55 @@ class SuperClip implements Runnable {
     @Override
     public void run() {
         try {
-            final AudioFormat audioformat = new AudioFormat(javax.sound.sampled.AudioFormat.Encoding.PCM_SIGNED,
+            final AudioFormat format = new AudioFormat(javax.sound.sampled.AudioFormat.Encoding.PCM_SIGNED,
                     skiprate, 16, 1, 2, skiprate, false);
             final javax.sound.sampled.DataLine.Info info = new javax.sound.sampled.DataLine.Info(SourceDataLine.class,
-                    audioformat);
+                    format);
             source = (SourceDataLine) AudioSystem.getLine(info);
-            source.open(audioformat);
+            source.open(format);
             source.start();
-        } catch (final Exception exception) {
+        } catch (final Exception ex) {
             stoped = 1;
         }
-        boolean flag = false;
+        boolean rewind = false;
         while (stoped == 0) {
             try {
-                final int i = skiprate;
-                int j = stream.available();
-                if (j % 2 != 0) {
-                    j++;
+                final int chunk = skiprate;
+                int left = stream.available();
+                if (left % 2 != 0) {
+                    left++;
                 }
-                byte abyte0[] = new byte[j <= i ? j : i];
-                final int l = stream.read(abyte0, 0, abyte0.length);
-                if (l == -1 || rollBackPos != 0 && j < rollBackTrig) {
-                    flag = true;
+                byte buffer[] = new byte[left <= chunk ? left : chunk];
+                final int read = stream.read(buffer, 0, buffer.length);
+                if (read == -1 || rollBackPos != 0 && left < rollBackTrig) {
+                    rewind = true;
                 }
-                if (flag) {
-                    if (l != -1) {
-                        source.write(abyte0, 0, abyte0.length);
+                if (rewind) {
+                    if (read != -1) {
+                        source.write(buffer, 0, buffer.length);
                     }
                     stream.reset();
                     if (rollBackPos != 0) {
                         stream.skip(rollBackPos);
                     }
-                    int k = stream.available();
-                    if (k % 2 != 0) {
-                        k++;
+                    int remaining = stream.available();
+                    if (remaining % 2 != 0) {
+                        remaining++;
                     }
-                    abyte0 = new byte[k <= i ? k : i];
-                    stream.read(abyte0, 0, abyte0.length);
-                    flag = false;
+                    buffer = new byte[remaining <= chunk ? remaining : chunk];
+                    stream.read(buffer, 0, buffer.length);
+                    rewind = false;
                 }
-                source.write(abyte0, 0, abyte0.length);
-            } catch (final Exception exception1) {
+                source.write(buffer, 0, buffer.length);
+            } catch (final Exception ex) {
                 if (GameSparker.DEBUG) {
-                    System.out.println("Play error: " + exception1);
+                    System.out.println("Play error: " + ex);
                 }
                 stoped = 1;
             }
             try {
                 Thread.sleep(200L);
-            } catch (final InterruptedException interruptedexception) {
+            } catch (final InterruptedException ex) {
             }
         }
         source.stop();
@@ -118,7 +118,7 @@ class SuperClip implements Runnable {
             stoped = 0;
             try {
                 stream.reset();
-            } catch (final Exception exception) {
+            } catch (final Exception ex) {
             }
             cliper = new Thread(this);
             cliper.start();
@@ -155,7 +155,7 @@ class SuperClip implements Runnable {
         try {
             stream.close();
             stream = null;
-        } catch (final Exception exception) {
+        } catch (final Exception ex) {
         }
     }
     // Removed unused code found by UCDetector

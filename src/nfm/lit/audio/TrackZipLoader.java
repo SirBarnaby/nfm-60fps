@@ -165,9 +165,9 @@ public final class TrackZipLoader {
 
     private static void downloadMusic(final String songname) throws IOException {
         // prepares download
-        String string = "http://multiplayer.needformadness.com/tracks/music/" + songname + ".zip";
-        string = string.replace(' ', '_');
-        final URL url = new URL(string);
+        String address = "http://multiplayer.needformadness.com/tracks/music/" + songname + ".zip";
+        address = address.replace(' ', '_');
+        final URL url = new URL(address);
         final int connLength = url.openConnection().getContentLength();
 
         final File themodfile = new File("data/music/temp_" + songname + ".zip");
@@ -176,13 +176,13 @@ public final class TrackZipLoader {
         }
 
         // writes to file
-        final DataInputStream datainputstream = new DataInputStream(url.openStream());
-        final byte[] is = new byte[connLength];
-        datainputstream.readFully(is);
-        datainputstream.close();
-        final FileOutputStream fileoutputstream = new FileOutputStream(themodfile);
-        fileoutputstream.write(is);
-        fileoutputstream.close();
+        final DataInputStream in = new DataInputStream(url.openStream());
+        final byte[] bytes = new byte[connLength];
+        in.readFully(bytes);
+        in.close();
+        final FileOutputStream out = new FileOutputStream(themodfile);
+        out.write(bytes);
+        out.close();
     }
 
     private static File extractzip(final ZipInputStream zis, final String zipmodulename)

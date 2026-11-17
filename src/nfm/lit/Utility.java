@@ -23,21 +23,21 @@ public class Utility {
      * Gets a value from a string in format:
      * string(value1,value2,value3...)
      *
-     * @param string The variable name (e.g: foo(bar) = foo)
+     * @param name   The variable name (e.g: foo(bar) = foo)
      * @param source The string (single line) to get the value from
-     * @param i      The position of the value (starting from 0)
+     * @param index  The position of the value (starting from 0)
      * @return An integer containing the value
      */
-    public static int getvalue(final String string, final String source, final int i) {
+    public static int getvalue(final String name, final String source, final int index) {
         int var = 0;
         String part = "";
-        for (int k = string.length() + 1; k < source.length(); k++) {
+        for (int k = name.length() + 1; k < source.length(); k++) {
             final String strChar = new StringBuilder().append("").append(source.charAt(k)).toString();
             if ((",").equals(strChar) || (")").equals(strChar)) {
                 var++;
                 k++;
             }
-            if (var == i) {
+            if (var == index) {
                 part = new StringBuilder().append(part).append(source.charAt(k)).toString();
             }
         }
@@ -45,31 +45,31 @@ public class Utility {
     }
 
     /**
-     * Turns a 3D XY coordinate into a 2D X perspective coordinate.
+     * Turns a 3D point into a 2D X perspective coordinate.
      *
-     * @param i The 3D X point
-     * @param j The 3D Y point
+     * @param x The 3D X point
+     * @param z The 3D Z point (its depth)
      * @return The 2D X coordinate.
      */
-    public static int xs(final int i, int j) {
-        if (j < Medium.cz) {
-            j = Medium.cz;
+    public static int xs(final int x, int z) {
+        if (z < Medium.cz) {
+            z = Medium.cz;
         }
-        return (j - Medium.focus_point) * (Medium.cx - i) / j + i;
+        return (z - Medium.focus_point) * (Medium.cx - x) / z + x;
     }
 
-    public static int cXs(final int i, int j) {
-        if (j < 50) {
-            j = 50;
+    public static int cXs(final int x, int z) {
+        if (z < 50) {
+            z = 50;
         }
-        return (j - Medium.focus_point) * (Medium.cx - i) / j + i;
+        return (z - Medium.focus_point) * (Medium.cx - x) / z + x;
     }
 
     /**
-     * Turns a 3D ZY coordinate into a 2D Y perspective coordinate.
+     * Turns a 3D point into a 2D Y perspective coordinate.
      *
-     * @param i The 3D Z point
-     * @param j The 3D Y point
+     * @param y The 3D Y point
+     * @param z The 3D Z point (its depth)
      * @param m There are two different ys() methods within NFM2, this integer is
      *          used to unify them while providing a way to distinguish between
      *          them.
@@ -77,7 +77,7 @@ public class Utility {
      *          1 is for using 10 (only found in Medium)
      * @return The 2D Y coordinate.
      */
-    public static int ys(final int i, int j, int m) {
+    public static int ys(final int y, int z, int m) {
         int value = 0;
         switch (m) {
             case 0:
@@ -89,38 +89,38 @@ public class Utility {
             default:
                 break;
         }
-        if (j < value) {
-            j = value;
+        if (z < value) {
+            z = value;
         }
-        return (j - Medium.focus_point) * (Medium.cy - i) / j + i;
+        return (z - Medium.focus_point) * (Medium.cy - y) / z + y;
     }
 
-    public static int cYs(final int i, int j) {
-        if (j < 50) {
-            j = 50;
+    public static int cYs(final int y, int z) {
+        if (z < 50) {
+            z = 50;
         }
-        return (j - Medium.focus_point) * (Medium.cy - i) / j + i;
+        return (z - Medium.focus_point) * (Medium.cy - y) / z + y;
     }
 
     /**
      * Gets an integer from a string in format:
      * string(int1,int2,int3...)
      *
-     * @param string The beginning of the string (e.g: foo(0,0,1) = foo)
+     * @param name   The beginning of the string (e.g: foo(0,0,1) = foo)
      * @param source The string (single line) to get the value from
-     * @param i      The position of the value (starting from 0)
+     * @param index  The position of the value (starting from 0)
      * @return An integer containing the value
      */
-    public static int getint(final String string, final String source, final int i) {
+    public static int getint(final String name, final String source, final int index) {
         int var = 0;
         String part = "";
-        for (int k = string.length() + 1; k < source.length(); k++) {
+        for (int k = name.length() + 1; k < source.length(); k++) {
             final String strChar = new StringBuilder().append("").append(source.charAt(k)).toString();
             if ((",").equals(strChar) || (")").equals(strChar)) {
                 var++;
                 k++;
             }
-            if (var == i) {
+            if (var == index) {
                 part = new StringBuilder().append(part).append(source.charAt(k)).toString();
             }
         }
@@ -130,46 +130,46 @@ public class Utility {
     /**
      * Gets a substring, nicely
      *
-     * @param string The beginning of the string (e.g: foo(0,0,1) = foo)
+     * @param name   The beginning of the string (e.g: foo(0,0,1) = foo)
      * @param source The string (single line) to get the value from
-     * @param i      The position of the string (starting from 0)
+     * @param index  The position of the string (starting from 0)
      * @return A string
      */
-    public static String getstring(final String string, final String source, final int i) {
+    public static String getstring(final String name, final String source, final int index) {
         int var = 0;
         String part = "";
-        for (int k = string.length() + 1; k < source.length(); k++) {
+        for (int k = name.length() + 1; k < source.length(); k++) {
             final String strChar = new StringBuilder().append("").append(source.charAt(k)).toString();
             if ((",").equals(strChar) || (")").equals(strChar)) {
                 var++;
                 k++;
             }
-            if (var == i) {
+            if (var == index) {
                 part = new StringBuilder().append(part).append(source.charAt(k)).toString();
             }
         }
         return part;
     }
 
-    public static BufferedImage webGet(String string) throws IOException {
-        HLogger.info("Loaded " + string);
-        return ImageIO.read(new URL(string));
+    public static BufferedImage webGet(String url) throws IOException {
+        HLogger.info("Loaded " + url);
+        return ImageIO.read(new URL(url));
     }
 
-    public static int spy(int i, int j) {
-        return (int) Math.sqrt((i - Medium.cx) * (i - Medium.cx) + j * j);
+    public static int spy(int x, int z) {
+        return (int) Math.sqrt((x - Medium.cx) * (x - Medium.cx) + z * z);
     }
 
-    public static float pys(int i, int j, int k, int l) {
-        return (float) Math.sqrt((i - j) * (i - j) + (k - l) * (k - l));
+    public static float pys(int x1, int x2, int z1, int z2) {
+        return (float) Math.sqrt((x1 - x2) * (x1 - x2) + (z1 - z2) * (z1 - z2));
     }
 
-    public static int rpy(float f, float f1, float f2, float f3, float f4, float f5) {
-        return (int) ((f - f1) * (f - f1) + (f2 - f3) * (f2 - f3) + (f4 - f5) * (f4 - f5));
+    public static int rpy(float x1, float x2, float y1, float y2, float z1, float z2) {
+        return (int) ((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2) + (z1 - z2) * (z1 - z2));
     }
 
-    public static int py(int i, int j, int k, int l) {
-        return (i - j) * (i - j) + (k - l) * (k - l);
+    public static int py(int x1, int x2, int z1, int z2) {
+        return (x1 - x2) * (x1 - x2) + (z1 - z2) * (z1 - z2);
     }
 
     /**
@@ -230,25 +230,25 @@ public class Utility {
         return (int) Math.sqrt(StrictMath.pow(x2 - x1, 2) + StrictMath.pow(y2 - y1, 2));
     }
 
-    public static void rot(float af[], float af1[], int i, int j, int k, int l) {
-        if (k != 0) {
-            for (int i1 = 0; i1 < l; i1++) {
-                float f = af[i1];
-                float f1 = af1[i1];
-                af[i1] = i + ((f - i) * RadicalMath.cos(k) - (f1 - j) * RadicalMath.sin(k));
-                af1[i1] = j + ((f - i) * RadicalMath.sin(k) + (f1 - j) * RadicalMath.cos(k));
+    public static void rot(float xs[], float ys[], int centerX, int centerY, int angle, int count) {
+        if (angle != 0) {
+            for (int point = 0; point < count; point++) {
+                float u = xs[point];
+                float v = ys[point];
+                xs[point] = centerX + ((u - centerX) * RadicalMath.cos(angle) - (v - centerY) * RadicalMath.sin(angle));
+                ys[point] = centerY + ((u - centerX) * RadicalMath.sin(angle) + (v - centerY) * RadicalMath.cos(angle));
             }
 
         }
     }
 
-    public static void rot(int ai[], int ai1[], int i, int j, int k, int l) {
-        if (k != 0) {
-            for (int i1 = 0; i1 < l; i1++) {
-                int j1 = ai[i1];
-                int k1 = ai1[i1];
-                ai[i1] = i + (int) ((j1 - i) * RadicalMath.cos(k) - (k1 - j) * RadicalMath.sin(k));
-                ai1[i1] = j + (int) ((j1 - i) * RadicalMath.sin(k) + (k1 - j) * RadicalMath.cos(k));
+    public static void rot(int xs[], int ys[], int centerX, int centerY, int angle, int count) {
+        if (angle != 0) {
+            for (int point = 0; point < count; point++) {
+                int u = xs[point];
+                int v = ys[point];
+                xs[point] = centerX + (int) ((u - centerX) * RadicalMath.cos(angle) - (v - centerY) * RadicalMath.sin(angle));
+                ys[point] = centerY + (int) ((u - centerX) * RadicalMath.sin(angle) + (v - centerY) * RadicalMath.cos(angle));
             }
 
         }
@@ -257,10 +257,10 @@ public class Utility {
     public static int[] rotSingle(int poly1, int poly2, final int center1, final int center2, final int angle,
             final float sin_ang, final float cos_ang) {
         if (angle != 0) {
-            final int j1 = poly1;
-            final int k1 = poly2;
-            poly1 = center1 + (int) ((j1 - center1) * cos_ang - (k1 - center2) * sin_ang);
-            poly2 = center2 + (int) ((j1 - center1) * sin_ang + (k1 - center2) * cos_ang);
+            final int u = poly1;
+            final int v = poly2;
+            poly1 = center1 + (int) ((u - center1) * cos_ang - (v - center2) * sin_ang);
+            poly2 = center2 + (int) ((u - center1) * sin_ang + (v - center2) * cos_ang);
         }
         return new int[] {
                 poly1, poly2
