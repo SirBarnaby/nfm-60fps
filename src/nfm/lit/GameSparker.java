@@ -337,6 +337,24 @@ public class GameSparker extends Panel implements Runnable {
     private static volatile boolean multisampleChanged;
     /** Samples per pixel the card last drew a race with: fewer than asked when it does no more. */
     private static volatile int multisampleInUse = 1;
+    private static final String DYNAMIC_RESOLUTION_COOKIE = "dynres";
+    public static final int DYNAMIC_RESOLUTION_DEFAULT = 50;
+    public static final int DYNAMIC_RESOLUTION_MIN = 25;
+    /**
+     * Dynamic resolution for races drawn on the graphics card: the lowest
+     * share of the window's size, in percent, the scene may be drawn at to
+     * hold the frame rate when the card cannot keep up; 0 for off.
+     */
+    private static volatile int dynamicResolution = DYNAMIC_RESOLUTION_DEFAULT;
+    private static volatile boolean dynamicResolutionChanged;
+    /** Picks the scale races are drawn at; used under {@link #presentLock}. */
+    private final nfm.lit.gpu.DynamicResolution resolution = new nfm.lit.gpu.DynamicResolution();
+    /** The share of the window's size the card last drew a race at. */
+    private static volatile float sceneScaleInUse = 1F;
+    /** How long the card took over the last frame, for the profile. */
+    private static volatile long gpuFrameNanos;
+    /** The time a frame may take, from the frame limit or the display; 0 for no limit. */
+    private static volatile long frameBudgetNanos;
     /** How long a closing window waits for the game thread to stop drawing into it. */
     private static final long WINDOW_RELEASE_WAIT_NANOS = 500_000_000L;
     /**
@@ -2414,11 +2432,13 @@ public class GameSparker extends Panel implements Runnable {
                         c[c.length - 1], h[h.length / 2], h[h.length * 9 / 10], h[h.length - 1]);
             }
             System.out.printf("[draw] own thread: %.1f fps (placing %.2f ms, showing %.2f ms; %d carried on past"
-                    + " the tick; corrections at new ticks: %s)%s; last scene %s, %d points, %d polygons kept%n",
+                    + " the tick; corrections at new ticks: %s)%s; last scene %s, %d points, %d polygons kept;"
+                    + " card %.2f ms a frame, races drawn at %d%%%n",
                     statFrames / seconds, statFrames == 0 ? 0D : statPlaceNanos / 1e6D / statFrames,
                     statFrames == 0 ? 0D : statShowNanos / 1e6D / statFrames, statCarried, corrections, pace,
                     gpu != null ? gpu.sceneStatistics() : "", shown == null ? 0 : shown.scene.points(),
-                    shown == null ? 0 : shown.scene.polygons());
+                    shown == null ? 0 : shown.scene.polygons(), gpuFrameNanos / 1e6D,
+                    Math.round(sceneScaleInUse * 100F));
             statCorrectionCount = 0;
             statFrames = 0;
             statPlaceNanos = 0L;
@@ -2838,8 +2858,10 @@ public class GameSparker extends Panel implements Runnable {
                 if (scene != null) {
                     picture = null; // show the scene drawn on the card
                     gpu.setMultisample(multisample);
-                    boolean drawn = gpu.drawScene(scene, hud, version, flash, capture, sceneTargetSize(place));
+                    float scale = dynamicResolution == 0 ? 1F : resolution.scale();
+                    boolean drawn = gpu.drawScene(scene, hud, version, flash, capture, sceneTargetSize(place), scale);
                     multisampleInUse = gpu.multisample();
+                    sceneScaleInUse = gpu.sceneScale();
                     if (!drawn) {
                         if (presenterFrame) {
                             return false;
@@ -2855,6 +2877,13 @@ public class GameSparker extends Panel implements Runnable {
                     shown = true;
                 } else {
                     shown = gpu.present(picture, size, place, smooth);
+                }
+                if (shown) {
+                    long gpuNanos = gpu.gpuFrameNanos();
+                    gpuFrameNanos = gpuNanos;
+                    if (picture == null) {
+                        resolution.update(gpuNanos, frameBudgetNanos, lowestSceneScale(place), System.nanoTime());
+                    }
                 }
             } catch (RuntimeException | LinkageError ex) {
                 HLogger.warn("The graphics card stopped drawing, drawing in software: " + ex);
@@ -2874,12 +2903,30 @@ public class GameSparker extends Panel implements Runnable {
      * window, so a large window shows it sharp rather than scaled up, or the
      * picture's own size when the window is smaller (lines thinner than a
      * pixel would break up) or {@code -Dnfm.gpuscene=picture} asks for it.
+     * Dynamic resolution draws in part of it when the card cannot keep up,
+     * but never below the picture's own size, the size the game always drew
+     * at.
      */
     private static Dimension sceneTargetSize(Rectangle place) {
         if (!GPU_SCENE_NATIVE || place.width < GameFacts.screenWidth || place.height < GameFacts.screenHeight) {
             return new Dimension(GameFacts.screenWidth, GameFacts.screenHeight);
         }
         return new Dimension(place.width, place.height);
+    }
+
+    /**
+     * The lowest scale dynamic resolution may draw a race at in a window
+     * showing it at {@code place}: the setting, but not below the picture's
+     * own size; 1 when it is off or the window is no larger than the picture.
+     */
+    private static float lowestSceneScale(Rectangle place) {
+        int lowest = dynamicResolution;
+        if (lowest == 0 || !GPU_SCENE_NATIVE) {
+            return 1F;
+        }
+        float picture = Math.max(GameFacts.screenWidth / (float) place.width,
+                GameFacts.screenHeight / (float) place.height);
+        return Math.max(lowest / 100F, picture);
     }
 
     /** Starts the GPU display on the window, or marks it unavailable for this session. */
@@ -3019,6 +3066,89 @@ public class GameSparker extends Panel implements Runnable {
             case "8" -> 8;
             default -> 0;
         };
+    }
+
+    /**
+     * Sets the lowest share of the window's size, in percent, dynamic
+     * resolution may draw races at (DYNAMIC_RESOLUTION_MIN to 100, or 0 for
+     * off), saved with the rest of the settings on the next tick.
+     *
+     * @return false if the value is out of range
+     */
+    public static boolean setDynamicResolution(int lowest) {
+        if (lowest != 0 && (lowest < DYNAMIC_RESOLUTION_MIN || lowest > 100)) {
+            return false;
+        }
+        dynamicResolution = lowest == 100 ? 0 : lowest; // never below the whole size is never scaling
+        dynamicResolutionChanged = true;
+        return true;
+    }
+
+    /** The dynamic resolution setting in words, with the scale races are drawn at now when it is on. */
+    public static String describeDynamicResolution() {
+        int lowest = dynamicResolution;
+        if (lowest == 0) {
+            return "off";
+        }
+        String words = "on, down to " + lowest + "% of the window";
+        if (!gpuRenderer) {
+            return words + " (only with the gpu renderer)";
+        }
+        return words + String.format(java.util.Locale.ROOT, "; races drawn at %d%% now",
+                Math.round(sceneScaleInUse * 100F));
+    }
+
+    /** The lowest percent for "on" (the default), "off", or a number; -1 if it is none of those. */
+    public static int parseDynamicResolution(String text) {
+        String t = text.trim().toLowerCase(java.util.Locale.ROOT);
+        if (t.endsWith("%")) {
+            t = t.substring(0, t.length() - 1);
+        }
+        switch (t) {
+            case "off":
+                return 0;
+            case "on":
+                return DYNAMIC_RESOLUTION_DEFAULT;
+            default:
+                try {
+                    int lowest = Integer.parseInt(t);
+                    return lowest == 0 || lowest >= DYNAMIC_RESOLUTION_MIN && lowest <= 100 ? lowest : -1;
+                } catch (NumberFormatException ex) {
+                    return -1;
+                }
+        }
+    }
+
+    /**
+     * -Dnfm.dynres, else off in hidden test runs (their pictures are compared
+     * pixel for pixel), else the saved choice, else on down to 50%.
+     */
+    private void loadDynamicResolution() {
+        String property = System.getProperty("nfm.dynres");
+        int lowest = DYNAMIC_RESOLUTION_DEFAULT;
+        if (property != null) {
+            lowest = parseDynamicResolution(property);
+            if (lowest < 0) {
+                HLogger.warn("Ignoring invalid nfm.dynres value: " + property);
+                lowest = runsHidden() ? 0 : DYNAMIC_RESOLUTION_DEFAULT;
+            }
+        } else if (runsHidden()) {
+            lowest = 0;
+        } else {
+            int saved = readcookie(DYNAMIC_RESOLUTION_COOKIE);
+            if (saved == 0 || saved >= DYNAMIC_RESOLUTION_MIN && saved <= 100) {
+                lowest = saved;
+            }
+        }
+        dynamicResolution = lowest == 100 ? 0 : lowest;
+        dynamicResolutionChanged = false;
+    }
+
+    private void saveDynamicResolutionIfChanged() {
+        if (dynamicResolutionChanged) {
+            dynamicResolutionChanged = false;
+            savecookie(DYNAMIC_RESOLUTION_COOKIE, String.valueOf(dynamicResolution));
+        }
     }
 
     private static final String GAMEPAD_COOKIE = "gamepad";
@@ -3240,7 +3370,9 @@ public class GameSparker extends Panel implements Runnable {
         if (capped) {
             limit = cap;
         }
-        return limit <= 0 ? 0L : 1_000_000_000L / limit;
+        long interval = limit <= 0 ? 0L : 1_000_000_000L / limit;
+        frameBudgetNanos = interval;
+        return interval;
     }
 
     /**
@@ -3786,6 +3918,7 @@ public class GameSparker extends Panel implements Runnable {
         loadScaleToWindow();
         loadRenderer();
         loadMultisample();
+        loadDynamicResolution();
         loadHdr();
         startAutoTest();
         session = RaceSession.fromCommandLine(new SessionHost());
@@ -3866,6 +3999,7 @@ public class GameSparker extends Panel implements Runnable {
                 saveScaleToWindowIfChanged();
                 saveRendererIfChanged();
                 saveMultisampleIfChanged();
+                saveDynamicResolutionIfChanged();
                 saveHdrIfChanged();
                 saveGamepadIfChanged();
                 if (session != null) {

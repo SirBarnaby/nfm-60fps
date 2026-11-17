@@ -410,6 +410,16 @@ public class DevTool {
                 }
                 break;
             }
+            case "dynres": {
+                int lowest = args.length == 1 ? GameSparker.parseDynamicResolution(args[0]) : -1;
+                if (lowest >= 0 && GameSparker.setDynamicResolution(lowest)) {
+                    print("Dynamic resolution " + GameSparker.describeDynamicResolution() + " (saved).");
+                } else {
+                    print("Dynamic resolution is " + GameSparker.describeDynamicResolution() + ".\nUsage: dynres <on|off|"
+                            + GameSparker.DYNAMIC_RESOLUTION_MIN + "-100>");
+                }
+                break;
+            }
             case "hdr": {
                 int mode = args.length == 1 ? GameSparker.parseHdr(args[0]) : -1;
                 if (mode == nfm.lit.gpu.GpuDisplay.HDR_OFF || mode == nfm.lit.gpu.GpuDisplay.HDR_AUTO) {
@@ -473,6 +483,7 @@ public class DevTool {
         commandDescriptions.put("hdr", "HDR output on a monitor that has HDR turned on in Windows: the game looks as it does in SDR, at the brightness Windows shows SDR white at, and flames, lamps, sparks, stars and lightning shine brighter than white. Needs the gpu renderer. Usage: hdr <auto|off>");
         commandDescriptions.put("gamepad", "Game controllers (Xbox, PlayStation, Switch and others): RT or A accelerates, LT or X brakes, the left stick or d-pad steers, B is the handbrake, LB/RB look back, Y changes the view, Start pauses; in menus the stick moves and A selects. Hard hits shake the pad. Usage: gamepad <on|off>, gamepad rumble <on|off>");
         commandDescriptions.put("msaa", "Smooths the edges of the polygons in races drawn on the graphics card by taking 2, 4 or 8 samples per pixel (multisampling); off keeps the game's own hard edges. Usage: msaa <off|2|4|8>");
+        commandDescriptions.put("dynres", "When the graphics card cannot draw a race at the window's full size in time for the next frame, draws it smaller (down to the given percent of the window, never below the game's own 1280x720) and scales it up smoothly; the HUD stays sharp. Steps down at once and back up slowly, so the picture does not pump. On by default, down to 50%. Usage: dynres <on|off|25-100>");
         commandDescriptions.put("renderer", "gpu puts frames on screen through the graphics card (Direct3D 11), which scales them for free; software draws them with Java2D. Usage: renderer <gpu|software>");
         commandDescriptions.put("runahead", "Shows race frames one tick ahead with the keys held now, for 53 ms less input lag. Usage: runahead <on|off>");
         commandDescriptions.put("fps", "Sets the frame rate limit. auto matches the monitor, unlimited removes the cap. On battery frames are held to 60 a second unless fps battery says otherwise. Usage: fps <auto|unlimited|30-1000>, fps battery <off|30-1000>");

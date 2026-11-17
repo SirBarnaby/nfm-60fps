@@ -12,6 +12,7 @@ import java.nio.ByteOrder;
 import java.nio.IntBuffer;
 import org.lwjgl.bgfx.BGFXInit;
 import org.lwjgl.bgfx.BGFXPlatform;
+import org.lwjgl.bgfx.BGFXStats;
 import org.lwjgl.bgfx.BGFXTransientVertexBuffer;
 import org.lwjgl.bgfx.BGFXVertexLayout;
 import org.lwjgl.system.MemoryUtil;
@@ -166,12 +167,20 @@ public final class GpuDisplay {
 
     /* the scene target, made on first use and remade when its size changes */
     private short sceneBuffer = BGFX_INVALID_HANDLE;
+    /* the scene target's size, and the part of it the last scene was drawn in (smaller with dynamic resolution) */
+    private int targetWidth;
+    private int targetHeight;
     private int sceneWidth;
     private int sceneHeight;
     private short sceneColor = BGFX_INVALID_HANDLE;
     /* samples per pixel asked for, and those the scene target has */
     private int wantedSamples = 1;
     private int samples = 1;
+    /* the most samples the card does up to wantedSamples, and the wantedSamples that was checked for */
+    private int supported = 1;
+    private int supportedFor = 1;
+    /** Pixels times samples of the smallest scene target the card could not make, so it is not tried again. */
+    private long failedSampleArea = Long.MAX_VALUE;
     private short hud = BGFX_INVALID_HANDLE;
     private IntBuffer hudUpload;
     private SceneGeometry geometry;
@@ -379,11 +388,16 @@ public final class GpuDisplay {
      *                moved, so how concave ones were cut into triangles can be checked rather than worked
      *                out again; -1 for a scene and HUD drawn anew
      * @param capture also read the drawn picture back, see {@link #takeSceneCapture}
+     * @param scale   with dynamic resolution, the share of {@code size} to draw the scene at, 1 for all of it;
+     *                never below the picture's own size. The target keeps its size, so changing the scale
+     *                costs nothing: only part of it is drawn in, and that part is shown filtered
      * @return false if it could not be drawn (the caller should fall back)
      */
     public boolean drawScene(SceneList scene, BufferedImage hudImage, long version, boolean flash,
-            boolean capture, Dimension size) {
+            boolean capture, Dimension size, float scale) {
         fitSceneTarget(Math.max(1, size.width), Math.max(1, size.height));
+        sceneWidth = Math.min(targetWidth, Math.max(pictureWidth, Math.round(targetWidth * scale)));
+        sceneHeight = Math.min(targetHeight, Math.max(pictureHeight, Math.round(targetHeight * scale)));
         if (hudImage != null && (version < 0L || version != uploadedHud)) {
             if (!uploadPicture(hudImage, hud, hudUpload)) {
                 return false;
@@ -408,7 +422,7 @@ public final class GpuDisplay {
         if (hudImage != null) {
             boolean scaled = sceneWidth != pictureWidth || sceneHeight != pictureHeight;
             drawRectangle(SCENE_VIEW, overlayProgram, hud, sceneWidth, sceneHeight,
-                    new Rectangle(0, 0, sceneWidth, sceneHeight), scaled, OPAQUE | HUD_BLEND);
+                    new Rectangle(0, 0, sceneWidth, sceneHeight), scaled, OPAQUE | HUD_BLEND, WHOLE);
         }
         if (flash) {
             fillWhite();
@@ -449,6 +463,24 @@ public final class GpuDisplay {
         buildNanos = 0L;
         builds = 0;
         return text;
+    }
+
+    /**
+     * How long the graphics card itself took over the last frame it finished,
+     * from its own clock, in nanoseconds; 0 if it cannot say. Time the card
+     * waits for the processor or the display is not in it.
+     */
+    public long gpuFrameNanos() {
+        BGFXStats stats = bgfx_get_stats();
+        if (stats == null) {
+            return 0L;
+        }
+        long frequency = stats.gpuTimerFreq();
+        long ticks = stats.gpuTimeEnd() - stats.gpuTimeBegin();
+        if (frequency <= 0L || ticks <= 0L) {
+            return 0L;
+        }
+        return (long) (ticks * (1e9D / frequency));
     }
 
     /** Which HUD the HUD texture holds, see {@link #drawScene}. */
@@ -497,25 +529,32 @@ public final class GpuDisplay {
     }
 
     private void fitSceneTarget(int newWidth, int newHeight) {
-        int newSamples = wantedSamples == samples ? samples : supportedSamples(wantedSamples);
-        if (isValid(sceneBuffer) && newWidth == sceneWidth && newHeight == sceneHeight && newSamples == samples) {
-
+        if (supportedFor != wantedSamples) {
+            supportedFor = wantedSamples;
+            supported = supportedSamples(wantedSamples);
+        }
+        int newSamples = supported;
+        while (newSamples > 1 && (long) newWidth * newHeight * newSamples >= failedSampleArea) {
+            newSamples /= 2; // as large as a target the card could not make
+        }
+        if (isValid(sceneBuffer) && newWidth == targetWidth && newHeight == targetHeight && newSamples == samples) {
             return;
         }
         if (isValid(sceneBuffer)) {
             bgfx_destroy_frame_buffer(sceneBuffer); // and its two textures
         }
-        sceneWidth = newWidth;
-        sceneHeight = newHeight;
-        samples = newSamples;
-        wantedSamples = newSamples;
-        // multisampled, the colour is resolved into a plain texture when the scene view is done
-        long msaa = msaaFlag(samples);
-        sceneColor = bgfx_create_texture_2d(sceneWidth, sceneHeight, false, 1, BGFX_TEXTURE_FORMAT_BGRA8,
-                BGFX_TEXTURE_RT | CLAMP | msaa, null, 0);
-        short stencil = bgfx_create_texture_2d(sceneWidth, sceneHeight, false, 1, BGFX_TEXTURE_FORMAT_D24S8,
-                BGFX_TEXTURE_RT_WRITE_ONLY | msaa, null, 0);
-        sceneBuffer = bgfx_create_frame_buffer_from_handles(new short[] {sceneColor, stencil}, true);
+        targetWidth = newWidth;
+        targetHeight = newHeight;
+        // a large multisampled target can be more than the card has room for: then fewer samples
+        for (samples = newSamples;; samples /= 2) {
+            sceneBuffer = createSceneBuffer(samples);
+            if (isValid(sceneBuffer) || samples == 1) {
+                break;
+            }
+            failedSampleArea = Math.min(failedSampleArea, (long) targetWidth * targetHeight * samples);
+            HLogger.warn("The graphics card cannot draw " + targetWidth + "x" + targetHeight + " with " + samples
+                    + " samples per pixel, trying " + (samples / 2));
+        }
         if (!isValid(hud)) {
             hud = bgfx_create_texture_2d(pictureWidth, pictureHeight, false, 1, BGFX_TEXTURE_FORMAT_BGRA8,
                     CLAMP, null, 0);
@@ -529,6 +568,30 @@ public final class GpuDisplay {
         bgfx_set_view_mode(SCENE_VIEW, BGFX_VIEW_MODE_SEQUENTIAL);
         // the scene paints every pixel, as it does in software; only the stencil starts empty
         bgfx_set_view_clear(SCENE_VIEW, BGFX_CLEAR_STENCIL, 0, 1F, 0);
+    }
+
+    /**
+     * Makes the scene target at the scene's size with {@code n} samples per
+     * pixel, its colour in {@link #sceneColor}; an invalid handle, with
+     * nothing left over, if the card cannot.
+     */
+    private short createSceneBuffer(int n) {
+        // multisampled, the colour is resolved into a plain texture when the scene view is done
+        long msaa = msaaFlag(n);
+        sceneColor = bgfx_create_texture_2d(targetWidth, targetHeight, false, 1, BGFX_TEXTURE_FORMAT_BGRA8,
+                BGFX_TEXTURE_RT | CLAMP | msaa, null, 0);
+        short stencil = bgfx_create_texture_2d(targetWidth, targetHeight, false, 1, BGFX_TEXTURE_FORMAT_D24S8,
+                BGFX_TEXTURE_RT_WRITE_ONLY | msaa, null, 0);
+        if (!isValid(sceneColor) || !isValid(stencil)) {
+            if (isValid(sceneColor)) {
+                bgfx_destroy_texture(sceneColor);
+            }
+            if (isValid(stencil)) {
+                bgfx_destroy_texture(stencil);
+            }
+            return BGFX_INVALID_HANDLE;
+        }
+        return bgfx_create_frame_buffer_from_handles(new short[] {sceneColor, stencil}, true);
     }
 
     private void submitScene() {
@@ -666,12 +729,39 @@ public final class GpuDisplay {
     /** Draws the frame into a view as it goes to the screen: as it is, or in HDR brightened by its glow. */
     private boolean drawFrame(int view, Rectangle place, boolean smooth, float glowBoost) {
         if (!hdr) {
-            return drawRectangle(view, pictureProgram, source, width, height, place, smooth, OPAQUE);
+            return drawRectangle(view, pictureProgram, source, width, height, place, smooth, OPAQUE, sourcePart());
         }
         hdrValues[0] = whiteScale();
         hdrValues[1] = glowBoost;
         bgfx_set_uniform(hdrUniform, hdrValues, 1);
-        return drawRectangle(view, hdrProgram, source, width, height, place, smooth, OPAQUE);
+        return drawRectangle(view, hdrProgram, source, width, height, place, smooth, OPAQUE, sourcePart());
+    }
+
+    /** Texture coordinates of all of a texture. */
+    private static final float[] WHOLE = {0F, 0F, 1F, 1F};
+
+    /**
+     * The texture coordinates of what is shown: all of a picture, or the part
+     * of the scene target the scene was drawn in. A part is taken from the
+     * centre of its first pixels to the centre of its last, so filtering
+     * never mixes in a pixel outside it, left over from a larger scene.
+     */
+    private float[] sourcePart() {
+        if (source != sceneColor || sceneWidth == targetWidth && sceneHeight == targetHeight) {
+            return WHOLE;
+        }
+        part[0] = 0.5F / targetWidth;
+        part[1] = 0.5F / targetHeight;
+        part[2] = (sceneWidth - 0.5F) / targetWidth;
+        part[3] = (sceneHeight - 0.5F) / targetHeight;
+        return part;
+    }
+
+    private final float[] part = new float[4];
+
+    /** The share of the scene target's width the last scene was drawn in, below 1 with dynamic resolution. */
+    public float sceneScale() {
+        return targetWidth == 0 ? 1F : sceneWidth / (float) targetWidth;
     }
 
     /** SDR white in scRGB, where 1.0 is 80 nits. */
@@ -739,9 +829,13 @@ public final class GpuDisplay {
         hdrStatus = describeHdr();
     }
 
-    /** Submits a textured rectangle at {@code place} to a view of {@code viewWidth} x {@code viewHeight}. */
+    /**
+     * Submits a textured rectangle at {@code place} to a view of
+     * {@code viewWidth} x {@code viewHeight}, showing the part {@code uv}
+     * (left, top, right, bottom texture coordinates) of the texture.
+     */
     private boolean drawRectangle(int view, short program, short texture, int viewWidth, int viewHeight,
-            Rectangle place, boolean smooth, long state) {
+            Rectangle place, boolean smooth, long state, float[] uv) {
         if (view != SCENE_VIEW) {
             bgfx_set_view_rect(view, 0, 0, viewWidth, viewHeight);
         }
@@ -756,10 +850,10 @@ public final class GpuDisplay {
             float right = 2F * (place.x + place.width) / viewWidth - 1F;
             float top = 1F - 2F * place.y / viewHeight;
             float bottom = 1F - 2F * (place.y + place.height) / viewHeight;
-            vertices.putFloat(left).putFloat(top).putFloat(0F).putFloat(0F);
-            vertices.putFloat(right).putFloat(top).putFloat(1F).putFloat(0F);
-            vertices.putFloat(left).putFloat(bottom).putFloat(0F).putFloat(1F);
-            vertices.putFloat(right).putFloat(bottom).putFloat(1F).putFloat(1F);
+            vertices.putFloat(left).putFloat(top).putFloat(uv[0]).putFloat(uv[1]);
+            vertices.putFloat(right).putFloat(top).putFloat(uv[2]).putFloat(uv[1]);
+            vertices.putFloat(left).putFloat(bottom).putFloat(uv[0]).putFloat(uv[3]);
+            vertices.putFloat(right).putFloat(bottom).putFloat(uv[2]).putFloat(uv[3]);
             bgfx_set_transient_vertex_buffer(0, quad, 0, 4);
         } finally {
             quad.free();
