@@ -1164,17 +1164,40 @@ public final class Sound3D implements Runnable {
             float target = i / 3 < cars && carTraced[i / 3] ? traced[i] : 1F;
             through[i] += (target - through[i]) * k;
         }
+        float[] paths = acoustics.paths();
+        for (int i = 0; i < MAX_CARS; i++) {
+            int at = SteamAcoustics.PATH_FLOATS * i;
+            boolean found = paths != null && i < cars && carTraced[i] && paths[at] > 0F;
+            float mid = found ? paths[at + 2] : 0F;
+            pathGain[i] += (mid - pathGain[i]) * k;
+            pathTreble[i] += ((found && mid > 0F ? Math.min(1F, paths[at + 3] / mid) : 0F) - pathTreble[i]) * k;
+            pathWeight[i] += ((found ? 1F : 0F) - pathWeight[i]) * k;
+            if (found) {
+                for (int axis = 0; axis < 3; axis++) {
+                    pathFrom[3 * i + axis] += (paths[at + 4 + axis] - pathFrom[3 * i + axis]) * k;
+                }
+            }
+        }
     }
 
     /*
      * Rays straight through a hill say nearly nothing gets through, but sound
-     * bends over a crest and around the ends of a wall (Steam Audio's pathing,
-     * which needs baked probes, would trace that). So a car fully behind
+     * bends over a crest and around the ends of a wall. A car fully behind
      * something is muffled, not cut: 9 dB quieter and losing most of its
-     * treble; foliage and glass, which let sound through, muffle less.
+     * treble; foliage and glass, which let sound through, muffle less. Where
+     * Steam Audio finds the way round (its paths between the stage's baked
+     * probes), the car is as loud and as bright as that path lets it be, if
+     * that is more, and is heard from where the path comes from: over the
+     * crest, round the end of the wall.
      */
     private static final float BLOCKED_GAIN = 0.35F;
     private static final float BLOCKED_TREBLE = 0.15F;
+    /* per car, eased like through: how much of it the path round brings (mid band), its treble relative to that,
+       how sure the path is (0 none to 1 found), and the direction it arrives from in the game's world */
+    private final float[] pathGain = new float[MAX_CARS];
+    private final float[] pathTreble = new float[MAX_CARS];
+    private final float[] pathWeight = new float[MAX_CARS];
+    private final float[] pathFrom = new float[3 * MAX_CARS];
 
     /** How much of a car the stage hides, 0 in the clear to 1 fully behind something. */
     private float hidden(int car) {
@@ -1183,13 +1206,39 @@ public final class Sound3D implements Runnable {
 
     /** A car's overall level as the stage lets it through. */
     private float throughGain(int car) {
-        return 1F - (1F - BLOCKED_GAIN) * hidden(car);
+        float blocked = car >= 0 && car < MAX_CARS ? Math.max(BLOCKED_GAIN, pathGain[car]) : BLOCKED_GAIN;
+        return 1F - (1F - blocked) * hidden(car);
     }
 
     /** A car's treble as the stage lets it through, relative to {@link #throughGain}. */
     private float throughTreble(int car) {
-        return 1F - (1F - BLOCKED_TREBLE) * hidden(car);
+        float blocked = car >= 0 && car < MAX_CARS ? Math.max(BLOCKED_TREBLE, pathTreble[car]) : BLOCKED_TREBLE;
+        return 1F - (1F - blocked) * hidden(car);
     }
+
+    /**
+     * Turns the way to a car, {@code d} (from the listener, in the game's
+     * world), toward the way its sound comes round the stage, as far as the
+     * car is hidden and a path was found; the distance stays.
+     */
+    private void bendTowardPath(int car, float[] d) {
+        float w = car >= 0 && car < MAX_CARS ? hidden(car) * pathWeight[car] : 0F;
+        float length = (float) Math.sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+        if (w < 0.01F || length < 1e-3F) {
+            return;
+        }
+        float bx = d[0] / length + (pathFrom[3 * car] - d[0] / length) * w;
+        float by = d[1] / length + (pathFrom[3 * car + 1] - d[1] / length) * w;
+        float bz = d[2] / length + (pathFrom[3 * car + 2] - d[2] / length) * w;
+        float b = (float) Math.sqrt(bx * bx + by * by + bz * bz);
+        if (b > 1e-3F) {
+            d[0] = bx / b * length;
+            d[1] = by / b * length;
+            d[2] = bz / b * length;
+        }
+    }
+
+    private final float[] toCar = new float[3];
 
     private void stopEverything() {
         if (context == 0L) {
@@ -1503,7 +1552,11 @@ public final class Sound3D implements Runnable {
                 vz = dz / seconds;
             }
         }
-        turn(c.x + vx * ahead - camX, c.y + vy * ahead - camY, c.z + vz * ahead - camZ, position);
+        toCar[0] = c.x + vx * ahead - camX;
+        toCar[1] = c.y + vy * ahead - camY;
+        toCar[2] = c.z + vz * ahead - camZ;
+        bendTowardPath(car, toCar);
+        turn(toCar[0], toCar[1], toCar[2], position);
         turn(vx, vy, vz, velocity);
         return true;
     }

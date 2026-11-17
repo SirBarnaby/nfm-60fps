@@ -3,6 +3,7 @@ package nfm.lit.audio;
 import static java.lang.foreign.ValueLayout.ADDRESS;
 import static java.lang.foreign.ValueLayout.JAVA_FLOAT;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
+import static java.lang.foreign.ValueLayout.JAVA_LONG;
 
 import fallk.logmaster.HLogger;
 import java.lang.foreign.Arena;
@@ -14,10 +15,27 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.StructLayout;
 import java.lang.foreign.SymbolLookup;
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.FileTime;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Comparator;
+import java.util.HexFormat;
+import java.util.List;
 import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.stream.Stream;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.GZIPOutputStream;
 
 /**
  * Sound against the shape of the track, worked out by Steam Audio (Valve,
@@ -33,6 +51,14 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * Audio's world has y up and is in metres; the game's has y down and is in
  * its own units, so points are turned half a turn about x (keeping the
  * world right-handed) and scaled.
+ * <p>
+ * Sound also bends over a crest and around the end of a wall. Steam Audio
+ * finds those paths between probes it places over the stage, a few metres
+ * above the ground: which probes see each other is baked once per stage, on
+ * this thread while the race starts, and kept in {@code cache\sound-paths}
+ * so a stage is baked only the first time; then every tenth of a second the
+ * shortest path from each car to the listener gives how much of the car gets
+ * round (by frequency) and the direction it arrives from.
  * <p>
  * Only the parts of the API this needs are bound; each structure's layout
  * is spelled out below as in {@code phonon.h} 4.8 and its size checked, so a
@@ -96,6 +122,31 @@ final class SteamAcoustics {
     private static final float DURATION = 2F;
     private static final long REFLECTIONS_EVERY_NANOS = 250_000_000L;
 
+    /*
+     * pathing: probes every 16 m, 2 m over the ground, which see each other within 60 m; paths up to 150 m.
+     * A 1 x 1.5 km stage has about 4,300 probes, bakes in 5 to 11 s on a quarter of the cores (so the race
+     * starting meanwhile keeps its frame rate) and keeps in 2 MB; at 12 m it took 17 s and 10 MB for little a
+     * driver would hear.
+     */
+    private static final int SIMULATE_PATHING = 4;
+    private static final int PROBES_UNIFORM_FLOOR = 1;
+    private static final int BAKED_PATHING = 1;
+    private static final int VARIATION_DYNAMIC = 3;
+    private static final float PROBE_SPACING = 16F;
+    private static final float PROBE_HEIGHT = 2F;
+    private static final float VIS_RADIUS = 1F;
+    private static final float VIS_THRESHOLD = 0.1F;
+    private static final float VIS_RANGE = 60F;
+    private static final float PATH_RANGE = 150F;
+    private static final int VIS_SAMPLES = 4;
+    private static final long PATHS_EVERY_NANOS = 100_000_000L;
+    /** Changes with anything that changes what is baked, so an old cache file is not used. */
+    private static final String PATHS_BAKED_WITH = "phonon 4.8 paths v1 16/2/1/0.1/60/150 4";
+    /** Where baked paths are kept, one gzipped file per stage named by a hash of its shape. */
+    static final Path PATH_CACHE = Path.of("cache", "sound-paths");
+    /** The most stages kept; the ones used longest ago go first. */
+    private static final int PATH_CACHE_STAGES = 100;
+
     /* ------------------------------------------------------- layouts */
 
     private static final MemoryLayout PAD4 = MemoryLayout.paddingLayout(4);
@@ -156,6 +207,23 @@ final class SteamAcoustics {
             PathElement.groupElement("transmission"));
     private static final long REVERB_TIMES = OUTPUTS.byteOffset(PathElement.groupElement("reflections"),
             PathElement.groupElement("reverbTimes"));
+    private static final long PATH_EQ = OUTPUTS.byteOffset(PathElement.groupElement("pathing"));
+    private static final long PATH_SH = PATH_EQ + 16;
+
+    private static final StructLayout SERIALIZED_SETTINGS = MemoryLayout.structLayout(
+            ADDRESS.withName("data"), JAVA_LONG.withName("size"));
+    private static final StructLayout PROBE_GENERATION = MemoryLayout.structLayout(
+            JAVA_INT.withName("type"), JAVA_FLOAT.withName("spacing"), JAVA_FLOAT.withName("height"),
+            MemoryLayout.sequenceLayout(16, JAVA_FLOAT).withName("transform"));
+    private static final StructLayout IDENTIFIER = MemoryLayout.structLayout(
+            JAVA_INT.withName("type"), JAVA_INT.withName("variation"), VEC3.withName("center"),
+            JAVA_FLOAT.withName("radius"));
+    private static final StructLayout PATH_BAKE = MemoryLayout.structLayout(
+            ADDRESS.withName("scene"), ADDRESS.withName("probeBatch"), IDENTIFIER.withName("identifier"),
+            JAVA_INT.withName("numSamples"), JAVA_FLOAT.withName("radius"), JAVA_FLOAT.withName("threshold"),
+            JAVA_FLOAT.withName("visRange"), JAVA_FLOAT.withName("pathRange"), JAVA_INT.withName("numThreads"));
+    private static final StructLayout DEVIATION = MemoryLayout.structLayout(
+            JAVA_INT.withName("type"), PAD4, ADDRESS.withName("callback"), ADDRESS.withName("userData"));
 
     private static long at(StructLayout layout, String field) {
         return layout.byteOffset(PathElement.groupElement(field));
@@ -179,6 +247,26 @@ final class SteamAcoustics {
     private final MethodHandle sourceRelease;
     private final MethodHandle sourceSetInputs;
     private final MethodHandle sourceGetOutputs;
+    private final MethodHandle probeArrayCreate;
+    private final MethodHandle probeArrayRelease;
+    private final MethodHandle probeArrayGenerate;
+    private final MethodHandle probeBatchCreate;
+    private final MethodHandle probeBatchRelease;
+    private final MethodHandle probeBatchAddArray;
+    private final MethodHandle probeBatchCommit;
+    private final MethodHandle probeBatchSave;
+    private final MethodHandle probeBatchLoad;
+    private final MethodHandle probeBatchCount;
+    private final MethodHandle serializedCreate;
+    private final MethodHandle serializedRelease;
+    private final MethodHandle serializedSize;
+    private final MethodHandle serializedData;
+    private final MethodHandle pathBake;
+    /* the path baker calls its progress callback without checking it is there */
+    private final MemorySegment bakeProgress;
+    private final MethodHandle simulatorAddProbes;
+    private final MethodHandle simulatorRemoveProbes;
+    private final MethodHandle simulatorRunPathing;
 
     private final Arena arena = Arena.ofShared();
     private MemorySegment context = MemorySegment.NULL;
@@ -189,6 +277,11 @@ final class SteamAcoustics {
     private final MemorySegment[] probeSources = new MemorySegment[PROBES.length];
     private volatile float enclosure;
     private MemorySegment roomSource = MemorySegment.NULL;
+    /* the stage's baked probes, in the simulator while pathsReady; written under the write lock */
+    private MemorySegment probeBatch = MemorySegment.NULL;
+    private volatile boolean pathsReady;
+    private volatile String pathsDescribed = "";
+    private volatile long pathNanos;
 
     /* writing the scene excludes simulating it; the two simulations may run together */
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
@@ -206,6 +299,16 @@ final class SteamAcoustics {
     private final MemorySegment roomInputs;
     private final MemorySegment roomShared;
     private final MemorySegment roomOutputs;
+    private final MemorySegment pathInputs;
+    private final MemorySegment pathShared;
+    private final MemorySegment pathOutputs;
+    /* the cars as the sound thread last traced them, for the paths; guarded by pathCars */
+    private final float[] pathCars;
+    private final boolean[] pathActive;
+    private int pathCount;
+    /** Per car: 1 if a path was found, its three bands, and the direction it arrives from in the game's world. */
+    private volatile float[] paths;
+    static final int PATH_FLOATS = 7;
 
     /** The listener as Steam Audio has it: right, up, ahead, origin; written by the sound thread. */
     private final float[] listener = new float[12];
@@ -253,6 +356,28 @@ final class SteamAcoustics {
         MethodHandle sourceAdd = handle(linker, lib, "iplSourceAdd", twoHandles);
         sourceSetInputs = handle(linker, lib, "iplSourceSetInputs", flagged);
         sourceGetOutputs = handle(linker, lib, "iplSourceGetOutputs", flagged);
+        probeArrayCreate = handle(linker, lib, "iplProbeArrayCreate", FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS));
+        probeArrayRelease = handle(linker, lib, "iplProbeArrayRelease", oneHandle);
+        probeArrayGenerate = handle(linker, lib, "iplProbeArrayGenerateProbes",
+                FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, ADDRESS));
+        probeBatchCreate = handle(linker, lib, "iplProbeBatchCreate", FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS));
+        probeBatchRelease = handle(linker, lib, "iplProbeBatchRelease", oneHandle);
+        probeBatchAddArray = handle(linker, lib, "iplProbeBatchAddProbeArray", twoHandles);
+        probeBatchCommit = handle(linker, lib, "iplProbeBatchCommit", oneHandle);
+        probeBatchSave = handle(linker, lib, "iplProbeBatchSave", twoHandles);
+        probeBatchLoad = handle(linker, lib, "iplProbeBatchLoad", create);
+        probeBatchCount = handle(linker, lib, "iplProbeBatchGetNumProbes", FunctionDescriptor.of(JAVA_INT, ADDRESS));
+        serializedCreate = handle(linker, lib, "iplSerializedObjectCreate", create);
+        serializedRelease = handle(linker, lib, "iplSerializedObjectRelease", oneHandle);
+        serializedSize = handle(linker, lib, "iplSerializedObjectGetSize", FunctionDescriptor.of(JAVA_LONG, ADDRESS));
+        serializedData = handle(linker, lib, "iplSerializedObjectGetData", FunctionDescriptor.of(ADDRESS, ADDRESS));
+        pathBake = handle(linker, lib, "iplPathBakerBake", FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, ADDRESS, ADDRESS));
+        bakeProgress = linker.upcallStub(MethodHandles.lookup().findStatic(SteamAcoustics.class, "bakeProgress",
+                MethodType.methodType(void.class, float.class, MemorySegment.class)),
+                FunctionDescriptor.ofVoid(JAVA_FLOAT, ADDRESS), arena);
+        simulatorAddProbes = handle(linker, lib, "iplSimulatorAddProbeBatch", twoHandles);
+        simulatorRemoveProbes = handle(linker, lib, "iplSimulatorRemoveProbeBatch", twoHandles);
+        simulatorRunPathing = handle(linker, lib, "iplSimulatorRunPathing", oneHandle);
 
         MemorySegment out = arena.allocate(ADDRESS);
         MemorySegment settings = arena.allocate(CONTEXT_SETTINGS);
@@ -262,18 +387,21 @@ final class SteamAcoustics {
         context = out.get(ADDRESS, 0);
 
         MemorySegment sim = arena.allocate(SIMULATION_SETTINGS);
-        sim.set(JAVA_INT, at(SIMULATION_SETTINGS, "flags"), SIMULATE_DIRECT | SIMULATE_REFLECTIONS);
+        // in step, no paths: they are found by rays drawn at random, like the reflections
+        sim.set(JAVA_INT, at(SIMULATION_SETTINGS, "flags"),
+                SIMULATE_DIRECT | SIMULATE_REFLECTIONS | (inStep ? 0 : SIMULATE_PATHING));
         sim.set(JAVA_INT, at(SIMULATION_SETTINGS, "sceneType"), SCENE_DEFAULT);
         sim.set(JAVA_INT, at(SIMULATION_SETTINGS, "reflectionType"), REFLECTIONS_PARAMETRIC);
         sim.set(JAVA_INT, at(SIMULATION_SETTINGS, "maxNumOcclusionSamples"), OCCLUSION_SAMPLES);
         sim.set(JAVA_INT, at(SIMULATION_SETTINGS, "maxNumRays"), RAYS);
         sim.set(JAVA_INT, at(SIMULATION_SETTINGS, "numDiffuseSamples"), 32);
         sim.set(JAVA_FLOAT, at(SIMULATION_SETTINGS, "maxDuration"), DURATION);
-        sim.set(JAVA_INT, at(SIMULATION_SETTINGS, "maxOrder"), 0);
+        sim.set(JAVA_INT, at(SIMULATION_SETTINGS, "maxOrder"), inStep ? 0 : 1); // paths come with a first-order direction
         sim.set(JAVA_INT, at(SIMULATION_SETTINGS, "maxNumSources"), cars + PROBES.length + 1);
         sim.set(JAVA_INT, at(SIMULATION_SETTINGS, "numThreads"), inStep ? 1 : Math.max(1,
                 Math.min(2, Runtime.getRuntime().availableProcessors() / 4)));
         sim.set(JAVA_INT, at(SIMULATION_SETTINGS, "rayBatchSize"), 1);
+        sim.set(JAVA_INT, at(SIMULATION_SETTINGS, "numVisSamples"), VIS_SAMPLES);
         sim.set(JAVA_INT, at(SIMULATION_SETTINGS, "samplingRate"), 48_000);
         sim.set(JAVA_INT, at(SIMULATION_SETTINGS, "frameSize"), 1024);
         check((int) simulatorCreate.invokeExact(context, sim, out), "iplSimulatorCreate");
@@ -281,12 +409,13 @@ final class SteamAcoustics {
 
         MemorySegment sourceSettings = arena.allocate(JAVA_INT);
         carSources = new MemorySegment[cars];
-        sourceSettings.set(JAVA_INT, 0, SIMULATE_DIRECT);
+        sourceSettings.set(JAVA_INT, 0, SIMULATE_DIRECT | (inStep ? 0 : SIMULATE_PATHING));
         for (int i = 0; i < cars; i++) {
             check((int) sourceCreate.invokeExact(simulator, sourceSettings, out), "iplSourceCreate");
             carSources[i] = out.get(ADDRESS, 0);
             sourceAdd.invokeExact(carSources[i], simulator);
         }
+        sourceSettings.set(JAVA_INT, 0, SIMULATE_DIRECT);
         for (int i = 0; i < PROBES.length; i++) {
             check((int) sourceCreate.invokeExact(simulator, sourceSettings, out), "iplSourceCreate");
             probeSources[i] = out.get(ADDRESS, 0);
@@ -306,6 +435,26 @@ final class SteamAcoustics {
         roomInputs = inputs(SIMULATE_REFLECTIONS, 0);
         roomShared = arena.allocate(SHARED_INPUTS);
         roomOutputs = arena.allocate(OUTPUTS);
+        pathInputs = inputs(SIMULATE_PATHING, 0);
+        identityAxes(pathInputs);
+        long id = at(INPUTS, "bakedDataIdentifier");
+        pathInputs.set(JAVA_INT, id, BAKED_PATHING);
+        pathInputs.set(JAVA_INT, id + 4, VARIATION_DYNAMIC);
+        pathInputs.set(JAVA_FLOAT, at(INPUTS, "visRadius"), VIS_RADIUS);
+        pathInputs.set(JAVA_FLOAT, at(INPUTS, "visThreshold"), VIS_THRESHOLD);
+        pathInputs.set(JAVA_FLOAT, at(INPUTS, "visRange"), VIS_RANGE);
+        pathInputs.set(JAVA_INT, at(INPUTS, "pathingOrder"), 1);
+        // the stage does not move, so the baked visibility holds and the paths need no checking again
+        // (and Steam Audio 4.8 crashes checking them)
+        pathInputs.set(JAVA_INT, at(INPUTS, "enableValidation"), 0);
+        pathInputs.set(JAVA_INT, at(INPUTS, "findAlternatePaths"), 0);
+        MemorySegment deviation = arena.allocate(DEVIATION); // the default: Uniform Theory of Diffraction
+        pathInputs.set(ADDRESS, at(INPUTS, "deviationModel"), deviation);
+        pathShared = arena.allocate(SHARED_INPUTS);
+        pathOutputs = arena.allocate(OUTPUTS);
+        pathCars = new float[3 * cars];
+        pathActive = new boolean[cars];
+        paths = new float[PATH_FLOATS * cars];
         for (MemorySegment shared : new MemorySegment[] {directShared, roomShared}) {
             shared.set(JAVA_INT, at(SHARED_INPUTS, "numRays"), RAYS);
             shared.set(JAVA_INT, at(SHARED_INPUTS, "numBounces"), BOUNCES);
@@ -360,7 +509,9 @@ final class SteamAcoustics {
         try {
             if (CONTEXT_SETTINGS.byteSize() != 40 || SCENE_SETTINGS.byteSize() != 64
                     || MESH_SETTINGS.byteSize() != 48 || SIMULATION_SETTINGS.byteSize() != 80
-                    || INPUTS.byteSize() != 264 || SHARED_INPUTS.byteSize() != 88 || OUTPUTS.byteSize() != 216) {
+                    || INPUTS.byteSize() != 264 || SHARED_INPUTS.byteSize() != 88 || OUTPUTS.byteSize() != 216
+                || PROBE_GENERATION.byteSize() != 76 || PATH_BAKE.byteSize() != 64 || IDENTIFIER.byteSize() != 24
+                || SERIALIZED_SETTINGS.byteSize() != 16) {
                 throw new IllegalStateException("structure sizes do not match phonon.h 4.8");
             }
             return new SteamAcoustics(SymbolLookup.libraryLookup(dll, Arena.global()), cars, inStep);
@@ -381,7 +532,19 @@ final class SteamAcoustics {
     }
 
     String describe() {
-        return described + String.format(", reflections %.1f ms, occlusion %.2f ms", roomNanos / 1e6, directNanos / 1e6);
+        return described + pathsDescribed + String.format(", reflections %.1f ms, occlusion %.2f ms, paths %.2f ms",
+                roomNanos / 1e6, directNanos / 1e6, pathNanos / 1e6);
+    }
+
+    /**
+     * The paths from the cars to the listener, {@link #PATH_FLOATS} per car:
+     * 1 if one was found (else 0 and the rest is to be ignored), how much of
+     * the car gets round by band (low, mid, high), and the direction the
+     * sound arrives from, a unit vector in the game's world. Null when there
+     * are no paths (no probes yet, or in step).
+     */
+    float[] paths() {
+        return pathsReady ? paths : null;
     }
 
     private volatile long roomNanos;
@@ -449,6 +612,11 @@ final class SteamAcoustics {
                 sourceSetInputs.invokeExact(carSources[i], SIMULATE_DIRECT, directInputs);
             }
             setProbes(origin);
+            synchronized (pathCars) {
+                System.arraycopy(cars, 0, pathCars, 0, 3 * n);
+                System.arraycopy(active, 0, pathActive, 0, n);
+                pathCount = n;
+            }
             simulatorSetShared.invokeExact(simulator, SIMULATE_DIRECT, directShared);
             simulatorRunDirect.invokeExact(simulator);
             float closed = 0F;
@@ -532,11 +700,15 @@ final class SteamAcoustics {
 
     private void work() {
         long nextRoom = 0L;
+        long nextPaths = 0L;
         while (running) {
             Stage stage = pendingStage;
             if (stage != null) {
                 pendingStage = null;
                 build(stage);
+                if (ready && pendingStage == null) {
+                    preparePaths(stage);
+                }
                 nextRoom = 0L;
             }
             long now = System.nanoTime();
@@ -544,7 +716,12 @@ final class SteamAcoustics {
                 room();
                 nextRoom = now + REFLECTIONS_EVERY_NANOS;
             }
-            LockSupport.parkNanos(this, Math.max(1_000_000L, nextRoom - System.nanoTime()));
+            if (pathsReady && listenerKnown && now >= nextPaths) {
+                findPaths();
+                nextPaths = now + PATHS_EVERY_NANOS;
+            }
+            long next = pathsReady ? Math.min(nextRoom, nextPaths) : nextRoom;
+            LockSupport.parkNanos(this, Math.max(1_000_000L, next - System.nanoTime()));
         }
         releaseAll();
     }
@@ -553,6 +730,7 @@ final class SteamAcoustics {
         lock.writeLock().lock();
         try {
             ready = false;
+            dropPaths();
             releaseScene();
             for (MemorySegment s : carSources) {
                 release(sourceRelease, s);
@@ -613,6 +791,7 @@ final class SteamAcoustics {
 
             lock.writeLock().lock();
             try {
+                dropPaths();
                 releaseScene();
                 scene = newScene;
                 mesh = newMesh;
@@ -658,6 +837,319 @@ final class SteamAcoustics {
         } finally {
             lock.readLock().unlock();
         }
+    }
+
+    /* ------------------------------------------------------- pathing */
+
+    /** Takes the probes out of the simulator and lets go of them; under the write lock. */
+    private void dropPaths() {
+        pathsReady = false;
+        pathsDescribed = "";
+        if (probeBatch.equals(MemorySegment.NULL)) {
+            return;
+        }
+        try {
+            simulatorRemoveProbes.invokeExact(probeBatch, simulator);
+            simulatorCommit.invokeExact(simulator);
+        } catch (Throwable ex) {
+            HLogger.warn("3D sound: Steam Audio could not take the sound paths out: " + ex);
+        }
+        release(probeBatchRelease, probeBatch);
+        probeBatch = MemorySegment.NULL;
+    }
+
+    /**
+     * Gives the simulator the stage's probes, with the paths between them:
+     * from the cache when this stage was baked before, else baked now and
+     * kept. On the acoustics thread, after {@link #build}.
+     */
+    private void preparePaths(Stage stage) {
+        long started = System.nanoTime();
+        String key = cacheKey(stage);
+        Path file = PATH_CACHE.resolve(key + ".probes.gz");
+        try (Arena a = Arena.ofConfined()) {
+            MemorySegment batch = MemorySegment.NULL;
+            boolean cached = false;
+            if (Files.isRegularFile(file)) {
+                batch = loadProbes(a, readKept(file));
+                cached = !batch.equals(MemorySegment.NULL);
+            }
+            if (!cached) {
+                batch = bakeProbes(a, stage);
+                if (pendingStage != null) { // another stage is wanted: this one is no use now
+                    release(probeBatchRelease, batch);
+                    return;
+                }
+                saveProbes(a, batch, file);
+            }
+            int probes = (int) probeBatchCount.invokeExact(batch);
+            lock.writeLock().lock();
+            try {
+                if (pendingStage != null || !ready) {
+                    release(probeBatchRelease, batch);
+                    return;
+                }
+                probeBatch = batch;
+                simulatorAddProbes.invokeExact(probeBatch, simulator);
+                simulatorCommit.invokeExact(simulator);
+                pathInputs.set(ADDRESS, at(INPUTS, "pathingProbes"), probeBatch);
+                pathsReady = probes > 0;
+            } finally {
+                lock.writeLock().unlock();
+            }
+            pathsDescribed = String.format(", %d path probes %s in %.1f s", probes, cached ? "loaded" : "baked",
+                    (System.nanoTime() - started) / 1e9);
+            HLogger.info("3D sound: " + probes + " probes for sound paths " + (cached ? "loaded from " + file
+                    : "baked and kept in " + file) + String.format(" in %.1f s", (System.nanoTime() - started) / 1e9));
+        } catch (Throwable ex) {
+            HLogger.warn("3D sound: no sound paths for this stage, cars behind hills are only muffled: " + ex);
+            pathsDescribed = ", no paths";
+        }
+    }
+
+    /** Places probes over the stage's ground and bakes which of them see each other. */
+    private MemorySegment bakeProbes(Arena a, Stage stage) throws Throwable {
+        MemorySegment out = a.allocate(ADDRESS);
+        check((int) probeArrayCreate.invokeExact(context, out), "iplProbeArrayCreate");
+        MemorySegment array = out.get(ADDRESS, 0);
+        try {
+            MemorySegment params = a.allocate(PROBE_GENERATION);
+            params.set(JAVA_INT, at(PROBE_GENERATION, "type"), PROBES_UNIFORM_FLOOR);
+            params.set(JAVA_FLOAT, at(PROBE_GENERATION, "spacing"), PROBE_SPACING);
+            params.set(JAVA_FLOAT, at(PROBE_GENERATION, "height"), PROBE_HEIGHT);
+            float[] box = bounds(stage);
+            // row-major: the unit cube scaled to the stage's box and moved to its lowest corner
+            long m = at(PROBE_GENERATION, "transform");
+            for (int axis = 0; axis < 3; axis++) {
+                params.set(JAVA_FLOAT, m + 4L * (5 * axis), box[3 + axis] - box[axis]);
+                params.set(JAVA_FLOAT, m + 4L * (12 + axis), box[axis]);
+            }
+            params.set(JAVA_FLOAT, m + 4L * 15, 1F);
+            probeArrayGenerate.invokeExact(array, scene, params);
+            check((int) probeBatchCreate.invokeExact(context, out), "iplProbeBatchCreate");
+            MemorySegment batch = out.get(ADDRESS, 0);
+            probeBatchAddArray.invokeExact(batch, array);
+            probeBatchCommit.invokeExact(batch);
+            MemorySegment bake = a.allocate(PATH_BAKE);
+            bake.set(ADDRESS, at(PATH_BAKE, "scene"), scene);
+            bake.set(ADDRESS, at(PATH_BAKE, "probeBatch"), batch);
+            long id = at(PATH_BAKE, "identifier");
+            bake.set(JAVA_INT, id, BAKED_PATHING);
+            bake.set(JAVA_INT, id + 4, VARIATION_DYNAMIC);
+            bake.set(JAVA_INT, at(PATH_BAKE, "numSamples"), VIS_SAMPLES);
+            bake.set(JAVA_FLOAT, at(PATH_BAKE, "radius"), VIS_RADIUS);
+            bake.set(JAVA_FLOAT, at(PATH_BAKE, "threshold"), VIS_THRESHOLD);
+            bake.set(JAVA_FLOAT, at(PATH_BAKE, "visRange"), VIS_RANGE);
+            bake.set(JAVA_FLOAT, at(PATH_BAKE, "pathRange"), PATH_RANGE);
+            bake.set(JAVA_INT, at(PATH_BAKE, "numThreads"),
+                    Math.max(1, Runtime.getRuntime().availableProcessors() / 4));
+            pathBake.invokeExact(context, bake, bakeProgress, MemorySegment.NULL);
+            probeBatchCommit.invokeExact(batch);
+            return batch;
+        } finally {
+            release(probeArrayRelease, array);
+        }
+    }
+
+    private static void bakeProgress(float progress, MemorySegment userData) {
+        // nothing to show: the bake runs while the race starts
+    }
+
+    /** The stage's box in Steam Audio's world: lowest x, y, z, then highest, a little above its top. */
+    private static float[] bounds(Stage stage) {
+        float[] box = {Float.MAX_VALUE, Float.MAX_VALUE, Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE,
+                -Float.MAX_VALUE};
+        float[] v = stage.vertices();
+        for (int i = 0; i + 2 < v.length; i += 3) {
+            float[] p = {v[i] / UNITS_PER_METRE, -v[i + 1] / UNITS_PER_METRE, -v[i + 2] / UNITS_PER_METRE};
+            for (int axis = 0; axis < 3; axis++) {
+                box[axis] = Math.min(box[axis], p[axis]);
+                box[3 + axis] = Math.max(box[3 + axis], p[axis]);
+            }
+        }
+        box[4] += PROBE_HEIGHT * 4F;
+        return box;
+    }
+
+    private MemorySegment loadProbes(Arena a, byte[] bytes) {
+        try {
+            MemorySegment data = a.allocateFrom(java.lang.foreign.ValueLayout.JAVA_BYTE, bytes);
+            MemorySegment settings = a.allocate(SERIALIZED_SETTINGS);
+            settings.set(ADDRESS, at(SERIALIZED_SETTINGS, "data"), data);
+            settings.set(JAVA_LONG, at(SERIALIZED_SETTINGS, "size"), bytes.length);
+            MemorySegment out = a.allocate(ADDRESS);
+            check((int) serializedCreate.invokeExact(context, settings, out), "iplSerializedObjectCreate");
+            MemorySegment serialized = out.get(ADDRESS, 0);
+            try {
+                check((int) probeBatchLoad.invokeExact(context, serialized, out), "iplProbeBatchLoad");
+                MemorySegment batch = out.get(ADDRESS, 0);
+                probeBatchCommit.invokeExact(batch);
+                return batch;
+            } finally {
+                release(serializedRelease, serialized);
+            }
+        } catch (Throwable ex) {
+            HLogger.warn("3D sound: the kept sound paths could not be read, baking them again: " + ex);
+            return MemorySegment.NULL;
+        }
+    }
+
+    private void saveProbes(Arena a, MemorySegment batch, Path file) {
+        try {
+            MemorySegment settings = a.allocate(SERIALIZED_SETTINGS);
+            MemorySegment out = a.allocate(ADDRESS);
+            check((int) serializedCreate.invokeExact(context, settings, out), "iplSerializedObjectCreate");
+            MemorySegment serialized = out.get(ADDRESS, 0);
+            try {
+                probeBatchSave.invokeExact(batch, serialized);
+                long size = (long) serializedSize.invokeExact(serialized);
+                MemorySegment data = ((MemorySegment) serializedData.invokeExact(serialized)).reinterpret(size);
+                Files.createDirectories(file.getParent());
+                Path part = file.resolveSibling(file.getFileName() + ".part");
+                try (OutputStream zipped = new GZIPOutputStream(Files.newOutputStream(part), 1 << 16)) {
+                    zipped.write(data.toArray(java.lang.foreign.ValueLayout.JAVA_BYTE));
+                }
+                Files.move(part, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                forgetOldStages();
+            } finally {
+                release(serializedRelease, serialized);
+            }
+        } catch (Throwable ex) {
+            HLogger.warn("3D sound: the sound paths could not be kept, they are baked again next time: " + ex);
+        }
+    }
+
+    /** A kept stage's paths, unzipped; marks it as just used, so it is the last to be forgotten. */
+    private static byte[] readKept(Path file) throws IOException {
+        try (InputStream in = new GZIPInputStream(Files.newInputStream(file), 1 << 16)) {
+            byte[] bytes = in.readAllBytes();
+            Files.setLastModifiedTime(file, FileTime.fromMillis(System.currentTimeMillis()));
+            return bytes;
+        }
+    }
+
+    /** Keeps the cache to {@link #PATH_CACHE_STAGES} stages, forgetting those used longest ago. */
+    private static void forgetOldStages() {
+        try (Stream<Path> files = Files.list(PATH_CACHE)) {
+            List<Path> kept = files.filter(p -> p.getFileName().toString().endsWith(".probes.gz"))
+                    .sorted(Comparator.comparing((Path p) -> {
+                        try {
+                            return Files.getLastModifiedTime(p);
+                        } catch (IOException ex) {
+                            return FileTime.fromMillis(0L);
+                        }
+                    }).reversed())
+                    .toList();
+            for (Path old : kept.subList(Math.min(kept.size(), PATH_CACHE_STAGES), kept.size())) {
+                Files.deleteIfExists(old);
+            }
+        } catch (IOException ex) {
+            HLogger.warn("3D sound: could not tidy " + PATH_CACHE + ": " + ex);
+        }
+    }
+
+    /** SHA-256 of the stage's shape and what the bake depends on, in hex. */
+    static String cacheKey(Stage stage) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            digest.update(PATHS_BAKED_WITH.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            ByteBuffer b = ByteBuffer.allocate(4 * (stage.vertices().length + stage.triangles().length))
+                    .order(ByteOrder.LITTLE_ENDIAN);
+            for (float f : stage.vertices()) {
+                b.putFloat(f);
+            }
+            for (int t : stage.triangles()) {
+                b.putInt(t);
+            }
+            digest.update(b.array());
+            digest.update(stage.kinds());
+            return HexFormat.of().formatHex(digest.digest(), 0, 16);
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException(ex);
+        }
+    }
+
+    /** Finds the path from each car to the listener; on the acoustics thread. */
+    private void findPaths() {
+        lock.readLock().lock();
+        try {
+            if (!pathsReady) {
+                return;
+            }
+            long started = System.nanoTime();
+            float[] cars;
+            boolean[] active;
+            int n;
+            synchronized (pathCars) {
+                n = pathCount;
+                cars = pathCars.clone();
+                active = pathActive.clone();
+            }
+            writeListener(pathShared);
+            long origin = at(INPUTS, "source") + COORDS.byteOffset(PathElement.groupElement("origin"));
+            for (int i = 0; i < n; i++) {
+                if (!active[i]) {
+                    continue;
+                }
+                pathInputs.set(JAVA_FLOAT, origin, cars[3 * i] / UNITS_PER_METRE);
+                pathInputs.set(JAVA_FLOAT, origin + 4, -(cars[3 * i + 1] - 30F) / UNITS_PER_METRE);
+                pathInputs.set(JAVA_FLOAT, origin + 8, -cars[3 * i + 2] / UNITS_PER_METRE);
+                sourceSetInputs.invokeExact(carSources[i], SIMULATE_PATHING, pathInputs);
+            }
+            simulatorSetShared.invokeExact(simulator, SIMULATE_PATHING, pathShared);
+            simulatorRunPathing.invokeExact(simulator);
+            float[] found = new float[paths.length];
+            for (int i = 0; i < n; i++) {
+                if (active[i]) {
+                    sourceGetOutputs.invokeExact(carSources[i], SIMULATE_PATHING, pathOutputs);
+                    readPath(pathOutputs, found, PATH_FLOATS * i);
+                }
+            }
+            paths = found;
+            pathNanos = System.nanoTime() - started;
+        } catch (Throwable ex) {
+            fail(ex);
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    /**
+     * One car's path from Steam Audio's outputs into {@code into} at
+     * {@code at}: its bands, and the direction of the first-order
+     * Ambisonic coefficients (ACN order W, Y, Z, X, in Steam Audio's
+     * Ambisonic axes: x ahead = its -z, y left = its -x, z up = its y),
+     * turned into the game's world.
+     */
+    static void readPath(MemorySegment outputs, float[] into, int at) {
+        float low = outputs.get(JAVA_FLOAT, PATH_EQ);
+        float mid = outputs.get(JAVA_FLOAT, PATH_EQ + 4);
+        float high = outputs.get(JAVA_FLOAT, PATH_EQ + 8);
+        MemorySegment sh = outputs.get(ADDRESS, PATH_SH);
+        if (sh.equals(MemorySegment.NULL) || !(Float.isFinite(low) && Float.isFinite(mid) && Float.isFinite(high))) {
+            return;
+        }
+        sh = sh.reinterpret(16);
+        float w = sh.getAtIndex(JAVA_FLOAT, 0);
+        float y = sh.getAtIndex(JAVA_FLOAT, 1);
+        float z = sh.getAtIndex(JAVA_FLOAT, 2);
+        float x = sh.getAtIndex(JAVA_FLOAT, 3);
+        float length = (float) Math.sqrt(x * x + y * y + z * z);
+        if (w <= 0F || length < 1e-6F || Math.max(low, Math.max(mid, high)) <= 0F) {
+            return; // no path
+        }
+        into[at] = 1F;
+        into[at + 1] = clamp(low);
+        into[at + 2] = clamp(mid);
+        into[at + 3] = clamp(high);
+        // Ambisonic left, up and ahead into the game's x (right), y (down) and z (Steam Audio's -z)
+        into[at + 4] = -y / length;
+        into[at + 5] = -z / length;
+        into[at + 6] = x / length;
+    }
+
+    private static float clamp(float v) {
+        return Math.max(0F, Math.min(1F, v));
     }
 
     private void releaseScene() {
