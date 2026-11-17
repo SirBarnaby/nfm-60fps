@@ -568,9 +568,9 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
      * @author Kaffeinated
      */
     public Image credsnap(Image image) {
-        int i = GameFacts.screenHeight; // image.getHeight(ob);
-        int j = image.getWidth(ob);
-        int ai[] = new int[j * i];
+        int height = GameFacts.screenHeight; // image.getHeight(ob);
+        int width = image.getWidth(ob);
+        int pixels[] = new int[width * height];
 
         if (credColors[0] < 200) {
             credColors[0] += 5;
@@ -593,38 +593,38 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                 credColors[2] -= 5;
             } while (credColors[2] > 100);
         }
-        PixelGrabber pixelgrabber = new PixelGrabber(image, 0, 0, j, i, ai, 0, j);
+        PixelGrabber grabber = new PixelGrabber(image, 0, 0, width, height, pixels, 0, width);
         try {
-            pixelgrabber.grabPixels();
-        } catch (InterruptedException _ex) {
+            grabber.grabPixels();
+        } catch (InterruptedException ignored) {
         }
-        for (int k = 0; k < j * i; k++) {
-            Color color = new Color(ai[k]);
-            int l = (int) (color.getRed() * (credColors[0] / 100F));
-            if (l > 225) {
-                l = 225;
+        for (int k = 0; k < width * height; k++) {
+            Color color = new Color(pixels[k]);
+            int red = (int) (color.getRed() * (credColors[0] / 100F));
+            if (red > 225) {
+                red = 225;
             }
-            if (l < 0) {
-                l = 0;
+            if (red < 0) {
+                red = 0;
             }
-            int i1 = (int) (color.getGreen() * (credColors[1] / 100F));
-            if (i1 > 225) {
-                i1 = 225;
+            int green = (int) (color.getGreen() * (credColors[1] / 100F));
+            if (green > 225) {
+                green = 225;
             }
-            if (i1 < 0) {
-                i1 = 0;
+            if (green < 0) {
+                green = 0;
             }
-            int j1 = (int) (color.getBlue() * (credColors[2] / 100F));
-            if (j1 > 225) {
-                j1 = 225;
+            int blue = (int) (color.getBlue() * (credColors[2] / 100F));
+            if (blue > 225) {
+                blue = 225;
             }
-            if (j1 < 0) {
-                j1 = 0;
+            if (blue < 0) {
+                blue = 0;
             }
-            Color color2 = new Color(l, i1, j1, 50); /// last is alpha
-            ai[k] = color2.getRGB();
+            Color tinted = new Color(red, green, blue, 50); /// last is alpha
+            pixels[k] = tinted.getRGB();
         }
-        return createImage(new MemoryImageSource(j, i, ai, 0, j));
+        return createImage(new MemoryImageSource(width, height, pixels, 0, width));
     }
 
     public int colorinvert(int r, int g, int b) {
@@ -699,10 +699,10 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         }
     }
 
-    private boolean over(Image image, int i, int j, int k, int l) {
-        int i1 = image.getHeight(ob);
-        int j1 = image.getWidth(ob);
-        return i > k - 5 && i < k + j1 + 5 && j > l - 5 && j < l + i1 + 5;
+    private boolean over(Image image, int mouseX, int mouseY, int x, int y) {
+        int height = image.getHeight(ob);
+        int width = image.getWidth(ob);
+        return mouseX > x - 5 && mouseX < x + width + 5 && mouseY > y - 5 && mouseY < y + height + 5;
     }
 
     public void cantgo(Control control) {
@@ -714,13 +714,13 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
 
         drawcs(400, "This stage will be unlocked when stage " + unlocked + " is complete!", 177, 177, 177, 3);
 
-        int i = 0;
+        int gate = 0;
         int pgate_gap = 30;
         int pgate_amt = 9;
         int pgate_start = Utility.centeredWidthX((pgate_amt - 1) * pgate_gap);
         do {
-            rd.drawImage(pgate, pgate_start + i * pgate_gap, 190, null);
-        } while (++i < pgate_amt);
+            rd.drawImage(pgate, pgate_start + gate * pgate_gap, 190, null);
+        } while (++gate < pgate_amt);
 
         rd.setFont(new Font("SansSerif", 1, 11));
         FontHandler.fMetrics = rd.getFontMetrics();
@@ -748,7 +748,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         }
     }
 
-    public void loadingstage(int i) {
+    public void loadingstage(int stage) {
         /*
          * 
          * looks better without idc fight me
@@ -762,7 +762,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
 
         rd.setFont(new Font("SansSerif", 1, 13));
         FontHandler.fMetrics = rd.getFontMetrics();
-        drawcs(180, "Loading Stage " + i + ", please wait...", 0, 0, 0, 3);
+        drawcs(180, "Loading Stage " + stage + ", please wait...", 0, 0, 0, 3);
         rd.drawImage(select, Utility.centeredImageX(select), stage_select_text_y, null);
 
         // rd.drawImage(br, 0, 0, null);
@@ -1178,436 +1178,436 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         }
     }
 
-    public void fleximage(Image image, int i, int j) {
-        if (i == 0) {
-            PixelGrabber pixelgrabber = new PixelGrabber(image, 0, 0, GameFacts.screenWidth, GameFacts.screenHeight,
+    public void fleximage(Image image, int frame, int stage) {
+        if (frame == 0) {
+            PixelGrabber grabber = new PixelGrabber(image, 0, 0, GameFacts.screenWidth, GameFacts.screenHeight,
                     flexpix, 0, GameFacts.screenWidth);
             try {
-                pixelgrabber.grabPixels();
-            } catch (InterruptedException _ex) {
+                grabber.grabPixels();
+            } catch (InterruptedException ignored) {
             }
         }
-        int k = 0;
-        int l = 0;
-        int i1 = 0;
-        int j1 = 0;
-        int k1 = (int) (Math.random() * 128D);
-        int l1 = (int) (5D + Math.random() * 15D);
-        int i2 = 0;
+        int column = 0;
+        int lastRed = 0;
+        int lastGreen = 0;
+        int lastBlue = 0;
+        int noise = (int) (Math.random() * 128D);
+        int noiseLeft = (int) (5D + Math.random() * 15D);
+        int pixel = 0;
         do {
-            Color color = new Color(flexpix[i2]);
-            int j2 = 0;
-            int k2 = 0;
-            int l2 = 0;
-            if (k == 0) {
-                j2 = color.getRed();
-                l = j2;
-                k2 = color.getGreen();
-                i1 = k2;
-                l2 = color.getBlue();
-                j1 = l2;
+            Color color = new Color(flexpix[pixel]);
+            int red = 0;
+            int green = 0;
+            int blue = 0;
+            if (column == 0) {
+                red = color.getRed();
+                lastRed = red;
+                green = color.getGreen();
+                lastGreen = green;
+                blue = color.getBlue();
+                lastBlue = blue;
             } else {
-                j2 = (int) ((color.getRed() + l * 0.38F * i) / (1.0F + 0.38F * i));
-                l = j2;
-                k2 = (int) ((color.getGreen() + i1 * 0.38F * i) / (1.0F + 0.38F * i));
-                i1 = k2;
-                l2 = (int) ((color.getBlue() + j1 * 0.38F * i) / (1.0F + 0.38F * i));
-                j1 = l2;
+                red = (int) ((color.getRed() + lastRed * 0.38F * frame) / (1.0F + 0.38F * frame));
+                lastRed = red;
+                green = (int) ((color.getGreen() + lastGreen * 0.38F * frame) / (1.0F + 0.38F * frame));
+                lastGreen = green;
+                blue = (int) ((color.getBlue() + lastBlue * 0.38F * frame) / (1.0F + 0.38F * frame));
+                lastBlue = blue;
             }
-            if (++k == GameFacts.screenWidth) {
-                k = 0;
+            if (++column == GameFacts.screenWidth) {
+                column = 0;
             }
-            int i3 = (j2 * 17 + k2 + l2 + k1) / 22;
-            int j3 = (k2 * 17 + j2 + l2 + k1) / 22;
-            int k3 = (l2 * 17 + j2 + k2 + k1) / 22;
-            if (j == 17) {
-                i3 = (j2 * 17 + k2 + l2 + k1) / 22;
-                j3 = (k2 * 17 + j2 + l2 + k1) / 21;
-                k3 = (l2 * 17 + j2 + k2 + k1) / 20;
+            int outRed = (red * 17 + green + blue + noise) / 22;
+            int outGreen = (green * 17 + red + blue + noise) / 22;
+            int outBlue = (blue * 17 + red + green + noise) / 22;
+            if (stage == 17) {
+                outRed = (red * 17 + green + blue + noise) / 22;
+                outGreen = (green * 17 + red + blue + noise) / 21;
+                outBlue = (blue * 17 + red + green + noise) / 20;
             }
-            if (--l1 == 0) {
-                k1 = (int) (Math.random() * 128D);
-                l1 = (int) (5D + Math.random() * 15D);
+            if (--noiseLeft == 0) {
+                noise = (int) (Math.random() * 128D);
+                noiseLeft = (int) (5D + Math.random() * 15D);
             }
-            Color color1 = new Color(i3, j3, k3);
-            flexpix[i2] = color1.getRGB();
-        } while (++i2 < 0xE1000);
+            Color blurred = new Color(outRed, outGreen, outBlue);
+            flexpix[pixel] = blurred.getRGB();
+        } while (++pixel < 0xE1000);
         fleximg = createImage(new MemoryImageSource(GameFacts.screenWidth, GameFacts.screenHeight, flexpix, 0,
                 GameFacts.screenWidth));
         rd.drawImage(fleximg, 0, 0, null);
     }
 
-    private void arrow(int i, int j, CheckPoints checkpoints, ContO conto[], boolean flag) {
-        int ai[] = new int[7];
-        int ai1[] = new int[7];
-        int ai2[] = new int[7];
+    private void arrow(int checkpoint, int missed, CheckPoints checkpoints, ContO cars[], boolean toRacers) {
+        int xs[] = new int[7];
+        int ys[] = new int[7];
+        int zs[] = new int[7];
         /**
          * Base X position
          */
-        int c = GameFacts.screenWidth / 2;
-        byte byte0 = -90;
+        int centerX = GameFacts.screenWidth / 2;
+        byte arrowY = -90;
         /**
          * Base Y position
          */
-        int c1 = GameFacts.screenHeight; // 2BC
-        int k = 0;
+        int centerZ = GameFacts.screenHeight; // 2BC
+        int angle = 0;
         do {
-            ai1[k] = byte0;
-        } while (++k < 7);
-        ai[0] = c;
-        ai2[0] = c1 + 110;
-        ai[1] = c - 35;
-        ai2[1] = c1 + 50;
-        ai[2] = c - 15;
-        ai2[2] = c1 + 50;
-        ai[3] = c - 15;
-        ai2[3] = c1 - 50;
-        ai[4] = c + 15;
-        ai2[4] = c1 - 50;
-        ai[5] = c + 15;
-        ai2[5] = c1 + 50;
-        ai[6] = c + 35;
-        ai2[6] = c1 + 50;
-        k = 0;
-        int l = 0;
-        if (!flag) {
-            char c2 = '\0';
-            if (checkpoints.x[i] - checkpoints.opx[0] >= 0) {
-                c2 = '\264';
+            ys[angle] = arrowY;
+        } while (++angle < 7);
+        xs[0] = centerX;
+        zs[0] = centerZ + 110;
+        xs[1] = centerX - 35;
+        zs[1] = centerZ + 50;
+        xs[2] = centerX - 15;
+        zs[2] = centerZ + 50;
+        xs[3] = centerX - 15;
+        zs[3] = centerZ - 50;
+        xs[4] = centerX + 15;
+        zs[4] = centerZ - 50;
+        xs[5] = centerX + 15;
+        zs[5] = centerZ + 50;
+        xs[6] = centerX + 35;
+        zs[6] = centerZ + 50;
+        angle = 0;
+        int nearest = 0;
+        if (!toRacers) {
+            char flip = '\0';
+            if (checkpoints.x[checkpoint] - checkpoints.opx[0] >= 0) {
+                flip = '\264';
             }
-            k = (int) (90 + c2 + StrictMath.atan(
-                    (double) (checkpoints.z[i] - checkpoints.opz[0]) / (double) (checkpoints.x[i] - checkpoints.opx[0]))
+            angle = (int) (90 + flip + StrictMath.atan(
+                    (double) (checkpoints.z[checkpoint] - checkpoints.opz[0]) / (double) (checkpoints.x[checkpoint] - checkpoints.opx[0]))
                     / 0.017453292519943295D);
         } else {
-            int k1 = -1;
-            boolean flag1 = false;
-            int l2 = 1;
+            int nearestDistance = -1;
+            boolean seenOnScreen = false;
+            int other = 1;
             do {
-                if ((Utility.py(checkpoints.opx[0] / 100, checkpoints.opx[l2] / 100, checkpoints.opz[0] / 100,
-                        checkpoints.opz[l2] / 100) < k1 || k1 == -1) && (!flag1 || checkpoints.onscreen[l2] != 0)
-                        && checkpoints.dested[l2] == 0) {
-                    l = l2;
-                    k1 = Utility.py(checkpoints.opx[0] / 100, checkpoints.opx[l2] / 100, checkpoints.opz[0] / 100,
-                            checkpoints.opz[l2] / 100);
-                    if (checkpoints.onscreen[l2] != 0) {
-                        flag1 = true;
+                if ((Utility.py(checkpoints.opx[0] / 100, checkpoints.opx[other] / 100, checkpoints.opz[0] / 100,
+                        checkpoints.opz[other] / 100) < nearestDistance || nearestDistance == -1) && (!seenOnScreen || checkpoints.onscreen[other] != 0)
+                        && checkpoints.dested[other] == 0) {
+                    nearest = other;
+                    nearestDistance = Utility.py(checkpoints.opx[0] / 100, checkpoints.opx[other] / 100, checkpoints.opz[0] / 100,
+                            checkpoints.opz[other] / 100);
+                    if (checkpoints.onscreen[other] != 0) {
+                        seenOnScreen = true;
                     }
                 }
-            } while (++l2 < GameFacts.numberOfPlayers);
-            l2 = 0;
-            if (checkpoints.opx[l] - checkpoints.opx[0] >= 0) {
-                l2 = 180;
+            } while (++other < GameFacts.numberOfPlayers);
+            other = 0;
+            if (checkpoints.opx[nearest] - checkpoints.opx[0] >= 0) {
+                other = 180;
             }
-            k = (int) (90 + l2 + StrictMath.atan((double) (checkpoints.opz[l] - checkpoints.opz[0])
-                    / (double) (checkpoints.opx[l] - checkpoints.opx[0])) / 0.017453292519943295D);
-            drawcs(13, "[ " + names[sc[l]] + " ]", 76, 67, 240, 0);
-            drawcs(13, names[sc[l]], 0, 0, 0, 0);
+            angle = (int) (90 + other + StrictMath.atan((double) (checkpoints.opz[nearest] - checkpoints.opz[0])
+                    / (double) (checkpoints.opx[nearest] - checkpoints.opx[0])) / 0.017453292519943295D);
+            drawcs(13, "[ " + names[sc[nearest]] + " ]", 76, 67, 240, 0);
+            drawcs(13, names[sc[nearest]], 0, 0, 0, 0);
             /*
              * example use of drawOver
              */
             // drawOver(names[sc[l]], conto[l]);
         }
-        for (k += Medium.xz; k < 0; k += 360) {
+        for (angle += Medium.xz; angle < 0; angle += 360) {
         }
-        for (; k > 180; k -= 360) {
+        for (; angle > 180; angle -= 360) {
         }
-        if (!flag) {
-            if (k > 130) {
-                k = 130;
+        if (!toRacers) {
+            if (angle > 130) {
+                angle = 130;
             }
-            if (k < -130) {
-                k = -130;
+            if (angle < -130) {
+                angle = -130;
             }
         } else {
-            if (k > 100) {
-                k = 100;
+            if (angle > 100) {
+                angle = 100;
             }
-            if (k < -100) {
-                k = -100;
+            if (angle < -100) {
+                angle = -100;
             }
         }
-        if (Math.abs(ana - k) < 180) {
-            if (Math.abs(ana - k) < 10) {
-                ana = k;
-            } else if (ana < k) {
+        if (Math.abs(ana - angle) < 180) {
+            if (Math.abs(ana - angle) < 10) {
+                ana = angle;
+            } else if (ana < angle) {
                 ana += 10;
             } else {
                 ana -= 10;
             }
         } else {
-            if (k < 0) {
+            if (angle < 0) {
                 ana += 15;
                 if (ana > 180) {
                     ana -= 360;
                 }
             }
-            if (k > 0) {
+            if (angle > 0) {
                 ana -= 15;
                 if (ana < -180) {
                     ana += 360;
                 }
             }
         }
-        Utility.rot(ai, ai2, c, c1, ana, 7);
-        k = Math.abs(ana);
-        if (!flag) {
-            if (k > 7 || j > 0 || j == -2 || cntan != 0) {
-                int i1 = 0;
+        Utility.rot(xs, zs, centerX, centerZ, ana, 7);
+        angle = Math.abs(ana);
+        if (!toRacers) {
+            if (angle > 7 || missed > 0 || missed == -2 || cntan != 0) {
+                int red = 0;
                 do {
-                    ai[i1] = Utility.cXs(ai[i1], ai2[i1]);
-                    ai1[i1] = Utility.cYs(ai1[i1], ai2[i1]);
-                } while (++i1 < 7);
-                i1 = (int) (190F + 190F * (Medium.snap[0] / 100F));
-                if (i1 > 255) {
-                    i1 = 255;
+                    xs[red] = Utility.cXs(xs[red], zs[red]);
+                    ys[red] = Utility.cYs(ys[red], zs[red]);
+                } while (++red < 7);
+                red = (int) (190F + 190F * (Medium.snap[0] / 100F));
+                if (red > 255) {
+                    red = 255;
                 }
-                if (i1 < 0) {
-                    i1 = 0;
+                if (red < 0) {
+                    red = 0;
                 }
-                int l1 = (int) (255F + 255F * (Medium.snap[1] / 100F));
-                if (l1 > 255) {
-                    l1 = 255;
+                int green = (int) (255F + 255F * (Medium.snap[1] / 100F));
+                if (green > 255) {
+                    green = 255;
                 }
-                if (l1 < 0) {
-                    l1 = 0;
+                if (green < 0) {
+                    green = 0;
                 }
-                int j2 = 0;
-                if (j <= 0) {
-                    if (k <= 45 && j != -2 && cntan == 0) {
-                        i1 = (i1 * k + Medium.csky[0] * (45 - k)) / 45;
-                        l1 = (l1 * k + Medium.csky[1] * (45 - k)) / 45;
-                        j2 = (j2 * k + Medium.csky[2] * (45 - k)) / 45;
+                int blue = 0;
+                if (missed <= 0) {
+                    if (angle <= 45 && missed != -2 && cntan == 0) {
+                        red = (red * angle + Medium.csky[0] * (45 - angle)) / 45;
+                        green = (green * angle + Medium.csky[1] * (45 - angle)) / 45;
+                        blue = (blue * angle + Medium.csky[2] * (45 - angle)) / 45;
                     }
-                    if (k >= 90) {
-                        int i3 = (int) (255F + 255F * (Medium.snap[0] / 100F));
-                        if (i3 > 255) {
-                            i3 = 255;
+                    if (angle >= 90) {
+                        int brightRed = (int) (255F + 255F * (Medium.snap[0] / 100F));
+                        if (brightRed > 255) {
+                            brightRed = 255;
                         }
-                        if (i3 < 0) {
-                            i3 = 0;
+                        if (brightRed < 0) {
+                            brightRed = 0;
                         }
-                        i1 = (i1 * (140 - k) + i3 * (k - 90)) / 50;
-                        if (i1 > 255) {
-                            i1 = 255;
+                        red = (red * (140 - angle) + brightRed * (angle - 90)) / 50;
+                        if (red > 255) {
+                            red = 255;
                         }
                     }
                 } else if (flk) {
-                    i1 = (int) (255F + 255F * (Medium.snap[0] / 100F));
-                    if (i1 > 255) {
-                        i1 = 255;
+                    red = (int) (255F + 255F * (Medium.snap[0] / 100F));
+                    if (red > 255) {
+                        red = 255;
                     }
-                    if (i1 < 0) {
-                        i1 = 0;
+                    if (red < 0) {
+                        red = 0;
                     }
                     flk = false;
                 } else {
-                    i1 = (int) (255F + 255F * (Medium.snap[0] / 100F));
-                    if (i1 > 255) {
-                        i1 = 255;
+                    red = (int) (255F + 255F * (Medium.snap[0] / 100F));
+                    if (red > 255) {
+                        red = 255;
                     }
-                    if (i1 < 0) {
-                        i1 = 0;
+                    if (red < 0) {
+                        red = 0;
                     }
-                    l1 = (int) (220F + 220F * (Medium.snap[1] / 100F));
-                    if (l1 > 255) {
-                        l1 = 255;
+                    green = (int) (220F + 220F * (Medium.snap[1] / 100F));
+                    if (green > 255) {
+                        green = 255;
                     }
-                    if (l1 < 0) {
-                        l1 = 0;
+                    if (green < 0) {
+                        green = 0;
                     }
                     flk = true;
                 }
-                rd.setColor(new Color(i1, l1, j2));
-                rd.fillPolygon(ai, ai1, 7);
-                i1 = (int) (115F + 115F * (Medium.snap[0] / 100F));
-                if (i1 > 255) {
-                    i1 = 255;
+                rd.setColor(new Color(red, green, blue));
+                rd.fillPolygon(xs, ys, 7);
+                red = (int) (115F + 115F * (Medium.snap[0] / 100F));
+                if (red > 255) {
+                    red = 255;
                 }
-                if (i1 < 0) {
-                    i1 = 0;
+                if (red < 0) {
+                    red = 0;
                 }
-                l1 = (int) (170F + 170F * (Medium.snap[1] / 100F));
-                if (l1 > 255) {
-                    l1 = 255;
+                green = (int) (170F + 170F * (Medium.snap[1] / 100F));
+                if (green > 255) {
+                    green = 255;
                 }
-                if (l1 < 0) {
-                    l1 = 0;
+                if (green < 0) {
+                    green = 0;
                 }
-                j2 = 0;
-                if (j <= 0) {
-                    if (k <= 45 && j != -2 && cntan == 0) {
-                        i1 = (i1 * k + Medium.csky[0] * (45 - k)) / 45;
-                        l1 = (l1 * k + Medium.csky[1] * (45 - k)) / 45;
-                        j2 = (j2 * k + Medium.csky[2] * (45 - k)) / 45;
+                blue = 0;
+                if (missed <= 0) {
+                    if (angle <= 45 && missed != -2 && cntan == 0) {
+                        red = (red * angle + Medium.csky[0] * (45 - angle)) / 45;
+                        green = (green * angle + Medium.csky[1] * (45 - angle)) / 45;
+                        blue = (blue * angle + Medium.csky[2] * (45 - angle)) / 45;
                     }
                 } else if (flk) {
-                    i1 = (int) (255F + 255F * (Medium.snap[0] / 100F));
-                    if (i1 > 255) {
-                        i1 = 255;
+                    red = (int) (255F + 255F * (Medium.snap[0] / 100F));
+                    if (red > 255) {
+                        red = 255;
                     }
-                    if (i1 < 0) {
-                        i1 = 0;
+                    if (red < 0) {
+                        red = 0;
                     }
-                    l1 = 0;
+                    green = 0;
                 }
-                rd.setColor(new Color(i1, l1, j2));
-                rd.drawPolygon(ai, ai1, 7);
+                rd.setColor(new Color(red, green, blue));
+                rd.drawPolygon(xs, ys, 7);
             }
         } else {
-            int j1 = 0;
+            int red = 0;
             do {
-                ai[j1] = Utility.cXs(ai[j1], ai2[j1]);
-                ai1[j1] = Utility.cYs(ai1[j1], ai2[j1]);
-            } while (++j1 < 7);
-            j1 = (int) (159F + 159F * (Medium.snap[0] / 100F));
-            if (j1 > 255) {
-                j1 = 255;
+                xs[red] = Utility.cXs(xs[red], zs[red]);
+                ys[red] = Utility.cYs(ys[red], zs[red]);
+            } while (++red < 7);
+            red = (int) (159F + 159F * (Medium.snap[0] / 100F));
+            if (red > 255) {
+                red = 255;
             }
-            if (j1 < 0) {
-                j1 = 0;
+            if (red < 0) {
+                red = 0;
             }
-            int i2 = (int) (207F + 207F * (Medium.snap[1] / 100F));
-            if (i2 > 255) {
-                i2 = 255;
+            int green = (int) (207F + 207F * (Medium.snap[1] / 100F));
+            if (green > 255) {
+                green = 255;
             }
-            if (i2 < 0) {
-                i2 = 0;
+            if (green < 0) {
+                green = 0;
             }
-            int k2 = (int) (255F + 255F * (Medium.snap[2] / 100F));
-            if (k2 > 255) {
-                k2 = 255;
+            int blue = (int) (255F + 255F * (Medium.snap[2] / 100F));
+            if (blue > 255) {
+                blue = 255;
             }
-            if (k2 < 0) {
-                k2 = 0;
+            if (blue < 0) {
+                blue = 0;
             }
-            rd.setColor(new Color(j1, i2, k2));
-            rd.fillPolygon(ai, ai1, 7);
-            j1 = (int) (120F + 120F * (Medium.snap[0] / 100F));
-            if (j1 > 255) {
-                j1 = 255;
+            rd.setColor(new Color(red, green, blue));
+            rd.fillPolygon(xs, ys, 7);
+            red = (int) (120F + 120F * (Medium.snap[0] / 100F));
+            if (red > 255) {
+                red = 255;
             }
-            if (j1 < 0) {
-                j1 = 0;
+            if (red < 0) {
+                red = 0;
             }
-            i2 = (int) (114F + 114F * (Medium.snap[1] / 100F));
-            if (i2 > 255) {
-                i2 = 255;
+            green = (int) (114F + 114F * (Medium.snap[1] / 100F));
+            if (green > 255) {
+                green = 255;
             }
-            if (i2 < 0) {
-                i2 = 0;
+            if (green < 0) {
+                green = 0;
             }
-            k2 = (int) (255F + 255F * (Medium.snap[2] / 100F));
-            if (k2 > 255) {
-                k2 = 255;
+            blue = (int) (255F + 255F * (Medium.snap[2] / 100F));
+            if (blue > 255) {
+                blue = 255;
             }
-            if (k2 < 0) {
-                k2 = 0;
+            if (blue < 0) {
+                blue = 0;
             }
-            rd.setColor(new Color(j1, i2, k2));
-            rd.drawPolygon(ai, ai1, 7);
+            rd.setColor(new Color(red, green, blue));
+            rd.drawPolygon(xs, ys, 7);
         }
     }
 
-    public void levelhigh(int i, int j, int k, int l, int i1) {
+    public void levelhigh(int wasted, int whenWasted, int closeFinish, int frame, int stage) {
         rd.drawImage(gameh, Utility.centeredImageX(gameh), 20, null);
-        byte byte0 = 16; ///////////// change this to 1 to relock the game
-        char c = '0';
-        char c1 = '`';
-        if (l < 50) {
+        byte red = 16; ///////////// change this to 1 to relock the game
+        char green = '0';
+        char blue = '`';
+        if (frame < 50) {
             if (aflk) {
-                byte0 = 106;
-                c = '\260';
-                c1 = '\377';
+                red = 106;
+                green = '\260';
+                blue = '\377';
                 aflk = false;
             } else {
                 aflk = true;
             }
         }
-        if (i != 0) {
-            if (k == 0) {
-                drawcs(60, "You Wasted 'em!", byte0, c, c1, 0);
-            } else if (k == 1) {
-                drawcs(60, "Close Finish!", byte0, c, c1, 0);
+        if (wasted != 0) {
+            if (closeFinish == 0) {
+                drawcs(60, "You Wasted 'em!", red, green, blue, 0);
+            } else if (closeFinish == 1) {
+                drawcs(60, "Close Finish!", red, green, blue, 0);
             } else {
-                drawcs(60, "Close Finish!  Almost got it!", byte0, c, c1, 0);
+                drawcs(60, "Close Finish!  Almost got it!", red, green, blue, 0);
             }
-        } else if (j == 229) {
-            drawcs(60, "Wasted!", byte0, c, c1, 0);
-        } else if (i1 > 2) {
-            drawcs(60, "Stunts!", byte0, c, c1, 0);
+        } else if (whenWasted == 229) {
+            drawcs(60, "Wasted!", red, green, blue, 0);
+        } else if (stage > 2) {
+            drawcs(60, "Stunts!", red, green, blue, 0);
         } else {
-            drawcs(60, "Best Stunt!", byte0, c, c1, 0);
+            drawcs(60, "Best Stunt!", red, green, blue, 0);
         }
         drawcs(press_enter_to_continue_height, "Press  [ Enter ]  to continue", 0, 0, 0, 0);
     }
 
-    public void playsounds(Madness madness, Control control, int i) {
+    public void playsounds(Madness car, Control control, int stage) {
         if (fase == Phase.INGAME && starcnt < 35 && cntwis != 8 && !mutes) {
-            boolean flag = control.up && madness.speed > 0.0F || control.down && madness.speed < 10F;
-            boolean flag1 = madness.skid == 1 && control.handb
-                    || Math.abs(madness.scz[0]
-                            - (madness.scz[1] + madness.scz[0] + madness.scz[2] + madness.scz[3]) / 4F) > 1.0F
-                    || Math.abs(madness.scx[0]
-                            - (madness.scx[1] + madness.scx[0] + madness.scx[2] + madness.scx[3]) / 4F) > 1.0F;
-            boolean flag2 = false;
-            if (control.up && madness.speed < 10F) {
-                flag1 = true;
-                flag = true;
-                flag2 = true;
+            boolean throttle = control.up && car.speed > 0.0F || control.down && car.speed < 10F;
+            boolean wheelspin = car.skid == 1 && control.handb
+                    || Math.abs(car.scz[0]
+                            - (car.scz[1] + car.scz[0] + car.scz[2] + car.scz[3]) / 4F) > 1.0F
+                    || Math.abs(car.scx[0]
+                            - (car.scx[1] + car.scx[0] + car.scx[2] + car.scx[3]) / 4F) > 1.0F;
+            boolean launching = false;
+            if (control.up && car.speed < 10F) {
+                wheelspin = true;
+                throttle = true;
+                launching = true;
             }
-            if (flag && madness.mtouch) {
-                if (!madness.capsized) {
-                    if (!flag1) {
-                        if (madness.power != 98F) {
-                            if (Math.abs(madness.speed) > 0.0F
-                                    && Math.abs(madness.speed) <= madness.stat.swits[0]) {
-                                int j = (int) ((3F * Math.abs(madness.speed)) / madness.stat.swits[0]);
-                                if (j == 2) {
+            if (throttle && car.mtouch) {
+                if (!car.capsized) {
+                    if (!wheelspin) {
+                        if (car.power != 98F) {
+                            if (Math.abs(car.speed) > 0.0F
+                                    && Math.abs(car.speed) <= car.stat.swits[0]) {
+                                int gear = (int) ((3F * Math.abs(car.speed)) / car.stat.swits[0]);
+                                if (gear == 2) {
                                     if (pwait == 0) {
-                                        j = 0;
+                                        gear = 0;
                                     } else {
                                         pwait--;
                                     }
                                 } else {
                                     pwait = 7;
                                 }
-                                sparkeng(madness.stat, j);
+                                sparkeng(car.stat, gear);
                             }
-                            if (Math.abs(madness.speed) > madness.stat.swits[0]
-                                    && Math.abs(madness.speed) <= madness.stat.swits[1]) {
-                                int k = (int) ((3F * (Math.abs(madness.speed) - madness.stat.swits[0]))
-                                        / (madness.stat.swits[1] - madness.stat.swits[0]));
-                                if (k == 2) {
+                            if (Math.abs(car.speed) > car.stat.swits[0]
+                                    && Math.abs(car.speed) <= car.stat.swits[1]) {
+                                int gear = (int) ((3F * (Math.abs(car.speed) - car.stat.swits[0]))
+                                        / (car.stat.swits[1] - car.stat.swits[0]));
+                                if (gear == 2) {
                                     if (pwait == 0) {
-                                        k = 0;
+                                        gear = 0;
                                     } else {
                                         pwait--;
                                     }
                                 } else {
                                     pwait = 7;
                                 }
-                                sparkeng(madness.stat, k);
+                                sparkeng(car.stat, gear);
                             }
-                            if (Math.abs(madness.speed) > madness.stat.swits[1]
-                                    && Math.abs(madness.speed) <= madness.stat.swits[2]) {
-                                int l = (int) ((3F * (Math.abs(madness.speed) - madness.stat.swits[1]))
-                                        / (madness.stat.swits[2] - madness.stat.swits[1]));
-                                sparkeng(madness.stat, l);
+                            if (Math.abs(car.speed) > car.stat.swits[1]
+                                    && Math.abs(car.speed) <= car.stat.swits[2]) {
+                                int gear = (int) ((3F * (Math.abs(car.speed) - car.stat.swits[1]))
+                                        / (car.stat.swits[2] - car.stat.swits[1]));
+                                sparkeng(car.stat, gear);
                             }
                         } else {
-                            byte byte0 = 2;
+                            byte gear = 2;
                             if (pwait == 0) {
-                                if (Math.abs(madness.speed) > madness.stat.swits[1]) {
-                                    byte0 = 3;
+                                if (Math.abs(car.speed) > car.stat.swits[1]) {
+                                    gear = 3;
                                 }
                             } else {
                                 pwait--;
                             }
-                            sparkeng(madness.stat, byte0);
+                            sparkeng(car.stat, gear);
                         }
                     } else {
-                        sparkeng(madness.stat, -1);
-                        if (flag2) {
+                        sparkeng(car.stat, -1);
+                        if (launching) {
                             if (stopcnt <= 0) {
                                 sm.loop("air" + 5);
                                 stopcnt = 10;
@@ -1618,26 +1618,26 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                         }
                     }
                 } else {
-                    sparkeng(madness.stat, 3);
+                    sparkeng(car.stat, 3);
                 }
                 grrd = false;
                 aird = false;
             } else {
                 pwait = 15;
-                if (!madness.mtouch && !grrd && Medium.fxRandom() > 0.50000000000000002D) {
+                if (!car.mtouch && !grrd && Medium.fxRandom() > 0.50000000000000002D) {
                     sm.loop("air" + (int) (Medium.fxRandom() * 4F));
                     stopcnt = 5;
                     grrd = true;
                 }
-                if (!madness.wtouch && !aird) {
+                if (!car.wtouch && !aird) {
                     stopairs();
                     sm.loop("air" + (int) (Medium.fxRandom() * 4F));
                     stopcnt = 10;
                     aird = true;
                 }
-                sparkeng(madness.stat, -1);
+                sparkeng(car.stat, -1);
             }
-            if (madness.cntdest != 0 && cntwis < 7) {
+            if (car.cntdest != 0 && cntwis < 7) {
                 if (!pwastd) {
                     sm.loop("wasted");
                     pwastd = true;
@@ -1653,7 +1653,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                 }
             }
         } else {
-            sparkeng(madness.stat, -2);
+            sparkeng(car.stat, -2);
             if (pwastd) {
                 sm.stop("wasted");
                 pwastd = false;
@@ -1671,7 +1671,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         if (bfskid != 0) {
             bfskid--;
         }
-        if (madness.newcar) {
+        if (car.newcar) {
             cntwis = 0;
         }
         if (fase == Phase.INGAME || fase == Phase.PREGAME || fase == Phase.INSTANTREPLAY
@@ -1691,12 +1691,12 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                 }
             }
         }
-        if (madness.cntdest != 0 && cntwis < 7) {
-            if (madness.dest) {
+        if (car.cntdest != 0 && cntwis < 7) {
+            if (car.dest) {
                 cntwis++;
             }
         } else {
-            if (madness.cntdest == 0) {
+            if (car.cntdest == 0) {
                 cntwis = 0;
             }
             if (cntwis == 7) {
@@ -1706,25 +1706,25 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
     }
 
     @Override
-    public void crash(float f, int i) {
+    public void crash(float force, int kind) {
         if (bfcrash == 0) {
-            if (Math.abs(f) > 25F && !SoundManager.isDiscarding()) {
-                Gamepads.hit(f);
+            if (Math.abs(force) > 25F && !SoundManager.isDiscarding()) {
+                Gamepads.hit(force);
             }
-            if (i == 0) {
-                if (Math.abs(f) > 25F && Math.abs(f) < 170F) {
+            if (kind == 0) {
+                if (Math.abs(force) > 25F && Math.abs(force) < 170F) {
                     if (!mutes) {
                         sm.play("lowcrash" + crshturn);
                     }
                     bfcrash = 2;
                 }
-                if (Math.abs(f) >= 170F) {
+                if (Math.abs(force) >= 170F) {
                     if (!mutes) {
                         sm.play("crash" + crshturn);
                     }
                     bfcrash = 2;
                 }
-                if (Math.abs(f) > 25F) {
+                if (Math.abs(force) > 25F) {
                     if (crashup) {
                         crshturn--;
                     } else {
@@ -1738,21 +1738,21 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                     }
                 }
             }
-            if (i == -1) {
-                if (Math.abs(f) > 25F && Math.abs(f) < 170F) {
+            if (kind == -1) {
+                if (Math.abs(force) > 25F && Math.abs(force) < 170F) {
                     if (!mutes) {
                         sm.play("lowcrash" + 2);
                     }
                     bfcrash = 2;
                 }
-                if (Math.abs(f) > 170F) {
+                if (Math.abs(force) > 170F) {
                     if (!mutes) {
                         sm.play("crash" + 2);
                     }
                     bfcrash = 2;
                 }
             }
-            if (i == 1) {
+            if (kind == 1) {
                 if (!mutes) {
                     sm.play("tires");
                 }
@@ -1789,73 +1789,73 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
     }
 
     private Image pressed(Image image) {
-        int i = image.getHeight(ob);
-        int j = image.getWidth(ob);
-        int ai[] = new int[j * i];
-        PixelGrabber pixelgrabber = new PixelGrabber(image, 0, 0, j, i, ai, 0, j);
+        int height = image.getHeight(ob);
+        int width = image.getWidth(ob);
+        int pixels[] = new int[width * height];
+        PixelGrabber grabber = new PixelGrabber(image, 0, 0, width, height, pixels, 0, width);
         try {
-            pixelgrabber.grabPixels();
-        } catch (InterruptedException _ex) {
+            grabber.grabPixels();
+        } catch (InterruptedException ignored) {
         }
-        for (int k = 0; k < j * i; k++) {
-            if (ai[k] != ai[j * i - 1]) {
-                ai[k] = 0xff000000;
+        for (int k = 0; k < width * height; k++) {
+            if (pixels[k] != pixels[width * height - 1]) {
+                pixels[k] = 0xff000000;
             }
         }
 
-        return createImage(new MemoryImageSource(j, i, ai, 0, j));
+        return createImage(new MemoryImageSource(width, height, pixels, 0, width));
     }
 
     private Image dodgen(Image image) {
-        int i = image.getHeight(ob);
-        int j = image.getWidth(ob);
-        int ai[] = new int[j * i];
-        PixelGrabber pixelgrabber = new PixelGrabber(image, 0, 0, j, i, ai, 0, j);
+        int height = image.getHeight(ob);
+        int width = image.getWidth(ob);
+        int pixels[] = new int[width * height];
+        PixelGrabber grabber = new PixelGrabber(image, 0, 0, width, height, pixels, 0, width);
         try {
-            pixelgrabber.grabPixels();
-        } catch (InterruptedException _ex) {
+            grabber.grabPixels();
+        } catch (InterruptedException ignored) {
         }
-        for (int k = 0; k < j * i; k++) {
-            Color color = new Color(ai[k]);
-            int l = color.getRed() * 3 + 90;
-            if (l > 255) {
-                l = 255;
+        for (int k = 0; k < width * height; k++) {
+            Color color = new Color(pixels[k]);
+            int red = color.getRed() * 3 + 90;
+            if (red > 255) {
+                red = 255;
             }
-            if (l < 0) {
-                l = 0;
+            if (red < 0) {
+                red = 0;
             }
-            int i1 = color.getGreen() * 3 + 90;
-            if (i1 > 255) {
-                i1 = 255;
+            int green = color.getGreen() * 3 + 90;
+            if (green > 255) {
+                green = 255;
             }
-            if (i1 < 0) {
-                i1 = 0;
+            if (green < 0) {
+                green = 0;
             }
-            int j1 = color.getBlue() * 3 + 90;
-            if (j1 > 255) {
-                j1 = 255;
+            int blue = color.getBlue() * 3 + 90;
+            if (blue > 255) {
+                blue = 255;
             }
-            if (j1 < 0) {
-                j1 = 0;
+            if (blue < 0) {
+                blue = 0;
             }
-            Color color1 = new Color(l, i1, j1);
-            ai[k] = color1.getRGB();
+            Color brightened = new Color(red, green, blue);
+            pixels[k] = brightened.getRGB();
         }
 
-        return createImage(new MemoryImageSource(j, i, ai, 0, j));
+        return createImage(new MemoryImageSource(width, height, pixels, 0, width));
     }
 
-    private void smokeypix(byte abyte0[], MediaTracker mediatracker, Toolkit toolkit) {
-        Image image = toolkit.createImage(abyte0);
-        mediatracker.addImage(image, 0);
+    private void smokeypix(byte data[], MediaTracker tracker, Toolkit toolkit) {
+        Image image = toolkit.createImage(data);
+        tracker.addImage(image, 0);
         try {
-            mediatracker.waitForID(0);
-        } catch (Exception _ex) {
+            tracker.waitForID(0);
+        } catch (Exception ignored) {
         }
-        PixelGrabber pixelgrabber = new PixelGrabber(image, 0, 0, 466, 202, smokey, 0, 466);
+        PixelGrabber grabber = new PixelGrabber(image, 0, 0, 466, 202, smokey, 0, 466);
         try {
-            pixelgrabber.grabPixels();
-        } catch (InterruptedException _ex) {
+            grabber.grabPixels();
+        } catch (InterruptedException ignored) {
         }
     }
 
@@ -1868,7 +1868,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
             loader.interrupt();
             try {
                 loader.join();
-            } catch (InterruptedException _ex) {
+            } catch (InterruptedException ignored) {
                 Thread.currentThread().interrupt();
             }
         }
@@ -1893,35 +1893,35 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                 3);
     }
 
-    private boolean overon(int i, int j, int k, int l, int i1, int j1) {
-        return i1 > i && i1 < i + k && j1 > j && j1 < j + l;
+    private boolean overon(int x, int y, int width, int height, int pointX, int pointY) {
+        return pointX > x && pointX < x + width && pointY > y && pointY < y + height;
     }
 
     public void pauseimage(Image image) {
-        PixelGrabber pixelgrabber = new PixelGrabber(image, 0, 0, GameFacts.screenWidth, GameFacts.screenHeight,
+        PixelGrabber grabber = new PixelGrabber(image, 0, 0, GameFacts.screenWidth, GameFacts.screenHeight,
                 flexpix, 0, GameFacts.screenWidth);
         try {
-            pixelgrabber.grabPixels();
-        } catch (InterruptedException _ex) {
+            grabber.grabPixels();
+        } catch (InterruptedException ignored) {
         }
-        int k = 0;
-        int l = 0;
+        int lastGray = 0;
+        int column = 0;
         int px_index = 0;
         do {
             Color color = new Color(flexpix[px_index]);
-            int j1 = 0;
-            if (l == 0) {
-                j1 = (color.getRed() + color.getGreen() + color.getBlue()) / 3;
-                k = j1;
+            int gray = 0;
+            if (column == 0) {
+                gray = (color.getRed() + color.getGreen() + color.getBlue()) / 3;
+                lastGray = gray;
             } else {
-                j1 = (color.getRed() + color.getGreen() + color.getBlue() + k * 30) / 33;
-                k = j1;
+                gray = (color.getRed() + color.getGreen() + color.getBlue() + lastGray * 30) / 33;
+                lastGray = gray;
             }
-            if (++l == 900) {
-                l = 0;
+            if (++column == 900) {
+                column = 0;
             }
-            Color color1 = new Color(j1, j1, j1);
-            flexpix[px_index] = color1.getRGB();
+            Color grayColor = new Color(gray, gray, gray);
+            flexpix[px_index] = grayColor.getRGB();
         } while (++px_index < GameFacts.screenHeight * GameFacts.screenWidth);
         fleximg = createImage(new MemoryImageSource(GameFacts.screenWidth, GameFacts.screenHeight, flexpix, 0,
                 GameFacts.screenWidth));
@@ -1929,14 +1929,14 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         Medium.flex = 0;
     }
 
-    public static void loadstrack(final int i) {
+    public static void loadstrack(final int stage) {
         // ACV: Large music files should not be in zip files, so why
         // not load/read them directly? Checks if the specific file
         // format exists, then load the music according to stage number.
         // I haven't applied these changes to all other tracks yet.
 
         // thank you for your service acv
-        String path = "data/music/" + GameSparker.stageSubDir + "stage" + i;
+        String path = "data/music/" + GameSparker.stageSubDir + "stage" + stage;
         boolean customMusic = false;
         String fileFormat = CheckPoints.trackformat;
 
@@ -1976,33 +1976,33 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                 strack = isZip(found) ? TrackZipLoader.loadZip(found, false) : TrackZipLoader.loadMusic(found);
             }
         } catch (final IOException ex) {
-            System.out.println("Error loading music file music/stage" + i);
+            System.out.println("Error loading music file music/stage" + stage);
             ex.printStackTrace();
             loadedt = false;
         }
         loadedt = true;
     }
 
-    public void loadmusic(int i, int j) {
-        hipnoload(i, false);
+    public void loadmusic(int stage, int unused) {
+        hipnoload(stage, false);
         app.setCursor(new Cursor(3));
         app.repaint();
 
-        boolean flag = false;
+        boolean animated = false;
 
-        if (i == 1 || i == 2 || i == 3 || i == 4 || i == 5 || i == 7 || i == 8 || i == 9 || i == 10 || i == 12
-                || i == 13 || i == 16) {
-            flag = true;
+        if (stage == 1 || stage == 2 || stage == 3 || stage == 4 || stage == 5 || stage == 7 || stage == 8 || stage == 9 || stage == 10 || stage == 12
+                || stage == 13 || stage == 16) {
+            animated = true;
         }
-        if (flag) {
-            runtyp = i;
+        if (animated) {
+            runtyp = stage;
             runner = new Thread(this);
             runner.start();
         }
-        loadstrack(i);
+        loadstrack(stage);
         /// aaaaaaaa
 
-        if (flag) {
+        if (animated) {
             runner.interrupt();
             runner = null;
             runtyp = 0;
@@ -2029,223 +2029,223 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
      */
     private void loadimages() {
         Toolkit toolkit = Toolkit.getDefaultToolkit();
-        MediaTracker mediatracker = new MediaTracker(app);
+        MediaTracker tracker = new MediaTracker(app);
         addLoaded(12);
         int howManyImages = 0;
 
         try {
             for (GameFiles.Entry zipentry : GameFiles.archive("images")) {
-                String s = zipentry.name();
-                byte abyte0[] = zipentry.data();
-                if ("cars.gif".equals(s)) {
-                    carsbg = loadimage(abyte0, mediatracker, toolkit);
+                String name = zipentry.name();
+                byte data[] = zipentry.data();
+                if ("cars.gif".equals(name)) {
+                    carsbg = loadimage(data, tracker, toolkit);
                 }
-                if ("smokey.gif".equals(s)) {
-                    smokeypix(abyte0, mediatracker, toolkit);
+                if ("smokey.gif".equals(name)) {
+                    smokeypix(data, tracker, toolkit);
                 }
-                if ("gameh.gif".equals(s)) {
-                    ogameh = loadimage(abyte0, mediatracker, toolkit);
+                if ("gameh.gif".equals(name)) {
+                    ogameh = loadimage(data, tracker, toolkit);
                 }
-                if ("gameov.gif".equals(s)) {
-                    gameov = loadimage(abyte0, mediatracker, toolkit);
+                if ("gameov.gif".equals(name)) {
+                    gameov = loadimage(data, tracker, toolkit);
                 }
-                if ("lap.gif".equals(s)) {
-                    olap = loadimage(abyte0, mediatracker, toolkit);
+                if ("lap.gif".equals(name)) {
+                    olap = loadimage(data, tracker, toolkit);
                 }
-                if ("paused.gif".equals(s)) {
-                    paused = loadimage(abyte0, mediatracker, toolkit);
+                if ("paused.gif".equals(name)) {
+                    paused = loadimage(data, tracker, toolkit);
                     pausebox_y = Utility.centeredImageY(paused) / 4;
                 }
-                if ("select.gif".equals(s)) {
-                    select = loadimage(abyte0, mediatracker, toolkit);
+                if ("select.gif".equals(name)) {
+                    select = loadimage(data, tracker, toolkit);
                 }
-                if ("yourwasted.gif".equals(s)) {
-                    oyourwasted = loadimage(abyte0, mediatracker, toolkit);
+                if ("yourwasted.gif".equals(name)) {
+                    oyourwasted = loadimage(data, tracker, toolkit);
                 }
-                if ("youwastedem.gif".equals(s)) {
-                    oyouwastedem = loadimage(abyte0, mediatracker, toolkit);
+                if ("youwastedem.gif".equals(name)) {
+                    oyouwastedem = loadimage(data, tracker, toolkit);
                 }
-                if ("d1.gif".equals(s)) {
-                    dude[0] = loadimage(abyte0, mediatracker, toolkit);
+                if ("d1.gif".equals(name)) {
+                    dude[0] = loadimage(data, tracker, toolkit);
                     /* setup initial position since it's dynamic */
                     insano_mainmenu_x = ((GameFacts.screenWidth / 2) - dude[0].getWidth(null) / 2) + 10;
                     insano_mainmenu_x_original = insano_mainmenu_x;
                     insano_mainmenu_y = 2 + main_menu_height_origin;
                     insano_mainmenu_y_original = insano_mainmenu_y;
                 }
-                if ("d2.gif".equals(s)) {
-                    dude[1] = loadimage(abyte0, mediatracker, toolkit);
+                if ("d2.gif".equals(name)) {
+                    dude[1] = loadimage(data, tracker, toolkit);
                 }
-                if ("d3.gif".equals(s)) {
-                    dude[2] = loadimage(abyte0, mediatracker, toolkit);
+                if ("d3.gif".equals(name)) {
+                    dude[2] = loadimage(data, tracker, toolkit);
                 }
-                if ("float.gif".equals(s)) {
-                    oflaot = loadimage(abyte0, mediatracker, toolkit);
+                if ("float.gif".equals(name)) {
+                    oflaot = loadimage(data, tracker, toolkit);
                 }
-                if ("1c.gif".equals(s)) {
-                    ocntdn[1] = loadimage(abyte0, mediatracker, toolkit);
+                if ("1c.gif".equals(name)) {
+                    ocntdn[1] = loadimage(data, tracker, toolkit);
                 }
-                if ("2c.gif".equals(s)) {
-                    ocntdn[2] = loadimage(abyte0, mediatracker, toolkit);
+                if ("2c.gif".equals(name)) {
+                    ocntdn[2] = loadimage(data, tracker, toolkit);
                 }
-                if ("3c.gif".equals(s)) {
-                    ocntdn[3] = loadimage(abyte0, mediatracker, toolkit);
+                if ("3c.gif".equals(name)) {
+                    ocntdn[3] = loadimage(data, tracker, toolkit);
                 }
-                if ("bgmain.jpg".equals(s)) {
-                    bgmain = loadimage(abyte0, mediatracker, toolkit);
+                if ("bgmain.jpg".equals(name)) {
+                    bgmain = loadimage(data, tracker, toolkit);
                 }
-                if ("loadingmusic.gif".equals(s)) {
-                    oloadingmusic = loadimage(abyte0, mediatracker, toolkit);
+                if ("loadingmusic.gif".equals(name)) {
+                    oloadingmusic = loadimage(data, tracker, toolkit);
                 }
-                if ("radicalplay.gif".equals(s)) {
-                    radicalplay = loadimage(abyte0, mediatracker, toolkit);
+                if ("radicalplay.gif".equals(name)) {
+                    radicalplay = loadimage(data, tracker, toolkit);
                 }
-                if ("back.gif".equals(s)) {
-                    back[0] = loadimage(abyte0, mediatracker, toolkit);
+                if ("back.gif".equals(name)) {
+                    back[0] = loadimage(data, tracker, toolkit);
                     back[1] = bressed(back[0]);
                 }
-                if ("continue2.gif".equals(s)) {
-                    contin[0] = loadimage(abyte0, mediatracker, toolkit);
+                if ("continue2.gif".equals(name)) {
+                    contin[0] = loadimage(data, tracker, toolkit);
                     contin[1] = bressed(contin[0]);
                 }
-                if ("next.gif".equals(s)) {
-                    next[0] = loadimage(abyte0, mediatracker, toolkit);
+                if ("next.gif".equals(name)) {
+                    next[0] = loadimage(data, tracker, toolkit);
                     next[1] = bressed(next[0]);
                 }
-                if ("pgate.gif".equals(s)) {
-                    pgate = loadimage(abyte0, mediatracker, toolkit);
+                if ("pgate.gif".equals(name)) {
+                    pgate = loadimage(data, tracker, toolkit);
                 }
-                if ("rpro.gif".equals(s)) {
-                    rpro = loadimage(abyte0, mediatracker, toolkit);
+                if ("rpro.gif".equals(name)) {
+                    rpro = loadimage(data, tracker, toolkit);
                 }
-                if ("selectcar.gif".equals(s)) {
-                    selectcar = loadimage(abyte0, mediatracker, toolkit);
+                if ("selectcar.gif".equals(name)) {
+                    selectcar = loadimage(data, tracker, toolkit);
                 }
-                if ("track1.jpg".equals(s)) {
-                    trackbg[0][0] = loadimage(abyte0, mediatracker, toolkit);
+                if ("track1.jpg".equals(name)) {
+                    trackbg[0][0] = loadimage(data, tracker, toolkit);
                     trackbg[1][0] = dodgen(trackbg[0][0]);
                 }
-                if ("track2.jpg".equals(s)) {
-                    trackbg[0][1] = loadimage(abyte0, mediatracker, toolkit);
+                if ("track2.jpg".equals(name)) {
+                    trackbg[0][1] = loadimage(data, tracker, toolkit);
                     trackbg[1][1] = dodgen(trackbg[0][1]);
                 }
-                if ("youlost.gif".equals(s)) {
-                    oyoulost = loadimage(abyte0, mediatracker, toolkit);
+                if ("youlost.gif".equals(name)) {
+                    oyoulost = loadimage(data, tracker, toolkit);
                 }
-                if ("youwon.gif".equals(s)) {
-                    oyouwon = loadimage(abyte0, mediatracker, toolkit);
+                if ("youwon.gif".equals(name)) {
+                    oyouwon = loadimage(data, tracker, toolkit);
                 }
-                if ("0c.gif".equals(s)) {
-                    ocntdn[0] = loadimage(abyte0, mediatracker, toolkit);
+                if ("0c.gif".equals(name)) {
+                    ocntdn[0] = loadimage(data, tracker, toolkit);
                 }
-                if ("damage.gif".equals(s)) {
-                    odmg = loadimage(abyte0, mediatracker, toolkit);
+                if ("damage.gif".equals(name)) {
+                    odmg = loadimage(data, tracker, toolkit);
                 }
-                if ("power.gif".equals(s)) {
-                    opwr = loadimage(abyte0, mediatracker, toolkit);
+                if ("power.gif".equals(name)) {
+                    opwr = loadimage(data, tracker, toolkit);
                 }
-                if ("position.gif".equals(s)) {
-                    opos = loadimage(abyte0, mediatracker, toolkit);
+                if ("position.gif".equals(name)) {
+                    opos = loadimage(data, tracker, toolkit);
                 }
-                if ("wasted.gif".equals(s)) {
-                    owas = loadimage(abyte0, mediatracker, toolkit);
+                if ("wasted.gif".equals(name)) {
+                    owas = loadimage(data, tracker, toolkit);
                 }
-                if ("start1.gif".equals(s)) {
-                    ostar[0] = loadimage(abyte0, mediatracker, toolkit);
+                if ("start1.gif".equals(name)) {
+                    ostar[0] = loadimage(data, tracker, toolkit);
                 }
-                if ("start2.gif".equals(s)) {
-                    ostar[1] = loadimage(abyte0, mediatracker, toolkit);
+                if ("start2.gif".equals(name)) {
+                    ostar[1] = loadimage(data, tracker, toolkit);
                     star[2] = pressed(ostar[1]);
                 }
-                if ("congrad.gif".equals(s)) {
-                    congrd = loadimage(abyte0, mediatracker, toolkit);
+                if ("congrad.gif".equals(name)) {
+                    congrd = loadimage(data, tracker, toolkit);
                 }
-                if ("statb.gif".equals(s)) {
-                    statb = loadimage(abyte0, mediatracker, toolkit);
+                if ("statb.gif".equals(name)) {
+                    statb = loadimage(data, tracker, toolkit);
                 }
-                if ("statbo.gif".equals(s)) {
-                    statbo = loadimage(abyte0, mediatracker, toolkit);
+                if ("statbo.gif".equals(name)) {
+                    statbo = loadimage(data, tracker, toolkit);
                 }
-                if ("madness.gif".equals(s)) {
-                    mdness = loadimage(abyte0, mediatracker, toolkit);
+                if ("madness.gif".equals(name)) {
+                    mdness = loadimage(data, tracker, toolkit);
                 }
-                if ("fixhoop.gif".equals(s)) {
-                    fixhoop = loadimage(abyte0, mediatracker, toolkit);
+                if ("fixhoop.gif".equals(name)) {
+                    fixhoop = loadimage(data, tracker, toolkit);
                 }
-                if ("arrow.gif".equals(s)) {
-                    sarrow = loadimage(abyte0, mediatracker, toolkit);
+                if ("arrow.gif".equals(name)) {
+                    sarrow = loadimage(data, tracker, toolkit);
                 }
-                if ("stunts.gif".equals(s)) {
-                    stunts = loadimage(abyte0, mediatracker, toolkit);
+                if ("stunts.gif".equals(name)) {
+                    stunts = loadimage(data, tracker, toolkit);
                 }
-                if ("racing.gif".equals(s)) {
-                    racing = loadimage(abyte0, mediatracker, toolkit);
+                if ("racing.gif".equals(name)) {
+                    racing = loadimage(data, tracker, toolkit);
                 }
-                if ("wasting.gif".equals(s)) {
-                    wasting = loadimage(abyte0, mediatracker, toolkit);
+                if ("wasting.gif".equals(name)) {
+                    wasting = loadimage(data, tracker, toolkit);
                 }
-                if ("plus.gif".equals(s)) {
-                    plus = loadimage(abyte0, mediatracker, toolkit);
+                if ("plus.gif".equals(name)) {
+                    plus = loadimage(data, tracker, toolkit);
                 }
-                if ("space.gif".equals(s)) {
-                    space = loadimage(abyte0, mediatracker, toolkit);
+                if ("space.gif".equals(name)) {
+                    space = loadimage(data, tracker, toolkit);
                 }
-                if ("arrows.gif".equals(s)) {
-                    arrows = loadimage(abyte0, mediatracker, toolkit);
+                if ("arrows.gif".equals(name)) {
+                    arrows = loadimage(data, tracker, toolkit);
                 }
-                if ("chil.gif".equals(s)) {
-                    chil = loadimage(abyte0, mediatracker, toolkit);
+                if ("chil.gif".equals(name)) {
+                    chil = loadimage(data, tracker, toolkit);
                 }
-                if ("ory.gif".equals(s)) {
-                    ory = loadimage(abyte0, mediatracker, toolkit);
+                if ("ory.gif".equals(name)) {
+                    ory = loadimage(data, tracker, toolkit);
                 }
-                if ("kz.gif".equals(s)) {
-                    kz = loadimage(abyte0, mediatracker, toolkit);
+                if ("kz.gif".equals(name)) {
+                    kz = loadimage(data, tracker, toolkit);
                 }
-                if ("kx.gif".equals(s)) {
-                    kx = loadimage(abyte0, mediatracker, toolkit);
+                if ("kx.gif".equals(name)) {
+                    kx = loadimage(data, tracker, toolkit);
                 }
-                if ("kv.gif".equals(s)) {
-                    kv = loadimage(abyte0, mediatracker, toolkit);
+                if ("kv.gif".equals(name)) {
+                    kv = loadimage(data, tracker, toolkit);
                 }
-                if ("kp.gif".equals(s)) {
-                    kp = loadimage(abyte0, mediatracker, toolkit);
+                if ("kp.gif".equals(name)) {
+                    kp = loadimage(data, tracker, toolkit);
                 }
-                if ("km.gif".equals(s)) {
-                    km = loadimage(abyte0, mediatracker, toolkit);
+                if ("km.gif".equals(name)) {
+                    km = loadimage(data, tracker, toolkit);
                 }
-                if ("kn.gif".equals(s)) {
-                    kn = loadimage(abyte0, mediatracker, toolkit);
+                if ("kn.gif".equals(name)) {
+                    kn = loadimage(data, tracker, toolkit);
                 }
-                if ("kenter.gif".equals(s)) {
-                    kenter = loadimage(abyte0, mediatracker, toolkit);
+                if ("kenter.gif".equals(name)) {
+                    kenter = loadimage(data, tracker, toolkit);
                 }
-                if ("nfm.gif".equals(s)) {
-                    nfm = loadimage(abyte0, mediatracker, toolkit);
+                if ("nfm.gif".equals(name)) {
+                    nfm = loadimage(data, tracker, toolkit);
                 }
-                if ("options.gif".equals(s)) {
-                    opti = loadimage(abyte0, mediatracker, toolkit);
+                if ("options.gif".equals(name)) {
+                    opti = loadimage(data, tracker, toolkit);
                 }
-                if ("opback.gif".equals(s)) {
-                    opback = loadimage(abyte0, mediatracker, toolkit);
+                if ("opback.gif".equals(name)) {
+                    opback = loadimage(data, tracker, toolkit);
                 }
-                if ("logocars.gif".equals(s)) {
-                    logocars = loadimage(abyte0, mediatracker, toolkit);
+                if ("logocars.gif".equals(name)) {
+                    logocars = loadimage(data, tracker, toolkit);
                 }
-                if ("logomadmess.gif".equals(s)) {
-                    logomadnes = loadimage(abyte0, mediatracker, toolkit);
+                if ("logomadmess.gif".equals(name)) {
+                    logomadnes = loadimage(data, tracker, toolkit);
                 }
-                if ("logomadbg.gif".equals(s)) {
-                    logomadbg = loadimage(abyte0, mediatracker, toolkit);
+                if ("logomadbg.gif".equals(name)) {
+                    logomadbg = loadimage(data, tracker, toolkit);
                 }
-                if ("byrd.gif".equals(s)) {
-                    byrd = loadimage(abyte0, mediatracker, toolkit);
+                if ("byrd.gif".equals(name)) {
+                    byrd = loadimage(data, tracker, toolkit);
                 }
-                if ("nfmcoms.gif".equals(s)) {
-                    nfmcoms = loadimage(abyte0, mediatracker, toolkit);
+                if ("nfmcoms.gif".equals(name)) {
+                    nfmcoms = loadimage(data, tracker, toolkit);
                 }
-                if ("nfmcom.gif".equals(s)) {
-                    nfmcom = loadimage(abyte0, mediatracker, toolkit);
+                if ("nfmcom.gif".equals(name)) {
+                    nfmcom = loadimage(data, tracker, toolkit);
                 }
                 howManyImages++;
                 addLoaded(3);
@@ -2272,14 +2272,14 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
             /// URL goes here
             //
             addLoaded(3);
-        } catch (Exception exception) {
-            HLogger.error("Error Loading Network Images: " + exception);
+        } catch (Exception ex) {
+            HLogger.error("Error Loading Network Images: " + ex);
         }
         System.gc();
         Utility.stopTimer();
     }
 
-    public void pausedgame(int i, Control control, Record record) {
+    public void pausedgame(int stage, Control control, Record record) {
         rd.drawImage(fleximg, 0, 0, null);
         /* add the blue lines behind the pause box */
         int current_line_y = pausebox_y + 5;
@@ -2501,7 +2501,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         }
     }
 
-    public void stat(Madness madness[], CheckPoints checkpoints, Control control, ContO conto[], boolean flag) {
+    public void stat(Madness drivers[], CheckPoints checkpoints, Control control, ContO scene[], boolean chaseView) {
         if (holdit) {
             holdcnt++;
             if (Medium.flex != 0) {
@@ -2547,7 +2547,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                 holdit = true;
                 winner = true;
             }
-            if (!holdit && madness[0].dest && cntwis == 8) {
+            if (!holdit && drivers[0].dest && cntwis == 8) {
                 if (Medium.flex != 2) {
                     rd.setColor(new Color(Medium.csky[0], Medium.csky[1], Medium.csky[2]));
                     rd.fillRect(Utility.centeredImageX(yourwasted), 70, yourwasted.getWidth(ob),
@@ -2562,10 +2562,10 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                 winner = false;
             }
             if (!holdit) {
-                int i = 0;
+                int racer = 0;
                 do {
-                    if (checkpoints.clear[i] == checkpoints.nlaps * checkpoints.nsp && checkpoints.pos[i] == 0) {
-                        if (i == 0) {
+                    if (checkpoints.clear[racer] == checkpoints.nlaps * checkpoints.nsp && checkpoints.pos[racer] == 0) {
+                        if (racer == 0) {
                             if (Medium.flex != 2) {
                                 rd.setColor(new Color(Medium.csky[0], Medium.csky[1], Medium.csky[2]));
                                 rd.fillRect(Utility.centeredImageX(youwon), 70, youwon.getWidth(ob),
@@ -2594,10 +2594,10 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                             }
                             rd.drawImage(youlost, Utility.centeredImageX(youlost), 70, null);
                             if (aflk) {
-                                drawcs(120, "" + names[sc[i]] + " finished first, race over!", 0, 0, 0, 0);
+                                drawcs(120, "" + names[sc[racer]] + " finished first, race over!", 0, 0, 0, 0);
                                 aflk = false;
                             } else {
-                                drawcs(120, "" + names[sc[i]] + " finished first, race over!", 0, 128, 255, 0);
+                                drawcs(120, "" + names[sc[racer]] + " finished first, race over!", 0, 128, 255, 0);
                                 aflk = true;
                             }
                             winner = false;
@@ -2606,9 +2606,9 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                         checkpoints.haltall = true;
                         holdit = true;
                     }
-                } while (++i < GameFacts.numberOfPlayers);
+                } while (++racer < GameFacts.numberOfPlayers);
             }
-            if (flag) {
+            if (chaseView) {
                 if (!arrowDisabled) {
                     if (checkpoints.stage != 110 && arrace != control.arrace) {
                         arrace = control.arrace;
@@ -2629,7 +2629,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                     rd.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
                     if (!arrowDisabled) {
-                        arrow(madness[spectate].point, madness[spectate].missedcp, checkpoints, conto, arrace);
+                        arrow(drivers[spectate].point, drivers[spectate].missedcp, checkpoints, scene, arrace);
                     }
 
                     if (!opstatusDisabled) {
@@ -2655,7 +2655,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                                     rd.drawString(names[sc[array_two]],
                                             600 - ((FontHandler.fMetrics.stringWidth(names[sc[array_two]])) / 2) + x_value,
                                             70 + y_value + 30 * array_one);
-                                    if (madness[0].im == array_two) {
+                                    if (drivers[0].im == array_two) {
                                         int red = (int) (159.0F + (159.0F * ((float) Medium.snap[0] / 100.0F)));
                                         if (red > 255)
                                             red = 255;
@@ -2676,8 +2676,8 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                                         rd.drawRect(532 + x_value, 59 + y_value + 30 * array_one, 112, 23);
                                     }
                                     if (arrace) {
-                                        int dmg = (int) (60F * ((float) madness[array_two].hitmag
-                                                / (float) madness[array_two].stat.maxmag));
+                                        int dmg = (int) (60F * ((float) drivers[array_two].hitmag
+                                                / (float) drivers[array_two].stat.maxmag));
 
                                         int red = 244;
                                         int green = 244;
@@ -2709,7 +2709,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                                         rd.setColor(new Color(red, green, blue));
                                         rd.fillRect(565 + x_value, 75 + y_value + 30 * array_one, dmg, 5);
                                     } else {
-                                        int pwr = (int) (60F * (madness[array_two].power / 98F));
+                                        int pwr = (int) (60F * (drivers[array_two].power / 98F));
                                         if (pwr > 98) {
                                             pwr = 98;
                                         }
@@ -2725,20 +2725,20 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                         }
                     }
                     rd.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
-                    if (!arrace && auscnt == 45 && madness[0].capcnt == 0) {
-                        if (madness[0].missedcp > 0) {
-                            if (madness[0].missedcp > 15 && madness[0].missedcp < 50) {
+                    if (!arrace && auscnt == 45 && drivers[0].capcnt == 0) {
+                        if (drivers[0].missedcp > 0) {
+                            if (drivers[0].missedcp > 15 && drivers[0].missedcp < 50) {
                                 if (flk) {
                                     drawcs(70, "Checkpoint Missed!", 255, 0, 0, 0);
                                 } else {
                                     drawcs(70, "Checkpoint Missed!", 255, 150, 0, 2);
                                 }
                             }
-                            madness[0].missedcp++;
-                            if (madness[0].missedcp == 70) {
-                                madness[0].missedcp = -2;
+                            drivers[0].missedcp++;
+                            if (drivers[0].missedcp == 70) {
+                                drivers[0].missedcp = -2;
                             }
-                        } else if (madness[0].mtouch && cntovn < 70) {
+                        } else if (drivers[0].mtouch && cntovn < 70) {
                             if (Math.abs(ana) > 100) {
                                 cntan++;
                             } else if (cntan != 0) {
@@ -2766,7 +2766,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                     rd.drawImage(pwr, bar_x, 27, null);
                     rd.drawImage(lap, 19, 7, null);
                     rd.setColor(new Color(0, 0, 100));
-                    rd.drawString("" + (madness[spectate].nlaps + 1) + " / " + checkpoints.nlaps + "", 51, 18);
+                    rd.drawString("" + (drivers[spectate].nlaps + 1) + " / " + checkpoints.nlaps + "", 51, 18);
                     rd.drawImage(was, 92, 7, null);
                     rd.setColor(new Color(0, 0, 100));
                     rd.drawString("" + checkpoints.wasted + " / " + (GameFacts.numberOfPlayers - 1), 150, 18);
@@ -2791,18 +2791,18 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                     rd.drawString("" + position + suffix + "", 110, 43);
                     rd.setFont(new Font("SansSerif", 1, 11));
                     FontHandler.fMetrics = rd.getFontMetrics();
-                    drawstat(madness[spectate].stat.maxmag, madness[spectate].hitmag, madness[spectate].newcar,
-                            madness[spectate].power, bar_x);
+                    drawstat(drivers[spectate].stat.maxmag, drivers[spectate].hitmag, drivers[spectate].newcar,
+                            drivers[spectate].power, bar_x);
 
                     if (GameSparker.DEBUG) {
                         if (debugmode) {
                             rd.setColor(new Color(0, 0, 0));
-                            rd.drawString("pcleared: " + madness[spectate].pcleared, 20, 80);
+                            rd.drawString("pcleared: " + drivers[spectate].pcleared, 20, 80);
                             rd.drawString("checkpoints.clear[" + spectate + "]: " + checkpoints.clear[spectate], 20,
                                     95);
-                            rd.drawString("X: " + conto[spectate].x, 20, 400);
-                            rd.drawString("Y: " + conto[spectate].y, 20, 420);
-                            rd.drawString("Z: " + conto[spectate].z, 20, 440);
+                            rd.drawString("X: " + scene[spectate].x, 20, 400);
+                            rd.drawString("Y: " + scene[spectate].y, 20, 420);
+                            rd.drawString("Z: " + scene[spectate].z, 20, 440);
                         }
                     }
                 }
@@ -2853,11 +2853,11 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                         rd.drawImage(cntdn[gocnt], Utility.centeredImageX(dudeb[duds]) + 60, 50, null);
                     }
                 }
-                if (looped != 0 && madness[0].loop == 2) {
+                if (looped != 0 && drivers[0].loop == 2) {
                     looped = 0;
                 }
-                if (madness[0].power < 45F) {
-                    if (tcnt == 30 && auscnt == 45 && madness[0].mtouch && madness[0].capcnt == 0) {
+                if (drivers[0].power < 45F) {
+                    if (tcnt == 30 && auscnt == 45 && drivers[0].mtouch && drivers[0].capcnt == 0) {
                         if (looped != 2) {
                             if (pwcnt < 70 || pwcnt < 160 && looped != 0) {
                                 if (pwflk) {
@@ -2893,7 +2893,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                 } else if (pwcnt != 0) {
                     pwcnt = 0;
                 }
-                if (madness[0].capcnt == 0) {
+                if (drivers[0].capcnt == 0) {
                     if (tcnt < 30) {
                         if (tflk) {
                             if (!wasay) {
@@ -2931,98 +2931,98 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                     drawcs(110, "Bad Landing!", 255, 100, 0, 0);
                     tflk = true;
                 }
-                if (madness[0].trcnt == 10) {
+                if (drivers[0].trcnt == 10) {
                     loop = "";
                     spin = "";
                     asay = "";
-                    int j;
-                    for (j = 0; madness[0].travzy > 225; j++) {
-                        madness[0].travzy -= 360;
+                    int turns;
+                    for (turns = 0; drivers[0].travzy > 225; turns++) {
+                        drivers[0].travzy -= 360;
                     }
 
-                    while (madness[0].travzy < -225) {
-                        madness[0].travzy += 360;
-                        j--;
+                    while (drivers[0].travzy < -225) {
+                        drivers[0].travzy += 360;
+                        turns--;
                     }
-                    if (j == 1) {
+                    if (turns == 1) {
                         loop = "Forward loop";
                     }
-                    if (j == 2) {
+                    if (turns == 2) {
                         loop = "double Forward";
                     }
-                    if (j == 3) {
+                    if (turns == 3) {
                         loop = "triple Forward";
                     }
-                    if (j >= 4) {
+                    if (turns >= 4) {
                         loop = "massive Forward looping";
                     }
-                    if (j == -1) {
+                    if (turns == -1) {
                         loop = "Backloop";
                     }
-                    if (j == -2) {
+                    if (turns == -2) {
                         loop = "double Back";
                     }
-                    if (j == -3) {
+                    if (turns == -3) {
                         loop = "triple Back";
                     }
-                    if (j <= -4) {
+                    if (turns <= -4) {
                         loop = "massive Back looping";
                     }
-                    if (j == 0) {
-                        if (madness[0].ftab && madness[0].btab) {
+                    if (turns == 0) {
+                        if (drivers[0].ftab && drivers[0].btab) {
                             loop = "Tabletop and reversed Tabletop";
-                        } else if (madness[0].ftab || madness[0].btab) {
+                        } else if (drivers[0].ftab || drivers[0].btab) {
                             loop = "Tabletop";
                         }
                     }
-                    if (j > 0 && madness[0].btab) {
+                    if (turns > 0 && drivers[0].btab) {
                         loop = "Hanged " + loop;
                     }
-                    if (j < 0 && madness[0].ftab) {
+                    if (turns < 0 && drivers[0].ftab) {
                         loop = "Hanged " + loop;
                     }
                     if (!("").equals(loop)) {
                         asay += " " + loop;
                     }
-                    j = 0;
-                    for (madness[0].travxy = Math.abs(madness[0].travxy); madness[0].travxy > 270;) {
-                        madness[0].travxy -= 360;
-                        j++;
+                    turns = 0;
+                    for (drivers[0].travxy = Math.abs(drivers[0].travxy); drivers[0].travxy > 270;) {
+                        drivers[0].travxy -= 360;
+                        turns++;
                     }
 
-                    if (j == 0 && madness[0].rtab) {
+                    if (turns == 0 && drivers[0].rtab) {
                         if (("").equals(loop)) {
                             spin = "Tabletop";
                         } else {
                             spin = "Flipside";
                         }
                     }
-                    if (j == 1) {
+                    if (turns == 1) {
                         spin = "Rollspin";
                     }
-                    if (j == 2) {
+                    if (turns == 2) {
                         spin = "double Rollspin";
                     }
-                    if (j == 3) {
+                    if (turns == 3) {
                         spin = "triple Rollspin";
                     }
-                    if (j >= 4) {
+                    if (turns >= 4) {
                         spin = "massive Roll spinning";
                     }
-                    j = 0;
-                    boolean flag1 = false;
-                    for (madness[0].travxz = Math.abs(madness[0].travxz); madness[0].travxz > 90;) {
-                        madness[0].travxz -= 180;
-                        if ((j += 180) > GameFacts.screenWidth) {
-                            j = GameFacts.screenWidth;
-                            flag1 = true;
+                    turns = 0;
+                    boolean maxed = false;
+                    for (drivers[0].travxz = Math.abs(drivers[0].travxz); drivers[0].travxz > 90;) {
+                        drivers[0].travxz -= 180;
+                        if ((turns += 180) > GameFacts.screenWidth) {
+                            turns = GameFacts.screenWidth;
+                            maxed = true;
                         }
                     }
 
-                    if (j != 0) {
+                    if (turns != 0) {
                         if (("").equals(loop) && ("").equals(spin)) {
-                            asay += " " + j;
-                            if (flag1) {
+                            asay += " " + turns;
+                            if (maxed) {
                                 asay += " and beyond";
                             }
                         } else {
@@ -3033,8 +3033,8 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                                     asay += " with " + spin;
                                 }
                             }
-                            asay += " by " + j;
-                            if (flag1) {
+                            asay += " by " + turns;
+                            if (maxed) {
                                 asay += " and beyond";
                             }
                         }
@@ -3054,7 +3054,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                     if (!("").equals(spin)) {
                         auscnt -= 25;
                     }
-                    if (j != 0) {
+                    if (turns != 0) {
                         auscnt -= 25;
                     }
                     if (auscnt < 45) {
@@ -3064,28 +3064,28 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                         if (auscnt < -20) {
                             auscnt = -20;
                         }
-                        byte byte0 = 0;
-                        if (madness[0].powerup > 20F) {
-                            byte0 = 1;
+                        byte praise = 0;
+                        if (drivers[0].powerup > 20F) {
+                            praise = 1;
                         }
-                        if (madness[0].powerup > 40F) {
-                            byte0 = 2;
+                        if (drivers[0].powerup > 40F) {
+                            praise = 2;
                         }
-                        if (madness[0].powerup > 150F) {
-                            byte0 = 3;
+                        if (drivers[0].powerup > 150F) {
+                            praise = 3;
                         }
-                        if (madness[0].surfer) {
+                        if (drivers[0].surfer) {
                             asay = " " + adj[4][(int) (Medium.fxRandom() * 3F)] + asay;
                         }
-                        if (byte0 != 3) {
-                            asay = adj[byte0][(int) (Medium.fxRandom() * 3F)] + asay + exlm[byte0];
+                        if (praise != 3) {
+                            asay = adj[praise][(int) (Medium.fxRandom() * 3F)] + asay + exlm[praise];
                         } else {
-                            asay = adj[byte0][(int) (Medium.fxRandom() * 3F)];
+                            asay = adj[praise][(int) (Medium.fxRandom() * 3F)];
                         }
                         if (!wasay) {
                             tcnt = auscnt;
-                            if (madness[0].power != 98F) {
-                                say = "Power Up " + (int) ((100F * madness[0].powerup) / 98F) + "%";
+                            if (drivers[0].power != 98F) {
+                                say = "Power Up " + (int) ((100F * drivers[0].powerup) / 98F) + "%";
                             } else {
                                 say = "Power To The MAX";
                             }
@@ -3093,19 +3093,19 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                         }
                     }
                 }
-                if (madness[0].newcar) {
+                if (drivers[0].newcar) {
                     if (!wasay) {
                         say = "Car Fixed";
                         tcnt = 0;
                     }
                     crashup = !crashup;
                 }
-                if (clear != madness[0].clear && madness[0].clear != 0) {
+                if (clear != drivers[0].clear && drivers[0].clear != 0) {
                     if (!wasay) {
                         say = "Checkpoint!";
                         tcnt = 15;
                     }
-                    clear = madness[0].clear;
+                    clear = drivers[0].clear;
                     if (!mutes) {
                         sm.play("checkpoint");
                     }
@@ -3114,22 +3114,22 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                         cntan = 0;
                     }
                 }
-                int k = 1;
+                int other = 1;
                 do {
-                    if (dested[k] != checkpoints.dested[k]) {
-                        dested[k] = checkpoints.dested[k];
-                        if (dested[k] == 1) {
+                    if (dested[other] != checkpoints.dested[other]) {
+                        dested[other] = checkpoints.dested[other];
+                        if (dested[other] == 1) {
                             wasay = true;
-                            say = "" + names[sc[k]] + " has been wasted!";
+                            say = "" + names[sc[other]] + " has been wasted!";
                             tcnt = -15;
                         }
-                        if (dested[k] == 2) {
+                        if (dested[other] == 2) {
                             wasay = true;
-                            say = "You wasted " + names[sc[k]] + "!";
+                            say = "You wasted " + names[sc[other]] + "!";
                             tcnt = -15;
                         }
                     }
-                } while (++k < GameFacts.numberOfPlayers);
+                } while (++other < GameFacts.numberOfPlayers);
             }
         }
         if (Medium.lightn != -1 && checkpoints.stage == 16) {
@@ -3138,7 +3138,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         }
     }
 
-    public void finish(CheckPoints checkpoints, ContO aconto[], Control control) {
+    public void finish(CheckPoints checkpoints, ContO models[], Control control) {
         rd.drawImage(fleximg, 0, 0, null);
         if (winner) {
             if (checkpoints.stage == unlocked) {
@@ -3152,54 +3152,54 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                 } else {
                     rd.drawImage(congrd, Utility.centeredImageX(congrd) + (int) (Medium.fxRandom() * 10F), 30, null);
                 }
-                byte byte0 = 0;
-                int i = 0;
+                byte unlockedCar = 0;
+                int carY = 0;
                 pin = 60;
                 if (checkpoints.stage == 2) {
-                    byte0 = 8;
-                    i = 265;
+                    unlockedCar = 8;
+                    carY = 265;
                     pin = 0;
                     sc[0] = 8;
                 }
                 if (checkpoints.stage == 4) {
-                    byte0 = 9;
-                    i = 240;
+                    unlockedCar = 9;
+                    carY = 240;
                     pin = 0;
                     sc[0] = 9;
                 }
                 if (checkpoints.stage == 6) {
-                    byte0 = 10;
-                    i = 290;
+                    unlockedCar = 10;
+                    carY = 290;
                     pin = 0;
                     sc[0] = 10;
                 }
                 if (checkpoints.stage == 8) {
-                    byte0 = 11;
-                    i = 226;
+                    unlockedCar = 11;
+                    carY = 226;
                     pin = 0;
                     sc[0] = 11;
                 }
                 if (checkpoints.stage == 10) {
-                    byte0 = 12;
-                    i = 200;
+                    unlockedCar = 12;
+                    carY = 200;
                     pin = 0;
                     sc[0] = 12;
                 }
                 if (checkpoints.stage == 12) {
-                    byte0 = 13;
-                    i = 200;
+                    unlockedCar = 13;
+                    carY = 200;
                     pin = 0;
                     sc[0] = 13;
                 }
                 if (checkpoints.stage == 14) {
-                    byte0 = 14;
-                    i = 270;
+                    unlockedCar = 14;
+                    carY = 270;
                     pin = 0;
                     sc[0] = 14;
                 }
                 if (checkpoints.stage == 16) {
-                    byte0 = 15;
-                    i = 290;
+                    unlockedCar = 15;
+                    carY = 290;
                     pin = 0;
                     sc[0] = 15;
                 }
@@ -3214,15 +3214,15 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                         drawcs(Utility.centeredHeightY(carUnlockedBoxHeight) - 40 + pin,
                                 "Stage " + (checkpoints.stage + 1) + " is now unlocked!", 247, 255, 165, 3);
                     }
-                    if (byte0 != 0) {
+                    if (unlockedCar != 0) {
                         if (aflk) {
                             drawcs(Utility.centeredHeightY(carUnlockedBoxHeight) - 20, "And:", 176, 196, 0, 3);
                         } else {
                             drawcs(Utility.centeredHeightY(carUnlockedBoxHeight) - 20, "And:", 247, 255, 165, 3);
                         }
                         rd.setColor(new Color(236, 226, 202));
-                        float f = (float) Math.random();
-                        if (f < 0.69999999999999996D) {
+                        float flicker = (float) Math.random();
+                        if (flicker < 0.69999999999999996D) {
                             rd.drawRect(Utility.centeredWidthX(349), Utility.centeredHeightY(carUnlockedBoxHeight), 349,
                                     126);
                         } else {
@@ -3236,7 +3236,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                                 Utility.centeredHeightY(carUnlockedBoxHeight) + carUnlockedBoxHeight, 348, 4);
                         rd.fillRect(Utility.centeredWidthX(348) + 345, Utility.centeredHeightY(carUnlockedBoxHeight), 4,
                                 125);
-                        aconto[byte0].y = i;
+                        models[unlockedCar].y = carY;
                         Medium.crs = true;
                         Medium.x = -(GameFacts.screenWidth / 2);
                         Medium.y = -130;
@@ -3244,33 +3244,33 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                         Medium.xz = 0;
                         Medium.zy = 0;
                         Medium.ground = 2470;
-                        aconto[byte0].blackout = false;
-                        aconto[byte0].z = 1000;
-                        aconto[byte0].x = 0;
-                        aconto[byte0].xz += 5;
-                        aconto[byte0].zy = 0;
-                        aconto[byte0].wzy -= 10;
-                        aconto[byte0].d(rd);
-                        if (f < 0.10000000000000001D) {
+                        models[unlockedCar].blackout = false;
+                        models[unlockedCar].z = 1000;
+                        models[unlockedCar].x = 0;
+                        models[unlockedCar].xz += 5;
+                        models[unlockedCar].zy = 0;
+                        models[unlockedCar].wzy -= 10;
+                        models[unlockedCar].d(rd);
+                        if (flicker < 0.10000000000000001D) {
                             rd.setColor(new Color(236, 226, 202));
-                            int j = 0;
+                            int row = 0;
                             do {
                                 rd.drawLine(Utility.centeredWidthX(348),
-                                        Utility.centeredHeightY(carUnlockedBoxHeight) + 4 * 2 + 4 * j,
+                                        Utility.centeredHeightY(carUnlockedBoxHeight) + 4 * 2 + 4 * row,
                                         Utility.centeredWidthX(348) + 348,
-                                        Utility.centeredHeightY(carUnlockedBoxHeight) + 4 * 2 + 4 * j);
-                            } while (++j < 30);
+                                        Utility.centeredHeightY(carUnlockedBoxHeight) + 4 * 2 + 4 * row);
+                            } while (++row < 30);
                         }
-                        String s = "";
-                        if (byte0 == 13) {
-                            s = " ";
+                        String space = "";
+                        if (unlockedCar == 13) {
+                            space = " ";
                         }
                         if (aflk) {
                             drawcs(Utility.centeredHeightY(carUnlockedBoxHeight) + carUnlockedBoxHeight + 20,
-                                    "" + names[byte0] + "" + s + " has been unlocked!", 176, 196, 0, 3);
+                                    "" + names[unlockedCar] + "" + space + " has been unlocked!", 176, 196, 0, 3);
                         } else {
                             drawcs(Utility.centeredHeightY(carUnlockedBoxHeight) + carUnlockedBoxHeight + 20,
-                                    "" + names[byte0] + "" + s + " has been unlocked!", 247, 255, 165, 3);
+                                    "" + names[unlockedCar] + "" + space + " has been unlocked!", 247, 255, 165, 3);
                         }
                         pin = 180;
                     }
@@ -3371,24 +3371,24 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
     /**
      * unique car sorter
      *
-     * @param i checkpoints.stage
+     * @param stage checkpoints.stage
      * @author rafa
      */
-    private void sortcars(int i) {
-        if (i != 0) {
+    private void sortcars(int stage) {
+        if (stage != 0) {
             int lastcar = GameFacts.numberOfPlayers;
 
             if (GameFacts.numberOfPlayers == 1) {
                 return; // if there's only 1 car (the player), don't sort anything
             }
 
-            int maxId = GameFacts.numberOfPlayers + (i + 1) / 2;
+            int maxId = GameFacts.numberOfPlayers + (stage + 1) / 2;
             if (maxId > GameFacts.numberOfCars - 1) {
                 maxId = GameFacts.numberOfCars - 1;
             }
 
             if (sc[0] != maxId) {
-                if (i != -1) {
+                if (stage != -1) {
                     sc[GameFacts.numberOfPlayers - 1] = maxId;
                     lastcar--; // boss car won't be randomized if stage isnt custom
                 }
@@ -3399,14 +3399,14 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
             // cd.names[nplayers + ((i - 1) / 2)] + ", therefore: " + (((i - 1) / 2) -
             // (nplayers + ((i - 1) / 2))) + " car difference");
 
-            if (i == -1 || unlocked == GameFacts.numberOfStages) {
-                i = GameFacts.numberOfStages;
+            if (stage == -1 || unlocked == GameFacts.numberOfStages) {
+                stage = GameFacts.numberOfStages;
                 // double boss cars can appear if game is unlocked and player is playing on regular stages cba to account for this rn
             }
 
             // create a list of car ids, each item completely unique
             ArrayList<Integer> list = new ArrayList<>();
-            for (int k = i / 2; k < GameFacts.numberOfPlayers + (i / 2); k++) {
+            for (int k = stage / 2; k < GameFacts.numberOfPlayers + (stage / 2); k++) {
                 if (k == sc[0])
                     continue;
                 list.add(k);
@@ -3420,13 +3420,13 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
             Collections.shuffle(list, deck);
 
             // which item of the list should be picked
-            int k = 0;
+            int pick = 0;
 
             for (int j = 1; j < lastcar; j++) {
 
                 // get an item from the "deck" - this can be any item as long as it's unique
-                sc[j] = list.get(k);
-                k++;
+                sc[j] = list.get(pick);
+                pick++;
 
                 // if there are more cars than tracks, reduce the car index number until it
                 // fits.
@@ -3447,11 +3447,11 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         }
     }
 
-    private void sparkeng(final Stat stat, int i) {
-        i++;
+    private void sparkeng(final Stat stat, int gear) {
+        gear++;
         int j = 0;
         do {
-            if (i == j) {
+            if (gear == j) {
                 if (!pengs[j]) {
                     sm.loop("engs" + stat.engine + j);
                     pengs[j] = true;
@@ -3467,8 +3467,8 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
     /*
      * Draws a centered string.
      */
-    public void drawcs(int yPos, String s, int red, int green, int blue, int i1) {
-        if (i1 != 3 && i1 != 4) {
+    public void drawcs(int yPos, String text, int red, int green, int blue, int style) {
+        if (style != 3 && style != 4) {
             red = (int) (red + red * (Medium.snap[0] / 100F));
             if (red > 255) {
                 red = 255;
@@ -3491,7 +3491,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                 blue = 0;
             }
         }
-        if (i1 == 4) {
+        if (style == 4) {
             red = (int) (red - red * (Medium.snap[0] / 100F));
             if (red > 255) {
                 red = 255;
@@ -3514,11 +3514,11 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                 blue = 0;
             }
         }
-        if (i1 == 1) {
+        if (style == 1) {
             rd.setColor(new Color(0, 0, 0));
-            rd.drawString(s, (GameFacts.screenWidth / 2 - FontHandler.fMetrics.stringWidth(s) / 2) + 1, yPos + 1);
+            rd.drawString(text, (GameFacts.screenWidth / 2 - FontHandler.fMetrics.stringWidth(text) / 2) + 1, yPos + 1);
         }
-        if (i1 == 2) {
+        if (style == 2) {
             red = (red * 2 + Medium.csky[0] * 1) / 3;
             if (red > 255) {
                 red = 255;
@@ -3542,23 +3542,23 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
             }
         }
         rd.setColor(new Color(red, green, blue));
-        rd.drawString(s, GameFacts.screenWidth / 2 - FontHandler.fMetrics.stringWidth(s) / 2, yPos);
+        rd.drawString(text, GameFacts.screenWidth / 2 - FontHandler.fMetrics.stringWidth(text) / 2, yPos);
     }
 
-    public void trackbg(boolean flag) {
-        int i = 0;
+    public void trackbg(boolean steady) {
+        int frame = 0;
         trkl++;
         if (trkl > trklim) {
-            i = 1;
+            frame = 1;
             trklim = (int) (Math.random() * 40D);
             trkl = 0;
         }
-        if (flag) {
-            i = 0;
+        if (steady) {
+            frame = 0;
         }
         int j = 0;
         do {
-            rd.drawImage(trackbg[i][j], trkx[j], 0, null);
+            rd.drawImage(trackbg[frame][j], trkx[j], 0, null);
             trkx[j]--;
             if (trkx[j] <= -GameFacts.screenWidth) {
                 trkx[j] = GameFacts.screenWidth;
@@ -3642,7 +3642,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         }
     }
 
-    public void snap(int i) {
+    public void snap(int stage) {
         dmg = loadsnap(odmg);
         pwr = loadsnap(opwr);
         was = loadsnap(owas);
@@ -3657,57 +3657,57 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         youwon = loadsnap(oyouwon);
         youwastedem = loadsnap(oyouwastedem);
         gameh = loadsnap(ogameh);
-        loadingmusic = loadopsnap(oloadingmusic, i, 76);
-        star[0] = loadopsnap(ostar[0], i, 0);
-        star[1] = loadopsnap(ostar[1], i, 0);
-        flaot = loadopsnap(oflaot, i, 1);
+        loadingmusic = loadopsnap(oloadingmusic, stage, 76);
+        star[0] = loadopsnap(ostar[0], stage, 0);
+        star[1] = loadopsnap(ostar[1], stage, 0);
+        flaot = loadopsnap(oflaot, stage, 1);
     }
 
     private Image loadsnap(Image image) {
-        int i = image.getHeight(ob);
-        int j = image.getWidth(ob);
-        int ai[] = new int[j * i];
-        PixelGrabber pixelgrabber = new PixelGrabber(image, 0, 0, j, i, ai, 0, j);
+        int height = image.getHeight(ob);
+        int width = image.getWidth(ob);
+        int pixels[] = new int[width * height];
+        PixelGrabber grabber = new PixelGrabber(image, 0, 0, width, height, pixels, 0, width);
         try {
-            pixelgrabber.grabPixels();
-        } catch (InterruptedException _ex) {
+            grabber.grabPixels();
+        } catch (InterruptedException ignored) {
         }
-        for (int k = 0; k < j * i; k++) {
-            if (ai[k] != 0xffc0c0c0 && ai[k] != ai[j * i - 1]) {
-                Color color = new Color(ai[k]);
-                int l = (int) (color.getRed() + color.getRed() * (Medium.snap[0] / 100F));
-                if (l > 225) {
-                    l = 225;
+        for (int k = 0; k < width * height; k++) {
+            if (pixels[k] != 0xffc0c0c0 && pixels[k] != pixels[width * height - 1]) {
+                Color color = new Color(pixels[k]);
+                int red = (int) (color.getRed() + color.getRed() * (Medium.snap[0] / 100F));
+                if (red > 225) {
+                    red = 225;
                 }
-                if (l < 0) {
-                    l = 0;
+                if (red < 0) {
+                    red = 0;
                 }
-                int i1 = (int) (color.getGreen() + color.getGreen() * (Medium.snap[1] / 100F));
-                if (i1 > 225) {
-                    i1 = 225;
+                int green = (int) (color.getGreen() + color.getGreen() * (Medium.snap[1] / 100F));
+                if (green > 225) {
+                    green = 225;
                 }
-                if (i1 < 0) {
-                    i1 = 0;
+                if (green < 0) {
+                    green = 0;
                 }
-                int j1 = (int) (color.getBlue() + color.getBlue() * (Medium.snap[2] / 100F));
-                if (j1 > 225) {
-                    j1 = 225;
+                int blue = (int) (color.getBlue() + color.getBlue() * (Medium.snap[2] / 100F));
+                if (blue > 225) {
+                    blue = 225;
                 }
-                if (j1 < 0) {
-                    j1 = 0;
+                if (blue < 0) {
+                    blue = 0;
                 }
-                Color color2 = new Color(l, i1, j1);
-                ai[k] = color2.getRGB();
-            } else if (ai[k] == 0xffc0c0c0) {
-                Color color1 = new Color(Medium.csky[0], Medium.csky[1], Medium.csky[2]);
-                ai[k] = color1.getRGB();
+                Color tinted = new Color(red, green, blue);
+                pixels[k] = tinted.getRGB();
+            } else if (pixels[k] == 0xffc0c0c0) {
+                Color sky = new Color(Medium.csky[0], Medium.csky[1], Medium.csky[2]);
+                pixels[k] = sky.getRGB();
             }
         }
 
-        return createImage(new MemoryImageSource(j, i, ai, 0, j));
+        return createImage(new MemoryImageSource(width, height, pixels, 0, width));
     }
 
-    public void resetstat(int i) {
+    public void resetstat(int stage) {
         arrace = false;
         ana = 0;
         cntan = 0;
@@ -3737,137 +3737,137 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         do {
             dested[j] = 0;
         } while (++j < GameFacts.numberOfPlayers);
-        sortcars(i);
+        sortcars(stage);
     }
 
     /**
      * x_origin defines the relative position horizontally at which to draw the bars
      */
-    private void drawstat(int i, int j, boolean flag, float f, int x_origin) {
-        int ai[] = new int[4];
-        int ai1[] = new int[4];
+    private void drawstat(int maxDamage, int damage, boolean redraw, float power, int x_origin) {
+        int xs[] = new int[4];
+        int ys[] = new int[4];
         int bar_x_origin = x_origin + 62;
 
-        if (flag) {
-            ai[0] = bar_x_origin;
-            ai1[0] = 11;
-            ai[1] = bar_x_origin;
-            ai1[1] = 19;
-            ai[2] = 630;
-            ai1[2] = 19;
-            ai[3] = 630;
-            ai1[3] = 11;
+        if (redraw) {
+            xs[0] = bar_x_origin;
+            ys[0] = 11;
+            xs[1] = bar_x_origin;
+            ys[1] = 19;
+            xs[2] = 630;
+            ys[2] = 19;
+            xs[3] = 630;
+            ys[3] = 11;
             rd.setColor(new Color(Medium.csky[0], Medium.csky[1], Medium.csky[2]));
-            rd.fillPolygon(ai, ai1, 4);
+            rd.fillPolygon(xs, ys, 4);
         }
-        if (j > i) {
-            j = i;
+        if (damage > maxDamage) {
+            damage = maxDamage;
         }
-        int k = (int) (98F * ((float) j / (float) i));
-        ai[0] = bar_x_origin;
-        ai1[0] = 11;
-        ai[1] = bar_x_origin;
-        ai1[1] = 20;
-        ai[2] = bar_x_origin + k;
-        ai1[2] = 20;
-        ai[3] = bar_x_origin + k;
-        ai1[3] = 11;
-        int l = 244;
-        int i1 = 244;
-        int j1 = 11;
-        if (k > 33) {
-            i1 = (int) (244F - 233F * ((k - 33) / 65F));
+        int damageBar = (int) (98F * ((float) damage / (float) maxDamage));
+        xs[0] = bar_x_origin;
+        ys[0] = 11;
+        xs[1] = bar_x_origin;
+        ys[1] = 20;
+        xs[2] = bar_x_origin + damageBar;
+        ys[2] = 20;
+        xs[3] = bar_x_origin + damageBar;
+        ys[3] = 11;
+        int red = 244;
+        int green = 244;
+        int blue = 11;
+        if (damageBar > 33) {
+            green = (int) (244F - 233F * ((damageBar - 33) / 65F));
         }
-        if (k > 70) {
+        if (damageBar > 70) {
             if (dmcnt < 10) {
                 if (dmflk) {
-                    i1 = 170;
+                    green = 170;
                     dmflk = false;
                 } else {
                     dmflk = true;
                 }
             }
             dmcnt++;
-            if (dmcnt > 167D - k * 1.5D) {
+            if (dmcnt > 167D - damageBar * 1.5D) {
                 dmcnt = 0;
             }
         }
-        l = (int) (l + l * (Medium.snap[0] / 100F));
-        if (l > 255) {
-            l = 255;
+        red = (int) (red + red * (Medium.snap[0] / 100F));
+        if (red > 255) {
+            red = 255;
         }
-        if (l < 0) {
-            l = 0;
+        if (red < 0) {
+            red = 0;
         }
-        i1 = (int) (i1 + i1 * (Medium.snap[1] / 100F));
-        if (i1 > 255) {
-            i1 = 255;
+        green = (int) (green + green * (Medium.snap[1] / 100F));
+        if (green > 255) {
+            green = 255;
         }
-        if (i1 < 0) {
-            i1 = 0;
+        if (green < 0) {
+            green = 0;
         }
-        j1 = (int) (j1 + j1 * (Medium.snap[2] / 100F));
-        if (j1 > 255) {
-            j1 = 255;
+        blue = (int) (blue + blue * (Medium.snap[2] / 100F));
+        if (blue > 255) {
+            blue = 255;
         }
-        if (j1 < 0) {
-            j1 = 0;
+        if (blue < 0) {
+            blue = 0;
         }
-        rd.setColor(new Color(l, i1, j1));
-        rd.fillPolygon(ai, ai1, 4);
-        ai[0] = bar_x_origin;
-        ai1[0] = 31;
-        ai[1] = bar_x_origin;
-        ai1[1] = 40;
-        ai[2] = (int) (bar_x_origin + f);
-        ai1[2] = 40;
-        ai[3] = (int) (bar_x_origin + f);
-        ai1[3] = 31;
-        l = 128;
-        if (f == 98F) {
-            l = 64;
+        rd.setColor(new Color(red, green, blue));
+        rd.fillPolygon(xs, ys, 4);
+        xs[0] = bar_x_origin;
+        ys[0] = 31;
+        xs[1] = bar_x_origin;
+        ys[1] = 40;
+        xs[2] = (int) (bar_x_origin + power);
+        ys[2] = 40;
+        xs[3] = (int) (bar_x_origin + power);
+        ys[3] = 31;
+        red = 128;
+        if (power == 98F) {
+            red = 64;
         }
-        i1 = (int) (190D + f * 0.37D);
-        j1 = 244;
+        green = (int) (190D + power * 0.37D);
+        blue = 244;
         if (auscnt < 45 && aflk) {
-            l = 128;
-            i1 = 244;
-            j1 = 244;
+            red = 128;
+            green = 244;
+            blue = 244;
         }
-        l = (int) (l + l * (Medium.snap[0] / 100F));
-        if (l > 255) {
-            l = 255;
+        red = (int) (red + red * (Medium.snap[0] / 100F));
+        if (red > 255) {
+            red = 255;
         }
-        if (l < 0) {
-            l = 0;
+        if (red < 0) {
+            red = 0;
         }
-        i1 = (int) (i1 + i1 * (Medium.snap[1] / 100F));
-        if (i1 > 255) {
-            i1 = 255;
+        green = (int) (green + green * (Medium.snap[1] / 100F));
+        if (green > 255) {
+            green = 255;
         }
-        if (i1 < 0) {
-            i1 = 0;
+        if (green < 0) {
+            green = 0;
         }
-        j1 = (int) (j1 + j1 * (Medium.snap[2] / 100F));
-        if (j1 > 255) {
-            j1 = 255;
+        blue = (int) (blue + blue * (Medium.snap[2] / 100F));
+        if (blue > 255) {
+            blue = 255;
         }
-        if (j1 < 0) {
-            j1 = 0;
+        if (blue < 0) {
+            blue = 0;
         }
-        rd.setColor(new Color(l, i1, j1));
-        rd.fillPolygon(ai, ai1, 4);
-        if (Medium.flex == 2 && f != 98F) {
-            ai[0] = (int) (bar_x_origin + f);
-            ai1[0] = 31;
-            ai[1] = (int) (bar_x_origin + f);
-            ai1[1] = 39;
-            ai[2] = 630;
-            ai1[2] = 39;
-            ai[3] = 630;
-            ai1[3] = 31;
+        rd.setColor(new Color(red, green, blue));
+        rd.fillPolygon(xs, ys, 4);
+        if (Medium.flex == 2 && power != 98F) {
+            xs[0] = (int) (bar_x_origin + power);
+            ys[0] = 31;
+            xs[1] = (int) (bar_x_origin + power);
+            ys[1] = 39;
+            xs[2] = 630;
+            ys[2] = 39;
+            xs[3] = 630;
+            ys[3] = 31;
             rd.setColor(new Color(Medium.csky[0], Medium.csky[1], Medium.csky[2]));
-            rd.fillPolygon(ai, ai1, 4);
+            rd.fillPolygon(xs, ys, 4);
         }
     }
 
@@ -3875,22 +3875,22 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
      * "pressed" lol
      */
     private Image bressed(Image image) {
-        int i = image.getHeight(ob);
-        int j = image.getWidth(ob);
-        int ai[] = new int[j * i];
-        PixelGrabber pixelgrabber = new PixelGrabber(image, 0, 0, j, i, ai, 0, j);
+        int height = image.getHeight(ob);
+        int width = image.getWidth(ob);
+        int pixels[] = new int[width * height];
+        PixelGrabber grabber = new PixelGrabber(image, 0, 0, width, height, pixels, 0, width);
         try {
-            pixelgrabber.grabPixels();
-        } catch (InterruptedException _ex) {
+            grabber.grabPixels();
+        } catch (InterruptedException ignored) {
         }
         Color color = new Color(247, 255, 165);
-        for (int k = 0; k < j * i; k++) {
-            if (ai[k] != ai[j * i - 1]) {
-                ai[k] = color.getRGB();
+        for (int k = 0; k < width * height; k++) {
+            if (pixels[k] != pixels[width * height - 1]) {
+                pixels[k] = color.getRGB();
             }
         }
 
-        return createImage(new MemoryImageSource(j, i, ai, 0, j));
+        return createImage(new MemoryImageSource(width, height, pixels, 0, width));
     }
 
     private void loading() {
@@ -3927,15 +3927,15 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
      * cadence) while the 3D scene is redrawn at the display rate and composited
      * underneath it.
      */
-    public void setTarget(Graphics2D graphics2d) {
-        this.rd = graphics2d;
+    public void setTarget(Graphics2D target) {
+        this.rd = target;
     }
 
     public Graphics2D getTarget() {
         return rd;
     }
 
-    public xtGraphics(Graphics2D graphics2d, GameSparker applet) {
+    public xtGraphics(Graphics2D target, GameSparker applet) {
         fase = Phase.LOADING;
         oldfase = Phase.INGAME;
         starcnt = 0;
@@ -4042,31 +4042,31 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         blackn = 0.0F;
         blacknados = 0.0F;
         app = applet;
-        rd = graphics2d;
-        MediaTracker mediatracker = new MediaTracker(app);
+        rd = target;
+        MediaTracker tracker = new MediaTracker(app);
         hello = Toolkit.getDefaultToolkit().getImage(xtGraphics.class.getResource("aimg/hello.gif"));
-        mediatracker.addImage(hello, 0);
+        tracker.addImage(hello, 0);
         try {
-            mediatracker.waitForID(0);
-        } catch (Exception _ex) {
+            tracker.waitForID(0);
+        } catch (Exception ignored) {
         }
         sign = Toolkit.getDefaultToolkit().getImage(xtGraphics.class.getResource("aimg/sign.gif"));
-        mediatracker.addImage(sign, 0);
+        tracker.addImage(sign, 0);
         try {
-            mediatracker.waitForID(0);
-        } catch (Exception _ex) {
+            tracker.waitForID(0);
+        } catch (Exception ignored) {
         }
         loadbar = Toolkit.getDefaultToolkit().getImage(xtGraphics.class.getResource("aimg/loadbar.gif"));
-        mediatracker.addImage(loadbar, 0);
+        tracker.addImage(loadbar, 0);
         try {
-            mediatracker.waitForID(0);
-        } catch (Exception _ex) {
+            tracker.waitForID(0);
+        } catch (Exception ignored) {
         }
         int i = 0;
         loadedt = false;
     }
 
-    public void maini(Control control, CheckPoints checkpoints, Madness madness[], ContO conto[], ContO conto1[]) {
+    public void maini(Control control, CheckPoints checkpoints, Madness drivers[], ContO models[], ContO scene[]) {
         // might redo the entire menu its horrible
 
         int menuItems = 4;
@@ -4075,7 +4075,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
             if (!devtriggered) {
                 HLogger.info("Developer Console triggered");
 
-                DevTool console = new DevTool(checkpoints, madness, conto, conto1, this);
+                DevTool console = new DevTool(checkpoints, drivers, models, scene, this);
                 console.showConsole();
                 devtriggered = true;
             }
@@ -4280,7 +4280,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
             app.repaint();
             try {
                 Thread.sleep(100L);
-            } catch (InterruptedException _ex) {
+            } catch (InterruptedException ignored) {
             }
         }
     }
@@ -4292,54 +4292,54 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
             } else {
                 dudo = 331;
             }
-            int ai[] = new int[19520];
-            PixelGrabber pixelgrabber = new PixelGrabber(image, dudo, 0, 122, 160, ai, 0, 122);
+            int background[] = new int[19520];
+            PixelGrabber grabber = new PixelGrabber(image, dudo, 0, 122, 160, background, 0, 122);
             try {
-                pixelgrabber.grabPixels();
-            } catch (InterruptedException _ex) {
+                grabber.grabPixels();
+            } catch (InterruptedException ignored) {
                 dudo = -1;
             }
             int j = 0;
             do {
-                int ai1[] = new int[19520];
-                PixelGrabber pixelgrabber1 = new PixelGrabber(dude[j], 0, 10, 122, 160, ai1, 0, 122);
+                int dudePixels[] = new int[19520];
+                PixelGrabber dudeGrabber = new PixelGrabber(dude[j], 0, 10, 122, 160, dudePixels, 0, 122);
                 try {
-                    pixelgrabber1.grabPixels();
-                } catch (InterruptedException _ex) {
+                    dudeGrabber.grabPixels();
+                } catch (InterruptedException ignored) {
                     dudo = -1;
                 }
                 if (dudo != -1) {
                     int k = 0;
                     do {
-                        if (ai1[k] != ai1[0]) {
-                            Color color = new Color(ai1[k]);
-                            Color color1 = new Color(ai[k]);
-                            int l = (color.getRed() + color1.getRed() * 3) / 4;
-                            if (l > 255) {
-                                l = 255;
+                        if (dudePixels[k] != dudePixels[0]) {
+                            Color color = new Color(dudePixels[k]);
+                            Color behind = new Color(background[k]);
+                            int red = (color.getRed() + behind.getRed() * 3) / 4;
+                            if (red > 255) {
+                                red = 255;
                             }
-                            if (l < 0) {
-                                l = 0;
+                            if (red < 0) {
+                                red = 0;
                             }
-                            int i1 = (color.getGreen() + color1.getGreen() * 3) / 4;
-                            if (i1 > 255) {
-                                i1 = 255;
+                            int green = (color.getGreen() + behind.getGreen() * 3) / 4;
+                            if (green > 255) {
+                                green = 255;
                             }
-                            if (i1 < 0) {
-                                i1 = 0;
+                            if (green < 0) {
+                                green = 0;
                             }
-                            int j1 = (color.getBlue() + color1.getBlue() * 3) / 4;
-                            if (j1 > 255) {
-                                j1 = 255;
+                            int blue = (color.getBlue() + behind.getBlue() * 3) / 4;
+                            if (blue > 255) {
+                                blue = 255;
                             }
-                            if (j1 < 0) {
-                                j1 = 0;
+                            if (blue < 0) {
+                                blue = 0;
                             }
-                            Color color2 = new Color(l, i1, j1);
-                            ai1[k] = color2.getRGB();
+                            Color blended = new Color(red, green, blue);
+                            dudePixels[k] = blended.getRGB();
                         }
                     } while (++k < 19520);
-                    dudeb[j] = createImage(new MemoryImageSource(122, 160, ai1, 0, 122));
+                    dudeb[j] = createImage(new MemoryImageSource(122, 160, dudePixels, 0, 122));
                 }
             } while (++j < 3);
         } else {
@@ -4355,8 +4355,8 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         }
     }
 
-    public void musicomp(int i, Control control) {
-        hipnoload(i, true);
+    public void musicomp(int stage, Control control) {
+        hipnoload(stage, true);
         if (control.handb || control.enter) {
             System.gc();
             fase = Phase.INGAME;
@@ -4394,26 +4394,26 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
             int j = 0;
             do {
                 if (smokey[i + j * 466] != smokey[0]) {
-                    float f = Utility.pys(i, 233, j, flyr);
-                    int k = (int) (((i - 233) / f) * flatr);
-                    int l = (int) (((j - flyr) / f) * flatr);
-                    int i1 = i + k + 100 + (j + l + 110) * GameFacts.screenWidth;
-                    if (i + k + 100 < GameFacts.screenWidth && i + k + 100 > 0 && j + l + 110 < GameFacts.screenHeight
-                            && j + l + 110 > 0 && i1 < 0xE1000
-                            && i1 >= 0) {
-                        Color color = new Color(flexpix[i1]);
-                        Color color1 = new Color(smokey[i + j * 466]);
-                        float f1 = (255F - color1.getRed()) / 255F;
-                        int j1 = (int) ((color.getRed() * (flang * f1)
-                                + color1.getRed() * (1.0F - f1)) / (flang * f1 + (1.0F - f1) + blackn));
-                        if (j1 > 255) {
-                            j1 = 255;
+                    float distance = Utility.pys(i, 233, j, flyr);
+                    int dx = (int) (((i - 233) / distance) * flatr);
+                    int dy = (int) (((j - flyr) / distance) * flatr);
+                    int target = i + dx + 100 + (j + dy + 110) * GameFacts.screenWidth;
+                    if (i + dx + 100 < GameFacts.screenWidth && i + dx + 100 > 0 && j + dy + 110 < GameFacts.screenHeight
+                            && j + dy + 110 > 0 && target < 0xE1000
+                            && target >= 0) {
+                        Color color = new Color(flexpix[target]);
+                        Color smoke = new Color(smokey[i + j * 466]);
+                        float density = (255F - smoke.getRed()) / 255F;
+                        int gray = (int) ((color.getRed() * (flang * density)
+                                + smoke.getRed() * (1.0F - density)) / (flang * density + (1.0F - density) + blackn));
+                        if (gray > 255) {
+                            gray = 255;
                         }
-                        if (j1 < 0) {
-                            j1 = 0;
+                        if (gray < 0) {
+                            gray = 0;
                         }
-                        Color color2 = new Color(j1, j1, j1);
-                        flexpix[i1] = color2.getRGB();
+                        Color grayColor = new Color(gray, gray, gray);
+                        flexpix[target] = grayColor.getRGB();
                     }
                 }
             } while (++j < 202);
@@ -4428,8 +4428,8 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
 
     public void loaddata() {
         kbload = 950;
-        String s2 = System.getProperty("os.name");
-        if (!s2.startsWith("Win")) {
+        String osName = System.getProperty("os.name");
+        if (!osName.startsWith("Win")) {
             macn = true;
         }
         runtyp = 176;
@@ -4678,8 +4678,8 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
              * dnload += 10;
              */
 
-        } catch (Exception var12) {
-            HLogger.error("Error Loading Sounds: " + var12);
+        } catch (Exception ex) {
+            HLogger.error("Error Loading Sounds: " + ex);
 
         }
 
@@ -4724,18 +4724,18 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         }
     }
 
-    private Image loadimage(byte abyte0[], MediaTracker mediatracker, Toolkit toolkit) {
-        Image image = toolkit.createImage(abyte0);
-        mediatracker.addImage(image, 0);
+    private Image loadimage(byte data[], MediaTracker tracker, Toolkit toolkit) {
+        Image image = toolkit.createImage(data);
+        tracker.addImage(image, 0);
         try {
-            mediatracker.waitForID(0);
-        } catch (Exception _ex) {
+            tracker.waitForID(0);
+        } catch (Exception ignored) {
         }
         return image;
     }
 
-    public void rad(int i) {
-        if (i == 0) {
+    public void rad(int frame) {
+        if (frame == 0) {
             radpx = Utility.centeredImageX(radicalplay);
             pin = 0;
         }
@@ -4762,7 +4762,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
             pin = 0;
         }
 
-        if (i == 40) {
+        if (frame == 40) {
             radpx = Utility.centeredImageX(radicalplay);
             pin = 1;
         }
@@ -4786,9 +4786,9 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
     }
 
     @Override
-    public void skid(int i, float f) {
-        if (bfcrash == 0 && bfskid == 0 && f > 150F) {
-            if (i == 0) {
+    public void skid(int surface, float speed) {
+        if (bfcrash == 0 && bfskid == 0 && speed > 150F) {
+            if (surface == 0) {
                 if (!mutes) {
                     sm.play("skid" + skflg);
                 }
@@ -4911,7 +4911,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         rd.drawImage(statbo, bar_x, y, null);
     }
 
-    public void carselect(Control control, ContO aconto[], Madness madness) {
+    public void carselect(Control control, ContO models[], Madness car) {
         /* this is a mess... */
 
         if (flatrstart == 6) {
@@ -4933,7 +4933,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         Medium.xz = 0;
         Medium.zy = 10;
         Medium.ground = 570;
-        aconto[sc[0]].d(rd);
+        models[sc[0]].d(rd);
 
         if (GameSparker.DEBUG) {
             if (debugmode) {
@@ -4945,21 +4945,21 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         if (flipo == 0) {
             rd.setFont(new Font("SansSerif", 1, 13));
             FontHandler.fMetrics = rd.getFontMetrics();
-            byte byte0 = 0;
+            byte nameDrop = 0;
             if (flatrstart < 6) {
-                byte0 = 2;
+                nameDrop = 2;
             }
-            aconto[sc[0]].z = 950;
+            models[sc[0]].z = 950;
             if (sc[0] == 13) {
-                aconto[sc[0]].z = 1000;
+                models[sc[0]].z = 1000;
             }
-            aconto[sc[0]].y = -34 - aconto[sc[0]].grat;
-            aconto[sc[0]].x = 0;
-            aconto[sc[0]].xz += 5;
-            aconto[sc[0]].zy = 0;
-            aconto[sc[0]].wzy -= 10;
-            if (aconto[sc[0]].wzy < -45) {
-                aconto[sc[0]].wzy += 45;
+            models[sc[0]].y = -34 - models[sc[0]].grat;
+            models[sc[0]].x = 0;
+            models[sc[0]].xz += 5;
+            models[sc[0]].zy = 0;
+            models[sc[0]].wzy -= 10;
+            if (models[sc[0]].wzy < -45) {
+                models[sc[0]].wzy += 45;
             }
 
             car_select_delay = 0;
@@ -5002,14 +5002,14 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                 // if (gatey != 0) {
                 // gatey -= 100;
                 // }
-                aconto[sc[0]].blackout = true;
+                models[sc[0]].blackout = true;
                 if (flatrstart == 6) {
                     drawcs((int) (GameFacts.screenHeight * 0.91), "[ Car Locked ]", 210, 210, 210, 3);
                     drawcs((int) (GameFacts.screenHeight * 0.94),
                             "This car unlocks when stage " + (sc[0] - 7) * 2 + " is completed...", 181, 120, 40, 3);
                 }
                 if (aflk) {
-                    drawcs((int) (GameFacts.screenHeight * 0.1) + byte0, "[ LOCKED ]", 240, 240, 240, 3);
+                    drawcs((int) (GameFacts.screenHeight * 0.1) + nameDrop, "[ LOCKED ]", 240, 240, 240, 3);
                     aflk = false;
                 } else {
                     drawcs((int) (GameFacts.screenHeight * 0.1), "[ LOCKED ]", 176, 176, 176, 3);
@@ -5017,7 +5017,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                 }
             } else {
                 if (aflk) {
-                    drawcs((int) (GameFacts.screenHeight * 0.1) + byte0, names[sc[0]], 240, 240, 240, 3);
+                    drawcs((int) (GameFacts.screenHeight * 0.1) + nameDrop, names[sc[0]], 240, 240, 240, 3);
                     aflk = false;
                 } else {
                     drawcs((int) (GameFacts.screenHeight * 0.1), names[sc[0]], 176, 176, 176, 3);
@@ -5038,40 +5038,40 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                      * draw_carselect_stat
                      */
 
-                    float f = (StatList.swits[sc[0]][2] - 220) / 90F;
-                    if (f < 0.20000000000000001D) {
-                        f = 0.2F;
+                    float fill = (StatList.swits[sc[0]][2] - 220) / 90F;
+                    if (fill < 0.20000000000000001D) {
+                        fill = 0.2F;
                     }
-                    draw_carselect_stat("Top Speed:", leftside_statbar_x, statbar_initial_y, f);
+                    draw_carselect_stat("Top Speed:", leftside_statbar_x, statbar_initial_y, fill);
 
-                    f = (StatList.acelf[sc[0]][1] * StatList.acelf[sc[0]][0] * StatList.acelf[sc[0]][2]
+                    fill = (StatList.acelf[sc[0]][1] * StatList.acelf[sc[0]][0] * StatList.acelf[sc[0]][2]
                             * StatList.grip[sc[0]]) / 7700F;
-                    if (f > 1.0F) {
-                        f = 1.0F;
+                    if (fill > 1.0F) {
+                        fill = 1.0F;
                     }
-                    draw_carselect_stat("Acceleration:", leftside_statbar_x, statbar_initial_y + statbar_y_gap, f);
+                    draw_carselect_stat("Acceleration:", leftside_statbar_x, statbar_initial_y + statbar_y_gap, fill);
 
-                    f = StatList.dishandle[sc[0]];
-                    draw_carselect_stat("Handling:", leftside_statbar_x, statbar_initial_y + statbar_y_gap * 2, f);
+                    fill = StatList.dishandle[sc[0]];
+                    draw_carselect_stat("Handling:", leftside_statbar_x, statbar_initial_y + statbar_y_gap * 2, fill);
 
-                    f = (StatList.airc[sc[0]] * StatList.airs[sc[0]] * StatList.bounce[sc[0]] + 28F) / 139F;
-                    if (f > 1.0F) {
-                        f = 1.0F;
+                    fill = (StatList.airc[sc[0]] * StatList.airs[sc[0]] * StatList.bounce[sc[0]] + 28F) / 139F;
+                    if (fill > 1.0F) {
+                        fill = 1.0F;
                     }
-                    draw_carselect_stat("Stunts:", rightside_statbar_x, statbar_initial_y, f);
+                    draw_carselect_stat("Stunts:", rightside_statbar_x, statbar_initial_y, fill);
 
-                    float f1 = 0.5F;
+                    float momentBase = 0.5F;
                     if (sc[0] == 9) {
-                        f1 = 0.8F;
+                        momentBase = 0.8F;
                     }
-                    f = (StatList.moment[sc[0]] + f1) / 2.6F;
-                    if (f > 1.0F) {
-                        f = 1.0F;
+                    fill = (StatList.moment[sc[0]] + momentBase) / 2.6F;
+                    if (fill > 1.0F) {
+                        fill = 1.0F;
                     }
-                    draw_carselect_stat("Strength:", rightside_statbar_x, statbar_initial_y + statbar_y_gap, f);
+                    draw_carselect_stat("Strength:", rightside_statbar_x, statbar_initial_y + statbar_y_gap, fill);
 
-                    f = StatList.outdam[sc[0]];
-                    draw_carselect_stat("Endurance:", rightside_statbar_x, statbar_initial_y + statbar_y_gap * 2, f);
+                    fill = StatList.outdam[sc[0]];
+                    draw_carselect_stat("Endurance:", rightside_statbar_x, statbar_initial_y + statbar_y_gap * 2, fill);
                 }
                 rd.drawImage(contin[pcontin], Utility.centeredImageX(contin[pcontin]), car_select_continue_button_y,
                         null);
@@ -5082,11 +5082,11 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
             gatey = 300;
             car_select_delay--;
             if (flipo > 10) {
-                aconto[sc[0]].y -= 100;
+                models[sc[0]].y -= 100;
                 if (nextc) {
-                    aconto[sc[0]].zy += 20;
+                    models[sc[0]].zy += 20;
                 } else {
-                    aconto[sc[0]].zy -= 20;
+                    models[sc[0]].zy -= 20;
                 }
             } else {
                 if (flipo == 10) {
@@ -5099,13 +5099,13 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                         if (sc[0] == -1)
                             sc[0] = GameFacts.numberOfCars - 1;
                     }
-                    aconto[sc[0]].z = 950;
-                    aconto[sc[0]].y = -34 - aconto[sc[0]].grat - 1100;
-                    aconto[sc[0]].x = 0;
-                    aconto[sc[0]].zy = 0;
+                    models[sc[0]].z = 950;
+                    models[sc[0]].y = -34 - models[sc[0]].grat - 1100;
+                    models[sc[0]].x = 0;
+                    models[sc[0]].zy = 0;
                 }
-                aconto[sc[0]].y += 100;
-                System.out.println(flipo + ", " + aconto[sc[0]].y);
+                models[sc[0]].y += 100;
+                System.out.println(flipo + ", " + models[sc[0]].y);
             }
             flipo--;
         }
@@ -5149,20 +5149,20 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         }
     }
 
-    public void ctachm(int i, int j, int k, Control control) {
+    public void ctachm(int mouseX, int mouseY, int mouseState, Control control) {
         if (fase == Phase.STAGESELECT) {
-            if (k == 1) {
-                if (over(next[0], i, j, stage_select_next_button_x, stage_select_next_back_button_y)) {
+            if (mouseState == 1) {
+                if (over(next[0], mouseX, mouseY, stage_select_next_button_x, stage_select_next_back_button_y)) {
                     pnext = 1;
                 }
-                if (over(back[0], i, j, stage_select_back_button_x, stage_select_next_back_button_y)) {
+                if (over(back[0], mouseX, mouseY, stage_select_back_button_x, stage_select_next_back_button_y)) {
                     pback = 1;
                 }
-                if (over(contin[0], i, j, Utility.centeredImageX(contin[0]), stage_select_continue_button_y)) {
+                if (over(contin[0], mouseX, mouseY, Utility.centeredImageX(contin[0]), stage_select_continue_button_y)) {
                     pcontin = 1;
                 }
             }
-            if (k == 2) {
+            if (mouseState == 2) {
                 if (pnext == 1) {
                     control.right = true;
                 }
@@ -5175,45 +5175,45 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
             }
         }
         if (fase == Phase.ERRORLOADINGSTAGE) {
-            if (k == 1 && over(contin[0], i, j, 290, 325)) {
+            if (mouseState == 1 && over(contin[0], mouseX, mouseY, 290, 325)) {
                 pcontin = 1;
             }
-            if (k == 2 && pcontin == 1) {
+            if (mouseState == 2 && pcontin == 1) {
                 control.enter = true;
                 pcontin = 0;
             }
         }
         if (fase == Phase.LOCKEDSTAGE) {
-            if (k == 1 && over(back[0], i, j, stage_select_back_button_x, stage_select_next_back_button_y)) {
+            if (mouseState == 1 && over(back[0], mouseX, mouseY, stage_select_back_button_x, stage_select_next_back_button_y)) {
                 pback = 1;
             }
-            if (k == 2 && pback == 1) {
+            if (mouseState == 2 && pback == 1) {
                 control.enter = true;
                 pback = 0;
             }
         }
         if (fase == Phase.PREGAME) {
-            if (k == 1 && (over(star[0], i, j, 294, 360) || over(star[0], i, j, 294, 270))) {
+            if (mouseState == 1 && (over(star[0], mouseX, mouseY, 294, 360) || over(star[0], mouseX, mouseY, 294, 270))) {
                 pstar = 2;
             }
-            if (k == 2 && pstar == 2) {
+            if (mouseState == 2 && pstar == 2) {
                 control.enter = true;
                 pstar = 1;
             }
         }
         if (fase == Phase.CARSELECT) {
-            if (k == 1) {
-                if (over(next[0], i, j, car_select_next_button_x, car_select_next_back_button_y)) {
+            if (mouseState == 1) {
+                if (over(next[0], mouseX, mouseY, car_select_next_button_x, car_select_next_back_button_y)) {
                     pnext = 1;
                 }
-                if (over(back[0], i, j, car_select_back_button_x, car_select_next_back_button_y)) {
+                if (over(back[0], mouseX, mouseY, car_select_back_button_x, car_select_next_back_button_y)) {
                     pback = 1;
                 }
-                if (over(contin[0], i, j, Utility.centeredImageX(contin[0]), car_select_continue_button_y)) {
+                if (over(contin[0], mouseX, mouseY, Utility.centeredImageX(contin[0]), car_select_continue_button_y)) {
                     pcontin = 1;
                 }
             }
-            if (k == 2) {
+            if (mouseState == 2) {
                 if (pnext == 1) {
                     control.right = true;
                 }
@@ -5227,135 +5227,135 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
             }
         }
         if (fase == Phase.POSTGAME) {
-            lxm = i;
-            lym = j;
-            if (k == 1 && over(contin[0], i, j, Utility.centeredImageX(contin[0]), post_game_continue_button_y)) {
+            lxm = mouseX;
+            lym = mouseY;
+            if (mouseState == 1 && over(contin[0], mouseX, mouseY, Utility.centeredImageX(contin[0]), post_game_continue_button_y)) {
                 pcontin = 1;
             }
-            if (k == 2 && pcontin == 1) {
+            if (mouseState == 2 && pcontin == 1) {
                 control.enter = true;
                 pcontin = 0;
             }
         }
         if (fase == Phase.PAUSEMENU) {
-            if (k == 1) {
+            if (mouseState == 1) {
                 if (overon(Utility.centeredWidthX(pausebox_op_0_width) + pausebox_op_x_correction,
                         pausebox_y + pausebox_option_start_off,
-                        pausebox_op_0_width, pausebox_op_height, i, j)) {
+                        pausebox_op_0_width, pausebox_op_height, mouseX, mouseY)) {
                     opselect = 0;
                     shaded = true;
                 }
                 if (overon(Utility.centeredWidthX(pausebox_op_1_width) + pausebox_op_x_correction,
                         pausebox_y + pausebox_option_start_off + pausebox_option_gap,
-                        pausebox_op_1_width, pausebox_op_height, i, j)) {
+                        pausebox_op_1_width, pausebox_op_height, mouseX, mouseY)) {
                     opselect = 1;
                     shaded = true;
                 }
                 if (overon(Utility.centeredWidthX(pausebox_op_2_width) + pausebox_op_x_correction,
                         pausebox_y + pausebox_option_start_off + pausebox_option_gap * 2,
-                        pausebox_op_2_width, pausebox_op_height, i, j)) {
+                        pausebox_op_2_width, pausebox_op_height, mouseX, mouseY)) {
                     opselect = 2;
                     shaded = true;
                 }
                 if (overon(Utility.centeredWidthX(pausebox_op_3_width) + pausebox_op_x_correction,
                         pausebox_y + pausebox_option_start_off + pausebox_option_gap * 3,
-                        pausebox_op_3_width, pausebox_op_height, i, j)) {
+                        pausebox_op_3_width, pausebox_op_height, mouseX, mouseY)) {
                     opselect = 3;
                     shaded = true;
                 }
             }
-            if (k == 2 && shaded) {
+            if (mouseState == 2 && shaded) {
                 control.enter = true;
                 shaded = false;
             }
-            if (k == 0 && (i != lxm || j != lym)) {
+            if (mouseState == 0 && (mouseX != lxm || mouseY != lym)) {
                 if (overon(Utility.centeredWidthX(pausebox_op_0_width) + pausebox_op_x_correction,
                         pausebox_y + pausebox_option_start_off,
-                        pausebox_op_0_width, pausebox_op_height, i, j)) {
+                        pausebox_op_0_width, pausebox_op_height, mouseX, mouseY)) {
                     opselect = 0;
                 }
                 if (overon(Utility.centeredWidthX(pausebox_op_1_width) + pausebox_op_x_correction,
                         pausebox_y + pausebox_option_start_off + pausebox_option_gap,
-                        pausebox_op_1_width, pausebox_op_height, i, j)) {
+                        pausebox_op_1_width, pausebox_op_height, mouseX, mouseY)) {
                     opselect = 1;
                 }
                 if (overon(Utility.centeredWidthX(pausebox_op_2_width) + pausebox_op_x_correction,
                         pausebox_y + pausebox_option_start_off + pausebox_option_gap * 2,
-                        pausebox_op_2_width, pausebox_op_height, i, j)) {
+                        pausebox_op_2_width, pausebox_op_height, mouseX, mouseY)) {
                     opselect = 2;
                 }
                 if (overon(Utility.centeredWidthX(pausebox_op_3_width) + pausebox_op_x_correction,
                         pausebox_y + pausebox_option_start_off + pausebox_option_gap * 3,
-                        pausebox_op_3_width, pausebox_op_height, i, j)) {
+                        pausebox_op_3_width, pausebox_op_height, mouseX, mouseY)) {
                     opselect = 3;
                 }
-                lxm = i;
-                lym = j;
+                lxm = mouseX;
+                lym = mouseY;
             }
         }
         if (fase == Phase.MAINMENU) {
-            if (k == 1) {
+            if (mouseState == 1) {
                 if (overon(Utility.centeredWidthX(main_menu_op_0_width), main_menu_op_0_y, main_menu_op_0_width,
-                        main_menu_button_height, i, j)) {
+                        main_menu_button_height, mouseX, mouseY)) {
                     opselect = 0;
                     shaded = true;
                 }
                 if (overon(Utility.centeredWidthX(main_menu_op_1_width), main_menu_op_1_y, main_menu_op_1_width,
-                        main_menu_button_height, i, j)) {
+                        main_menu_button_height, mouseX, mouseY)) {
                     opselect = 1;
                     shaded = true;
                 }
                 if (overon(Utility.centeredWidthX(main_menu_op_2_width), main_menu_op_2_y, main_menu_op_2_width,
-                        main_menu_button_height, i, j)) {
+                        main_menu_button_height, mouseX, mouseY)) {
                     opselect = 2;
                     shaded = true;
                 }
             }
-            if (k == 2 && shaded) {
+            if (mouseState == 2 && shaded) {
                 control.enter = true;
                 shaded = false;
             }
-            if (k == 0 && (i != lxm || j != lym)) {
+            if (mouseState == 0 && (mouseX != lxm || mouseY != lym)) {
                 if (overon(Utility.centeredWidthX(main_menu_op_0_width), main_menu_op_0_y, main_menu_op_0_width,
-                        main_menu_button_height, i, j)) {
+                        main_menu_button_height, mouseX, mouseY)) {
                     opselect = 0;
                 }
                 if (overon(Utility.centeredWidthX(main_menu_op_1_width), main_menu_op_1_y, main_menu_op_1_width,
-                        main_menu_button_height, i, j)) {
+                        main_menu_button_height, mouseX, mouseY)) {
                     opselect = 1;
                 }
                 if (overon(Utility.centeredWidthX(main_menu_op_2_width), main_menu_op_2_y, main_menu_op_2_width,
-                        main_menu_button_height, i, j)) {
+                        main_menu_button_height, mouseX, mouseY)) {
                     opselect = 2;
                 }
-                lxm = i;
-                lym = j;
+                lxm = mouseX;
+                lym = mouseY;
             }
         }
         if (fase == Phase.INSTRUCTIONS) {
             if (flipo >= 1 && flipo <= 13) {
-                if (k == 1 && over(next[0], i, j, instructions_next_button_x, instructions_next_back_button_y)) {
+                if (mouseState == 1 && over(next[0], mouseX, mouseY, instructions_next_button_x, instructions_next_back_button_y)) {
                     pnext = 1;
                 }
-                if (k == 2 && pnext == 1) {
+                if (mouseState == 2 && pnext == 1) {
                     control.right = true;
                     pnext = 0;
                 }
             }
             if (flipo >= 3 && flipo <= 15) {
-                if (k == 1 && over(back[0], i, j, instructions_back_button_x, instructions_next_back_button_y)) {
+                if (mouseState == 1 && over(back[0], mouseX, mouseY, instructions_back_button_x, instructions_next_back_button_y)) {
                     pback = 1;
                 }
-                if (k == 2 && pback == 1) {
+                if (mouseState == 2 && pback == 1) {
                     control.left = true;
                     pback = 0;
                 }
             }
             if (flipo == 15) {
-                if (k == 1 && over(contin[0], i, j, instructions_continue_button_x, instructions_next_back_button_y)) {
+                if (mouseState == 1 && over(contin[0], mouseX, mouseY, instructions_continue_button_x, instructions_next_back_button_y)) {
                     pcontin = 1;
                 }
-                if (k == 2 && pcontin == 1) {
+                if (mouseState == 2 && pcontin == 1) {
                     control.enter = true;
                     pcontin = 0;
                 }
@@ -5363,11 +5363,11 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         }
         if (fase == Phase.CREDITS) {
 
-            if (k == 1 && over(next[0], i, j, Utility.centeredImageX(next[0]), credits_next_button_y)) {
+            if (mouseState == 1 && over(next[0], mouseX, mouseY, Utility.centeredImageX(next[0]), credits_next_button_y)) {
                 pnext = 1;
             }
 
-            if (k == 2 && pnext == 1) {
+            if (mouseState == 2 && pnext == 1) {
                 control.enter = true;
                 pnext = 0;
             }
@@ -5393,7 +5393,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
             app.repaint();
             try {
                 Thread.sleep(20L);
-            } catch (InterruptedException _ex) {
+            } catch (InterruptedException ignored) {
             }
         }
     }
@@ -5439,46 +5439,46 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         }
     }
 
-    public void hipnoload(int i, boolean flag) {
-        int j = (int) (230F - 230F * (Medium.snap[0] / (100F * hipno)));
-        if (j > 255) {
-            j = 255;
+    public void hipnoload(int stage, boolean loaded) {
+        int red = (int) (230F - 230F * (Medium.snap[0] / (100F * hipno)));
+        if (red > 255) {
+            red = 255;
         }
-        if (j < 0) {
-            j = 0;
+        if (red < 0) {
+            red = 0;
         }
-        int l = (int) (230F - 230F * (Medium.snap[1] / (100F * hipno)));
-        if (l > 255) {
-            l = 255;
+        int green = (int) (230F - 230F * (Medium.snap[1] / (100F * hipno)));
+        if (green > 255) {
+            green = 255;
         }
-        if (l < 0) {
-            l = 0;
+        if (green < 0) {
+            green = 0;
         }
-        int j1 = (int) (230F - 230F * (Medium.snap[2] / (100F * hipno)));
-        if (j1 > 255) {
-            j1 = 255;
+        int blue = (int) (230F - 230F * (Medium.snap[2] / (100F * hipno)));
+        if (blue > 255) {
+            blue = 255;
         }
-        if (j1 < 0) {
-            j1 = 0;
+        if (blue < 0) {
+            blue = 0;
         }
-        if (i == 1) {
-            j = 230;
-            l = 230;
-            j1 = 230;
+        if (stage == 1) {
+            red = 230;
+            green = 230;
+            blue = 230;
         }
-        rd.setColor(new Color(j, l, j1));
+        rd.setColor(new Color(red, green, blue));
         rd.fillRect(0, 0, GameFacts.screenWidth, GameFacts.screenHeight);
         rd.setFont(new Font("SansSerif", 1, 13));
         FontHandler.fMetrics = rd.getFontMetrics();
         drawcs(25, asay, 0, 0, 0, 3);
 
         /* this is such a stupid way to accommodate for the stages with hints... */
-        byte byte0 = -90;
-        if (i == 1 || i == 2 || i == 3 || i == 4 || i == 7 || i == 8 || i == 9 || i == 10 || i == 12
-                || i == 13 || i == 16) {
-            byte0 = 0;
+        byte textDrop = -90;
+        if (stage == 1 || stage == 2 || stage == 3 || stage == 4 || stage == 7 || stage == 8 || stage == 9 || stage == 10 || stage == 12
+                || stage == 13 || stage == 16) {
+            textDrop = 0;
         }
-        if (byte0 == 0) {
+        if (textDrop == 0) {
             if (dudo > 0) {
                 if (aflk) {
                     if (Math.random() > Math.random()) {
@@ -5500,96 +5500,96 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
             int text_x = flaot_x + 70;
             rd.drawImage(dude[duds], start_x, 10, null);
             rd.drawImage(flaot, flaot_x, 42, null);
-            int k = (int) (80F - 80F * (Medium.snap[0] / (50F * hipno)));
-            if (k > 255) {
-                k = 255;
+            int hintRed = (int) (80F - 80F * (Medium.snap[0] / (50F * hipno)));
+            if (hintRed > 255) {
+                hintRed = 255;
             }
-            if (k < 0) {
-                k = 0;
+            if (hintRed < 0) {
+                hintRed = 0;
             }
-            int i1 = (int) (80F - 80F * (Medium.snap[1] / (50F * hipno)));
-            if (i1 > 255) {
-                i1 = 255;
+            int hintGreen = (int) (80F - 80F * (Medium.snap[1] / (50F * hipno)));
+            if (hintGreen > 255) {
+                hintGreen = 255;
             }
-            if (i1 < 0) {
-                i1 = 0;
+            if (hintGreen < 0) {
+                hintGreen = 0;
             }
-            int k1 = (int) (80F - 80F * (Medium.snap[2] / (50F * hipno)));
-            if (k1 > 255) {
-                k1 = 255;
+            int hintBlue = (int) (80F - 80F * (Medium.snap[2] / (50F * hipno)));
+            if (hintBlue > 255) {
+                hintBlue = 255;
             }
-            if (k1 < 0) {
-                k1 = 0;
+            if (hintBlue < 0) {
+                hintBlue = 0;
             }
-            if (i == 1) {
-                k = 80;
-                i1 = 80;
-                k1 = 80;
+            if (stage == 1) {
+                hintRed = 80;
+                hintGreen = 80;
+                hintBlue = 80;
             }
-            rd.setColor(new Color(k, i1, k1));
+            rd.setColor(new Color(hintRed, hintGreen, hintBlue));
             rd.setFont(new Font("SansSerif", 1, 13));
-            if (i == 1) {
+            if (stage == 1) {
                 rd.drawString("Hey!  Don't forget, to complete a lap you must pass through", text_x, 67);
                 rd.drawString("all checkpoints in the track!", text_x, 87);
             }
-            if (i == 2) {
+            if (stage == 2) {
                 rd.drawString("Remember, the more power you have the faster your car will be!", text_x, 67);
             }
-            if (i == 3) {
+            if (stage == 3) {
                 rd.drawString("Watch out!  Look out!  The policeman might be out to get you!", text_x, 67);
                 rd.drawString("Don't upset him or you'll be arrested!", text_x, 87);
                 rd.drawString("Better run, run, run.", text_x, 127);
             }
-            if (i == 4) {
+            if (stage == 4) {
                 rd.drawString("Don't waste your time.  Waste them instead!", text_x, 67);
                 rd.drawString("Try a taste of sweet revenge here (if you can)!", text_x, 87);
                 rd.drawString("Press [ A ] to make the guidance arrow point to cars instead of to", text_x, 127);
                 rd.drawString("the track.", text_x, 147);
             }
-            if (i == 7) {
+            if (stage == 7) {
                 rd.drawString("Welcome to the realm of the king...", text_x, 67);
                 rd.drawString("The key word here is 'POWER'.  The more you have of it the faster", text_x, 107);
                 rd.drawString("and STRONGER you car will be!", text_x, 127);
             }
-            if (i == 8) {
+            if (stage == 8) {
                 rd.drawString("Watch out, EL KING is out to get you now!", text_x, 67);
                 rd.drawString("He seems to be seeking revenge?", text_x, 87);
                 rd.drawString("(To fly longer distances in the air try drifting your car on the ramp", text_x, 127);
                 rd.drawString("before take off).", text_x, 147);
             }
-            if (i == 9) {
+            if (stage == 9) {
                 rd.drawString("It\u2019s good to be the king!", text_x, 67);
             }
-            if (i == 10) {
+            if (stage == 10) {
                 rd.drawString("Remember, forward loops give your car a push forwards in the air", text_x, 67);
                 rd.drawString("and help in racing.", text_x, 87);
                 rd.drawString("(You may need to do more forward loops here.  Also try keeping", text_x, 127);
                 rd.drawString("your power at maximum at all times.  Try not to miss a ramp).", text_x, 147);
             }
-            if (i == 12) {
+            if (stage == 12) {
                 rd.drawString("Watch out!  Beware!  Take care!", text_x, 67);
                 rd.drawString("MASHEEN is hiding out there some where, don't get mashed now!", text_x, 87);
             }
-            if (i == 13) {
+            if (stage == 13) {
                 rd.drawString("Anyone for a game of Digger?!", text_x, 67);
                 rd.drawString("You can have fun using MASHEEN here!", text_x, 87);
             }
-            if (i == 16) {
+            if (stage == 16) {
                 rd.drawString("This is it!  This is the toughest stage in the game!", text_x, 67);
                 rd.drawString("This track is actually a 4D object projected onto the 3D world.", text_x, 107);
                 rd.drawString("It's been broken down, separated and, in many ways, it is also a", text_x, 127);
                 rd.drawString("maze!  GOOD LUCK!", text_x, 147);
             }
         }
-        rd.drawImage(loadingmusic, Utility.centeredImageX(loadingmusic), 180 + byte0, null);
+        rd.drawImage(loadingmusic, Utility.centeredImageX(loadingmusic), 180 + textDrop, null);
         rd.setFont(new Font("SansSerif", 1, 11));
         FontHandler.fMetrics = rd.getFontMetrics();
-        if (!flag) {
-            // drawcs(315 + byte0, "" + sndsize[i - 1] + " KB", 0, 0, 0, 3);
-            drawcs(350 + byte0, " Please Wait...", 0, 0, 0, 3);
+        if (!loaded) {
+            // drawcs(315 + textDrop, "" + sndsize[stage - 1] + " KB", 0, 0, 0, 3);
+            drawcs(350 + textDrop, " Please Wait...", 0, 0, 0, 3);
         } else {
-            drawcs(340 + byte0, "Loading complete!  Press Start to begin...", 0, 0, 0, 3);
-            rd.drawImage(star[pstar], Utility.centeredImageX(star[pstar]), 360 + byte0, null);
+            drawcs(340 + textDrop, "Loading complete!  Press Start to begin...", 0, 0, 0, 3);
+            rd.drawImage(star[pstar], Utility.centeredImageX(star[pstar]), 360 + textDrop, null);
             if (pstar != 2) {
                 if (pstar == 0) {
                     pstar = 1;
@@ -5600,89 +5600,89 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         }
     }
 
-    private Image loadopsnap(Image image, int i, int j) {
-        int k = image.getHeight(ob);
-        int l = image.getWidth(ob);
-        int ai[] = new int[l * k];
-        PixelGrabber pixelgrabber = new PixelGrabber(image, 0, 0, l, k, ai, 0, l);
+    private Image loadopsnap(Image image, int stage, int keyPixel) {
+        int height = image.getHeight(ob);
+        int width = image.getWidth(ob);
+        int pixels[] = new int[width * height];
+        PixelGrabber grabber = new PixelGrabber(image, 0, 0, width, height, pixels, 0, width);
         try {
-            pixelgrabber.grabPixels();
-        } catch (InterruptedException _ex) {
+            grabber.grabPixels();
+        } catch (InterruptedException ignored) {
         }
-        int i1 = 0;
-        if (j == 1) {
-            i1 = ai[61993];
+        int highlight = 0;
+        if (keyPixel == 1) {
+            highlight = pixels[61993];
         }
-        for (int j1 = 0; j1 < l * k; j1++) {
-            if (ai[j1] != ai[j]) {
-                Color color = new Color(ai[j1]);
-                int k1 = 0;
-                int l1 = 0;
-                int i2 = 0;
-                if (j == 1 && ai[j1] == i1) {
-                    k1 = (int) (237F - 237F * (Medium.snap[0] / (150F * hipno)));
-                    if (k1 > 255) {
-                        k1 = 255;
+        for (int pixel = 0; pixel < width * height; pixel++) {
+            if (pixels[pixel] != pixels[keyPixel]) {
+                Color color = new Color(pixels[pixel]);
+                int red = 0;
+                int green = 0;
+                int blue = 0;
+                if (keyPixel == 1 && pixels[pixel] == highlight) {
+                    red = (int) (237F - 237F * (Medium.snap[0] / (150F * hipno)));
+                    if (red > 255) {
+                        red = 255;
                     }
-                    if (k1 < 0) {
-                        k1 = 0;
+                    if (red < 0) {
+                        red = 0;
                     }
-                    l1 = (int) (237F - 237F * (Medium.snap[1] / (150F * hipno)));
-                    if (l1 > 255) {
-                        l1 = 255;
+                    green = (int) (237F - 237F * (Medium.snap[1] / (150F * hipno)));
+                    if (green > 255) {
+                        green = 255;
                     }
-                    if (l1 < 0) {
-                        l1 = 0;
+                    if (green < 0) {
+                        green = 0;
                     }
-                    i2 = (int) (237F - 237F * (Medium.snap[2] / (150F * hipno)));
-                    if (i2 > 255) {
-                        i2 = 255;
+                    blue = (int) (237F - 237F * (Medium.snap[2] / (150F * hipno)));
+                    if (blue > 255) {
+                        blue = 255;
                     }
-                    if (i2 < 0) {
-                        i2 = 0;
+                    if (blue < 0) {
+                        blue = 0;
                     }
-                    if (i == 1) {
-                        k1 = 250;
-                        l1 = 250;
-                        i2 = 250;
+                    if (stage == 1) {
+                        red = 250;
+                        green = 250;
+                        blue = 250;
                     }
                 } else {
-                    k1 = (int) (color.getRed()
+                    red = (int) (color.getRed()
                             - color.getRed() * (Medium.snap[0] / (50F * hipno)));
-                    if (k1 > 255) {
-                        k1 = 255;
+                    if (red > 255) {
+                        red = 255;
                     }
-                    if (k1 < 0) {
-                        k1 = 0;
+                    if (red < 0) {
+                        red = 0;
                     }
-                    l1 = (int) (color.getGreen()
+                    green = (int) (color.getGreen()
                             - color.getGreen() * (Medium.snap[1] / (50F * hipno)));
-                    if (l1 > 255) {
-                        l1 = 255;
+                    if (green > 255) {
+                        green = 255;
                     }
-                    if (l1 < 0) {
-                        l1 = 0;
+                    if (green < 0) {
+                        green = 0;
                     }
-                    i2 = (int) (color.getBlue()
+                    blue = (int) (color.getBlue()
                             - color.getBlue() * (Medium.snap[2] / (50F * hipno)));
-                    if (i2 > 255) {
-                        i2 = 255;
+                    if (blue > 255) {
+                        blue = 255;
                     }
-                    if (i2 < 0) {
-                        i2 = 0;
+                    if (blue < 0) {
+                        blue = 0;
                     }
-                    if (i == 1) {
-                        k1 = color.getRed();
-                        l1 = color.getGreen();
-                        i2 = color.getBlue();
+                    if (stage == 1) {
+                        red = color.getRed();
+                        green = color.getGreen();
+                        blue = color.getBlue();
                     }
                 }
-                Color color1 = new Color(k1, l1, i2);
-                ai[j1] = color1.getRGB();
+                Color tinted = new Color(red, green, blue);
+                pixels[pixel] = tinted.getRGB();
             }
         }
 
-        return createImage(new MemoryImageSource(l, k, ai, 0, l));
+        return createImage(new MemoryImageSource(width, height, pixels, 0, width));
     }
 
     private void carsbginflex() {
@@ -5693,11 +5693,11 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         flangados = (int) (Medium.fxRandom() * 6F + 2.0F);
         blackn = 0.0F;
         blacknados = Medium.fxRandom() * 0.4F;
-        PixelGrabber pixelgrabber = new PixelGrabber(carsbg, 0, 0, GameFacts.screenWidth, GameFacts.screenHeight,
+        PixelGrabber grabber = new PixelGrabber(carsbg, 0, 0, GameFacts.screenWidth, GameFacts.screenHeight,
                 flexpix, 0, GameFacts.screenWidth);
         try {
-            pixelgrabber.grabPixels();
-        } catch (InterruptedException _ex) {
+            grabber.grabPixels();
+        } catch (InterruptedException ignored) {
         }
     }
 }
