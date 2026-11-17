@@ -356,7 +356,7 @@ public class DevTool {
             case "fps":
                 if (args.length == 2 && args[0].equalsIgnoreCase("battery")) {
                     Integer cap = GameSparker.parseFpsLimit(args[1]);
-                    if (cap != null && cap != GameSparker.FPS_MATCH_DISPLAY && GameSparker.setBatteryFps(cap)) {
+                    if (cap != null && cap != GameSparker.FPS_MATCH_DISPLAY && cap != GameSparker.FPS_VRR && GameSparker.setBatteryFps(cap)) {
                         print("On battery frames are held to " + GameSparker.describeBatteryFps() + " (saved).");
                     } else {
                         print("Usage: fps battery <off|" + GameSparker.FPS_MIN + "-" + GameSparker.FPS_MAX + ">");
@@ -366,11 +366,11 @@ public class DevTool {
                     if (limit != null && GameSparker.setFpsLimit(limit)) {
                         print("Frame rate limit set to " + GameSparker.describeFpsLimit() + " (saved).");
                     } else {
-                        print("Usage: fps <auto|unlimited|" + GameSparker.FPS_MIN + "-" + GameSparker.FPS_MAX + ">");
+                        print("Usage: fps <auto|vrr|unlimited|" + GameSparker.FPS_MIN + "-" + GameSparker.FPS_MAX + ">");
                     }
                 } else {
                     print("Frame rate limit is " + GameSparker.describeFpsLimit() + "; on battery "
-                            + GameSparker.describeBatteryFps() + ".\nUsage: fps <auto|unlimited|" + GameSparker.FPS_MIN
+                            + GameSparker.describeBatteryFps() + ".\nUsage: fps <auto|vrr|unlimited|" + GameSparker.FPS_MIN
                             + "-" + GameSparker.FPS_MAX + ">, fps battery <off|" + GameSparker.FPS_MIN + "-"
                             + GameSparker.FPS_MAX + ">");
                 }
@@ -539,7 +539,7 @@ public class DevTool {
         commandDescriptions.put("dynres", "When the graphics card cannot draw a race at the window's full size in time for the next frame, draws it smaller (down to the given percent of the window, never below the game's own 1280x720) and scales it up smoothly; the HUD stays sharp. Steps down at once and back up slowly, so the picture does not pump. On by default, down to 50%. Usage: dynres <on|off|25-100>");
         commandDescriptions.put("renderer", "gpu puts frames on screen through the graphics card (Direct3D 11), which scales them for free; software draws them with Java2D. Usage: renderer <gpu|software>");
         commandDescriptions.put("runahead", "Shows race frames one tick ahead with the keys held now, for 53 ms less input lag. Usage: runahead <on|off>");
-        commandDescriptions.put("fps", "Sets the frame rate limit. auto matches the monitor, unlimited removes the cap. On battery frames are held to 60 a second unless fps battery says otherwise. Usage: fps <auto|unlimited|30-1000>, fps battery <off|30-1000>");
+        commandDescriptions.put("fps", "Sets the frame rate limit. auto matches the monitor; vrr, for G-Sync and FreeSync monitors, holds frames just under its refresh rate so they stay in the variable-refresh range; unlimited removes the cap. On battery frames are held to 60 a second unless fps battery says otherwise. Usage: fps <auto|vrr|unlimited|30-1000>, fps battery <off|30-1000>");
         commandDescriptions.put("clear", "Clears the console.");
         commandDescriptions.put("connect", "Connects to a test server. Usage: connect <ip:port>");
         commandDescriptions.put("help", "Displays help information. Usage: help <command>");

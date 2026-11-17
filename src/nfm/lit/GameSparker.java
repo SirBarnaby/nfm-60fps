@@ -153,11 +153,18 @@ public class GameSparker extends Panel implements Runnable {
     /* Frame rate limit: a positive value caps it, these two are special. */
     public static final int FPS_MATCH_DISPLAY = -1;
     public static final int FPS_UNLIMITED = 0;
+    /**
+     * For G-Sync and FreeSync monitors: vsync on, frames held just under the
+     * refresh rate (refresh - refresh^2/3600, 138 at 144 Hz), so they stay
+     * inside the variable-refresh range and never queue behind vsync.
+     */
+    public static final int FPS_VRR = -2;
     public static final int FPS_MIN = 30;
     public static final int FPS_MAX = 1000;
     private static final String FPS_COOKIE = "fpslimit";
     /** The cookie store reads -1 as "missing", so "match display" is saved as 1. */
     private static final int FPS_COOKIE_MATCH_DISPLAY = 1;
+    private static final int FPS_COOKIE_VRR = 2;
     private static volatile int fpsLimit = FPS_MATCH_DISPLAY;
     private static volatile boolean fpsLimitChanged;
     /** On battery, frames a second are held to this, 0 for no cap. */
@@ -493,9 +500,26 @@ public class GameSparker extends Panel implements Runnable {
                     u[0].mutes = !u[0].mutes;
                 if (i == 97 || i == 65)
                     u[0].arrace = !u[0].arrace;
+                noteKeys();
             }
         }
         return false;
+    }
+
+    /* for the profile's key-to-screen readout: when the driving keys or the camera last changed (inputLock) */
+    private int keysNoted = -1;
+    private long keysChangedNanos;
+    /* the change the last real tick and the last run-ahead tick read, game thread */
+    private long tickKeysNanos;
+    private long aheadKeysNanos;
+
+    /** Under {@link #inputLock}: notes when the keys held changed. */
+    private void noteKeys() {
+        int keys = heldKeys();
+        if (keys != keysNoted) {
+            keysNoted = keys;
+            keysChangedNanos = System.nanoTime();
+        }
     }
 
     /**
@@ -529,6 +553,7 @@ public class GameSparker extends Panel implements Runnable {
         synchronized (inputLock) {
             latching = true;
             latchedKeys = heldKeys();
+            tickKeysNanos = keysChangedNanos;
             applyLiveKeys();
         }
     }
@@ -967,6 +992,7 @@ public class GameSparker extends Panel implements Runnable {
                 if (!latching) {
                     applyHeldKeys();
                 }
+                noteKeys();
             }
         }
         return false;
@@ -1992,6 +2018,7 @@ public class GameSparker extends Panel implements Runnable {
         }
         poseSpan(ahead, spanScratch);
         spanScratch.handedLate = System.nanoTime() - tickStartNanos;
+        spanScratch.keysNanos = ahead ? aheadKeysNanos : tickKeysNanos;
         presenter.handOverSpan(spanScratch);
         Presenter.Kept kept = presenter.free();
         if (!recordKept(ahead, kept.recorder, kept.scene)) {
@@ -2161,6 +2188,10 @@ public class GameSparker extends Panel implements Runnable {
         private int statCorrectionCount;
         private final long[] statGaps = new long[4096];
         private int statGapCount;
+        /* key change to the first frame shown that has it */
+        private final long[] statKeys = new long[256];
+        private int statKeyCount;
+        private long keysShown = -1L;
         private long statSince = System.nanoTime();
 
         Presenter() {
@@ -2358,6 +2389,14 @@ public class GameSparker extends Panel implements Runnable {
                 failed = true; // the game thread takes over and finds out why
                 return;
             }
+            if (span.keysNanos != keysShown) {
+                long took = end - span.keysNanos;
+                // a change more than a second old is from before the race (or a pause), not a frame late
+                if (keysShown != -1L && took < 1_000_000_000L && statKeyCount < statKeys.length) {
+                    statKeys[statKeyCount++] = took;
+                }
+                keysShown = span.keysNanos;
+            }
             statFrames++;
             statPlaceNanos += placed - start;
             statShowNanos += end - placed;
@@ -2421,6 +2460,13 @@ public class GameSparker extends Panel implements Runnable {
                         median / 1e6D, gaps[Math.min(gaps.length - 1, gaps.length * 99 / 100)] / 1e6D,
                         gaps[gaps.length - 1] / 1e6D, late, gaps.length);
             }
+            String keys = "";
+            if (statKeyCount > 0) {
+                long[] k = Arrays.copyOf(statKeys, statKeyCount);
+                Arrays.sort(k);
+                keys = String.format("; key to screen: median %.1f ms, longest %.1f ms over %d changes",
+                        k[k.length / 2] / 1e6D, k[k.length - 1] / 1e6D, k.length);
+            }
             Kept shown = drawing;
             String corrections = "none";
             if (statCorrectionCount > 0) {
@@ -2433,14 +2479,15 @@ public class GameSparker extends Panel implements Runnable {
                         c[c.length - 1], h[h.length / 2], h[h.length * 9 / 10], h[h.length - 1]);
             }
             System.out.printf("[draw] own thread: %.1f fps (placing %.2f ms, showing %.2f ms; %d carried on past"
-                    + " the tick; corrections at new ticks: %s)%s; last scene %s, %d points, %d polygons kept;"
+                    + " the tick; corrections at new ticks: %s)%s%s; last scene %s, %d points, %d polygons kept;"
                     + " card %.2f ms a frame, races drawn at %d%%%n",
                     statFrames / seconds, statFrames == 0 ? 0D : statPlaceNanos / 1e6D / statFrames,
-                    statFrames == 0 ? 0D : statShowNanos / 1e6D / statFrames, statCarried, corrections, pace,
+                    statFrames == 0 ? 0D : statShowNanos / 1e6D / statFrames, statCarried, corrections, pace, keys,
                     gpu != null ? gpu.sceneStatistics() : "", shown == null ? 0 : shown.scene.points(),
                     shown == null ? 0 : shown.scene.polygons(), gpuFrameNanos / 1e6D,
                     Math.round(sceneScaleInUse * 100F));
             statCorrectionCount = 0;
+            statKeyCount = 0;
             statFrames = 0;
             statPlaceNanos = 0L;
             statShowNanos = 0L;
@@ -2510,6 +2557,7 @@ public class GameSparker extends Panel implements Runnable {
             }
             aheadTick = raceTicks;
             aheadKeys = keys;
+            aheadKeysNanos = keysChangedNanos;
             aheadValid = true;
             return true;
         }
@@ -2849,7 +2897,7 @@ public class GameSparker extends Panel implements Runnable {
                 return true;
             }
             boolean smooth = place.width != GameFacts.screenWidth || place.height != GameFacts.screenHeight;
-            gpu.setVsync(fpsLimit == FPS_MATCH_DISPLAY);
+            gpu.setVsync(fpsLimit == FPS_MATCH_DISPLAY || fpsLimit == FPS_VRR);
             gpu.setHdr(hdrMode);
             hdrInUse = gpu.hdrStatus();
             Dimension size = new Dimension(width, height);
@@ -3738,20 +3786,22 @@ public class GameSparker extends Panel implements Runnable {
      */
     private long frameIntervalNanos(long now) {
         int limit = fpsLimit;
-        if (limit == FPS_MATCH_DISPLAY) {
+        double rate = limit;
+        if (limit == FPS_MATCH_DISPLAY || limit == FPS_VRR) {
             if (displayRefreshHz == 0 || now - displayRefreshCheckedAt > 1_000_000_000L) {
                 displayRefreshHz = queryRefreshRate();
                 displayRefreshCheckedAt = now;
             }
-            limit = displayRefreshHz;
+            int hz = displayRefreshHz;
+            rate = limit == FPS_VRR && hz > 0 ? vrrRate(hz) : hz;
         }
         int cap = batteryCap(now);
-        boolean capped = cap > 0 && (limit <= 0 || limit > cap);
+        boolean capped = cap > 0 && (rate <= 0 || rate > cap);
         batteryHolds = capped;
         if (capped) {
-            limit = cap;
+            rate = cap;
         }
-        long interval = limit <= 0 ? 0L : 1_000_000_000L / limit;
+        long interval = rate <= 0 ? 0L : (long) (1_000_000_000L / rate);
         frameBudgetNanos = interval;
         return interval;
     }
@@ -3850,8 +3900,14 @@ public class GameSparker extends Panel implements Runnable {
      *
      * @return false if the value is out of range
      */
+    /** The frame rate that keeps a variable-refresh monitor inside its range at this refresh rate. */
+    static double vrrRate(int hz) {
+        return hz - hz * (double) hz / 3600.0;
+    }
+
     public static boolean setFpsLimit(int limit) {
-        if (limit != FPS_MATCH_DISPLAY && limit != FPS_UNLIMITED && (limit < FPS_MIN || limit > FPS_MAX)) {
+        if (limit != FPS_MATCH_DISPLAY && limit != FPS_VRR && limit != FPS_UNLIMITED
+                && (limit < FPS_MIN || limit > FPS_MAX)) {
             return false;
         }
         fpsLimit = limit;
@@ -3863,6 +3919,9 @@ public class GameSparker extends Panel implements Runnable {
         int limit = fpsLimit;
         if (limit == FPS_MATCH_DISPLAY) {
             return "match display";
+        }
+        if (limit == FPS_VRR) {
+            return "variable refresh (just under the display's refresh rate)";
         }
         return limit == FPS_UNLIMITED ? "unlimited" : limit + " fps";
     }
@@ -3882,7 +3941,7 @@ public class GameSparker extends Panel implements Runnable {
             HLogger.warn("Ignoring invalid nfm.fps value: " + property);
         }
         int saved = readcookie(FPS_COOKIE);
-        int limit = saved == FPS_COOKIE_MATCH_DISPLAY ? FPS_MATCH_DISPLAY : saved;
+        int limit = saved == FPS_COOKIE_MATCH_DISPLAY ? FPS_MATCH_DISPLAY : saved == FPS_COOKIE_VRR ? FPS_VRR : saved;
         if (saved < 0 || !setFpsLimit(limit)) {
             fpsLimit = FPS_MATCH_DISPLAY;
         }
@@ -3900,6 +3959,10 @@ public class GameSparker extends Panel implements Runnable {
             case "auto":
             case "display":
                 return FPS_MATCH_DISPLAY;
+            case "vrr":
+            case "gsync":
+            case "freesync":
+                return FPS_VRR;
             case "unlimited":
             case "uncapped":
             case "off":
@@ -3945,7 +4008,8 @@ public class GameSparker extends Panel implements Runnable {
         if (fpsLimitChanged) {
             fpsLimitChanged = false;
             int limit = fpsLimit;
-            savecookie(FPS_COOKIE, "" + (limit == FPS_MATCH_DISPLAY ? FPS_COOKIE_MATCH_DISPLAY : limit));
+            savecookie(FPS_COOKIE, "" + (limit == FPS_MATCH_DISPLAY ? FPS_COOKIE_MATCH_DISPLAY
+                    : limit == FPS_VRR ? FPS_COOKIE_VRR : limit));
         }
     }
 

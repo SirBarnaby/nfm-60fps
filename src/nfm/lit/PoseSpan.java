@@ -38,6 +38,8 @@ final class PoseSpan {
     boolean moving;
     /** For the profile: how long after the tick was due the span was handed over. */
     long handedLate;
+    /** For the profile: when the keys this span's tick read last changed, as System.nanoTime. */
+    long keysNanos;
 
     void setCar(int i, int mode, int x, int y, int z, int xz, int xy, int zy, int wxz, int wzy) {
         this.mode[i] = mode;
@@ -77,6 +79,7 @@ final class PoseSpan {
         lengthNanos = o.lengthNanos;
         moving = o.moving;
         handedLate = o.handedLate;
+        keysNanos = o.keysNanos;
     }
 
     /**

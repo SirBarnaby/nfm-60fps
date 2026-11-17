@@ -86,7 +86,7 @@ Whatever reads the back buffer (the pause screen, the countdown portrait, the po
 
 On a monitor with HDR turned on in Windows, frames go out in HDR (an scRGB swap chain). The game looks just as it does in SDR, at the brightness Windows shows SDR white at (the "SDR content brightness" slider), so menus and the HUD are not blinding; but what gives off light shines brighter than white, up to four times as bright: fire and the flash of a car blowing up, headlights and lamps at night, the repair hoop's flash and the electrified car's sparks, stars, and the sky in a lightning storm. The world's drawing code marks those polygons as it draws them, the card keeps how much each pixel glows in the scene's alpha, and only the final step to the screen reads it. The game asks Windows every two seconds whether HDR is on for the monitor the window is on and where SDR white is, so turning HDR on or off, changing the slider or moving the window to another monitor takes effect while the game runs. Type `hdr off` or `hdr auto` (the default) in the developer console to choose (saved), or start with `-Dnfm.hdr=off`. Read back in a hidden test run with HDR forced on, every frame turned back into SDR is identical to the frame the card drew, pixel for pixel; `<name>-glow.png` shows what glowed.
 
-Its shaders are compiled when the game starts by Windows' own shader compiler (`d3dcompiler_47.dll`) and packed into bgfx's shader format by the game, so the project needs no shader tools. With the frame limit on "match display" frames wait for the display's refresh, so they are never shown torn; with any other limit they are shown at once.
+Its shaders are compiled when the game starts by Windows' own shader compiler (`d3dcompiler_47.dll`) and packed into bgfx's shader format by the game, so the project needs no shader tools. With the frame limit on "match display" or "vrr" frames wait for the display's refresh, so they are never shown torn; with any other limit they are shown at once, through DXGI's tearing flag, so a variable-refresh monitor still follows them.
 
 bgfx can also draw with Direct3D 12: start with `-Dnfm.backend=d3d12`. Everything works the same there, HDR included, and what it draws reads back identical to what reaches the screen; but on the laptop above it ran at about 220 frames a second in races against 350 with Direct3D 11, as the game sends many small draws each frame, which Direct3D 11's driver handles with less work. So Direct3D 11 stays the default.
 
@@ -100,19 +100,20 @@ By default the frame rate matches the refresh rate of the monitor the window is 
 | --- | --- |
 | `fps` | Show the current limit. |
 | `fps auto` | Match the monitor's refresh rate (default). |
+| `fps vrr` | For G-Sync and FreeSync monitors: vsync on, frames held just under the refresh rate (138 at 144 Hz, 59 at 60 Hz), so they stay inside the variable-refresh range and never wait in a queue behind vsync. `gsync` and `freesync` work too. |
 | `fps unlimited` | No limit: draw as fast as the CPU allows. |
 | `fps 144` | Any fixed cap from 30 to 1000. |
 | `fps battery 60` | On battery, hold frames to this many a second (default 60), or `off`. |
 
-On a laptop running on its battery, frames are held to 60 a second (or the limit above, if lower) so the battery lasts and the laptop stays cool; plugged in again, the limit returns within a few seconds. The settings are saved with the rest of the game's settings. Adding `vm.arg.2=-Dnfm.fps=unlimited` (or `auto`, or a number) to `madness64.ini` overrides the saved value at every start.
+On a laptop running on its battery, frames are held to 60 a second (or the limit above, if lower) so the battery lasts and the laptop stays cool; plugged in again, the limit returns within a few seconds. The settings are saved with the rest of the game's settings. Adding `vm.arg.2=-Dnfm.fps=unlimited` (or `auto`, `vrr`, or a number) to `madness64.ini` overrides the saved value at every start.
 
-All drawing is done on the CPU by Java2D, so the ceiling depends on the processor: on a laptop i7-8550U it is roughly 100-170 FPS mid-race and 25-40 FPS during the opening fly-over of the whole track.
+How high the frame rate goes depends on the renderer. With the graphics card (the default) a 1080p race runs at about 70-85 frames a second on a laptop i7-8550U with its integrated graphics, the race itself still being built on the processor; in software, where Java2D draws everything on the processor, it is roughly 42-66 at 1080p (more at smaller windows), and 25-40 during the opening fly-over of the whole track.
 
 ## Windows scheduling and power
 
 The thread that runs the race and the one that draws it join the Games task of Windows' Multimedia Class Scheduler (MMCSS), so a Windows update, a virus scan or a browser in the background waits for them rather than the other way round; MMCSS still keeps a fifth of the processor for everything else. The game also asks Windows not to throttle it to save power (EcoQoS), which otherwise moves programs it thinks unimportant to slower clocks or efficiency cores. Neither needs administrator rights. Hidden test runs do neither, so they stay out of the way of whatever the machine is doing.
 
-Frames wait in at most one place on their way to the display (the swap chain's frame latency is 1), so with the limit on "match display" what is drawn is shown at the next refresh rather than queued behind two or three older frames. Without vsync, frames go out at once, torn if they must.
+Frames wait in at most one place on their way to the display (the swap chain's frame latency is 1), so with the limit on "match display" or "vrr" what is drawn is shown at the next refresh rather than queued behind two or three older frames. Without vsync, frames go out at once, torn if they must.
 
 The graphics card is the one Windows picks for the game, which Windows' graphics settings can change per program. On a laptop with Intel UHD 620 and an NVIDIA Quadro P500, drawing on the discrete card was no faster (the game is limited by the processor) and costs battery, so the game does not override Windows; `-Dnfm.adapter=fast` does.
 
@@ -156,10 +157,10 @@ Every race you play is kept in the `replays` folder next to the game, as the sam
 
 | Property | Meaning |
 | --- | --- |
-| `-Dnfm.profile=true` | Print simulation rate, render rate, time per tick and per frame, run-ahead ticks (their cost, and how many real ticks were checked against the prediction and missed it), the frame limit and the current phase every two seconds, including how long putting each frame on screen took and whether the GPU or software did it. With race frames on their own thread a `[draw]` line gives that thread's frame rate, the gaps between frames, and how far frames had to correct themselves at each new tick. |
+| `-Dnfm.profile=true` | Print simulation rate, render rate, time per tick and per frame, run-ahead ticks (their cost, and how many real ticks were checked against the prediction and missed it), the frame limit and the current phase every two seconds, including how long putting each frame on screen took and whether the GPU or software did it. With race frames on their own thread a `[draw]` line gives that thread's frame rate, the gaps between frames, and how far frames had to correct themselves at each new tick, and how long a change of the driving keys took to reach the screen ("key to screen": from the key event to the first frame handed to the display that shows it, so the display's own delay comes on top). |
 | `-Dnfm.runahead=<true or false>` | Run-ahead for this run, see above. |
 | `-Dnfm.debug=false` | Do not open the developer console on the main menu. |
-| `-Dnfm.fps=<auto, unlimited or a number>` | Frame rate limit for this run, see above. |
+| `-Dnfm.fps=<auto, vrr, unlimited or a number>` | Frame rate limit for this run, see above. |
 | `-Dnfm.scale=<fit or off>` | Window scaling for this run, see above. |
 | `-Dnfm.renderer=<gpu or software>` | How frames reach the screen for this run, see above. Hidden test runs use software unless this asks for the GPU; they then also save `<name>-gpu.png`, the window read back from the graphics card, and in races `<name>-gpuscene.png`, the frame the card drew (at the window's size when that is larger than 1280x720), to compare with `<name>.png`, the same frame drawn in software. |
 | `-Dnfm.motiontest=<dir>` | With `-Dnfm.autotest`: at race ticks 200 to 450 records the scene at 49 points between two ticks into `<dir>\motion-<tick>.bin`, to check that every corner moves smoothly (`python test\motion.py <dir>` measures how far each corner strays from smooth motion), and the scene kept for the tick moved to the same points into `kept-<tick>.bin` (`python test\kept.py <dir>` compares the two). |
