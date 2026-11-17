@@ -22,7 +22,7 @@ import nfm.lit.xtGraphics;
 public final class TrackZipLoader {
 
     public static RadicalMusic loadZip(String file, final boolean download) throws FileNotFoundException, IOException {
-        if (SoundManager.isSilenced()) {
+        if (SoundManager.isSilenced() && !rendersMusic()) {
             return new SilentMusic();
         }
 
@@ -55,10 +55,22 @@ public final class TrackZipLoader {
                     // formats
                         ) {
 
+                    if (StreamMusic.wanted()) {
+                        // the 3D sound plays it, decoded by libopenmpt or mpg123
+                        if (isRecording(zipmodulename)) {
+                            return StreamMusic.recording(extractzip(zis, zipmodulename));
+                        }
+                        final byte[] data = zis.readAllBytes();
+                        zis.close();
+                        return StreamMusic.module(zipmodulename, data);
+                    }
                     final File themodfile = extractzip(zis, zipmodulename);
 
                     return new RadicalBASS(themodfile);
 
+                } else if (zipmodulename.endsWith(".mid") && SoundManager.isSilenced()) {
+                    zis.close();
+                    return new SilentMusic(); // a hidden run renders only what the 3D sound plays
                 } else if (zipmodulename.endsWith(".mid")) { // prefer
                     // radicalmidi
                     // over
@@ -111,20 +123,23 @@ public final class TrackZipLoader {
      */
     public static RadicalMusic loadMusic(String file) throws FileNotFoundException, IOException
     {
-        if (SoundManager.isSilenced()) {
+        if (SoundManager.isSilenced() && !rendersMusic()) {
             return new SilentMusic();
         }
     	final File f = new File(file);
-    	
+
     	if(file.endsWith(".ogg") || file.endsWith(".mp3") || file.endsWith(".wav"))
     	{
     		if(f.exists())
     		{
-    			return new RadicalBASS(f);
+    			return StreamMusic.wanted() ? StreamMusic.recording(f) : new RadicalBASS(f);
     		}
     	} else
     	if(file.endsWith(".mid"))
     	{
+    		if (SoundManager.isSilenced()) {
+    			return new SilentMusic(); // a hidden run renders only what the 3D sound plays
+    		}
     		if(f.exists())
     		{
     			return new RadicalMidi(file);
@@ -134,6 +149,20 @@ public final class TrackZipLoader {
     	throw new FileNotFoundException(file + " does not exist");
     }
     
+    /**
+     * A hidden test run that renders the 3D sound renders its music too;
+     * any other hidden run plays none, and nothing is ever heard.
+     */
+    private static boolean rendersMusic() {
+        return Sound3D.rendersMusic() && StreamMusic.wanted();
+    }
+
+    /** A recording, not a module: the 3D sound decodes these from a file. */
+    private static boolean isRecording(String name) {
+        return name.endsWith(".mp3") || name.endsWith(".mp2") || name.endsWith(".mp1") || name.endsWith(".ogg")
+                || name.endsWith(".wav") || name.endsWith(".aif");
+    }
+
     private static void downloadMusic(final String songname) throws IOException {
         // prepares download
         String string = "http://multiplayer.needformadness.com/tracks/music/" + songname + ".zip";

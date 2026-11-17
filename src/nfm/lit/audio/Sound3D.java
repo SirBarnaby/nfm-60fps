@@ -8,6 +8,9 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.ShortBuffer;
@@ -30,7 +33,9 @@ import org.lwjgl.openal.ALCCapabilities;
 import org.lwjgl.openal.ALCapabilities;
 import org.lwjgl.openal.EXTDisconnect;
 import org.lwjgl.openal.EXTEfx;
+import org.lwjgl.openal.EXTFloat32;
 import org.lwjgl.openal.SOFTDeferredUpdates;
+import org.lwjgl.openal.SOFTDirectChannels;
 import org.lwjgl.openal.SOFTHRTF;
 import org.lwjgl.openal.SOFTLoopback;
 import org.lwjgl.openal.SOFTOutputLimiter;
@@ -166,7 +171,10 @@ public final class Sound3D implements Runnable {
     private static volatile String status = "off";
 
     /** What the game asks for, in order. */
-    private record Command(int kind, String clip, int car, float a, float b) {
+    private record Command(int kind, String clip, int car, float a, float b, StreamMusic music) {
+        Command(int kind, String clip, int car, float a, float b) {
+            this(kind, clip, car, a, b, null);
+        }
     }
 
     private static final int PLAY = 0;
@@ -175,6 +183,10 @@ public final class Sound3D implements Runnable {
     private static final int CRASH = 3;
     private static final int SKID = 4;
     private static final int STOP_ALL = 5;
+    static final int MUSIC_PLAY = 6;
+    static final int MUSIC_PAUSE = 7;
+    static final int MUSIC_RESUME = 8;
+    static final int MUSIC_UNLOAD = 9;
 
     private final ConcurrentLinkedQueue<Command> commands = new ConcurrentLinkedQueue<>();
     private volatile Moment latest;
@@ -222,6 +234,7 @@ public final class Sound3D implements Runnable {
         wanted = on;
         if (!on) {
             shutdown();
+            StreamMusic.handToClassic();
         }
     }
 
@@ -269,6 +282,7 @@ public final class Sound3D implements Runnable {
         sound.thread.setPriority(Thread.MAX_PRIORITY);
         instance = sound;
         sound.thread.start();
+        StreamMusic.handTo3d();
     }
 
     /** Stops the new sound and lets go of the device; Classic plays from then on. */
@@ -300,6 +314,27 @@ public final class Sound3D implements Runnable {
         };
         sound.post(new Command(kind, clip, -1, 0F, 0F));
         return true;
+    }
+
+    /**
+     * Music for the new sound to play, pause, resume or let go of (see
+     * {@link StreamMusic}); false if the new sound is not running.
+     */
+    static boolean music(StreamMusic m, int op) {
+        Sound3D sound = instance;
+        if (sound == null) {
+            return false;
+        }
+        sound.post(new Command(op, null, -1, 0F, 0F, m));
+        return true;
+    }
+
+    /**
+     * True when a hidden test run renders the new sound to a file: its music
+     * is rendered with it (never heard), so the sound check covers it too.
+     */
+    static boolean rendersMusic() {
+        return wanted && System.getProperty("nfm.sound.render") != null;
     }
 
     /** Silences everything at once, as leaving a race does. */
@@ -412,6 +447,7 @@ public final class Sound3D implements Runnable {
     public void run() {
         try {
             if (!open()) {
+                handMusicOver();
                 return;
             }
             for (int i = 0; i < effects.length; i++) {
@@ -436,6 +472,7 @@ public final class Sound3D implements Runnable {
                 }
                 handleCommands();
                 update(now);
+                feedMusic();
                 if (deferred) {
                     SOFTDeferredUpdates.alProcessUpdatesSOFT();
                 }
@@ -454,8 +491,16 @@ public final class Sound3D implements Runnable {
             HLogger.warn("The 3D sound stopped: " + ex);
             status = "stopped: " + ex.getMessage();
             instance = null;
+            handMusicOver();
         } finally {
             close();
+        }
+    }
+
+    /* the new sound could not carry on: BASS plays the music meanwhile (never in a test render) */
+    private void handMusicOver() {
+        if (renderTo == null) {
+            StreamMusic.handToClassic();
         }
     }
 
@@ -493,6 +538,7 @@ public final class Sound3D implements Runnable {
                     SOFTDeferredUpdates.alDeferUpdatesSOFT();
                 }
                 update(clock);
+                feedMusic();
                 if (deferred) {
                     SOFTDeferredUpdates.alProcessUpdatesSOFT();
                 }
@@ -526,6 +572,8 @@ public final class Sound3D implements Runnable {
         ALCapabilities caps = AL.createCapabilities(deviceCaps);
         efx = deviceCaps.ALC_EXT_EFX;
         deferred = caps.AL_SOFT_deferred_updates;
+        musicFloat = caps.AL_EXT_FLOAT32;
+        musicDirect = caps.AL_SOFT_direct_channels;
         alDistanceModel(AL_INVERSE_DISTANCE_CLAMPED);
         alDopplerFactor(DOPPLER);
         AL11.alSpeedOfSound(343.3F * UNITS_PER_METRE);
@@ -587,6 +635,9 @@ public final class Sound3D implements Runnable {
                 alSourcef(source, AL_GAIN, flatGain);
             }
         }
+        if (musicSource != 0) {
+            alSourcef(musicSource, AL_GAIN, flatGain * musicLevel);
+        }
     }
 
     /** The gain of a clip heard as it is, undoing the listener's makeup. */
@@ -617,6 +668,7 @@ public final class Sound3D implements Runnable {
 
     private void close() {
         stopEverything();
+        stopMusic();
         if (acoustics != null) {
             acoustics.close();
             acoustics = null;
@@ -628,6 +680,12 @@ public final class Sound3D implements Runnable {
             }
             for (int source : named.values()) {
                 alDeleteSources(source);
+            }
+            if (musicSource != 0) {
+                alDeleteSources(musicSource);
+                alDeleteBuffers(musicBuffers);
+                musicSource = 0;
+                musicArena.close();
             }
             for (EngineVoices e : engines) {
                 e.delete();
@@ -717,8 +775,134 @@ public final class Sound3D implements Runnable {
             case CRASH -> crash(c.car, c.a, (int) c.b);
             case SKID -> skid(c.car, (int) c.a);
             case STOP_ALL -> stopEverything();
+            case MUSIC_PLAY -> startMusic(c.music);
+            case MUSIC_PAUSE, MUSIC_RESUME -> pauseMusic(c.music, c.kind == MUSIC_PAUSE);
+            case MUSIC_UNLOAD -> {
+                if (c.music == musicNow) {
+                    stopMusic();
+                }
+            }
             default -> {
             }
+        }
+    }
+
+    /* ----------------------------------------------------------- music */
+
+    /*
+     * The music streams through one source of its own, straight to the left
+     * and right speakers (no HRTF, no reverb, no ducking), in blocks decoded
+     * as the source uses them up: six of 1024 frames, a little over a tenth
+     * of a second ahead, enough to ride out a hitch of the sound thread.
+     */
+    private static final int MUSIC_RATE = 48_000;
+    private static final int MUSIC_FRAMES = 1_024;
+    private final int[] musicBuffers = new int[6];
+    private StreamMusic musicNow;
+    private MusicCodecs.Decoder decoder;
+    private int musicSource;
+    private boolean musicPaused;
+    private float musicLevel = 1F;
+    private boolean musicFloat;
+    private boolean musicDirect;
+    private Arena musicArena;
+    private MemorySegment musicBlock;
+    private MemorySegment musicShorts;
+
+    /** Starts this music from its beginning, in place of any other: BASS too played one at a time. */
+    private void startMusic(StreamMusic m) {
+        stopMusic();
+        try {
+            decoder = m.open(MUSIC_RATE);
+        } catch (IOException | RuntimeException ex) {
+            HLogger.warn("Music: " + ex.getMessage());
+            return;
+        }
+        if (musicSource == 0) {
+            musicSource = alGenSources();
+            flat(musicSource);
+            if (musicDirect) {
+                alSourcei(musicSource, SOFTDirectChannels.AL_DIRECT_CHANNELS_SOFT, AL_TRUE);
+            }
+            alGenBuffers(musicBuffers);
+            musicArena = Arena.ofConfined();
+            musicBlock = musicArena.allocate(MUSIC_FRAMES * 8L, 16);
+            musicShorts = musicArena.allocate(MUSIC_FRAMES * 4L, 16);
+        }
+        musicNow = m;
+        musicPaused = false;
+        musicLevel = decoder.level();
+        alSourcef(musicSource, AL_GAIN, flatGain * musicLevel);
+        try {
+            for (int b : musicBuffers) {
+                fillMusic(b);
+            }
+        } catch (RuntimeException ex) {
+            HLogger.warn("Music: cannot play " + m.name() + ": " + ex);
+            stopMusic();
+            return;
+        }
+        alSourceQueueBuffers(musicSource, musicBuffers);
+        alSourcePlay(musicSource);
+    }
+
+    private void pauseMusic(StreamMusic m, boolean pause) {
+        if (m != musicNow || decoder == null) {
+            return;
+        }
+        musicPaused = pause;
+        if (pause) {
+            alSourcePause(musicSource);
+        } else {
+            alSourcePlay(musicSource);
+        }
+    }
+
+    private void stopMusic() {
+        if (musicSource != 0) {
+            alSourceStop(musicSource);
+            alSourcei(musicSource, AL_BUFFER, 0);
+        }
+        if (decoder != null) {
+            decoder.close();
+            decoder = null;
+        }
+        musicNow = null;
+    }
+
+    /** Decodes the next block into this buffer, as float or, where OpenAL has no float, 16-bit. */
+    private void fillMusic(int buffer) {
+        decoder.read(musicBlock, MUSIC_FRAMES);
+        if (musicFloat) {
+            alBufferData(buffer, EXTFloat32.AL_FORMAT_STEREO_FLOAT32, musicBlock.asByteBuffer(), decoder.rate());
+            return;
+        }
+        for (int i = 0; i < MUSIC_FRAMES * 2; i++) {
+            float v = Math.max(-1F, Math.min(1F, musicBlock.getAtIndex(ValueLayout.JAVA_FLOAT, i)));
+            musicShorts.setAtIndex(ValueLayout.JAVA_SHORT, i, (short) (v * 32767F));
+        }
+        alBufferData(buffer, AL_FORMAT_STEREO16, musicShorts.asByteBuffer(), decoder.rate());
+    }
+
+    /** Refills what the music source has played; restarts it if it ran dry. */
+    private void feedMusic() {
+        if (decoder == null || musicPaused) {
+            return;
+        }
+        try {
+            int processed = alGetSourcei(musicSource, AL_BUFFERS_PROCESSED);
+            for (int i = 0; i < processed; i++) {
+                int b = alSourceUnqueueBuffers(musicSource);
+                fillMusic(b);
+                alSourceQueueBuffers(musicSource, b);
+            }
+        } catch (RuntimeException ex) {
+            HLogger.warn("Music: " + musicNow.name() + " stopped: " + ex);
+            stopMusic();
+            return;
+        }
+        if (alGetSourcei(musicSource, AL_SOURCE_STATE) != AL_PLAYING) {
+            alSourcePlay(musicSource);
         }
     }
 

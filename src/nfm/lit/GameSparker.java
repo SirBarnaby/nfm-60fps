@@ -3281,6 +3281,49 @@ public class GameSparker extends Panel implements Runnable {
         }
     }
 
+    private static final String MUSIC_SEPARATION_COOKIE = "musicsep";
+    private static volatile boolean musicSeparationChanged;
+
+    /** Sets the music's stereo separation in percent (0 to 200), saved; the music playing takes it at once. */
+    public static void setMusicSeparation(int percent) {
+        nfm.lit.audio.StreamMusic.setSeparation(percent);
+        musicSeparationChanged = true;
+    }
+
+    /** The music setting in words: its stereo separation, and what plays it. */
+    public static String describeMusic() {
+        String by = newSound && nfm.lit.audio.StreamMusic.available() ? "played by the 3D sound through libopenmpt"
+                : "played by BASS, which keeps its own separation";
+        return "stereo separation " + nfm.lit.audio.StreamMusic.separation() + "%, " + by;
+    }
+
+    /** -Dnfm.music.separation, else the saved choice, else the default; hidden runs always use the default. */
+    private void loadMusicSeparation() {
+        String property = System.getProperty("nfm.music.separation");
+        int percent = nfm.lit.audio.StreamMusic.DEFAULT_SEPARATION;
+        if (property != null) {
+            try {
+                percent = Integer.parseInt(property.trim());
+            } catch (NumberFormatException ex) {
+                HLogger.warn("Ignoring invalid nfm.music.separation value: " + property);
+            }
+        } else if (!runsHidden()) {
+            int saved = readcookie(MUSIC_SEPARATION_COOKIE);
+            if (saved >= 0) {
+                percent = saved;
+            }
+        }
+        nfm.lit.audio.StreamMusic.setSeparation(percent);
+        musicSeparationChanged = false;
+    }
+
+    private void saveMusicSeparationIfChanged() {
+        if (musicSeparationChanged) {
+            musicSeparationChanged = false;
+            savecookie(MUSIC_SEPARATION_COOKIE, String.valueOf(nfm.lit.audio.StreamMusic.separation()));
+        }
+    }
+
     private static final String SOUND_COOKIE = "sound3d";
     /** The new (3D) sound, or Classic: the game's own sound as it always played. */
     private static volatile boolean newSound = true;
@@ -4196,6 +4239,7 @@ public class GameSparker extends Panel implements Runnable {
         loadDynamicResolution();
         loadHdr();
         loadSound();
+        loadMusicSeparation();
         startAutoTest();
         session = RaceSession.fromCommandLine(new SessionHost());
         startGamepads();
@@ -4278,6 +4322,7 @@ public class GameSparker extends Panel implements Runnable {
                 saveDynamicResolutionIfChanged();
                 saveHdrIfChanged();
                 applySound();
+                saveMusicSeparationIfChanged();
                 saveGamepadIfChanged();
                 if (session != null) {
                     session.beforeTick();
