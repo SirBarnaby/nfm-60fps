@@ -3479,14 +3479,21 @@ public class GameSparker extends Panel implements Runnable {
         m.muted = Control.mutes;
         m.player = 0;
         boolean live = ui.fase == Phase.INGAME && ui.starcnt < 35;
+        boolean replay = ui.fase == Phase.INSTANTREPLAY || ui.fase == Phase.GAMEHIGHLIGHT
+                || ui.fase == Phase.CAUGHTHIGHLIGHT;
         int n = Math.min(GameFacts.numberOfPlayers, Math.min(racers.length, sceneObjects.length));
         m.cars = new nfm.lit.audio.Sound3D.Car[n];
+        if (!replay) {
+            replayHeard = false;
+        }
         for (int i = 0; i < n; i++) {
             Madness r = racers[i];
             ContO c = sceneObjects[i];
             Control k = u[i];
             nfm.lit.audio.Sound3D.Car car = new nfm.lit.audio.Sound3D.Car();
-            if (r != null && c != null && k != null) {
+            if (replay && r != null && c != null) {
+                replayCar(i, r, c, car);
+            } else if (r != null && c != null && k != null) {
                 car.x = c.x;
                 car.y = c.y;
                 car.z = c.z;
@@ -3502,7 +3509,45 @@ public class GameSparker extends Panel implements Runnable {
             }
             m.cars[i] = car;
         }
+        replayHeard = replay;
         nfm.lit.audio.Sound3D.publish(m);
+    }
+
+    /* replays keep where each car was, not how it was driven: the 3D sound works its engine out from that */
+    private final float[][] replayPlace = new float[GameFacts.numberOfPlayers][3];
+    private final float[] replaySpeed = new float[GameFacts.numberOfPlayers];
+    private boolean replayHeard;
+
+    /**
+     * A car in a replay or highlight, heard from the replay camera: its
+     * speed is how far it moved this tick (a car moves by its speed each
+     * tick), on the throttle while it is not slowing. While the picture holds
+     * still on an event, the engines hold their note.
+     */
+    private void replayCar(int i, Madness r, ContO c, nfm.lit.audio.Sound3D.Car car) {
+        float[] was = replayPlace[i];
+        float dx = c.x - was[0];
+        float dy = c.y - was[1];
+        float dz = c.z - was[2];
+        float moved = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+        float before = replaySpeed[i];
+        if (!replayHeard || moved > 2_000F) {
+            replaySpeed[i] = 0F; // the replay started or cut to another moment
+        } else if (ui.fase != Phase.CAUGHTHIGHLIGHT) {
+            replaySpeed[i] += (moved - replaySpeed[i]) * 0.5F;
+        }
+        was[0] = c.x;
+        was[1] = c.y;
+        was[2] = c.z;
+        car.x = c.x;
+        car.y = c.y;
+        car.z = c.z;
+        car.speed = replaySpeed[i];
+        car.engine = r.stat.engine;
+        car.bands = r.stat.swits;
+        car.running = true;
+        car.throttle = replaySpeed[i] >= before - 1F && replaySpeed[i] > 5F;
+        car.grounded = true;
     }
 
     /** One wheel slides against the others, as xtGraphics.playsounds tells wheelspin. */

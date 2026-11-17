@@ -149,6 +149,13 @@ public final class Sound3D implements Runnable {
     private static final float REVERB_SMOOTHING = 1F;
     /** The reverb's level where the track closes in all round; open ground stays dry. */
     private static final float REVERB_LEVEL = 0.6F;
+    /*
+     * A big crash heard at full volume pulls the engines down by this much
+     * (about 5 dB) at once and lets them back over half a second, so the hit
+     * lands; a crash far off ducks them less, a tap not at all.
+     */
+    private static final float DUCK_DEPTH = 0.45F;
+    private static final float DUCK_RELEASE = 0.5F;
     /** -Dnfm.sound.debug prints each engine's state once a second. */
     private static final boolean DEBUG = Boolean.getBoolean("nfm.sound.debug");
 
@@ -352,6 +359,9 @@ public final class Sound3D implements Runnable {
     private final float[] reverbNow = new float[3];
     private final float[] reverbApplied = {-1F, -1F, -1F};
     private float enclosed;
+    /** How far the engines are pulled down under a big crash, 0 to DUCK_DEPTH. */
+    private float duck;
+    private float engineLevel = 1F;
     private float enclosedApplied = -1F;
     private Moment previous;
     private Moment current;
@@ -871,6 +881,7 @@ public final class Sound3D implements Runnable {
         } else if (f >= 170F) {
             playAt(car, "crash" + turn, 1F, variation());
             e.crashWait = 2;
+            duck = Math.max(duck, DUCK_DEPTH / Math.max(1F, distanceToCar(car) / FULL_VOLUME_DISTANCE));
         }
         if (kind == 0 && f > 25F) {
             e.crashTurn = (e.crashTurn + 1) % 3;
@@ -980,6 +991,8 @@ public final class Sound3D implements Runnable {
         float dt = UPDATE_NANOS / 1e9F;
         updateOcclusion(dt);
         updateReverb(dt);
+        engineLevel = 1F - duck;
+        duck *= (float) Math.exp(-dt / DUCK_RELEASE);
         for (int i = 0; i < engines.size(); i++) {
             engines.get(i).update(i < cars ? m.cars[i] : null, i, ahead, dt, m.muted);
         }
@@ -1221,7 +1234,7 @@ public final class Sound3D implements Runnable {
                     }
                     continue;
                 }
-                alSourcef(s, AL_GAIN, gain[i]);
+                alSourcef(s, AL_GAIN, gain[i] * engineLevel);
                 alSourcef(s, AL_PITCH, Math.max(0.5F, Math.min(2F, pitch[i])));
                 alSource3f(s, AL_POSITION, position[0], position[1], position[2]);
                 alSource3f(s, AL_VELOCITY, velocity[0], velocity[1], velocity[2]);
