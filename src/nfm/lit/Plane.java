@@ -377,7 +377,7 @@ public class Plane {
         return array;
     }
 
-    public void d(Graphics2D rd, int x, int y, int z, int yaw, int roll, int pitch, int wheelTurn, int wheelSpin, boolean noOutline, int minSize, boolean blackout) {
+    public void d(Graphics2D rd, int x, int y, int z, int yaw, int roll, int pitch, int wheelTurn, int wheelSpin, boolean noOutline, int objectSize, boolean blackout) {
         int[][] slots = SCRATCH.get();
         // for the graphics card, the corners again without rounding (not while the plane is breaking up)
         boolean exact = Precise.on && embos == 0;
@@ -855,7 +855,7 @@ public class Plane {
             }
         }
 
-        if (minSize != -1) {
+        if (objectSize != -1) {
             int width = 0;
             int height = 0;
             for (int corner = 0; corner < n; corner++) {
@@ -874,7 +874,7 @@ public class Plane {
 
             if (width == 0 || height == 0) {
                 visible = false;
-            } else if (width < 3 && height < 3 && minSize / width > 15 && minSize / height > 15) {
+            } else if (width < 3 && height < 3 && objectSize / width > 15 && objectSize / height > 15) {
                 visible = false;
             }
         }
@@ -1004,7 +1004,7 @@ public class Plane {
             if (gr == -12 && av < 11200) {
                 Medium.lastmaf = facing;
             }
-            if (gr == -13 && (!Medium.lastcheck || minSize != -1)) {
+            if (gr == -13 && (!Medium.lastcheck || objectSize != -1)) {
                 visible = false;
             }
             if (gr == -16 && av > 1500) {
@@ -1046,7 +1046,7 @@ public class Plane {
                 }
                 if (gr == -11) {
                     shade = 0.67F;
-                    if (minSize == -1) {
+                    if (objectSize == -1) {
                         if (Medium.cpflik || Medium.nochekflk && !Medium.lastcheck) {
                             shade = 1.0F;
                         } else {
@@ -1054,7 +1054,7 @@ public class Plane {
                         }
                     }
                 }
-                if (gr == -13 && minSize == -1) {
+                if (gr == -13 && objectSize == -1) {
                     if (Medium.cpflik) {
                         shade = 0.0F;
                     } else {
@@ -1236,7 +1236,7 @@ public class Plane {
                     int lineRed = c[0];
                     int lineGreen = c[1];
                     int lineBlue = c[2];
-                    if (minSize == -1) {
+                    if (objectSize == -1) {
                         if (Medium.nochekflk && !Medium.lastcheck) {
                             lineRed = (int) (lineRed * 1.25D);
                             if (lineRed > 255) {
