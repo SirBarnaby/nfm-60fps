@@ -188,11 +188,11 @@ public class GameSparker extends Panel implements Runnable {
     private Image hudImage;
     private Graphics2D hudG;
 
-    /** Objects rendered by the in-game pass (was a local: aconto1). */
+    /** Objects rendered by the in-game pass: run()'s scene. */
     private ContO[] sceneObjects;
     /** Every loaded model, cars first: a car that is replaced after a crash is copied from here. */
     private ContO[] modelObjects;
-    /** Simulation state per car (was a local: amadness). */
+    /** Simulation state per car: run()'s drivers. */
     private Madness[] racers;
     private xtGraphics ui;
     private CheckPoints raceCheckpoints;
@@ -492,29 +492,29 @@ public class GameSparker extends Panel implements Runnable {
      * long ago Windows saw it, in nanoseconds. The autopilot, recorded races
      * and gamepads press keys here too, with no age.
      */
-    void pressKey(int i, boolean alt, long age) {
+    void pressKey(int key, boolean alt, long age) {
         if (!exwist) {
             synchronized (inputLock) {
-                if (i == 1004)
+                if (key == 1004)
                     liveUp = true;
-                if (i == 1005)
+                if (key == 1005)
                     liveDown = true;
-                if (i == 1007)
+                if (key == 1007)
                     liveRight = true;
-                if (i == 1006)
+                if (key == 1006)
                     liveLeft = true;
-                if (i == 32)
+                if (key == 32)
                     liveHandb = true;
-                if (i == 120 || i == 88)
+                if (key == 120 || key == 88)
                     liveLookback = -1;
-                if (i == 122 || i == 90)
+                if (key == 122 || key == 90)
                     liveLookback = 1;
-                boolean fullscreenKey = i == GameInput.F11 || i == 10 && alt;
+                boolean fullscreenKey = key == GameInput.F11 || key == 10 && alt;
                 if (fullscreenKey) {
                     RunApp.toggleFullscreen();
-                } else if (i == 10 || i == 80 || i == 112 || i == 27)
+                } else if (key == 10 || key == 80 || key == 112 || key == 27)
                     liveEnter = true;
-                if (i == 118 || i == 86) {
+                if (key == 118 || key == 86) {
                     liveView++;
                     if (liveView == 3)
                         liveView = 0;
@@ -523,11 +523,11 @@ public class GameSparker extends Panel implements Runnable {
                     applyLiveKeys();
                 }
                 // under the lock too: a run-ahead tick puts the controls back as they were
-                if (i == 77 || i == 109)
+                if (key == 77 || key == 109)
                     u[0].mutem = !u[0].mutem;
-                if (i == 78 || i == 110)
+                if (key == 78 || key == 110)
                     u[0].mutes = !u[0].mutes;
-                if (i == 97 || i == 65)
+                if (key == 97 || key == 65)
                     u[0].arrace = !u[0].arrace;
                 noteKeys(age);
             }
@@ -712,7 +712,7 @@ public class GameSparker extends Panel implements Runnable {
      * @param string name to match
      * @return value
      */
-    private int readcookie(String string) {
+    private int readcookie(String name) {
         try {
             ZipFile zipFile = new ZipFile(cookieDirZip);
             Enumeration<? extends ZipEntry> entries = zipFile.entries();
@@ -721,18 +721,18 @@ public class GameSparker extends Panel implements Runnable {
 
             while (entries.hasMoreElements()) {
                 ZipEntry entry = entries.nextElement();
-                if (entry.getName().contains(string)) {
+                if (entry.getName().contains(name)) {
                     InputStream stream = zipFile.getInputStream(entry);
                     fromEntry = fromStream(stream);
                 }
             }
             zipFile.close();
 
-            HLogger.info("Successfully read cookie " + string + " with value " + Integer.parseInt(fromEntry));
+            HLogger.info("Successfully read cookie " + name + " with value " + Integer.parseInt(fromEntry));
             return Integer.parseInt(fromEntry);
         } catch (IOException ioexception) {
             // HLogger.error(ioexception.toString());
-            HLogger.error(string + ".dat probably doesn't exist");
+            HLogger.error(name + ".dat probably doesn't exist");
             return -1;
         } catch (NumberFormatException nfe) {
             return -1;
@@ -758,11 +758,11 @@ public class GameSparker extends Panel implements Runnable {
      * placement for turning mouse positions into picture coordinates.
      */
     private Rectangle placePicture(int width, int height) {
-        int i = 0;
-        int i_97_ = 0;
+        int shakeX = 0;
+        int shakeY = 0;
         if (this.shaka > 10) {
-            i = (int) ((double) (this.shaka * 2) * Math.random() - (double) this.shaka);
-            i_97_ = (int) ((double) (this.shaka * 2) * Math.random() - (double) this.shaka);
+            shakeX = (int) ((double) (this.shaka * 2) * Math.random() - (double) this.shaka);
+            shakeY = (int) ((double) (this.shaka * 2) * Math.random() - (double) this.shaka);
             this.shaka -= 5;
         }
 
@@ -779,13 +779,13 @@ public class GameSparker extends Panel implements Runnable {
         apx = x;
         apy = y;
         presentScale = scale;
-        x += (int) Math.round(i * scale);
-        y += (int) Math.round(i_97_ * scale);
+        x += (int) Math.round(shakeX * scale);
+        y += (int) Math.round(shakeY * scale);
         return new Rectangle(x, y, w, h);
     }
 
     /** Draws the picture into the window in software, as {@link #paint} does without the GPU. */
-    private void paintPicture(Graphics2D graphics2d) {
+    private void paintPicture(Graphics2D g) {
         int width = getWidth();
         int height = getHeight();
         Rectangle place = placePicture(width, height);
@@ -797,17 +797,17 @@ public class GameSparker extends Panel implements Runnable {
         int w = place.width;
         int h = place.height;
         if (w == GameFacts.screenWidth && h == GameFacts.screenHeight) {
-            graphics2d.drawImage(this.offImage, x, y, this);
+            g.drawImage(this.offImage, x, y, this);
         } else {
-            drawScaled(graphics2d, x, y, w, h);
+            drawScaled(g, x, y, w, h);
         }
         // the borders, and the strip a screen shake uncovers
-        graphics2d.setComposite(AlphaComposite.Src);
-        graphics2d.setColor(Color.BLACK);
-        graphics2d.fillRect(0, 0, width, Math.max(0, y));
-        graphics2d.fillRect(0, y + h, width, Math.max(0, height - y - h));
-        graphics2d.fillRect(0, y, Math.max(0, x), h);
-        graphics2d.fillRect(x + w, y, Math.max(0, width - x - w), h);
+        g.setComposite(AlphaComposite.Src);
+        g.setColor(Color.BLACK);
+        g.fillRect(0, 0, width, Math.max(0, y));
+        g.fillRect(0, y + h, width, Math.max(0, height - y - h));
+        g.fillRect(0, y, Math.max(0, x), h);
+        g.fillRect(x + w, y, Math.max(0, width - x - w), h);
     }
 
     /**
@@ -816,16 +816,16 @@ public class GameSparker extends Panel implements Runnable {
      * filter it while drawing. The lock keeps a paint from the event thread
      * from reusing the scaled image while the game thread is drawing it.
      */
-    private void drawScaled(Graphics2D graphics2d, int x, int y, int w, int h) {
+    private void drawScaled(Graphics2D g, int x, int y, int w, int h) {
         synchronized (frameScaler) {
             BufferedImage scaled = offImage instanceof BufferedImage frame ? frameScaler.scale(frame, w, h) : null;
             if (scaled != null) {
-                graphics2d.drawImage(scaled, x, y, null);
+                g.drawImage(scaled, x, y, null);
                 return;
             }
         }
-        graphics2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-        graphics2d.drawImage(this.offImage, x, y, w, h, this);
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        g.drawImage(this.offImage, x, y, w, h, this);
     }
 
     /** A window x coordinate in the picture's 1280x720 coordinates. */
@@ -932,14 +932,13 @@ public class GameSparker extends Panel implements Runnable {
     /**
      * Loads all models
      *
-     * @param conto      conto instance
-     * @param medium     medium instance
-     * @param trackers   trackers instance
-     * @param xtgraphics xtgraphics instance
+     * @param models   where each model goes, by its place in the archive's lists
+     * @param trackers the surfaces the models' pieces add
+     * @param gameUi   the menus, HUD and loading bar
      * @author Kaffeinated, Omar Waly
      */
-    private void loadbase(final ContO conto[], Trackers trackers, xtGraphics xtgraphics) {
-        xtgraphics.addLoaded(6);
+    private void loadbase(final ContO models[], Trackers trackers, xtGraphics gameUi) {
+        gameUi.addLoaded(6);
         try {
             for (GameFiles.Entry zipentry : GameFiles.archive("models")) {
                 int modelId = -1;
@@ -960,8 +959,8 @@ public class GameSparker extends Panel implements Runnable {
                     if (zipentry.name().startsWith(extraModels[extra]))
                         modelId = extra + trackCount + carCount;
 
-                conto[modelId] = new ContO(zipentry.data(), trackers);
-                xtgraphics.addLoaded(1);
+                models[modelId] = new ContO(zipentry.data(), trackers);
+                gameUi.addLoaded(1);
             }
             /*
              * be sure to add your added arrays here
@@ -981,20 +980,20 @@ public class GameSparker extends Panel implements Runnable {
     }
 
     /** A key came up; see {@link #pressKey}. */
-    void releaseKey(int i, long age) {
+    void releaseKey(int key, long age) {
         if (!exwist) {
             synchronized (inputLock) {
-                if (i == 1004)
+                if (key == 1004)
                     liveUp = false;
-                if (i == 1005)
+                if (key == 1005)
                     liveDown = false;
-                if (i == 1007)
+                if (key == 1007)
                     liveRight = false;
-                if (i == 1006)
+                if (key == 1006)
                     liveLeft = false;
-                if (i == 32)
+                if (key == 32)
                     liveHandb = false;
-                if (i == 120 || i == 88 || i == 122 || i == 90)
+                if (key == 120 || key == 88 || key == 122 || key == 90)
                     liveLookback = 0;
                 if (!latching) {
                     applyHeldKeys();
@@ -1011,11 +1010,11 @@ public class GameSparker extends Panel implements Runnable {
             gamer.start();
     }
 
-    /** A mouse button went down at (i, j) in the panel. */
-    void mousePressedAt(int i, int j) {
+    /** A mouse button went down at (x, y) in the panel. */
+    void mousePressedAt(int x, int y) {
         if (!exwist && mouses == 0) {
-            xm = toPictureX(i);
-            ym = toPictureY(j);
+            xm = toPictureX(x);
+            ym = toPictureY(y);
             mouses = 1;
         }
     }
@@ -1023,18 +1022,18 @@ public class GameSparker extends Panel implements Runnable {
     /**
      * Loads stage elements
      *
-     * @param aconto      conto instance
-     * @param aconto1     conto instance specifically for cars
-     * @param trackers    trackers instance
-     * @param checkpoints checkpoints instance
-     * @param xtgraphics  xtgraphics instance
-     * @param amadness    madness instance
-     * @param record      record instance
+     * @param scene       the cars and track pieces placed in the race
+     * @param models      every loaded model, cars first
+     * @param trackers    the track's surfaces and walls
+     * @param checkpoints the stage's checkpoints and fixing hoops
+     * @param gameUi      the menus, HUD and loading bar
+     * @param drivers     the cars' physics, one per player
+     * @param record      the replay buffers
      * @author Kaffeinated, Omar Waly
      */
 
-    private void loadstage(ContO aconto[], ContO aconto1[], Trackers trackers, CheckPoints checkpoints,
-            xtGraphics xtgraphics, Madness amadness[], Record record, boolean custom) {
+    private void loadstage(ContO scene[], ContO models[], Trackers trackers, CheckPoints checkpoints,
+            xtGraphics gameUi, Madness drivers[], Record record, boolean custom) {
         /*
          * Every race starts its random streams from one seed, before anything
          * of the stage draws a number, so the race can be played again exactly.
@@ -1063,8 +1062,8 @@ public class GameSparker extends Panel implements Runnable {
         wallmodel = "thewall";
 
         //reset noarrow and nostatus
-        xtgraphics.arrowDisabled = false;
-        xtgraphics.opstatusDisabled = false;
+        gameUi.arrowDisabled = false;
+        gameUi.opstatusDisabled = false;
 
         resetView();
         int r_wall = 0;
@@ -1075,9 +1074,9 @@ public class GameSparker extends Panel implements Runnable {
         CheckPoints.customTrack = false;
 
         loadStage = stageDir + stageSubDir + checkpoints.stage + ".txt";
-        if (xtgraphics.nfmmode == 1) {
+        if (gameUi.nfmmode == 1) {
             stageSubDir = "nfm1/";
-        } else if (xtgraphics.nfmmode == 2) {
+        } else if (gameUi.nfmmode == 2) {
             stageSubDir = "nfm2/";
         }
 
@@ -1086,7 +1085,7 @@ public class GameSparker extends Panel implements Runnable {
             HLogger.info(loadStage);
         }
 
-        String string = "";
+        String unused = "";
 
         try (BufferedReader bufferedreader = new BufferedReader(new FileReader(GameFiles.file(loadStage)))) {
             for (String line; (line = bufferedreader.readLine()) != null;) {
@@ -1100,7 +1099,7 @@ public class GameSparker extends Panel implements Runnable {
                 if (line.startsWith("sky")) {
                     Medium.setSky(Utility.getint("sky", line, 0), Utility.getint("sky", line, 1),
                             Utility.getint("sky", line, 2));
-                    xtgraphics.snap(checkpoints.stage);
+                    gameUi.snap(checkpoints.stage);
                 }
                 if (line.startsWith("ground"))
                     Medium.setGround(Utility.getint("ground", line, 0), Utility.getint("ground", line, 1),
@@ -1133,9 +1132,9 @@ public class GameSparker extends Panel implements Runnable {
                     Medium.lightson = true;
 
                 if (line.startsWith("noarrow"))
-                    xtgraphics.arrowDisabled = true;
+                    gameUi.arrowDisabled = true;
                 if (line.startsWith("nostatus"))
-                    xtgraphics.opstatusDisabled = true;
+                    gameUi.opstatusDisabled = true;
 
                 if (line.startsWith("idoffset")) {
                     noboffset = Utility.getint("idoffset", line, 0);
@@ -1147,11 +1146,11 @@ public class GameSparker extends Panel implements Runnable {
                 }
 
                 if (line.startsWith("set")) {
-                    int k1 = Utility.getint("set", line, 0);
-                    k1 += nobfix;
+                    int piece = Utility.getint("set", line, 0);
+                    piece += nobfix;
                 
                     // compute default Y (ground-height)
-                    int yVal = Medium.ground - aconto1[k1].grat;
+                    int yVal = Medium.ground - models[piece].grat;
                     int rot = Utility.getint("set", line, 3);
                 
                     // if there *is* a 5th comma-separated value, use that instead
@@ -1167,8 +1166,8 @@ public class GameSparker extends Panel implements Runnable {
                     }
                 
                     // now create the object, exactly as before but with our yVal
-                    aconto[nob] = new ContO(
-                        aconto1[k1],
+                    scene[nob] = new ContO(
+                        models[piece],
                         Utility.getint("set", line, 1),
                         yVal,
                         Utility.getint("set", line, 2),
@@ -1208,7 +1207,7 @@ public class GameSparker extends Panel implements Runnable {
                 if (line.startsWith("ds:set")) {
                     String modelname = Utility.getstring("ds:set", line, 0);
                     int id = getModel(modelname);
-                    int yVal = Medium.ground - aconto1[id].grat;
+                    int yVal = Medium.ground - models[id].grat;
                 
                     // if there *is* a 5th comma-separated value, use that instead
                     // (splitting only the part inside the parentheses)
@@ -1219,8 +1218,8 @@ public class GameSparker extends Panel implements Runnable {
                     }
                 
                     // now create the object, exactly as before but with our yVal
-                    aconto[nob] = new ContO(
-                        aconto1[id],
+                    scene[nob] = new ContO(
+                        models[id],
                         Utility.getint("ds:set", line, 1),
                         yVal,
                         Utility.getint("ds:set", line, 2),
@@ -1251,11 +1250,11 @@ public class GameSparker extends Panel implements Runnable {
                     nob++;
                 }
                 if (line.startsWith("chk")) {
-                    int l1 = Utility.getint("chk", line, 0);
-                    l1 += nobfix;
+                    int piece = Utility.getint("chk", line, 0);
+                    piece += nobfix;
                 
                     // compute default Y (ground-height)
-                    int yVal = Medium.ground - aconto1[l1].grat;
+                    int yVal = Medium.ground - models[piece].grat;
                     int rot = Utility.getint("chk", line, 3);
                 
                     // grab the args between '(' and ')', split on commas
@@ -1271,8 +1270,8 @@ public class GameSparker extends Panel implements Runnable {
                     }
                 
                     // create your object exactly as before, but with our yVal
-                    aconto[nob] = new ContO(
-                        aconto1[l1],
+                    scene[nob] = new ContO(
+                        models[piece],
                         Utility.getint("chk", line, 1),
                         yVal,
                         Utility.getint("chk", line, 2),
@@ -1293,23 +1292,23 @@ public class GameSparker extends Panel implements Runnable {
                 
                     checkpoints.pcs = checkpoints.n;
                     checkpoints.n++;
-                    aconto[nob].checkpoint = checkpoints.nsp + 1;
+                    scene[nob].checkpoint = checkpoints.nsp + 1;
                     checkpoints.nsp++;
                     nob++;
                     notb = nob;
                 }
                 if (line.startsWith("fix")) {
-                    int i2 = Utility.getint("fix", line, 0);
-                    i2 += nobfix;
-                    aconto[nob] = new ContO(aconto1[i2], Utility.getint("fix", line, 1), Utility.getint("fix", line, 3),
+                    int piece = Utility.getint("fix", line, 0);
+                    piece += nobfix;
+                    scene[nob] = new ContO(models[piece], Utility.getint("fix", line, 1), Utility.getint("fix", line, 3),
                             Utility.getint("fix", line, 2), Utility.getint("fix", line, 4));
                     checkpoints.fx[checkpoints.fn] = Utility.getint("fix", line, 1);
                     checkpoints.fz[checkpoints.fn] = Utility.getint("fix", line, 2);
                     checkpoints.fy[checkpoints.fn] = Utility.getint("fix", line, 3);
-                    aconto[nob].elec = true;
+                    scene[nob].elec = true;
                     if (Utility.getint("fix", line, 4) != 0) {
                         checkpoints.roted[checkpoints.fn] = true;
-                        aconto[nob].roted = true;
+                        scene[nob].roted = true;
                     } else {
                         checkpoints.roted[checkpoints.fn] = false;
                     }
@@ -1332,44 +1331,44 @@ public class GameSparker extends Panel implements Runnable {
                 int wall_id = getModel(wallmodel);
 
                 if (line.startsWith("maxr")) {
-                    int j2 = Utility.getint("maxr", line, 0);
-                    int j3 = Utility.getint("maxr", line, 1);
-                    r_wall = j3;
-                    int j4 = Utility.getint("maxr", line, 2);
-                    for (int j5 = 0; j5 < j2; j5++) {
-                        aconto[nob] = new ContO(aconto1[wall_id], j3, Medium.ground - aconto1[wall_id].grat,
-                                j5 * 4800 + j4, 0);
+                    int wallCount = Utility.getint("maxr", line, 0);
+                    int wallAt = Utility.getint("maxr", line, 1);
+                    r_wall = wallAt;
+                    int wallStart = Utility.getint("maxr", line, 2);
+                    for (int segment = 0; segment < wallCount; segment++) {
+                        scene[nob] = new ContO(models[wall_id], wallAt, Medium.ground - models[wall_id].grat,
+                                segment * 4800 + wallStart, 0);
                         nob++;
                     }
 
                     trackers.y[trackers.nt] = -5000;
                     trackers.rady[trackers.nt] = 7100;
-                    trackers.x[trackers.nt] = j3 + 500;
+                    trackers.x[trackers.nt] = wallAt + 500;
                     trackers.radx[trackers.nt] = 600;
-                    trackers.z[trackers.nt] = ((j2 * 4800) / 2 + j4) - 2400;
-                    trackers.radz[trackers.nt] = (j2 * 4800) / 2;
+                    trackers.z[trackers.nt] = ((wallCount * 4800) / 2 + wallStart) - 2400;
+                    trackers.radz[trackers.nt] = (wallCount * 4800) / 2;
                     trackers.xy[trackers.nt] = 90;
                     trackers.zy[trackers.nt] = 0;
                     trackers.dam[trackers.nt] = 1;
                     trackers.nt++;
                 }
                 if (line.startsWith("maxl")) {
-                    int k2 = Utility.getint("maxl", line, 0);
-                    int k3 = Utility.getint("maxl", line, 1);
-                    l_wall = k3;
-                    int k4 = Utility.getint("maxl", line, 2);
-                    for (int k5 = 0; k5 < k2; k5++) {
-                        aconto[nob] = new ContO(aconto1[wall_id], k3, Medium.ground - aconto1[wall_id].grat,
-                                k5 * 4800 + k4, 0);
+                    int wallCount = Utility.getint("maxl", line, 0);
+                    int wallAt = Utility.getint("maxl", line, 1);
+                    l_wall = wallAt;
+                    int wallStart = Utility.getint("maxl", line, 2);
+                    for (int segment = 0; segment < wallCount; segment++) {
+                        scene[nob] = new ContO(models[wall_id], wallAt, Medium.ground - models[wall_id].grat,
+                                segment * 4800 + wallStart, 0);
                         nob++;
                     }
 
                     trackers.y[trackers.nt] = -5000;
                     trackers.rady[trackers.nt] = 7100;
-                    trackers.x[trackers.nt] = k3 - 500;
+                    trackers.x[trackers.nt] = wallAt - 500;
                     trackers.radx[trackers.nt] = 600;
-                    trackers.z[trackers.nt] = ((k2 * 4800) / 2 + k4) - 2400;
-                    trackers.radz[trackers.nt] = (k2 * 4800) / 2;
+                    trackers.z[trackers.nt] = ((wallCount * 4800) / 2 + wallStart) - 2400;
+                    trackers.radz[trackers.nt] = (wallCount * 4800) / 2;
                     trackers.xy[trackers.nt] = -90;
                     trackers.zy[trackers.nt] = 0;
                     trackers.dam[trackers.nt] = 1;
@@ -1377,44 +1376,44 @@ public class GameSparker extends Panel implements Runnable {
                 }
 
                 if (line.startsWith("maxt")) {
-                    int l2 = Utility.getint("maxt", line, 0);
-                    int l3 = Utility.getint("maxt", line, 1);
-                    t_wall = l3;
-                    int l4 = Utility.getint("maxt", line, 2);
-                    for (int l5 = 0; l5 < l2; l5++) {
-                        aconto[nob] = new ContO(aconto1[wall_id], l5 * 4800 + l4, Medium.ground - aconto1[wall_id].grat,
-                                l3, 90);
+                    int wallCount = Utility.getint("maxt", line, 0);
+                    int wallAt = Utility.getint("maxt", line, 1);
+                    t_wall = wallAt;
+                    int wallStart = Utility.getint("maxt", line, 2);
+                    for (int segment = 0; segment < wallCount; segment++) {
+                        scene[nob] = new ContO(models[wall_id], segment * 4800 + wallStart, Medium.ground - models[wall_id].grat,
+                                wallAt, 90);
                         nob++;
                     }
 
                     trackers.y[trackers.nt] = -5000;
                     trackers.rady[trackers.nt] = 7100;
-                    trackers.z[trackers.nt] = l3 + 500;
+                    trackers.z[trackers.nt] = wallAt + 500;
                     trackers.radz[trackers.nt] = 600;
-                    trackers.x[trackers.nt] = ((l2 * 4800) / 2 + l4) - 2400;
-                    trackers.radx[trackers.nt] = (l2 * 4800) / 2;
+                    trackers.x[trackers.nt] = ((wallCount * 4800) / 2 + wallStart) - 2400;
+                    trackers.radx[trackers.nt] = (wallCount * 4800) / 2;
                     trackers.zy[trackers.nt] = 90;
                     trackers.xy[trackers.nt] = 0;
                     trackers.dam[trackers.nt] = 1;
                     trackers.nt++;
                 }
                 if (line.startsWith("maxb")) {
-                    int i3 = Utility.getint("maxb", line, 0);
-                    int i4 = Utility.getint("maxb", line, 1);
-                    b_wall = i4;
-                    int i5 = Utility.getint("maxb", line, 2);
-                    for (int i6 = 0; i6 < i3; i6++) {
-                        aconto[nob] = new ContO(aconto1[wall_id], i6 * 4800 + i5, Medium.ground - aconto1[wall_id].grat,
-                                i4, 90);
+                    int wallCount = Utility.getint("maxb", line, 0);
+                    int wallAt = Utility.getint("maxb", line, 1);
+                    b_wall = wallAt;
+                    int wallStart = Utility.getint("maxb", line, 2);
+                    for (int segment = 0; segment < wallCount; segment++) {
+                        scene[nob] = new ContO(models[wall_id], segment * 4800 + wallStart, Medium.ground - models[wall_id].grat,
+                                wallAt, 90);
                         nob++;
                     }
 
                     trackers.y[trackers.nt] = -5000;
                     trackers.rady[trackers.nt] = 7100;
-                    trackers.z[trackers.nt] = i4 - 500;
+                    trackers.z[trackers.nt] = wallAt - 500;
                     trackers.radz[trackers.nt] = 600;
-                    trackers.x[trackers.nt] = ((i3 * 4800) / 2 + i5) - 2400;
-                    trackers.radx[trackers.nt] = (i3 * 4800) / 2;
+                    trackers.x[trackers.nt] = ((wallCount * 4800) / 2 + wallStart) - 2400;
+                    trackers.radx[trackers.nt] = (wallCount * 4800) / 2;
                     trackers.zy[trackers.nt] = -90;
                     trackers.xy[trackers.nt] = 0;
                     trackers.dam[trackers.nt] = 1;
@@ -1435,7 +1434,7 @@ public class GameSparker extends Panel implements Runnable {
             int maxLength = (exceptStr.length() < maxChar) ? exceptStr.length() : maxChar;
             stageError = e.toString().substring(0, maxLength) + "...";
 
-            xtgraphics.fase = Phase.ERRORLOADINGSTAGE;
+            gameUi.fase = Phase.ERRORLOADINGSTAGE;
             HLogger.error("Error loading stage " + checkpoints.stage);
             e.printStackTrace();
         }
@@ -1444,15 +1443,15 @@ public class GameSparker extends Panel implements Runnable {
         else
             Medium.lightn = -1;
         Medium.nochekflk = checkpoints.stage != 1;
-        if (xtgraphics.fase == Phase.STAGESELECTTRIGGER) {
+        if (gameUi.fase == Phase.STAGESELECTTRIGGER) {
             Medium.trx = 0L;
             Medium.trz = 0L;
             if (trackers.nt >= 4) {
-                int i1 = 4;
+                int corner = 4;
                 do {
-                    Medium.trx += trackers.x[trackers.nt - i1];
-                    Medium.trz += trackers.z[trackers.nt - i1];
-                } while (--i1 > 0);
+                    Medium.trx += trackers.x[trackers.nt - corner];
+                    Medium.trz += trackers.z[trackers.nt - corner];
+                } while (--corner > 0);
             }
             Medium.trx = Medium.trx / 4L;
             Medium.trz = Medium.trz / 4L;
@@ -1463,32 +1462,32 @@ public class GameSparker extends Panel implements Runnable {
             Medium.nrnd = 0;
             Medium.trk = true;
             //Medium.detailtype = 0;
-            xtgraphics.fase = Phase.STAGESELECT;
+            gameUi.fase = Phase.STAGESELECT;
             mouses = 0;
         }
-        int j1 = 0;
+        int racer = 0;
         do
-            u[j1].reset(checkpoints, xtgraphics.sc[j1]);
-        while (++j1 < GameFacts.numberOfPlayers);
-        xtgraphics.resetstat(checkpoints.stage);
-        j1 = 0;
+            u[racer].reset(checkpoints, gameUi.sc[racer]);
+        while (++racer < GameFacts.numberOfPlayers);
+        gameUi.resetstat(checkpoints.stage);
+        racer = 0;
         do {
-            if (j1 % 3 == 0) {
-                aconto[j1] = new ContO(aconto1[xtgraphics.sc[j1]], 0, 250 - aconto1[xtgraphics.sc[j1]].grat,
-                        -760 + ((j1 / 3) * 760), 0);
+            if (racer % 3 == 0) {
+                scene[racer] = new ContO(models[gameUi.sc[racer]], 0, 250 - models[gameUi.sc[racer]].grat,
+                        -760 + ((racer / 3) * 760), 0);
             }
-            if (j1 % 3 == 1) {
-                aconto[j1] = new ContO(aconto1[xtgraphics.sc[j1]], -350, 250 - aconto1[xtgraphics.sc[j1]].grat,
-                        -380 + ((int) (j1 / 3) * 760), 0);
+            if (racer % 3 == 1) {
+                scene[racer] = new ContO(models[gameUi.sc[racer]], -350, 250 - models[gameUi.sc[racer]].grat,
+                        -380 + ((int) (racer / 3) * 760), 0);
             }
-            if (j1 % 3 == 2) {
-                aconto[j1] = new ContO(aconto1[xtgraphics.sc[j1]], 350, 250 - aconto1[xtgraphics.sc[j1]].grat,
-                        -380 + ((int) (j1 / 3) * 760), 0);
+            if (racer % 3 == 2) {
+                scene[racer] = new ContO(models[gameUi.sc[racer]], 350, 250 - models[gameUi.sc[racer]].grat,
+                        -380 + ((int) (racer / 3) * 760), 0);
             }
-            amadness[j1].reseto(xtgraphics.sc[j1], aconto[j1], checkpoints);
-        } while (++j1 < GameFacts.numberOfPlayers);
-        record.reset(aconto);
-        sendSoundStage(aconto);
+            drivers[racer].reseto(gameUi.sc[racer], scene[racer], checkpoints);
+        } while (++racer < GameFacts.numberOfPlayers);
+        record.reset(scene);
+        sendSoundStage(scene);
         if (session != null) {
             session.stageLoaded();
         }
@@ -1498,16 +1497,16 @@ public class GameSparker extends Panel implements Runnable {
     /**
      * motion
      *
-     * @param amadness madness
+     * @param drivers  the cars' physics; the first is the player's
      * @param shakeAmt shake sensitivity
      *                 1 normal
      *                 20 maximum
      * @param maxAmt   maximum displacement of the screen while shaking
      */
-    private void initMoto(Madness amadness[], int shakeAmt, int maxAmt) {
-        if (amadness[0].shakedam > 0) {
-            shaka = amadness[0].shakedam / (20 / shakeAmt);
-            amadness[0].shakedam = 0;
+    private void initMoto(Madness drivers[], int shakeAmt, int maxAmt) {
+        if (drivers[0].shakedam > 0) {
+            shaka = drivers[0].shakedam / (20 / shakeAmt);
+            drivers[0].shakedam = 0;
             if (shaka > maxAmt) {
                 shaka = maxAmt;
             }
@@ -1817,49 +1816,49 @@ public class GameSparker extends Panel implements Runnable {
      * now and puts everything back.
      */
     private void advanceRace() {
-        int k3 = 0;
+        int racer = 0;
         do {
-            if (racers[k3].newcar) {
-                int j5 = sceneObjects[k3].xz;
-                int j6 = sceneObjects[k3].xy;
-                int l8 = sceneObjects[k3].zy;
-                sceneObjects[k3] = new ContO(modelObjects[racers[k3].cn], sceneObjects[k3].x, sceneObjects[k3].y, sceneObjects[k3].z,
+            if (racers[racer].newcar) {
+                int turnXz = sceneObjects[racer].xz;
+                int turnXy = sceneObjects[racer].xy;
+                int turnZy = sceneObjects[racer].zy;
+                sceneObjects[racer] = new ContO(modelObjects[racers[racer].cn], sceneObjects[racer].x, sceneObjects[racer].y, sceneObjects[racer].z,
                         0);
-                sceneObjects[k3].xz = j5;
-                sceneObjects[k3].xy = j6;
-                sceneObjects[k3].zy = l8;
-                racers[k3].newcar = false;
+                sceneObjects[racer].xz = turnXz;
+                sceneObjects[racer].xy = turnXy;
+                sceneObjects[racer].zy = turnZy;
+                racers[racer].newcar = false;
             }
-        } while (++k3 < GameFacts.numberOfPlayers);
+        } while (++racer < GameFacts.numberOfPlayers);
 
         drawSimulationStep();
 
         if (ui.starcnt == 0) {
-            int l12 = 0;
+            int car = 0;
             do {
-                int j14 = 0;
+                int other = 0;
                 do {
-                    if (j14 != l12) {
-                        racers[l12].colide(sceneObjects[l12], racers[j14], sceneObjects[j14]);
+                    if (other != car) {
+                        racers[car].colide(sceneObjects[car], racers[other], sceneObjects[other]);
                     }
-                } while (++j14 < GameFacts.numberOfPlayers);
-            } while (++l12 < GameFacts.numberOfPlayers);
-            l12 = 0;
+                } while (++other < GameFacts.numberOfPlayers);
+            } while (++car < GameFacts.numberOfPlayers);
+            car = 0;
             do
-                racers[l12].drive(u[l12], sceneObjects[l12], raceTrackers, raceCheckpoints);
-            while (++l12 < GameFacts.numberOfPlayers);
-            l12 = 0;
+                racers[car].drive(u[car], sceneObjects[car], raceTrackers, raceCheckpoints);
+            while (++car < GameFacts.numberOfPlayers);
+            car = 0;
             do
-                raceRecord.rec(sceneObjects[l12], l12, racers[l12].squash, racers[l12].lastcolido,
-                        racers[l12].cntdest);
-            while (++l12 < GameFacts.numberOfPlayers);
+                raceRecord.rec(sceneObjects[car], car, racers[car].squash, racers[car].lastcolido,
+                        racers[car].cntdest);
+            while (++car < GameFacts.numberOfPlayers);
             raceCheckpoints.checkstat(racers, sceneObjects, raceRecord, GameFacts.numberOfPlayers);
 
             // This starts the AI code for all the cars.
-            l12 = 1;
+            car = 1;
             do
-                u[l12].preform(racers[l12], sceneObjects[l12], raceCheckpoints, raceTrackers, GameFacts.numberOfPlayers);
-            while (++l12 < GameFacts.numberOfPlayers);
+                u[car].preform(racers[car], sceneObjects[car], raceCheckpoints, raceTrackers, GameFacts.numberOfPlayers);
+            while (++car < GameFacts.numberOfPlayers);
         } else {
             if (ui.starcnt == 130) {
                 Medium.adv = 1900;
@@ -2705,13 +2704,13 @@ public class GameSparker extends Panel implements Runnable {
      * the HUD's internal counters, blink timers and pause handling keep running at
      * the legacy tick rate instead of the display rate.
      */
-    private void renderHud(Control control, boolean flag) {
+    private void renderHud(Control control, boolean chaseView) {
         Graphics2D previous = ui.getTarget();
         hudG.setComposite(AlphaComposite.Clear);
         hudG.fillRect(0, 0, GameFacts.screenWidth, GameFacts.screenHeight);
         hudG.setComposite(AlphaComposite.SrcOver);
         ui.setTarget(hudG);
-        ui.stat(racers, raceCheckpoints, control, sceneObjects, flag);
+        ui.stat(racers, raceCheckpoints, control, sceneObjects, chaseView);
         ui.setTarget(previous);
     }
 
@@ -4176,9 +4175,9 @@ public class GameSparker extends Panel implements Runnable {
     private BufferedImage captureFrame() {
         BufferedImage image = new BufferedImage(GameFacts.screenWidth, GameFacts.screenHeight,
                 BufferedImage.TYPE_INT_RGB);
-        Graphics2D graphics2d = image.createGraphics();
-        graphics2d.drawImage(offImage, 0, 0, null);
-        graphics2d.dispose();
+        Graphics2D g = image.createGraphics();
+        g.drawImage(offImage, 0, 0, null);
+        g.dispose();
         return image;
     }
 
@@ -4193,9 +4192,9 @@ public class GameSparker extends Panel implements Runnable {
     private BufferedImage captureWindow() {
         BufferedImage image = new BufferedImage(Math.max(1, getWidth()), Math.max(1, getHeight()),
                 BufferedImage.TYPE_INT_RGB);
-        Graphics2D graphics2d = image.createGraphics();
-        paintPicture(graphics2d);
-        graphics2d.dispose();
+        Graphics2D g = image.createGraphics();
+        paintPicture(g);
+        g.dispose();
         return image;
     }
 
@@ -4439,7 +4438,7 @@ public class GameSparker extends Panel implements Runnable {
         System.out.println("[autotest] finishing");
         try {
             Thread.sleep(500L);
-        } catch (InterruptedException _ex) {
+        } catch (InterruptedException ignored) {
         }
         System.exit(0);
     }
@@ -4467,8 +4466,8 @@ public class GameSparker extends Panel implements Runnable {
         }
         Trackers trackers = new Trackers();
         CheckPoints checkpoints = new CheckPoints();
-        xtGraphics xtgraphics = new xtGraphics(rd, this);
-        ContO aconto[] = new ContO[carModels.length + trackModels.length + extraModels.length]; // be sure all your
+        xtGraphics gameUi = new xtGraphics(rd, this);
+        ContO models[] = new ContO[carModels.length + trackModels.length + extraModels.length]; // be sure all your
                                                                                                 // arrays get in here
         /*
          * The models load on a thread of their own while the images and sounds
@@ -4477,18 +4476,18 @@ public class GameSparker extends Panel implements Runnable {
          * decides their shapes.
          */
         Throwable[] modelsFailed = new Throwable[1];
-        Thread models = new Thread(() -> {
+        Thread modelLoader = new Thread(() -> {
             try {
-                loadbase(aconto, trackers, xtgraphics);
+                loadbase(models, trackers, gameUi);
             } catch (Throwable ex) {
                 modelsFailed[0] = ex;
             }
         }, "nfm-load-models");
-        models.start();
-        xtgraphics.loaddata();
+        modelLoader.start();
+        gameUi.loaddata();
         Record record = new Record();
         try {
-            models.join();
+            modelLoader.join();
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
         }
@@ -4496,16 +4495,16 @@ public class GameSparker extends Panel implements Runnable {
             throw new IllegalStateException("Loading the models failed", modelsFailed[0]);
         }
         modelsLoaded = true;
-        ContO aconto1[] = new ContO[5000];
-        Madness amadness[] = new Madness[51];
-        int l = 0;
+        ContO scene[] = new ContO[5000];
+        Madness drivers[] = new Madness[51];
+        int value = 0;
         do {
-            amadness[l] = new Madness(record, xtgraphics, world, l);
-            u[l] = new Control(world);
-        } while (++l < 51); // dont touch this
-        l = 0;
-        float f = 35F;
-        int i1 = 80;
+            drivers[value] = new Madness(record, gameUi, world, value);
+            u[value] = new Control(world);
+        } while (++value < 51); // dont touch this
+        value = 0;
+        float perfFactor = 35F;
+        int previewFrames = 80;
         /*
          * stop an example timer
          */
@@ -4513,33 +4512,33 @@ public class GameSparker extends Panel implements Runnable {
         /**
          * this bit in here reads cookies and set values
          */
-        l = readcookie("unlocked");
-        if (l >= 1 && l <= GameFacts.numberOfStages) {
+        value = readcookie("unlocked");
+        if (value >= 1 && value <= GameFacts.numberOfStages) {
             /*
              * Note: that is an L
              */
-            xtgraphics.unlocked = l;
-            if (xtgraphics.unlocked != GameFacts.numberOfStages)
-                checkpoints.stage = xtgraphics.unlocked;
+            gameUi.unlocked = value;
+            if (gameUi.unlocked != GameFacts.numberOfStages)
+                checkpoints.stage = gameUi.unlocked;
             else
                 checkpoints.stage = (int) (Math.random() * 17D) + 1;
-            xtgraphics.opselect = 0;
+            gameUi.opselect = 0;
         }
-        l = readcookie("usercar");
-        if (l >= 0 && l <= GameFacts.numberOfCars - 1)
-            xtgraphics.sc[0] = l;
-        l = readcookie("gameprfact");
-        if (l != -1) {
-            f = l;
-            i1 = 1;
+        value = readcookie("usercar");
+        if (value >= 0 && value <= GameFacts.numberOfCars - 1)
+            gameUi.sc[0] = value;
+        value = readcookie("gameprfact");
+        if (value != -1) {
+            perfFactor = value;
+            previewFrames = 1;
         }
 
-        xtgraphics.stoploading();
+        gameUi.stoploading();
         System.gc();
-        sceneObjects = aconto1;
-        racers = amadness;
-        modelObjects = aconto;
-        ui = xtgraphics;
+        sceneObjects = scene;
+        racers = drivers;
+        modelObjects = models;
+        ui = gameUi;
         raceCheckpoints = checkpoints;
         raceRecord = record;
         raceTrackers = trackers;
@@ -4562,11 +4561,11 @@ public class GameSparker extends Panel implements Runnable {
         startGamepads();
         final boolean unpaced = session != null && session.unpaced();
 
-        int k1 = 0;
-        int i2 = 0;
-        int j2 = 0;
-        int k2 = 0;
-        boolean flag2 = false;
+        int replayFrame = 0;
+        int frames = 0;
+        int replayPass = 0;
+        int flashLength = 0;
+        boolean flashed = false;
         exwist = false;
 
         /*
@@ -4586,7 +4585,7 @@ public class GameSparker extends Panel implements Runnable {
              */
             Thread.currentThread().setPriority(Thread.NORM_PRIORITY + 3);
         }
-        long nextTickNanos = System.nanoTime() + tickNanosFor(xtgraphics.fase);
+        long nextTickNanos = System.nanoTime() + tickNanosFor(gameUi.fase);
         long nextRenderNanos = System.nanoTime();
         long lastProfileFlush = nextRenderNanos;
         long lastRenderAt = nextRenderNanos;
@@ -4618,7 +4617,7 @@ public class GameSparker extends Panel implements Runnable {
                      */
                     nextTickNanos = now;
                 }
-                currentTickNanos = tickNanosFor(xtgraphics.fase);
+                currentTickNanos = tickNanosFor(gameUi.fase);
                 tickStartNanos = nextTickNanos;
                 nextTickNanos += currentTickNanos;
                 ticked = true;
@@ -4627,7 +4626,7 @@ public class GameSparker extends Panel implements Runnable {
                 keptBlocked = false;
                 ticksThisFrame++;
                 profileTicks++;
-                if (backBufferStale && !isScenePhase(xtgraphics.fase)) {
+                if (backBufferStale && !isScenePhase(gameUi.fase)) {
                     syncBackBuffer(); // menus and overlays draw on top of the last frame
                 }
                 saveFpsLimitIfChanged();
@@ -4643,78 +4642,78 @@ public class GameSparker extends Panel implements Runnable {
                 saveMusicSeparationIfChanged();
                 saveVolumesIfChanged();
                 saveGamepadIfChanged();
-                if (modelReloadWanted && xtgraphics.fase == Phase.MAINMENU) {
+                if (modelReloadWanted && gameUi.fase == Phase.MAINMENU) {
                     modelReloadWanted = false;
-                    loadbase(aconto, trackers, xtgraphics); // the next race and car select use them
+                    loadbase(models, trackers, gameUi); // the next race and car select use them
                     HLogger.info("Models loaded again" + (GameFiles.names().isEmpty() ? "" : " with mods: "
                             + GameFiles.names()));
                 }
                 if (session != null) {
                     session.beforeTick();
                 }
-                if (xtgraphics.fase != Phase.INGAME) {
+                if (gameUi.fase != Phase.INGAME) {
                     releaseRaceInput();
                 }
 
-            if (xtgraphics.fase == Phase.LOADING) {
+            if (gameUi.fase == Phase.LOADING) {
                 if (mouses == 1)
-                    i2 = 800;
-                if (i2 < 800) {
-                    xtgraphics.clicknow();
-                    i2++;
+                    frames = 800;
+                if (frames < 800) {
+                    gameUi.clicknow();
+                    frames++;
                 } else {
-                    i2 = 0;
-                    xtgraphics.fase = Phase.AWAITLOADDISMISSAL;
-                    xtgraphics.sm.play("powerup");
+                    frames = 0;
+                    gameUi.fase = Phase.AWAITLOADDISMISSAL;
+                    gameUi.sm.play("powerup");
                     mouses = 0;
                     lostfcs = false;
                 }
             }
-            if (xtgraphics.fase == Phase.AWAITLOADDISMISSAL)
-                if (i2 < 100 && splashScreenState) {
-                    xtgraphics.rad(i2);
-                    catchlink(0, xtgraphics);
+            if (gameUi.fase == Phase.AWAITLOADDISMISSAL)
+                if (frames < 100 && splashScreenState) {
+                    gameUi.rad(frames);
+                    catchlink(0, gameUi);
                     if (mouses == 2)
                         mouses = 0;
                     if (mouses == 1)
                         mouses = 2;
-                    i2++;
+                    frames++;
                 } else {
-                    i2 = 0;
-                    xtgraphics.fase = Phase.MAINMENU;
+                    frames = 0;
+                    gameUi.fase = Phase.MAINMENU;
                     mouses = 0;
                     u[0].falseo();
                 }
-            if (xtgraphics.fase == Phase.CARSELECTTRIGGER)
-                if (i2 < 2) {
+            if (gameUi.fase == Phase.CARSELECTTRIGGER)
+                if (frames < 2) {
                     rd.setColor(new Color(0, 0, 0));
                     rd.fillRect(0, 0, GameFacts.screenWidth, GameFacts.screenHeight);
-                    i2++;
+                    frames++;
                 } else {
-                    xtgraphics.inishcarselect();
-                    i2 = 0;
-                    xtgraphics.fase = Phase.CARSELECT;
+                    gameUi.inishcarselect();
+                    frames = 0;
+                    gameUi.fase = Phase.CARSELECT;
                     mouses = 0;
                 }
-            if (xtgraphics.fase == Phase.CREDITS) {
-                xtgraphics.credits(u[0]);
-                if (xtgraphics.flipo == 102) {
+            if (gameUi.fase == Phase.CREDITS) {
+                gameUi.credits(u[0]);
+                if (gameUi.flipo == 102) {
                     syncBackBuffer();
-                    rd.drawImage(xtgraphics.credsnap(offImage), 0, 0, null);
+                    rd.drawImage(gameUi.credsnap(offImage), 0, 0, null);
                 }
-                xtgraphics.ctachm(xm, ym, mouses, u[0]);
-                if (xtgraphics.flipo <= 100)
-                    catchlink(0, xtgraphics);
+                gameUi.ctachm(xm, ym, mouses, u[0]);
+                if (gameUi.flipo <= 100)
+                    catchlink(0, gameUi);
                 if (mouses == 2)
                     mouses = 0;
                 if (mouses == 1)
                     mouses = 2;
             }
-            // if (xtgraphics.fase == Phase.DRM0) {
-            //     xtgraphics.fase = Phase.DRMSCREEN;
+            // if (gameUi.fase == Phase.DRM0) {
+            //     gameUi.fase = Phase.DRMSCREEN;
             //     String regex = "^([a-zA-Z0-9.-]+):(\\d{1,5})$";
             //     Pattern pattern = Pattern.compile(regex);
-            //     Matcher matcher = pattern.matcher(xtgraphics.serverip + ":" + xtgraphics.serverport);
+            //     Matcher matcher = pattern.matcher(gameUi.serverip + ":" + gameUi.serverport);
     
             //     if (matcher.matches()) {
             //         String host = matcher.group(1);
@@ -4724,33 +4723,33 @@ public class GameSparker extends Panel implements Runnable {
             //             HLogger.info("Connecting to " + host + " on port " + port + "...");
     
             //             try {
-            //                 xtgraphics.socket = new Socket(host, port);
+            //                 gameUi.socket = new Socket(host, port);
             //                 HLogger.info("Connected to the server");
     
-            //                 xtgraphics.serverresponse = new BufferedReader(new InputStreamReader(xtgraphics.socket.getInputStream()));
+            //                 gameUi.serverresponse = new BufferedReader(new InputStreamReader(gameUi.socket.getInputStream()));
 
-            //                 PrintWriter out = new PrintWriter(xtgraphics.socket.getOutputStream(), true); // true = auto-flush
+            //                 PrintWriter out = new PrintWriter(gameUi.socket.getOutputStream(), true); // true = auto-flush
             //                 String hwid = HWID.getHWID();
             //                 String hashed = HWID.hashHWID(hwid);
 
             //                 out.println(hashed);  // <- you send this
 
 
-            //                 xtgraphics.serverresponse = new BufferedReader(new InputStreamReader(xtgraphics.socket.getInputStream()));
-            //                 xtgraphics.serverMessage = xtgraphics.serverresponse.readLine();
-            //                 HLogger.info(xtgraphics.serverMessage);
+            //                 gameUi.serverresponse = new BufferedReader(new InputStreamReader(gameUi.socket.getInputStream()));
+            //                 gameUi.serverMessage = gameUi.serverresponse.readLine();
+            //                 HLogger.info(gameUi.serverMessage);
 
             //                 out.close();
     
             //             } catch (java.net.ConnectException e) {
-            //                 xtgraphics.serverMessage = e.getMessage();
+            //                 gameUi.serverMessage = e.getMessage();
             //                 HLogger.info(e.getMessage());
             //             } catch (IOException e) {
             //                 HLogger.info("An error occurred:\n" + e.toString());
             //             } finally {
             //                 try {
-            //                     if (xtgraphics.serverresponse != null) xtgraphics.serverresponse.close();
-            //                     if (xtgraphics.socket != null) xtgraphics.socket.close();
+            //                     if (gameUi.serverresponse != null) gameUi.serverresponse.close();
+            //                     if (gameUi.socket != null) gameUi.socket.close();
             //                 } catch (IOException e) {
             //                     HLogger.info("An error occurred while closing connection:\n" + e.toString());
             //                 }
@@ -4763,200 +4762,200 @@ public class GameSparker extends Panel implements Runnable {
             //         HLogger.info("Invalid host:port format.");
             //     }
             // }
-            // if (xtgraphics.fase == Phase.DRMSCREEN) {
+            // if (gameUi.fase == Phase.DRMSCREEN) {
             //     repaint();
-            //     xtgraphics.drmcheck();
-            //     if (xtgraphics.serverMessage.equals("Authenticated")) {
-            //         xtgraphics.fase = Phase.LOADING;
+            //     gameUi.drmcheck();
+            //     if (gameUi.serverMessage.equals("Authenticated")) {
+            //         gameUi.fase = Phase.LOADING;
             //     }
             // }
-            if (xtgraphics.fase == Phase.MAINMENU) {
-                xtgraphics.maini(u[0], checkpoints, amadness, aconto, aconto1);
-                xtgraphics.ctachm(xm, ym, mouses, u[0]);
+            if (gameUi.fase == Phase.MAINMENU) {
+                gameUi.maini(u[0], checkpoints, drivers, models, scene);
+                gameUi.ctachm(xm, ym, mouses, u[0]);
                 if (mouses == 2)
                     mouses = 0;
                 if (mouses == 1)
                     mouses = 2;
             }
-            if (xtgraphics.fase == Phase.INSTRUCTIONS) {
-                xtgraphics.inst(u[0]);
-                xtgraphics.ctachm(xm, ym, mouses, u[0]);
+            if (gameUi.fase == Phase.INSTRUCTIONS) {
+                gameUi.inst(u[0]);
+                gameUi.ctachm(xm, ym, mouses, u[0]);
                 if (mouses == 2)
                     mouses = 0;
                 if (mouses == 1)
                     mouses = 2;
             }
-            if (xtgraphics.fase == Phase.CUSTOMSETTINGS) { // settings menu
-                xtgraphics.menusettings(u[0]);
-                xtgraphics.ctachm(xm, ym, mouses, u[0]);
+            if (gameUi.fase == Phase.CUSTOMSETTINGS) { // settings menu
+                gameUi.menusettings(u[0]);
+                gameUi.ctachm(xm, ym, mouses, u[0]);
                 if (mouses == 2)
                     mouses = 0;
                 if (mouses == 1)
                     mouses = 2;
             }
-            if (xtgraphics.fase == Phase.POSTGAMEHANDOVER) {
-                xtgraphics.fase = Phase.POSTGAME;
+            if (gameUi.fase == Phase.POSTGAMEHANDOVER) {
+                gameUi.fase = Phase.POSTGAME;
             }
-            if (xtgraphics.fase == Phase.SAVEGAME) { // save the fucking game properly
+            if (gameUi.fase == Phase.SAVEGAME) { // save the fucking game properly
 
-                if (checkpoints.stage == xtgraphics.unlocked && xtgraphics.winner
-                        && xtgraphics.unlocked != GameFacts.numberOfStages + 1)
-                    savecookie("unlocked", "" + xtgraphics.unlocked);
-                savecookie("gameprfact", "" + (int) f);
-                savecookie("usercar", "" + xtgraphics.sc[0]);
+                if (checkpoints.stage == gameUi.unlocked && gameUi.winner
+                        && gameUi.unlocked != GameFacts.numberOfStages + 1)
+                    savecookie("unlocked", "" + gameUi.unlocked);
+                savecookie("gameprfact", "" + (int) perfFactor);
+                savecookie("usercar", "" + gameUi.sc[0]);
 
-                xtgraphics.fase = Phase.MAINMENU;
+                gameUi.fase = Phase.MAINMENU;
             }
-            if (xtgraphics.fase == Phase.POSTGAME) {
-                xtgraphics.finish(checkpoints, aconto, u[0]);
-                xtgraphics.ctachm(xm, ym, mouses, u[0]);
-                if (checkpoints.stage == GameFacts.numberOfStages && xtgraphics.winner)
-                    catchlink(1, xtgraphics);
+            if (gameUi.fase == Phase.POSTGAME) {
+                gameUi.finish(checkpoints, models, u[0]);
+                gameUi.ctachm(xm, ym, mouses, u[0]);
+                if (checkpoints.stage == GameFacts.numberOfStages && gameUi.winner)
+                    catchlink(1, gameUi);
                 if (mouses == 2)
                     mouses = 0;
                 if (mouses == 1)
                     mouses = 2;
             }
-            if (xtgraphics.fase == Phase.CARSELECT) {
-                xtgraphics.carselect(u[0], aconto, amadness[0]);
-                xtgraphics.ctachm(xm, ym, mouses, u[0]);
+            if (gameUi.fase == Phase.CARSELECT) {
+                gameUi.carselect(u[0], models, drivers[0]);
+                gameUi.ctachm(xm, ym, mouses, u[0]);
                 if (mouses == 2)
                     mouses = 0;
                 if (mouses == 1)
                     mouses = 2;
             }
-            if (xtgraphics.fase == Phase.PREGAME) {
-                xtgraphics.musicomp(checkpoints.stage, u[0]);
-                xtgraphics.ctachm(xm, ym, mouses, u[0]);
+            if (gameUi.fase == Phase.PREGAME) {
+                gameUi.musicomp(checkpoints.stage, u[0]);
+                gameUi.ctachm(xm, ym, mouses, u[0]);
                 if (mouses == 2)
                     mouses = 0;
                 if (mouses == 1)
                     mouses = 2;
             }
-            if (xtgraphics.fase == Phase.SELECTEDCARSAVE) {
-                savecookie("usercar", "" + xtgraphics.sc[0]);
+            if (gameUi.fase == Phase.SELECTEDCARSAVE) {
+                savecookie("usercar", "" + gameUi.sc[0]);
 
                 for (int x = 0; x < GameFacts.numberOfPlayers; x++) {
-                    amadness[x].stat = new Stat(xtgraphics.sc[x]);
+                    drivers[x].stat = new Stat(gameUi.sc[x]);
                 }
-                xtgraphics.fase = Phase.PREGAMEMUSIC;
+                gameUi.fase = Phase.PREGAMEMUSIC;
             }
-            if (xtgraphics.fase == Phase.PREGAMEMUSIC) {
-                xtgraphics.loadmusic(checkpoints.stage, i1);
+            if (gameUi.fase == Phase.PREGAMEMUSIC) {
+                gameUi.loadmusic(checkpoints.stage, previewFrames);
             }
-            if (xtgraphics.fase == Phase.LOCKEDSTAGE) {
-                xtgraphics.cantgo(u[0]);
-                xtgraphics.ctachm(xm, ym, mouses, u[0]);
+            if (gameUi.fase == Phase.LOCKEDSTAGE) {
+                gameUi.cantgo(u[0]);
+                gameUi.ctachm(xm, ym, mouses, u[0]);
                 if (mouses == 2)
                     mouses = 0;
                 if (mouses == 1)
                     mouses = 2;
             }
-            if (xtgraphics.fase == Phase.ERRORLOADINGSTAGE) {
-                xtgraphics.loadingfailed(checkpoints, u[0], stageError);
-                xtgraphics.ctachm(xm, ym, mouses, u[0]);
+            if (gameUi.fase == Phase.ERRORLOADINGSTAGE) {
+                gameUi.loadingfailed(checkpoints, u[0], stageError);
+                gameUi.ctachm(xm, ym, mouses, u[0]);
                 if (mouses == 2)
                     mouses = 0;
                 if (mouses == 1)
                     mouses = 2;
             }
-            if (xtgraphics.fase == Phase.NPLAYERSCHECK) {
-                xtgraphics.carspergame(checkpoints);
+            if (gameUi.fase == Phase.NPLAYERSCHECK) {
+                gameUi.carspergame(checkpoints);
             }
-            if (xtgraphics.fase == Phase.STAGESELECTTRIGGER) {
-                xtgraphics.loadingstage(checkpoints.stage);
-                loadstage(aconto1, aconto, trackers, checkpoints, xtgraphics, amadness, record, false);
+            if (gameUi.fase == Phase.STAGESELECTTRIGGER) {
+                gameUi.loadingstage(checkpoints.stage);
+                loadstage(scene, models, trackers, checkpoints, gameUi, drivers, record, false);
                 u[0].falseo();
             }
-            if (xtgraphics.fase == Phase.LOADSTAGE) { // for custom stage loading
+            if (gameUi.fase == Phase.LOADSTAGE) { // for custom stage loading
                 repaint();
-                loadstage(aconto1, aconto, trackers, checkpoints, xtgraphics, amadness, record, true);
-                xtgraphics.fase = Phase.STAGESELECT;
+                loadstage(scene, models, trackers, checkpoints, gameUi, drivers, record, true);
+                gameUi.fase = Phase.STAGESELECT;
             }
-            if (xtgraphics.fase == Phase.LOADSTAGE2) { // for custom stage loading
+            if (gameUi.fase == Phase.LOADSTAGE2) { // for custom stage loading
                 repaint();
-                loadstage(aconto1, aconto, trackers, checkpoints, xtgraphics, amadness, record, true);
-                xtgraphics.loadmusic(checkpoints.stage, i1);
+                loadstage(scene, models, trackers, checkpoints, gameUi, drivers, record, true);
+                gameUi.loadmusic(checkpoints.stage, previewFrames);
             }
-            if (xtgraphics.fase == Phase.STAGESELECT) {
+            if (gameUi.fase == Phase.STAGESELECT) {
                 rd.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
-                xtgraphics.trackbg(true);
+                gameUi.trackbg(true);
                 Medium.d(rd);
                 Medium.aroundTrack(checkpoints);
-                int i3 = 0;
-                int ai[] = new int[200];
-                for (int k5 = GameFacts.numberOfPlayers; k5 < notb; k5++)
-                    if (aconto1[k5].dist != 0) {
-                        ai[i3] = k5;
-                        i3++;
+                int farCount = 0;
+                int far[] = new int[200];
+                for (int piece = GameFacts.numberOfPlayers; piece < notb; piece++)
+                    if (scene[piece].dist != 0) {
+                        far[farCount] = piece;
+                        farCount++;
                     } else {
-                        aconto1[k5].d(rd);
+                        scene[piece].d(rd);
                     }
 
-                int ai5[] = new int[i3];
-                for (int j7 = 0; j7 < i3; j7++)
-                    ai5[j7] = 0;
+                int order[] = new int[farCount];
+                for (int n = 0; n < farCount; n++)
+                    order[n] = 0;
 
-                for (int k7 = 0; k7 < i3; k7++) {
-                    for (int i11 = k7 + 1; i11 < i3; i11++)
-                        if (aconto1[ai[k7]].dist != aconto1[ai[i11]].dist) {
-                            if (aconto1[ai[k7]].dist < aconto1[ai[i11]].dist)
-                                ai5[k7]++;
+                for (int first = 0; first < farCount; first++) {
+                    for (int second = first + 1; second < farCount; second++)
+                        if (scene[far[first]].dist != scene[far[second]].dist) {
+                            if (scene[far[first]].dist < scene[far[second]].dist)
+                                order[first]++;
                             else
-                                ai5[i11]++;
-                        } else if (i11 > k7)
-                            ai5[k7]++;
+                                order[second]++;
+                        } else if (second > first)
+                            order[first]++;
                         else
-                            ai5[i11]++;
+                            order[second]++;
 
                 }
 
-                for (int l7 = 0; l7 < i3; l7++) {
-                    for (int j11 = 0; j11 < i3; j11++)
-                        if (ai5[j11] == l7)
-                            aconto1[ai[j11]].d(rd);
+                for (int rank = 0; rank < farCount; rank++) {
+                    for (int slot = 0; slot < farCount; slot++)
+                        if (order[slot] == rank)
+                            scene[far[slot]].d(rd);
 
                 }
 
                 rd.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                xtgraphics.ctachm(xm, ym, mouses, u[0]);
+                gameUi.ctachm(xm, ym, mouses, u[0]);
                 if (mouses == 2)
                     mouses = 0;
                 if (mouses == 1)
                     mouses = 2;
-                xtgraphics.stageselect(checkpoints, u[0]);
+                gameUi.stageselect(checkpoints, u[0]);
             }
-            if (xtgraphics.fase == Phase.DRAWENVIRONMENT) {
+            if (gameUi.fase == Phase.DRAWENVIRONMENT) {
                 Medium.d(rd);
-                drawWorldObjects(rd); // aconto1 is sceneObjects
-                Medium.follow(aconto1[0], 0, 0);
-                xtgraphics.hipnoload(checkpoints.stage, false);
-                if (i1 != 0) {
-                    i1--;
+                drawWorldObjects(rd); // scene is sceneObjects
+                Medium.follow(scene[0], 0, 0);
+                gameUi.hipnoload(checkpoints.stage, false);
+                if (previewFrames != 0) {
+                    previewFrames--;
                 } else {
                     u[0].enter = false;
                     u[0].handb = false;
 
                     setCursor(new Cursor(0));
-                    xtgraphics.fase = Phase.PREGAME;
+                    gameUi.fase = Phase.PREGAME;
                 }
             }
-            if (autotestHighlightRequested && xtgraphics.fase == Phase.INGAME && xtgraphics.starcnt == 0) {
+            if (autotestHighlightRequested && gameUi.fase == Phase.INGAME && gameUi.starcnt == 0) {
                 /*
                  * Smoke test only: end the race as if it had just been won after a
                  * stunt, so the post-race highlight gets exercised.
                  */
                 autotestHighlightRequested = false;
                 record.cotchinow(0);
-                xtgraphics.looped = 0;
-                xtgraphics.fase = Phase.CAUGHTHIGHLIGHT;
+                gameUi.looped = 0;
+                gameUi.fase = Phase.CAUGHTHIGHLIGHT;
             }
-            if (autotestRepairRequested && xtgraphics.fase == Phase.INGAME && xtgraphics.starcnt == 0) {
+            if (autotestRepairRequested && gameUi.fase == Phase.INGAME && gameUi.starcnt == 0) {
                 // Smoke test only: what a repair hoop does to a visible car.
                 autotestRepairRequested = false;
-                aconto1[0].fix = true;
+                scene[0].fix = true;
             }
-            if (xtgraphics.fase == Phase.INGAME) {
+            if (gameUi.fase == Phase.INGAME) {
                 latchRaceInput();
                 if (session != null) {
                     session.ingameInput();
@@ -4972,7 +4971,7 @@ public class GameSparker extends Panel implements Runnable {
                  * The intro fly-by draws no HUD. Clear the layer so a previous
                  * race's HUD cannot bleed through during the camera sweep.
                  */
-                if (xtgraphics.starcnt >= 38) {
+                if (gameUi.starcnt >= 38) {
                     hudG.setComposite(AlphaComposite.Clear);
                     hudG.fillRect(0, 0, GameFacts.screenWidth, GameFacts.screenHeight);
                     hudG.setComposite(AlphaComposite.SrcOver);
@@ -4993,293 +4992,293 @@ public class GameSparker extends Panel implements Runnable {
                     session.ingameTickEnded();
                 }
             }
-            if (xtgraphics.fase == Phase.INSTANTREPLAY) {
+            if (gameUi.fase == Phase.INSTANTREPLAY) {
                 /*
                  * Drawn by the presentation pass, like a race. The caption goes
                  * to the HUD layer.
                  */
                 snapshotFrameState();
-                if (k1 == 0) {
+                if (replayFrame == 0) {
                     prevFrameValid = false;
                 }
                 beginOverlayTick();
-                if (k1 == 0) {
-                    int i4 = 0;
+                if (replayFrame == 0) {
+                    int racer = 0;
                     do {
-                        record.ocar[i4] = new ContO(aconto1[i4], 0, 0, 0, 0);
-                        aconto1[i4] = new ContO(record.car[0][i4], 0, 0, 0, 0);
-                    } while (++i4 < GameFacts.numberOfPlayers);
+                        record.ocar[racer] = new ContO(scene[racer], 0, 0, 0, 0);
+                        scene[racer] = new ContO(record.car[0][racer], 0, 0, 0, 0);
+                    } while (++racer < GameFacts.numberOfPlayers);
                 }
                 drawSimulationStep();
 
                 if (u[0].enter || u[0].handb || mouses == 1) {
-                    k1 = 299;
+                    replayFrame = 299;
                     u[0].enter = false;
                     u[0].handb = false;
                     mouses = 0;
                 }
-                int l9 = 0;
+                int racer = 0;
                 do {
-                    if (record.fix[l9] == k1)
-                        if (aconto1[l9].dist == 0)
-                            aconto1[l9].fcnt = 8;
+                    if (record.fix[racer] == replayFrame)
+                        if (scene[racer].dist == 0)
+                            scene[racer].fcnt = 8;
                         else
-                            aconto1[l9].fix = true;
-                    if (aconto1[l9].fcnt == 7 || aconto1[l9].fcnt == 8) {
-                        aconto1[l9] = new ContO(aconto[amadness[l9].cn], 0, 0, 0, 0);
-                        record.cntdest[l9] = 0;
+                            scene[racer].fix = true;
+                    if (scene[racer].fcnt == 7 || scene[racer].fcnt == 8) {
+                        scene[racer] = new ContO(models[drivers[racer].cn], 0, 0, 0, 0);
+                        record.cntdest[racer] = 0;
                     }
-                    if (k1 == 299)
-                        aconto1[l9] = new ContO(record.ocar[l9], 0, 0, 0, 0);
-                    record.play(aconto1[l9], amadness[l9], l9, k1);
-                } while (++l9 < GameFacts.numberOfPlayers);
-                if (++k1 == 300) {
-                    k1 = 0;
-                    xtgraphics.fase = Phase.PAUSETRIGGER;
+                    if (replayFrame == 299)
+                        scene[racer] = new ContO(record.ocar[racer], 0, 0, 0, 0);
+                    record.play(scene[racer], drivers[racer], racer, replayFrame);
+                } while (++racer < GameFacts.numberOfPlayers);
+                if (++replayFrame == 300) {
+                    replayFrame = 0;
+                    gameUi.fase = Phase.PAUSETRIGGER;
                 } else {
-                    xtgraphics.replyn();
+                    gameUi.replyn();
                 }
-                Medium.around(aconto1[0], false);
+                Medium.around(scene[0], false);
                 endOverlayTick();
             }
-            if (xtgraphics.fase == Phase.CAUGHTHIGHLIGHT) {
+            if (gameUi.fase == Phase.CAUGHTHIGHLIGHT) {
                 if (record.hcaught && record.wasted == 0 && record.whenwasted != 229 && checkpoints.stage <= 2
-                        && xtgraphics.looped != 0)
+                        && gameUi.looped != 0)
                     record.hcaught = false;
                 if (record.hcaught) {
                     Medium.vert = Medium.fxRandom() <= 0.45000000000000001D;
                     Medium.adv = (int) (900F * Medium.fxRandom());
                     Medium.vxz = (int) (360F * Medium.fxRandom());
-                    k1 = 0;
-                    xtgraphics.fase = Phase.GAMEHIGHLIGHT;
-                    i2 = 0;
-                    j2 = 0;
+                    replayFrame = 0;
+                    gameUi.fase = Phase.GAMEHIGHLIGHT;
+                    frames = 0;
+                    replayPass = 0;
                 } else {
-                    k1 = -2;
-                    xtgraphics.fase = Phase.POSTGAMEFADEOUT;
+                    replayFrame = -2;
+                    gameUi.fase = Phase.POSTGAMEFADEOUT;
                 }
             }
-            if (xtgraphics.fase == Phase.GAMEHIGHLIGHT) {
+            if (gameUi.fase == Phase.GAMEHIGHLIGHT) {
                 /*
                  * Drawn by the presentation pass, like a race. Captions and the
                  * black and white flashes go to the HUD layer.
                  */
                 snapshotFrameState();
-                if (k1 == 0) {
+                if (replayFrame == 0) {
                     prevFrameValid = false;
                 }
                 beginOverlayTick();
-                if (k1 == 0) {
+                if (replayFrame == 0) {
                     if (record.wasted == 0) {
                         if (record.whenwasted == 229) {
-                            k2 = 67;
+                            flashLength = 67;
                             Medium.vxz += 90;
                         } else {
-                            k2 = (int) (Medium.fxRandom() * 4F);
-                            if (k2 == 1 || k2 == 3)
-                                k2 = 69;
-                            if (k2 == 2 || k2 == 4)
-                                k2 = 30;
+                            flashLength = (int) (Medium.fxRandom() * 4F);
+                            if (flashLength == 1 || flashLength == 3)
+                                flashLength = 69;
+                            if (flashLength == 2 || flashLength == 4)
+                                flashLength = 30;
                         }
-                    } else if (record.closefinish != 0 && j2 != 0)
+                    } else if (record.closefinish != 0 && replayPass != 0)
                         Medium.vxz += 90;
-                    int k4 = 0;
+                    int racer = 0;
                     do
-                        aconto1[k4] = new ContO(record.starcar[k4], 0, 0, 0, 0);
-                    while (++k4 < GameFacts.numberOfPlayers);
+                        scene[racer] = new ContO(record.starcar[racer], 0, 0, 0, 0);
+                    while (++racer < GameFacts.numberOfPlayers);
                 }
                 drawSimulationStep();
 
-                int l10 = 0;
+                int racer = 0;
                 do {
-                    if (record.hfix[l10] == k1)
-                        if (aconto1[l10].dist == 0)
-                            aconto1[l10].fcnt = 8;
+                    if (record.hfix[racer] == replayFrame)
+                        if (scene[racer].dist == 0)
+                            scene[racer].fcnt = 8;
                         else
-                            aconto1[l10].fix = true;
-                    if (aconto1[l10].fcnt == 7 || aconto1[l10].fcnt == 8) {
-                        aconto1[l10] = new ContO(aconto[amadness[l10].cn], 0, 0, 0, 0);
-                        record.cntdest[l10] = 0;
+                            scene[racer].fix = true;
+                    if (scene[racer].fcnt == 7 || scene[racer].fcnt == 8) {
+                        scene[racer] = new ContO(models[drivers[racer].cn], 0, 0, 0, 0);
+                        record.cntdest[racer] = 0;
                     }
-                    record.playh(aconto1[l10], amadness[l10], l10, k1);
-                } while (++l10 < GameFacts.numberOfPlayers);
-                if (j2 == 2 && k1 == 299)
+                    record.playh(scene[racer], drivers[racer], racer, replayFrame);
+                } while (++racer < GameFacts.numberOfPlayers);
+                if (replayPass == 2 && replayFrame == 299)
                     u[0].enter = true;
                 if (u[0].enter || u[0].handb) {
-                    xtgraphics.fase = Phase.POSTGAMEFADEOUT;
+                    gameUi.fase = Phase.POSTGAMEFADEOUT;
                     u[0].enter = false;
                     u[0].handb = false;
-                    k1 = -7;
+                    replayFrame = -7;
                 } else {
-                    xtgraphics.levelhigh(record.wasted, record.whenwasted, record.closefinish, k1, checkpoints.stage);
-                    if (k1 == 0 || k1 == 1 || k1 == 2) {
+                    gameUi.levelhigh(record.wasted, record.whenwasted, record.closefinish, replayFrame, checkpoints.stage);
+                    if (replayFrame == 0 || replayFrame == 1 || replayFrame == 2) {
                         rd.setColor(new Color(0, 0, 0));
                         rd.fillRect(0, 0, GameFacts.screenWidth, GameFacts.screenHeight);
                     }
                     if (record.wasted != 0) {
                         if (record.closefinish == 0) {
-                            if (i2 == 9 || i2 == 11) {
+                            if (frames == 9 || frames == 11) {
                                 rd.setColor(new Color(255, 255, 255));
                                 rd.fillRect(0, 0, GameFacts.screenWidth, GameFacts.screenHeight);
                             }
-                            if (i2 == 0)
-                                Medium.around(aconto1[0], false);
-                            if (i2 > 0 && i2 < 20)
-                                Medium.transaround(aconto1[0], aconto1[record.wasted], i2);
-                            if (i2 == 20)
-                                Medium.around(aconto1[record.wasted], false);
-                            if (k1 > record.whenwasted && i2 != 20)
-                                i2++;
-                            if ((i2 == 0 || i2 == 20) && ++k1 == 300) {
-                                k1 = 0;
-                                i2 = 0;
-                                j2++;
+                            if (frames == 0)
+                                Medium.around(scene[0], false);
+                            if (frames > 0 && frames < 20)
+                                Medium.transaround(scene[0], scene[record.wasted], frames);
+                            if (frames == 20)
+                                Medium.around(scene[record.wasted], false);
+                            if (replayFrame > record.whenwasted && frames != 20)
+                                frames++;
+                            if ((frames == 0 || frames == 20) && ++replayFrame == 300) {
+                                replayFrame = 0;
+                                frames = 0;
+                                replayPass++;
                             }
                         } else if (record.closefinish == 1) {
-                            if (i2 == 0)
-                                Medium.around(aconto1[0], false);
-                            if (i2 > 0 && i2 < 20)
-                                Medium.transaround(aconto1[0], aconto1[record.wasted], i2);
-                            if (i2 == 20)
-                                Medium.around(aconto1[record.wasted], false);
-                            if (i2 > 20 && i2 < 40)
-                                Medium.transaround(aconto1[record.wasted], aconto1[0], i2 - 20);
-                            if (i2 == 40)
-                                Medium.around(aconto1[0], false);
-                            if (i2 > 40 && i2 < 60)
-                                Medium.transaround(aconto1[0], aconto1[record.wasted], i2 - 40);
-                            if (i2 == 60)
-                                Medium.around(aconto1[record.wasted], false);
-                            if (k1 > 160 && i2 < 20)
-                                i2++;
-                            if (k1 > 230 && i2 < 40)
-                                i2++;
-                            if (k1 > 280 && i2 < 60)
-                                i2++;
-                            if ((i2 == 0 || i2 == 20 || i2 == 40 || i2 == 60) && ++k1 == 300) {
-                                k1 = 0;
-                                i2 = 0;
-                                j2++;
+                            if (frames == 0)
+                                Medium.around(scene[0], false);
+                            if (frames > 0 && frames < 20)
+                                Medium.transaround(scene[0], scene[record.wasted], frames);
+                            if (frames == 20)
+                                Medium.around(scene[record.wasted], false);
+                            if (frames > 20 && frames < 40)
+                                Medium.transaround(scene[record.wasted], scene[0], frames - 20);
+                            if (frames == 40)
+                                Medium.around(scene[0], false);
+                            if (frames > 40 && frames < 60)
+                                Medium.transaround(scene[0], scene[record.wasted], frames - 40);
+                            if (frames == 60)
+                                Medium.around(scene[record.wasted], false);
+                            if (replayFrame > 160 && frames < 20)
+                                frames++;
+                            if (replayFrame > 230 && frames < 40)
+                                frames++;
+                            if (replayFrame > 280 && frames < 60)
+                                frames++;
+                            if ((frames == 0 || frames == 20 || frames == 40 || frames == 60) && ++replayFrame == 300) {
+                                replayFrame = 0;
+                                frames = 0;
+                                replayPass++;
                             }
                         } else {
-                            if (i2 == 0)
-                                Medium.around(aconto1[0], false);
-                            if (i2 > 0 && i2 < 20)
-                                Medium.transaround(aconto1[0], aconto1[record.wasted], i2);
-                            if (i2 == 20)
-                                Medium.around(aconto1[record.wasted], false);
-                            if (i2 > 20 && i2 < 40)
-                                Medium.transaround(aconto1[record.wasted], aconto1[0], i2 - 20);
-                            if (i2 == 40)
-                                Medium.around(aconto1[0], false);
-                            if (i2 > 40 && i2 < 60)
-                                Medium.transaround(aconto1[0], aconto1[record.wasted], i2 - 40);
-                            if (i2 == 60)
-                                Medium.around(aconto1[record.wasted], false);
-                            if (i2 > 60 && i2 < 80)
-                                Medium.transaround(aconto1[record.wasted], aconto1[0], i2 - 60);
-                            if (i2 == 80)
-                                Medium.around(aconto1[0], false);
-                            if (k1 > 90 && i2 < 20)
-                                i2++;
-                            if (k1 > 160 && i2 < 40)
-                                i2++;
-                            if (k1 > 230 && i2 < 60)
-                                i2++;
-                            if (k1 > 280 && i2 < 80)
-                                i2++;
-                            if ((i2 == 0 || i2 == 20 || i2 == 40 || i2 == 60 || i2 == 80) && ++k1 == 300) {
-                                k1 = 0;
-                                i2 = 0;
-                                j2++;
+                            if (frames == 0)
+                                Medium.around(scene[0], false);
+                            if (frames > 0 && frames < 20)
+                                Medium.transaround(scene[0], scene[record.wasted], frames);
+                            if (frames == 20)
+                                Medium.around(scene[record.wasted], false);
+                            if (frames > 20 && frames < 40)
+                                Medium.transaround(scene[record.wasted], scene[0], frames - 20);
+                            if (frames == 40)
+                                Medium.around(scene[0], false);
+                            if (frames > 40 && frames < 60)
+                                Medium.transaround(scene[0], scene[record.wasted], frames - 40);
+                            if (frames == 60)
+                                Medium.around(scene[record.wasted], false);
+                            if (frames > 60 && frames < 80)
+                                Medium.transaround(scene[record.wasted], scene[0], frames - 60);
+                            if (frames == 80)
+                                Medium.around(scene[0], false);
+                            if (replayFrame > 90 && frames < 20)
+                                frames++;
+                            if (replayFrame > 160 && frames < 40)
+                                frames++;
+                            if (replayFrame > 230 && frames < 60)
+                                frames++;
+                            if (replayFrame > 280 && frames < 80)
+                                frames++;
+                            if ((frames == 0 || frames == 20 || frames == 40 || frames == 60 || frames == 80) && ++replayFrame == 300) {
+                                replayFrame = 0;
+                                frames = 0;
+                                replayPass++;
                             }
                         }
                     } else {
-                        if (k2 == 67 && (i2 == 3 || i2 == 31 || i2 == 66)) {
+                        if (flashLength == 67 && (frames == 3 || frames == 31 || frames == 66)) {
                             rd.setColor(new Color(255, 255, 255));
                             rd.fillRect(0, 0, GameFacts.screenWidth, GameFacts.screenHeight);
                         }
-                        if (k2 == 69 && (i2 == 3 || i2 == 5 || i2 == 31 || i2 == 33 || i2 == 66 || i2 == 68)) {
+                        if (flashLength == 69 && (frames == 3 || frames == 5 || frames == 31 || frames == 33 || frames == 66 || frames == 68)) {
                             rd.setColor(new Color(255, 255, 255));
                             rd.fillRect(0, 0, GameFacts.screenWidth, GameFacts.screenHeight);
                         }
-                        if (k2 == 30 && i2 >= 1 && i2 < 30)
-                            if (i2 % (int) (2.0F + Medium.fxRandom() * 3F) == 0 && !flag2) {
+                        if (flashLength == 30 && frames >= 1 && frames < 30)
+                            if (frames % (int) (2.0F + Medium.fxRandom() * 3F) == 0 && !flashed) {
                                 rd.setColor(new Color(255, 255, 255));
                                 rd.fillRect(0, 0, GameFacts.screenWidth, GameFacts.screenHeight);
-                                flag2 = true;
+                                flashed = true;
                             } else {
-                                flag2 = false;
+                                flashed = false;
                             }
-                        if (k1 > record.whenwasted && i2 != k2)
-                            i2++;
-                        Medium.around(aconto1[0], false);
-                        if ((i2 == 0 || i2 == k2) && ++k1 == 300) {
-                            k1 = 0;
-                            i2 = 0;
-                            j2++;
+                        if (replayFrame > record.whenwasted && frames != flashLength)
+                            frames++;
+                        Medium.around(scene[0], false);
+                        if ((frames == 0 || frames == flashLength) && ++replayFrame == 300) {
+                            replayFrame = 0;
+                            frames = 0;
+                            replayPass++;
                         }
                     }
                 }
                 endOverlayTick();
             }
-            if (xtgraphics.fase == Phase.POSTGAMEFADEOUT) {
-                if (k1 <= 0) {
-                    rd.drawImage(xtgraphics.mdness, 224, 30, null);
-                    rd.drawImage(xtgraphics.dude[0], 70, 10, null);
+            if (gameUi.fase == Phase.POSTGAMEFADEOUT) {
+                if (replayFrame <= 0) {
+                    rd.drawImage(gameUi.mdness, 224, 30, null);
+                    rd.drawImage(gameUi.dude[0], 70, 10, null);
                 }
-                if (k1 >= 0) {
+                if (replayFrame >= 0) {
                     syncBackBuffer();
-                    xtgraphics.fleximage(offImage, k1, checkpoints.stage);
+                    gameUi.fleximage(offImage, replayFrame, checkpoints.stage);
                 }
-                k1++;
-                if (checkpoints.stage == GameFacts.numberOfStages && k1 == 10)
-                    xtgraphics.fase = Phase.POSTGAME;
-                if (k1 == 12)
-                    xtgraphics.fase = Phase.POSTGAME;
+                replayFrame++;
+                if (checkpoints.stage == GameFacts.numberOfStages && replayFrame == 10)
+                    gameUi.fase = Phase.POSTGAME;
+                if (replayFrame == 12)
+                    gameUi.fase = Phase.POSTGAME;
             }
-            if (xtgraphics.fase == Phase.PAUSETRIGGER) {
+            if (gameUi.fase == Phase.PAUSETRIGGER) {
                 repaint();
                 syncBackBuffer();
-                xtgraphics.pauseimage(offImage);
-                xtgraphics.fase = Phase.PAUSEMENU;
+                gameUi.pauseimage(offImage);
+                gameUi.fase = Phase.PAUSEMENU;
                 mouses = 0;
             }
-            if (xtgraphics.fase == Phase.PAUSEMENU) {
-                xtgraphics.pausedgame(checkpoints.stage, u[0], record);
-                if (k1 != 0)
-                    k1 = 0;
-                xtgraphics.ctachm(xm, ym, mouses, u[0]);
+            if (gameUi.fase == Phase.PAUSEMENU) {
+                gameUi.pausedgame(checkpoints.stage, u[0], record);
+                if (replayFrame != 0)
+                    replayFrame = 0;
+                gameUi.ctachm(xm, ym, mouses, u[0]);
                 if (mouses == 2)
                     mouses = 0;
                 if (mouses == 1)
                     mouses = 2;
             }
-            if (xtgraphics.fase == Phase.NOTENOUGHREPLAYDATA) {
-                xtgraphics.cantreply();
-                if (++k1 == 150 || u[0].enter || u[0].handb || mouses == 1) {
-                    xtgraphics.fase = Phase.PAUSEMENU;
+            if (gameUi.fase == Phase.NOTENOUGHREPLAYDATA) {
+                gameUi.cantreply();
+                if (++replayFrame == 150 || u[0].enter || u[0].handb || mouses == 1) {
+                    gameUi.fase = Phase.PAUSEMENU;
                     mouses = 0;
                     u[0].enter = false;
                     u[0].handb = false;
                 }
             }
-            if (lostfcs && xtgraphics.fase != Phase.DRAWENVIRONMENT && xtgraphics.fase != Phase.LOADING) {
-                if (xtgraphics.fase == Phase.INGAME)
+            if (lostfcs && gameUi.fase != Phase.DRAWENVIRONMENT && gameUi.fase != Phase.LOADING) {
+                if (gameUi.fase == Phase.INGAME)
                     u[0].enter = false;
                 else
-                    xtgraphics.nofocus();
+                    gameUi.nofocus();
                 if (mouses == 1 || mouses == 2)
                     lostfcs = false;
             }
-            xtgraphics.playsounds(amadness[0], u[0], checkpoints.stage);
+            gameUi.playsounds(drivers[0], u[0], checkpoints.stage);
             publishSound();
             /*
              * The original loop passed the adaptive sleep target here. Feeding a
              * constant keeps the fog distance at the stage's intended value.
              */
             Medium.adjustFade(currentTickNanos / 1_000_000F);
-            if (isScenePhase(xtgraphics.fase)) {
+            if (isScenePhase(gameUi.fase)) {
                 /*
                  * The legacy loop clamped the camera in Medium.d() once per tick;
                  * the presentation pass draws from a copy, so do it here. Without
@@ -5290,16 +5289,16 @@ public class GameSparker extends Panel implements Runnable {
             }
             if (exwist) {
                 rd.dispose();
-                xtgraphics.stopallnow();
+                gameUi.stopallnow();
                 System.gc();
                 gamer = null;
                 return;
             }
 
-            // if (xtgraphics.devtriggered) {
+            // if (gameUi.devtriggered) {
 
             // this could be useful for discord rich presence
-            switch (xtgraphics.fase) {
+            switch (gameUi.fase) {
                 case INGAME:
                     gameState = "In game\nStage " + checkpoints.stage + ": " + checkpoints.name +
                     "\nPlayers: " + GameFacts.numberOfPlayers;
@@ -5345,7 +5344,7 @@ public class GameSparker extends Panel implements Runnable {
              */
             long frameNow = System.nanoTime();
             long renderNanos = frameIntervalNanos(frameNow);
-            boolean scene = isScenePhase(xtgraphics.fase);
+            boolean scenePhase = isScenePhase(gameUi.fase);
             boolean frameDue = renderNanos == 0L || frameNow - nextRenderNanos >= 0L;
             /*
              * Races on the graphics card are drawn by the presenter on its own
@@ -5353,14 +5352,14 @@ public class GameSparker extends Panel implements Runnable {
              * this thread only keeps it up to date, so a tick never holds a
              * frame back.
              */
-            boolean presented = presenterDraws(scene, unpaced) && handOverKept();
+            boolean presented = presenterDraws(scenePhase, unpaced) && handOverKept();
             if (presenter != null) {
                 presenter.drawRaces(presented);
             }
             if (!presented) {
                 keptStale = true; // the presenter starts again from a scene handed over then
             }
-            if (!unpaced && !presented && (scene ? frameDue : ticked)) {
+            if (!unpaced && !presented && (scenePhase ? frameDue : ticked)) {
                 if (renderNanos > 0L) {
                     nextRenderNanos += renderNanos;
                     if (frameNow - nextRenderNanos > renderNanos * 4L || nextRenderNanos - frameNow > renderNanos) {
@@ -5369,8 +5368,8 @@ public class GameSparker extends Panel implements Runnable {
                     }
                 }
 
-                gpuSceneFrame = scene && GPU_SCENE && gpuActive && !xtgraphics.debugmode;
-                if (scene) {
+                gpuSceneFrame = scenePhase && GPU_SCENE && gpuActive && !gameUi.debugmode;
+                if (scenePhase) {
                     double elapsed = (double) (frameNow - tickStartNanos) / (double) currentTickNanos;
                     if (!prevFrameValid || elapsed >= 1D) {
                         renderAlpha = 1F;
@@ -5428,9 +5427,9 @@ public class GameSparker extends Panel implements Runnable {
                             ? captureWindow() : null;
                 }
 
-                if (xtgraphics.fase != Phase.LOADING && xtgraphics.debugmode) {
-                    xtgraphics.gameMetrics.addFrameTimeSample((int) ((frameNow - lastRenderAt) / 1_000_000L));
-                    xtgraphics.gameMetrics.render(rd);
+                if (gameUi.fase != Phase.LOADING && gameUi.debugmode) {
+                    gameUi.gameMetrics.addFrameTimeSample((int) ((frameNow - lastRenderAt) / 1_000_000L));
+                    gameUi.gameMetrics.render(rd);
                 }
                 lastRenderAt = frameNow;
                 profileFrames++;
@@ -5462,7 +5461,7 @@ public class GameSparker extends Panel implements Runnable {
                                 ? "; last scene " + gpu.sceneStatistics() : "",
                         runAhead ? "on" : "off", profileAheads,
                         profileAheads == 0 ? 0D : profileAheadNanos / 1e6D / profileAheads,
-                        profileAheadChecked, profileAheadMissed, describeFpsLimit(), xtgraphics.fase);
+                        profileAheadChecked, profileAheadMissed, describeFpsLimit(), gameUi.fase);
                 if (profileGapCount > 0) {
                     long[] gaps = Arrays.copyOf(profileGaps, profileGapCount);
                     Arrays.sort(gaps);
@@ -5511,7 +5510,7 @@ public class GameSparker extends Panel implements Runnable {
             long wakeAt = nextTickNanos;
             if (presenter != null && presenter.drawingRaces()) {
                 wakeAt = Math.min(wakeAt - System.nanoTime(), KEY_CHECK_NANOS) + System.nanoTime();
-            } else if (isScenePhase(xtgraphics.fase)) {
+            } else if (isScenePhase(gameUi.fase)) {
                 if (renderNanos == 0L) {
                     Thread.yield();
                     continue;
@@ -5521,7 +5520,7 @@ public class GameSparker extends Panel implements Runnable {
             }
             try {
                 frameSleep.sleepUntil(wakeAt);
-            } catch (InterruptedException _ex) {
+            } catch (InterruptedException ignored) {
                 // shutdown is signalled through exwist, not interrupts
             }
         } while (true);
@@ -5603,37 +5602,37 @@ public class GameSparker extends Panel implements Runnable {
         return false;
     }
 
-    private void openurl(final String string) {
+    private void openurl(final String url) {
         if (Desktop.isDesktopSupported()) {
             try {
-                Desktop.getDesktop().browse(new URI(string));
-            } catch (final Exception exception) {
+                Desktop.getDesktop().browse(new URI(url));
+            } catch (final Exception ignored) {
 
             }
         } else {
             try {
-                Runtime.getRuntime().exec("" + urlopen() + " " + string + "");
-            } catch (final Exception exception) {
+                Runtime.getRuntime().exec("" + urlopen() + " " + url + "");
+            } catch (final Exception ignored) {
 
             }
         }
     }
 
     private static String urlopen() {
-        String string = "explorer";
-        final String string27 = System.getProperty("os.name").toLowerCase();
-        if (string27.contains("linux") || string27.contains("unix") || string27.equals("aix")) {
-            string = "xdg-open";
+        String opener = "explorer";
+        final String osName = System.getProperty("os.name").toLowerCase();
+        if (osName.contains("linux") || osName.contains("unix") || osName.equals("aix")) {
+            opener = "xdg-open";
         }
-        if (string27.contains("mac")) {
-            string = "open";
+        if (osName.contains("mac")) {
+            opener = "open";
         }
-        return string;
+        return opener;
     }
 
-    private void catchlink(int i, xtGraphics xtg) {
+    private void catchlink(int screen, xtGraphics xtg) {
         if (!lostfcs) {
-            if (i == 0)
+            if (screen == 0)
                 if (xm > 0 && xm < GameFacts.screenWidth && ym > 110 && ym < 169
                         || xm > Utility.centeredImageX(xtg.rpro)
                                 && xm < Utility.centeredImageX(xtg.rpro) + xtg.rpro.getWidth(null) && ym > 240
@@ -5644,7 +5643,7 @@ public class GameSparker extends Panel implements Runnable {
                 } else {
                     setCursor(new Cursor(0));
                 }
-            if (i == 1)
+            if (screen == 1)
                 if (xm > 0 && xm < GameFacts.screenWidth && ym > 205 && ym < 267) {
                     setCursor(new Cursor(12));
                     if (mouses == 2)
@@ -5655,11 +5654,11 @@ public class GameSparker extends Panel implements Runnable {
         }
     }
 
-    /** The pointer moved to (i, j) in the panel with no button held. */
-    void mouseMovedTo(int i, int j) {
+    /** The pointer moved to (x, y) in the panel with no button held. */
+    void mouseMovedTo(int x, int y) {
         if (!exwist && !lostfcs) {
-            xm = toPictureX(i);
-            ym = toPictureY(j);
+            xm = toPictureX(x);
+            ym = toPictureY(y);
         }
     }
 
