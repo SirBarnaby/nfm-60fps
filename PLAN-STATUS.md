@@ -157,7 +157,7 @@ thread pinning, large pages, GraalVM) are left out.
 | Gamepad and rumble | ✅ | 3af9371 |
 | Key rebinding | ❌ | |
 | Analog steering | ❌ | |
-| Settings screen in the game | ❌ | developer console only |
+| Settings screen in the game | ✅ | main menu and pause menu, every console setting; smooth effects added |
 | Bot chat | ❌ | |
 | Stage editor | ❌ | |
 | VR, adaptive triggers, path-traced photos, video export, leaderboards, rewind, trained bots, telemetry, retro filters, colour-blind palettes | ❌ | |

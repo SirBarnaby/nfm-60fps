@@ -64,8 +64,10 @@ Before a release or a large change, also run:
 
 - **Settings** follow one pattern (see `loadMultisample` in `GameSparker`): a
   `-Dnfm.<name>` property for one run, else the saved cookie, else the default,
-  with hidden runs pinned; a developer console command in `DevTool` with a
-  line in `commandDescriptions`; and a row in the README's options table.
+  with hidden runs pinned; a row in `SettingsScreen` (the in-game settings,
+  with a line on what it does and when it does not apply); a developer
+  console command in `DevTool` with a line in `commandDescriptions`; and a
+  row in the README's options table.
 - **Cookie names are matched by substring** (`readcookie` takes the last
   entry whose name *contains* the name asked for), so a new cookie's name must
   not contain an existing one's, nor be contained in one.
