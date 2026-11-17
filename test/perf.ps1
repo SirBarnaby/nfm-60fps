@@ -3,19 +3,20 @@
 #
 #   .\test\perf.ps1                   measure, and compare with this machine's baseline
 #   .\test\perf.ps1 -UpdateBaseline   measure, and save the result as the baseline
-#   .\test\perf.ps1 -Runs 3           more runs (the best of them counts; default 2)
+#   .\test\perf.ps1 -Runs 5           more runs (the best of them counts; default 3)
 #
 # Speed is defended the way gameplay is: a change that makes race frames more
 # than 5% slower (median frames a second over the race, replays and highlights)
 # or whose 99th-percentile frame gap grows by more than 20% fails. Baselines are
 # kept per machine and power source in test\perf-baseline.json, as other
-# machines are not comparable; on battery a laptop's speed wanders, so plug it in.
+# machines are not comparable. On battery a laptop's speed wanders by more than
+# 5% from run to run, so there the numbers are reported but never fail the gate.
 # The window is never shown. Exit code 0 means as fast as the baseline (or a
 # baseline was saved), 1 slower, 2 the test could not be run.
 # Build first with build.ps1: this uses madness.jar and the runtime it makes.
 
 param(
-    [int]$Runs = 2,
+    [int]$Runs = 3,
     [switch]$UpdateBaseline
 )
 
@@ -80,6 +81,10 @@ $slower = $best.fps -lt $baseline.fps * 0.95
 $jerkier = $best.gap99 -gt $baseline.gap99 * 1.2
 Write-Host ("[perf] {0}: {1:N1} fps against {2:N1} ({3:+0.0;-0.0}%), 99% gap {4:N1} ms against {5:N1}" -f $key,
     $best.fps, $baseline.fps, (100 * ($best.fps / $baseline.fps - 1)), $best.gap99, $baseline.gap99)
+if (($slower -or $jerkier) -and $onBattery) {
+    Write-Host '[perf] slower than the baseline, but on battery that is not judged: plug in and run again'
+    exit 0
+}
 if ($slower -or $jerkier) {
     Write-Host "[perf] SLOWER than the baseline$(if ($slower) { ': frames a second down more than 5%' })$(if ($jerkier) { ': frame gaps up more than 20%' })"
     exit 1

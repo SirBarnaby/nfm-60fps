@@ -242,6 +242,10 @@ powershell -ExecutionPolicy Bypass -File test\verify-races.ps1
 
 `verify-races.ps1 -Fresh` runs each race in a game of its own, which is slower but shows nothing depends on the race before. `test\record-races.ps1` records more (`-Count`, `-Seed`, `-Ticks`, `-RealTime`).
 
+### The performance gate
+
+`.\test\perf.ps1` defends speed the way the race corpus defends gameplay. It plays the hidden smoke test three times with the GPU renderer and no frame limit, and takes the best run's median frames a second and median 99th-percentile frame gap. The first run on a machine saves them as its baseline in `test\perf-baseline.json` (kept per machine and per power source, and not in git, since other machines are not comparable). Later runs fail, with exit code 1, when frames a second drop more than 5% or the frame gap grows more than 20%. On battery a laptop's speed wanders by more than that, so there the numbers are reported but not judged. `-UpdateBaseline` saves a new baseline after a change that is meant to cost speed; `-Runs` sets how many runs to take.
+
 ### Golden screenshots
 
 While it checks the races, `verify-races.ps1` also renders four frames of each one (just after the start, then spread evenly to the end) and compares them pixel by pixel with the frames in `test\golden`. A race replays exactly, so a frame only changes when drawing changes: this proves that rendering work leaves the picture as it was, and measures how far a new renderer is from the original. A changed frame is reported with the number of pixels, how far they are off and where, and the new frame plus a picture with every changed pixel marked are written to the temp folder.
