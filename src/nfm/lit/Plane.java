@@ -176,16 +176,16 @@ public class Plane {
 
     public void loadprojf() {
         projf = 1.0F;
-        int i = 0;
+        int corner = 0;
         do {
-            int j = 0;
+            int other = 0;
             do {
-                if (j != i) {
-                    projf *= (float) (Math.sqrt((ox[i] - ox[j]) * (ox[i] - ox[j]) + (oz[i] - oz[j]) * (oz[i] - oz[j]))
+                if (other != corner) {
+                    projf *= (float) (Math.sqrt((ox[corner] - ox[other]) * (ox[corner] - ox[other]) + (oz[corner] - oz[other]) * (oz[corner] - oz[other]))
                             / 100D);
                 }
-            } while (++j < 3);
-        } while (++i < 3);
+            } while (++other < 3);
+        } while (++corner < 3);
         projf = projf / 3F;
     }
 
@@ -207,8 +207,8 @@ public class Plane {
         shapeJitter.reseed(RaceRandom.derive(raceSeed, RaceRandom.STREAM_SHAPES));
     }
 
-    public Plane(Trackers trackers, int ai[], int ai1[], int ai2[], int i, int ai3[], boolean flag,
-                 int j, int k, int l, int i1, int j1, int k1, int l1, boolean flag1, int i2, boolean flag2) {
+    public Plane(Trackers trackers, int pointX[], int pointZ[], int pointY[], int count, int color[], boolean isGlass,
+                 int group, int faceSign, int wheelX, int wheelY, int wheelZ, int outline, int burn, boolean isRoad, int lamp, boolean isSolo) {
         c = new int[3];
         oc = new int[3];
         hsb = new float[3];
@@ -247,74 +247,74 @@ public class Plane {
         pb = 0;
         flx = 0;
         t = trackers;
-        n = i;
+        n = count;
         ox = new int[n];
         oz = new int[n];
         oy = new int[n];
-        for (int j2 = 0; j2 < n; j2++) {
-            ox[j2] = ai[j2];
-            oy[j2] = ai2[j2];
-            oz[j2] = ai1[j2];
+        for (int corner = 0; corner < n; corner++) {
+            ox[corner] = pointX[corner];
+            oy[corner] = pointY[corner];
+            oz[corner] = pointZ[corner];
         }
 
-        int k2 = Math.abs(ox[2] - ox[1]);
-        int l2 = Math.abs(oy[2] - oy[1]);
-        int i3 = Math.abs(oz[2] - oz[1]);
-        if (l2 <= k2 && l2 <= i3) {
+        int spanX = Math.abs(ox[2] - ox[1]);
+        int spanY = Math.abs(oy[2] - oy[1]);
+        int spanZ = Math.abs(oz[2] - oz[1]);
+        if (spanY <= spanX && spanY <= spanZ) {
             typ = 2;
         }
-        if (k2 <= l2 && k2 <= i3) {
+        if (spanX <= spanY && spanX <= spanZ) {
             typ = 1;
         }
-        if (i3 <= k2 && i3 <= l2) {
+        if (spanZ <= spanX && spanZ <= spanY) {
             typ = 3;
         }
-        int j3 = 0;
+        int channel = 0;
         do {
-            oc[j3] = ai3[j3];
-        } while (++j3 < 3);
-        if (j == -15) {
-            j3 = (int) (185D + shapeJitter.nextDouble() * 30D);
-            ai3[0] = (217 + j3) / 2;
-            ai3[1] = (189 + j3) / 2;
-            ai3[2] = (132 + j3) / 2;
-            for (int k3 = 0; k3 < n; k3++) {
+            oc[channel] = color[channel];
+        } while (++channel < 3);
+        if (group == -15) {
+            channel = (int) (185D + shapeJitter.nextDouble() * 30D);
+            color[0] = (217 + channel) / 2;
+            color[1] = (189 + channel) / 2;
+            color[2] = (132 + channel) / 2;
+            for (int corner = 0; corner < n; corner++) {
                 if (shapeJitter.nextDouble() > shapeJitter.nextDouble()) {
-                    ox[k3] += (int) (8D * shapeJitter.nextDouble() - 4D);
+                    ox[corner] += (int) (8D * shapeJitter.nextDouble() - 4D);
                 }
                 if (shapeJitter.nextDouble() > shapeJitter.nextDouble()) {
-                    oy[k3] += (int) (8D * shapeJitter.nextDouble() - 4D);
+                    oy[corner] += (int) (8D * shapeJitter.nextDouble() - 4D);
                 }
                 if (shapeJitter.nextDouble() > shapeJitter.nextDouble()) {
-                    oz[k3] += (int) (8D * shapeJitter.nextDouble() - 4D);
+                    oz[corner] += (int) (8D * shapeJitter.nextDouble() - 4D);
                 }
             }
 
         }
-        if (ai3[0] == ai3[1] && ai3[1] == ai3[2]) {
+        if (color[0] == color[1] && color[1] == color[2]) {
             nocol = true;
         }
-        if (!flag) {
-            j3 = 0;
+        if (!isGlass) {
+            channel = 0;
             do {
-                c[j3] = (int) (ai3[j3] + ai3[j3] * (Medium.snap[j3] / 100F));
-                if (c[j3] > 255) {
-                    c[j3] = 255;
+                c[channel] = (int) (color[channel] + color[channel] * (Medium.snap[channel] / 100F));
+                if (c[channel] > 255) {
+                    c[channel] = 255;
                 }
-                if (c[j3] < 0) {
-                    c[j3] = 0;
+                if (c[channel] < 0) {
+                    c[channel] = 0;
                 }
-            } while (++j3 < 3);
+            } while (++channel < 3);
         }
-        if (flag) {
-            j3 = 0;
+        if (isGlass) {
+            channel = 0;
             do {
-                c[j3] = (Medium.csky[j3] * Medium.fade[0] * 2 + Medium.cfade[j3] * 3000) / (Medium.fade[0] * 2 + 3000);
-            } while (++j3 < 3);
+                c[channel] = (Medium.csky[channel] * Medium.fade[0] * 2 + Medium.cfade[channel] * 3000) / (Medium.fade[0] * 2 + 3000);
+            } while (++channel < 3);
         }
-        disline = k1;
-        bfase = l1;
-        glass = flag;
+        disline = outline;
+        bfase = burn;
+        glass = isGlass;
         Color.RGBtoHSB(c[0], c[1], c[2], hsb);
         if (!nocol && !glass) {
             if (bfase > 20 && hsb[1] > 0.25D) {
@@ -339,24 +339,24 @@ public class Plane {
                 hsb[0] = 0.05F;
             }
         }
-        road = flag1;
-        light = i2;
-        solo = flag2;
-        gr = j;
-        fs = k;
-        wx = l;
-        wy = i1;
-        wz = j1;
-        j3 = 0;
+        road = isRoad;
+        light = lamp;
+        solo = isSolo;
+        gr = group;
+        fs = faceSign;
+        wx = wheelX;
+        wy = wheelY;
+        wz = wheelZ;
+        channel = 0;
         do {
-            int l3 = 0;
+            int other = 0;
             do {
-                if (l3 != j3) {
-                    deltaf *= (float) (Math.sqrt((ox[l3] - ox[j3]) * (ox[l3] - ox[j3])
-                            + (oy[l3] - oy[j3]) * (oy[l3] - oy[j3]) + (oz[l3] - oz[j3]) * (oz[l3] - oz[j3])) / 100D);
+                if (other != channel) {
+                    deltaf *= (float) (Math.sqrt((ox[other] - ox[channel]) * (ox[other] - ox[channel])
+                            + (oy[other] - oy[channel]) * (oy[other] - oy[channel]) + (oz[other] - oz[channel]) * (oz[other] - oz[channel])) / 100D);
                 }
-            } while (++l3 < 3);
-        } while (++j3 < 3);
+            } while (++other < 3);
+        } while (++channel < 3);
         deltaf = deltaf / 3F;
     }
 
@@ -377,7 +377,7 @@ public class Plane {
         return array;
     }
 
-    public void d(Graphics2D rd, int i, int j, int k, int l, int i1, int j1, int k1, int l1, boolean flag, int i2, boolean blackout) {
+    public void d(Graphics2D rd, int x, int y, int z, int yaw, int roll, int pitch, int wheelTurn, int wheelSpin, boolean noOutline, int minSize, boolean blackout) {
         int[][] slots = SCRATCH.get();
         // for the graphics card, the corners again without rounding (not while the plane is breaking up)
         boolean exact = Precise.on && embos == 0;
@@ -393,75 +393,75 @@ public class Plane {
                 n = 16;
             }
         }
-        int ai[] = scratch(slots, 0, n);
-        int ai1[] = scratch(slots, 1, n);
-        int ai2[] = scratch(slots, 2, n);
+        int px[] = scratch(slots, 0, n);
+        int pz[] = scratch(slots, 1, n);
+        int py[] = scratch(slots, 2, n);
         if (embos == 0) {
-            for (int j2 = 0; j2 < n; j2++) {
-                ai[j2] = ox[j2] + i;
-                ai2[j2] = oy[j2] + j;
-                ai1[j2] = oz[j2] + k;
+            for (int corner = 0; corner < n; corner++) {
+                px[corner] = ox[corner] + x;
+                py[corner] = oy[corner] + y;
+                pz[corner] = oz[corner] + z;
             }
 
             if ((gr == -11 || gr == -13) && Medium.lastmaf == 1) {
-                for (int k2 = 0; k2 < n; k2++) {
-                    ai[k2] = -ox[k2] + i;
-                    ai2[k2] = oy[k2] + j;
-                    ai1[k2] = -oz[k2] + k;
+                for (int corner = 0; corner < n; corner++) {
+                    px[corner] = -ox[corner] + x;
+                    py[corner] = oy[corner] + y;
+                    pz[corner] = -oz[corner] + z;
                 }
 
             }
         } else {
             if (embos <= 11 && Medium.fxRandom() > 0.5D && !glass) {
-                for (int l2 = 0; l2 < n; l2++) {
-                    ai[l2] = (int) (ox[l2] + i + (15F - Medium.fxRandom() * 30F));
-                    ai2[l2] = (int) (oy[l2] + j + (15F - Medium.fxRandom() * 30F));
-                    ai1[l2] = (int) (oz[l2] + k + (15F - Medium.fxRandom() * 30F));
+                for (int corner = 0; corner < n; corner++) {
+                    px[corner] = (int) (ox[corner] + x + (15F - Medium.fxRandom() * 30F));
+                    py[corner] = (int) (oy[corner] + y + (15F - Medium.fxRandom() * 30F));
+                    pz[corner] = (int) (oz[corner] + z + (15F - Medium.fxRandom() * 30F));
                 }
 
-                Utility.rot(ai, ai2, i, j, i1, n);
-                Utility.rot(ai2, ai1, j, k, j1, n);
-                Utility.rot(ai, ai1, i, k, l, n);
-                Utility.rot(ai, ai1, Medium.cx, Medium.cz, Medium.xz, n);
-                Utility.rot(ai2, ai1, Medium.cy, Medium.cz, Medium.zy, n);
-                int ai3[] = scratch(slots, 3, n);
-                int ai5[] = scratch(slots, 5, n);
-                for (int i4 = 0; i4 < n; i4++) {
-                    ai3[i4] = Utility.xs(ai[i4], ai1[i4]);
-                    ai5[i4] = Utility.ys(ai2[i4], ai1[i4], 0);
+                Utility.rot(px, py, x, y, roll, n);
+                Utility.rot(py, pz, y, z, pitch, n);
+                Utility.rot(px, pz, x, z, yaw, n);
+                Utility.rot(px, pz, Medium.cx, Medium.cz, Medium.xz, n);
+                Utility.rot(py, pz, Medium.cy, Medium.cz, Medium.zy, n);
+                int flashX[] = scratch(slots, 3, n);
+                int flashY[] = scratch(slots, 5, n);
+                for (int corner = 0; corner < n; corner++) {
+                    flashX[corner] = Utility.xs(px[corner], pz[corner]);
+                    flashY[corner] = Utility.ys(py[corner], pz[corner], 0);
                 }
 
                 rd.setColor(new Color(230, 230, 230));
                 Glow.set(Glow.FLAME);
-                rd.fillPolygon(ai3, ai5, n);
+                rd.fillPolygon(flashX, flashY, n);
                 Glow.off();
             }
-            float f = 1.0F;
+            float burst = 1.0F;
             if (embos <= 4)/// explode outward a little + white flame
             {
-                f = 1.0F + Medium.fxRandom() / 5F;
+                burst = 1.0F + Medium.fxRandom() / 5F;
             }
             if (embos > 4 && embos <= 7)/// explode outward a little + white flame a bit bigger than previous
             {
-                f = 1.0F + Medium.fxRandom() / 4F;
+                burst = 1.0F + Medium.fxRandom() / 4F;
             }
             if (embos > 7 && embos <= 9)/////// /// explode outward a little + white flame a bit bigger than previous + polUtility.ys start to darken
             {
-                f = 1.0F + Medium.fxRandom() / 3F;
+                burst = 1.0F + Medium.fxRandom() / 3F;
                 if (hsb[2] > 0.69999999999999996D) {
                     hsb[2] = 0.7F;
                 }
             }
             if (embos > 9 && embos <= 10)/////// /// explode outward a little + white flame a bit bigger than previous + maor darkening
             {
-                f = 1.0F + Medium.fxRandom() / 2.0F;
+                burst = 1.0F + Medium.fxRandom() / 2.0F;
                 if (hsb[2] > 0.59999999999999998D) {
                     hsb[2] = 0.6F;
                 }
             }
             if (embos > 10 && embos <= 12)/////// /// explode outward a little + white flame a bit bigger than previous + more darkkkk liek coffee beans
             {
-                f = 1.0F + Medium.fxRandom() / 1.0F;
+                burst = 1.0F + Medium.fxRandom() / 1.0F;
                 if (hsb[2] > 0.5D) {
                     hsb[2] = 0.5F;
                 }
@@ -485,167 +485,167 @@ public class Plane {
             }
             if (embos >= 16) ///// flames as well
             {
-                byte byte0 = 1;
-                byte byte1 = 1;
-                int j4;
-                for (j4 = Math.abs(j1); j4 > 270; j4 -= 360) {
+                byte pitchSign = 1;
+                byte rollSign = 1;
+                int pitchAngle;
+                for (pitchAngle = Math.abs(pitch); pitchAngle > 270; pitchAngle -= 360) {
                 }
-                j4 = Math.abs(j4);
-                if (j4 > 90) {
-                    byte0 = -1;
+                pitchAngle = Math.abs(pitchAngle);
+                if (pitchAngle > 90) {
+                    pitchSign = -1;
                 }
-                int i5;
-                for (i5 = Math.abs(i1); i5 > 270; i5 -= 360) {
+                int rollAngle;
+                for (rollAngle = Math.abs(roll); rollAngle > 270; rollAngle -= 360) {
                 }
-                i5 = Math.abs(i5);
-                if (i5 > 90) {
-                    byte1 = -1;
+                rollAngle = Math.abs(rollAngle);
+                if (rollAngle > 90) {
+                    rollSign = -1;
                 }
-                int ai12[] = scratch(slots, 12, 3);
-                int ai13[] = scratch(slots, 13, 3);
-                ai[0] = ox[pa] + i;
-                ai2[0] = oy[pa] + j;
-                ai1[0] = oz[pa] + k;
-                ai[1] = ox[pb] + i;
-                ai2[1] = oy[pb] + j;
-                for (ai1[1] = oz[pb] + k; Math.abs(ai[0] - ai[1]) > 100; ) {
-                    if (ai[1] > ai[0]) {
-                        ai[1] -= 30;
+                int flameX[] = scratch(slots, 12, 3);
+                int flameY[] = scratch(slots, 13, 3);
+                px[0] = ox[pa] + x;
+                py[0] = oy[pa] + y;
+                pz[0] = oz[pa] + z;
+                px[1] = ox[pb] + x;
+                py[1] = oy[pb] + y;
+                for (pz[1] = oz[pb] + z; Math.abs(px[0] - px[1]) > 100; ) {
+                    if (px[1] > px[0]) {
+                        px[1] -= 30;
                     } else {
-                        ai[1] += 30;
+                        px[1] += 30;
                     }
                 }
 
-                while (Math.abs(ai1[0] - ai1[1]) > 100) {
-                    if (ai1[1] > ai1[0]) {
-                        ai1[1] -= 30;
+                while (Math.abs(pz[0] - pz[1]) > 100) {
+                    if (pz[1] > pz[0]) {
+                        pz[1] -= 30;
                     } else {
-                        ai1[1] += 30;
+                        pz[1] += 30;
                     }
                 }
-                int i7 = (int) (Math.abs(ai[0] - ai[1]) / 3 * (0.5D - Medium.fxRandom()));
-                int l7 = (int) (Math.abs(ai1[0] - ai1[1]) / 3 * (0.5D - Medium.fxRandom()));
-                ai[2] = (ai[0] + ai[1]) / 2 + i7;
-                ai1[2] = (ai1[0] + ai1[1]) / 2 + l7;
-                int i8 = (int) (((Math.abs(ai[0] - ai[1]) + Math.abs(ai1[0] - ai1[1])) / 1.5D)
+                int wobbleX = (int) (Math.abs(px[0] - px[1]) / 3 * (0.5D - Medium.fxRandom()));
+                int wobbleZ = (int) (Math.abs(pz[0] - pz[1]) / 3 * (0.5D - Medium.fxRandom()));
+                px[2] = (px[0] + px[1]) / 2 + wobbleX;
+                pz[2] = (pz[0] + pz[1]) / 2 + wobbleZ;
+                int flameHeight = (int) (((Math.abs(px[0] - px[1]) + Math.abs(pz[0] - pz[1])) / 1.5D)
                         * (Medium.fxRandom() / 2.0F + 0.5D));
-                ai2[2] = (ai2[0] + ai2[1]) / 2 - byte0 * byte1 * i8;
-                Utility.rot(ai, ai2, i, j, i1, 3);
-                Utility.rot(ai2, ai1, j, k, j1, 3);
-                Utility.rot(ai, ai1, i, k, l, 3);
-                Utility.rot(ai, ai1, Medium.cx, Medium.cz, Medium.xz, 3);
-                Utility.rot(ai2, ai1, Medium.cy, Medium.cz, Medium.zy, 3);
-                int k8 = 0;
+                py[2] = (py[0] + py[1]) / 2 - pitchSign * rollSign * flameHeight;
+                Utility.rot(px, py, x, y, roll, 3);
+                Utility.rot(py, pz, y, z, pitch, 3);
+                Utility.rot(px, pz, x, z, yaw, 3);
+                Utility.rot(px, pz, Medium.cx, Medium.cz, Medium.xz, 3);
+                Utility.rot(py, pz, Medium.cy, Medium.cz, Medium.zy, 3);
+                int red = 0;
                 do {
-                    ai12[k8] = Utility.xs(ai[k8], ai1[k8]);
-                    ai13[k8] = Utility.ys(ai2[k8], ai1[k8], 0);
-                } while (++k8 < 3);
+                    flameX[red] = Utility.xs(px[red], pz[red]);
+                    flameY[red] = Utility.ys(py[red], pz[red], 0);
+                } while (++red < 3);
                 // Flame color. Outer Flame Red Value
-                k8 = (int) (255F + 255F * (Medium.snap[0] / 400F));
-                if (k8 > 255) {
-                    k8 = 255;
+                red = (int) (255F + 255F * (Medium.snap[0] / 400F));
+                if (red > 255) {
+                    red = 255;
                 }
-                if (k8 < 0) {
-                    k8 = 0;
+                if (red < 0) {
+                    red = 0;
                 }
                 // Flame color. Outer Flame Green Value
-                int i9 = (int) (169F + 169F * (Medium.snap[1] / 300F));
-                if (i9 > 255) {
-                    i9 = 255;
+                int green = (int) (169F + 169F * (Medium.snap[1] / 300F));
+                if (green > 255) {
+                    green = 255;
                 }
-                if (i9 < 0) {
-                    i9 = 0;
+                if (green < 0) {
+                    green = 0;
                 }
                 // Flame color. Outer Flame Blue Value
-                int k9 = (int) (89F + 89F * (Medium.snap[2] / 200F));
-                if (k9 > 255) {
-                    k9 = 255;
+                int blue = (int) (89F + 89F * (Medium.snap[2] / 200F));
+                if (blue > 255) {
+                    blue = 255;
                 }
-                if (k9 < 0) {
-                    k9 = 0;
+                if (blue < 0) {
+                    blue = 0;
                 }
-                rd.setColor(new Color(k8, i9, k9));
+                rd.setColor(new Color(red, green, blue));
                 Glow.set(Glow.FLAME);
-                rd.fillPolygon(ai12, ai13, 3);
+                rd.fillPolygon(flameX, flameY, 3);
                 Glow.off();
-                ai[0] = ox[pa] + i;
-                ai2[0] = oy[pa] + j;
-                ai1[0] = oz[pa] + k;
-                ai[1] = ox[pb] + i;
-                ai2[1] = oy[pb] + j;
-                for (ai1[1] = oz[pb] + k; Math.abs(ai[0] - ai[1]) > 100; ) {
-                    if (ai[1] > ai[0]) {
-                        ai[1] -= 30;
+                px[0] = ox[pa] + x;
+                py[0] = oy[pa] + y;
+                pz[0] = oz[pa] + z;
+                px[1] = ox[pb] + x;
+                py[1] = oy[pb] + y;
+                for (pz[1] = oz[pb] + z; Math.abs(px[0] - px[1]) > 100; ) {
+                    if (px[1] > px[0]) {
+                        px[1] -= 30;
                     } else {
-                        ai[1] += 30;
+                        px[1] += 30;
                     }
                 }
 
-                while (Math.abs(ai1[0] - ai1[1]) > 100) {
-                    if (ai1[1] > ai1[0]) {
-                        ai1[1] -= 30;
+                while (Math.abs(pz[0] - pz[1]) > 100) {
+                    if (pz[1] > pz[0]) {
+                        pz[1] -= 30;
                     } else {
-                        ai1[1] += 30;
+                        pz[1] += 30;
                     }
                 }
-                ai[2] = (ai[0] + ai[1]) / 2 + i7;
-                ai1[2] = (ai1[0] + ai1[1]) / 2 + l7;
-                i8 = (int) (i8 * 0.80000000000000004D);
-                ai2[2] = (ai2[0] + ai2[1]) / 2 - byte0 * byte1 * i8;
-                Utility.rot(ai, ai2, i, j, i1, 3);
-                Utility.rot(ai2, ai1, j, k, j1, 3);
-                Utility.rot(ai, ai1, i, k, l, 3);
-                Utility.rot(ai, ai1, Medium.cx, Medium.cz, Medium.xz, 3);
-                Utility.rot(ai2, ai1, Medium.cy, Medium.cz, Medium.zy, 3);
-                int i10 = 0;
+                px[2] = (px[0] + px[1]) / 2 + wobbleX;
+                pz[2] = (pz[0] + pz[1]) / 2 + wobbleZ;
+                flameHeight = (int) (flameHeight * 0.80000000000000004D);
+                py[2] = (py[0] + py[1]) / 2 - pitchSign * rollSign * flameHeight;
+                Utility.rot(px, py, x, y, roll, 3);
+                Utility.rot(py, pz, y, z, pitch, 3);
+                Utility.rot(px, pz, x, z, yaw, 3);
+                Utility.rot(px, pz, Medium.cx, Medium.cz, Medium.xz, 3);
+                Utility.rot(py, pz, Medium.cy, Medium.cz, Medium.zy, 3);
+                int point = 0;
                 do {
-                    ai12[i10] = Utility.xs(ai[i10], ai1[i10]);
-                    ai13[i10] = Utility.ys(ai2[i10], ai1[i10], 0);
-                } while (++i10 < 3);
+                    flameX[point] = Utility.xs(px[point], pz[point]);
+                    flameY[point] = Utility.ys(py[point], pz[point], 0);
+                } while (++point < 3);
                 // Flame color. Inner Flame Red Value
-                k8 = (int) (255F + 255F * (Medium.snap[0] / 400F));
-                if (k8 > 255) {
-                    k8 = 255;
+                red = (int) (255F + 255F * (Medium.snap[0] / 400F));
+                if (red > 255) {
+                    red = 255;
                 }
-                if (k8 < 0) {
-                    k8 = 0;
+                if (red < 0) {
+                    red = 0;
                 }
                 // Flame color. Inner Flame Green Value
-                i9 = (int) (207F + 207F * (Medium.snap[1] / 300F));
-                if (i9 > 255) {
-                    i9 = 255;
+                green = (int) (207F + 207F * (Medium.snap[1] / 300F));
+                if (green > 255) {
+                    green = 255;
                 }
-                if (i9 < 0) {
-                    i9 = 0;
+                if (green < 0) {
+                    green = 0;
                 }
                 // Flame color. Inner Flame Blue Value
-                k9 = (int) (136F + 136F * (Medium.snap[2] / 200F));
-                if (k9 > 255) {
-                    k9 = 255;
+                blue = (int) (136F + 136F * (Medium.snap[2] / 200F));
+                if (blue > 255) {
+                    blue = 255;
                 }
-                if (k9 < 0) {
-                    k9 = 0;
+                if (blue < 0) {
+                    blue = 0;
                 }
-                rd.setColor(new Color(k8, i9, k9));
+                rd.setColor(new Color(red, green, blue));
                 Glow.set(Glow.FLAME);
-                rd.fillPolygon(ai12, ai13, 3);
+                rd.fillPolygon(flameX, flameY, 3);
                 Glow.off();
             }
-            for (int k3 = 0; k3 < n; k3++) {
+            for (int corner = 0; corner < n; corner++) {
                 if (typ == 1) {
-                    ai[k3] = (int) (ox[k3] * f + i);
+                    px[corner] = (int) (ox[corner] * burst + x);
                 } else {
-                    ai[k3] = ox[k3] + i;
+                    px[corner] = ox[corner] + x;
                 }
                 if (typ == 2) {
-                    ai2[k3] = (int) (oy[k3] * f + j);
+                    py[corner] = (int) (oy[corner] * burst + y);
                 } else {
-                    ai2[k3] = oy[k3] + j;
+                    py[corner] = oy[corner] + y;
                 }
                 if (typ == 3) {
-                    ai1[k3] = (int) (oz[k3] * f + k);
+                    pz[corner] = (int) (oz[corner] * burst + z);
                 } else {
-                    ai1[k3] = oz[k3] + k;
+                    pz[corner] = oz[corner] + z;
                 }
             }
 
@@ -656,10 +656,10 @@ public class Plane {
             }
         }
         if (wz != 0) {
-            Utility.rot(ai2, ai1, wy + j, wz + k, l1, n);
+            Utility.rot(py, pz, wy + y, wz + z, wheelSpin, n);
         }
         if (wx != 0) {
-            Utility.rot(ai, ai1, wx + i, wz + k, k1, n);
+            Utility.rot(px, pz, wx + x, wz + z, wheelTurn, n);
         }
         if (chip == 1 && (Medium.fxRandom() > 0.59999999999999998D || bfase == 0)) {
             chip = 0;
@@ -669,13 +669,13 @@ public class Plane {
         }
         if (chip != 0) {
             if (chip == 1) {
-                cxz = l;
-                cxy = i1;
-                czy = j1;
-                int i3 = (int) (Medium.fxRandom() * n);
-                cox[0] = ox[i3];
-                coz[0] = oz[i3];
-                coy[0] = oy[i3];
+                cxz = yaw;
+                cxy = roll;
+                czy = pitch;
+                int corner = (int) (Medium.fxRandom() * n);
+                cox[0] = ox[corner];
+                coz[0] = oz[corner];
+                coy[0] = oy[corner];
                 if (ctmag > 3F) {
                     ctmag = 3F;
                 }
@@ -702,792 +702,792 @@ public class Plane {
                 }
                 chip = 2;
             }
-            int ai4[] = scratch(slots, 4, 3);
-            int ai6[] = scratch(slots, 6, 3);
-            int ai8[] = scratch(slots, 8, 3);
-            int k4 = 0;
+            int chipX[] = scratch(slots, 4, 3);
+            int chipZ[] = scratch(slots, 6, 3);
+            int chipY[] = scratch(slots, 8, 3);
+            int point = 0;
             do {
-                ai4[k4] = cox[k4] + i;
-                ai8[k4] = coy[k4] + j;
-                ai6[k4] = coz[k4] + k;
-            } while (++k4 < 3);
-            Utility.rot(ai4, ai8, i, j, cxy, 3);
-            Utility.rot(ai8, ai6, j, k, czy, 3);
-            Utility.rot(ai4, ai6, i, k, cxz, 3);
-            k4 = 0;
+                chipX[point] = cox[point] + x;
+                chipY[point] = coy[point] + y;
+                chipZ[point] = coz[point] + z;
+            } while (++point < 3);
+            Utility.rot(chipX, chipY, x, y, cxy, 3);
+            Utility.rot(chipY, chipZ, y, z, czy, 3);
+            Utility.rot(chipX, chipZ, x, z, cxz, 3);
+            point = 0;
             do {
-                ai4[k4] += dx;
-                ai8[k4] += dy;
-                ai6[k4] += dz;
-            } while (++k4 < 3);
+                chipX[point] += dx;
+                chipY[point] += dy;
+                chipZ[point] += dz;
+            } while (++point < 3);
             dx += vx;
             dz += vz;
             dy += vy;
             vy += 7;
-            if (ai8[0] > Medium.ground) {
+            if (chipY[0] > Medium.ground) {
                 chip = 19;
             }
-            Utility.rot(ai4, ai6, Medium.cx, Medium.cz, Medium.xz, 3);
-            Utility.rot(ai8, ai6, Medium.cy, Medium.cz, Medium.zy, 3);
-            int ai10[] = scratch(slots, 10, 3);
-            int ai11[] = scratch(slots, 11, 3);
-            int l5 = 0;
+            Utility.rot(chipX, chipZ, Medium.cx, Medium.cz, Medium.xz, 3);
+            Utility.rot(chipY, chipZ, Medium.cy, Medium.cz, Medium.zy, 3);
+            int chipScreenX[] = scratch(slots, 10, 3);
+            int chipScreenY[] = scratch(slots, 11, 3);
+            int shade = 0;
             do {
-                ai10[l5] = Utility.xs(ai4[l5], ai6[l5]);
-                ai11[l5] = Utility.ys(ai8[l5], ai6[l5], 0);
-                if (ai11[l5] < 45 && Medium.flex != 0) {
+                chipScreenX[shade] = Utility.xs(chipX[shade], chipZ[shade]);
+                chipScreenY[shade] = Utility.ys(chipY[shade], chipZ[shade], 0);
+                if (chipScreenY[shade] < 45 && Medium.flex != 0) {
                     Medium.flex = 0;
                 }
-            } while (++l5 < 3);
-            l5 = (int) (Medium.fxRandom() * 3F);
+            } while (++shade < 3);
+            shade = (int) (Medium.fxRandom() * 3F);
             if (bfase != -7) {
-                if (l5 == 0) {
+                if (shade == 0) {
                     rd.setColor((new Color(c[0], c[1], c[2])).darker());
                 }
-                if (l5 == 1) {
+                if (shade == 1) {
                     rd.setColor(new Color(c[0], c[1], c[2]));
                 }
-                if (l5 == 2) {
+                if (shade == 2) {
                     rd.setColor((new Color(c[0], c[1], c[2])).brighter());
                 }
             } else {
                 rd.setColor(Color.getHSBColor(hsb[0], hsb[1], hsb[2]));
             }
-            rd.fillPolygon(ai10, ai11, 3);
+            rd.fillPolygon(chipScreenX, chipScreenY, 3);
             chip++;
             if (chip == 20) {
                 chip = 0;
             }
         }
-        Utility.rot(ai, ai2, i, j, i1, n);
-        Utility.rot(ai2, ai1, j, k, j1, n);
-        Utility.rot(ai, ai1, i, k, l, n);
-        if (i1 != 0 || j1 != 0 || l != 0) {
+        Utility.rot(px, py, x, y, roll, n);
+        Utility.rot(py, pz, y, z, pitch, n);
+        Utility.rot(px, pz, x, z, yaw, n);
+        if (roll != 0 || pitch != 0 || yaw != 0) {
             projf = 1.0F;
-            int j3 = 0;
+            int corner = 0;
             do {
-                int l3 = 0;
+                int other = 0;
                 do {
-                    if (l3 != j3) {
+                    if (other != corner) {
                         projf *= (float) (Math
-                                .sqrt((ai[j3] - ai[l3]) * (ai[j3] - ai[l3]) + (ai1[j3] - ai1[l3]) * (ai1[j3] - ai1[l3]))
+                                .sqrt((px[corner] - px[other]) * (px[corner] - px[other]) + (pz[corner] - pz[other]) * (pz[corner] - pz[other]))
                                 / 100D);
                     }
-                } while (++l3 < 3);
-            } while (++j3 < 3);
+                } while (++other < 3);
+            } while (++corner < 3);
             projf = projf / 3F;
         }
-        Utility.rot(ai, ai1, Medium.cx, Medium.cz, Medium.xz, n);
-        boolean flag1 = false;
-        int ai7[] = scratch(slots, 7, n);
-        int ai9[] = scratch(slots, 9, n);
-        int l4 = 500;
-        for (int j5 = 0; j5 < n; j5++) {
-            ai7[j5] = Utility.xs(ai[j5], ai1[j5]);
-            ai9[j5] = Utility.ys(ai2[j5], ai1[j5], 0);
+        Utility.rot(px, pz, Medium.cx, Medium.cz, Medium.xz, n);
+        boolean backFacing = false;
+        int flatX[] = scratch(slots, 7, n);
+        int flatY[] = scratch(slots, 9, n);
+        int best = 500;
+        for (int corner = 0; corner < n; corner++) {
+            flatX[corner] = Utility.xs(px[corner], pz[corner]);
+            flatY[corner] = Utility.ys(py[corner], pz[corner], 0);
         }
 
-        int k5 = 0;
-        int i6 = 1;
-        for (int j6 = 0; j6 < n; j6++) {
-            for (int j7 = 0; j7 < n; j7++) {
-                if (j6 != j7 && Math.abs(ai7[j6] - ai7[j7]) - Math.abs(ai9[j6] - ai9[j7]) < l4) {
-                    i6 = j6;
-                    k5 = j7;
-                    l4 = Math.abs(ai7[j6] - ai7[j7]) - Math.abs(ai9[j6] - ai9[j7]);
+        int top = 0;
+        int bottom = 1;
+        for (int corner = 0; corner < n; corner++) {
+            for (int other = 0; other < n; other++) {
+                if (corner != other && Math.abs(flatX[corner] - flatX[other]) - Math.abs(flatY[corner] - flatY[other]) < best) {
+                    bottom = corner;
+                    top = other;
+                    best = Math.abs(flatX[corner] - flatX[other]) - Math.abs(flatY[corner] - flatY[other]);
                 }
             }
 
         }
 
-        if (ai9[k5] < ai9[i6]) {
-            int k6 = k5;
-            k5 = i6;
-            i6 = k6;
+        if (flatY[top] < flatY[bottom]) {
+            int swap = top;
+            top = bottom;
+            bottom = swap;
         }
-        if (Utility.spy(ai[k5], ai1[k5]) > Utility.spy(ai[i6], ai1[i6])) {
-            flag1 = true;
-            int l6 = 0;
-            for (int k7 = 0; k7 < n; k7++) {
-                if (ai1[k7] < 50 && ai2[k7] > Medium.cy) {
-                    flag1 = false;
-                } else if (ai2[k7] == ai2[0]) {
-                    l6++;
+        if (Utility.spy(px[top], pz[top]) > Utility.spy(px[bottom], pz[bottom])) {
+            backFacing = true;
+            int level = 0;
+            for (int corner = 0; corner < n; corner++) {
+                if (pz[corner] < 50 && py[corner] > Medium.cy) {
+                    backFacing = false;
+                } else if (py[corner] == py[0]) {
+                    level++;
                 }
             }
 
-            if (l6 == n && ai2[0] > Medium.cy) {
-                flag1 = false;
+            if (level == n && py[0] > Medium.cy) {
+                backFacing = false;
             }
         }
-        Utility.rot(ai2, ai1, Medium.cy, Medium.cz, Medium.zy, n);
-        boolean flag2 = true;
-        int ai14[] = scratch(slots, 14, n);
-        int ai15[] = scratch(slots, 15, n);
-        int j8 = 0;
-        int l8 = 0;
-        int j9 = 0;
-        int l9 = 0;
-        int j10 = 0;
-        for (int k10 = 0; k10 < n; k10++) {
-            ai14[k10] = Utility.xs(ai[k10], ai1[k10]);
-            ai15[k10] = Utility.ys(ai2[k10], ai1[k10], 0);
-            if (ai15[k10] < -Medium.cullY || ai1[k10] < 10) {
-                j8++;
+        Utility.rot(py, pz, Medium.cy, Medium.cz, Medium.zy, n);
+        boolean visible = true;
+        int screenX[] = scratch(slots, 14, n);
+        int screenY[] = scratch(slots, 15, n);
+        int above = 0;
+        int below = 0;
+        int leftOf = 0;
+        int rightOf = 0;
+        int behind = 0;
+        for (int corner = 0; corner < n; corner++) {
+            screenX[corner] = Utility.xs(px[corner], pz[corner]);
+            screenY[corner] = Utility.ys(py[corner], pz[corner], 0);
+            if (screenY[corner] < -Medium.cullY || pz[corner] < 10) {
+                above++;
             }
-            if (ai15[k10] > Medium.h + Medium.cullY || ai1[k10] < 10) {
-                l8++;
+            if (screenY[corner] > Medium.h + Medium.cullY || pz[corner] < 10) {
+                below++;
             }
-            if (ai14[k10] < -Medium.cullX || ai1[k10] < 10) {
-                j9++;
+            if (screenX[corner] < -Medium.cullX || pz[corner] < 10) {
+                leftOf++;
             }
-            if (ai14[k10] > Medium.w + Medium.cullX || ai1[k10] < 10) {
-                l9++;
+            if (screenX[corner] > Medium.w + Medium.cullX || pz[corner] < 10) {
+                rightOf++;
             }
-            if (ai15[k10] < 45 && Medium.flex != 0) {
+            if (screenY[corner] < 45 && Medium.flex != 0) {
                 Medium.flex = 0;
             }
-            if (ai1[k10] < 10) {
-                j10++;
+            if (pz[corner] < 10) {
+                behind++;
             }
-            if(ai15[k10] <= -30000 || ai14[k10] <= -30000 || ai14[k10] >= 30000) {
-                flag2 = false;
+            if(screenY[corner] <= -30000 || screenX[corner] <= -30000 || screenX[corner] >= 30000) {
+                visible = false;
             }
         }
 
-        if (i2 != -1) {
-            int l10 = 0;
-            int j11 = 0;
-            for (int k11 = 0; k11 < n; k11++) {
-                for (int l12 = k11; l12 < n; l12++) {
-                    if (k11 != l12) {
-                        if (Math.abs(ai14[k11] - ai14[l12]) > l10) {
-                            l10 = Math.abs(ai14[k11] - ai14[l12]);
+        if (minSize != -1) {
+            int width = 0;
+            int height = 0;
+            for (int corner = 0; corner < n; corner++) {
+                for (int other = corner; other < n; other++) {
+                    if (corner != other) {
+                        if (Math.abs(screenX[corner] - screenX[other]) > width) {
+                            width = Math.abs(screenX[corner] - screenX[other]);
                         }
-                        if (Math.abs(ai15[k11] - ai15[l12]) > j11) {
-                            j11 = Math.abs(ai15[k11] - ai15[l12]);
+                        if (Math.abs(screenY[corner] - screenY[other]) > height) {
+                            height = Math.abs(screenY[corner] - screenY[other]);
                         }
                     }
                 }
 
             }
 
-            if (l10 == 0 || j11 == 0) {
-                flag2 = false;
-            } else if (l10 < 3 && j11 < 3 && i2 / l10 > 15 && i2 / j11 > 15) {
-                flag2 = false;
+            if (width == 0 || height == 0) {
+                visible = false;
+            } else if (width < 3 && height < 3 && minSize / width > 15 && minSize / height > 15) {
+                visible = false;
             }
         }
-        if (j9 == n || j8 == n || l8 == n || l9 == n) {
-            flag2 = false;
+        if (leftOf == n || above == n || below == n || rightOf == n) {
+            visible = false;
         }
         /*if (Medium.trk && (j9 != 0 || j8 != 0 || l8 != 0 || l9 != 0)) {
             flag2 = false;
         }*/
-        if (j10 != 0) {
-            flag = true;
+        if (behind != 0) {
+            noOutline = true;
         }
-        if (flag2) {
-            int i11 = 1;
-            byte byte2;
-            byte byte3;
-            if (Math.abs(ai15[0] - ai15[1]) > Math.abs(ai15[2] - ai15[1])) {
-                byte2 = 0;
-                byte3 = 2;
+        if (visible) {
+            int facing = 1;
+            byte sideA;
+            byte sideB;
+            if (Math.abs(screenY[0] - screenY[1]) > Math.abs(screenY[2] - screenY[1])) {
+                sideA = 0;
+                sideB = 2;
             } else {
-                byte2 = 2;
-                byte3 = 0;
-                i11 *= -1;
+                sideA = 2;
+                sideB = 0;
+                facing *= -1;
             }
-            if (ai15[1] > ai15[byte2]) {
-                i11 *= -1;
+            if (screenY[1] > screenY[sideA]) {
+                facing *= -1;
             }
-            if (ai14[1] > ai14[byte3]) {
-                i11 *= -1;
+            if (screenX[1] > screenX[sideB]) {
+                facing *= -1;
             }
-            int i13 = gr;
-            if (i13 < 0 && i13 >= -17) {
-                i13 = 0;
+            int bias = gr;
+            if (bias < 0 && bias >= -17) {
+                bias = 0;
             }
             if (gr == -11) {
-                i13 = -90;
+                bias = -90;
             }
             if (gr == -14 || gr == -15) {
-                i13 = -50;
+                bias = -50;
             }
             if (gr == -16) {
-                i13 = 35;
+                bias = 35;
             }
             if (fs != 0) {
-                i11 *= fs;
-                if (i11 == -1) {
-                    i13 += 40;
+                facing *= fs;
+                if (facing == -1) {
+                    bias += 40;
                     if (!road) {
-                        i11 = -111;
+                        facing = -111;
                     }
                 }
             }
             if (Medium.lightson && light == 2) {
-                i13 -= 40;
+                bias -= 40;
             }
-            int j14 = 0;
-            int k15 = 0;
-            int k16 = 0;
-            int l16 = 0;
-            int i17 = 0;
-            int j17 = 0;
-            for (int k17 = 0; k17 < n; k17++) {
-                int i18 = 0;
-                int k18 = 0;
-                int i19 = 0;
-                int j19 = 0;
-                int k19 = 0;
-                int l19 = 0;
-                for (int i20 = 0; i20 < n; i20++) {
-                    if (ai2[k17] >= ai2[i20]) {
-                        i18++;
+            int maxY = 0;
+            int minY = 0;
+            int maxX = 0;
+            int minX = 0;
+            int maxZ = 0;
+            int minZ = 0;
+            for (int corner = 0; corner < n; corner++) {
+                int geY = 0;
+                int leY = 0;
+                int geX = 0;
+                int leX = 0;
+                int geZ = 0;
+                int leZ = 0;
+                for (int other = 0; other < n; other++) {
+                    if (py[corner] >= py[other]) {
+                        geY++;
                     }
-                    if (ai2[k17] <= ai2[i20]) {
-                        k18++;
+                    if (py[corner] <= py[other]) {
+                        leY++;
                     }
-                    if (ai[k17] >= ai[i20]) {
-                        i19++;
+                    if (px[corner] >= px[other]) {
+                        geX++;
                     }
-                    if (ai[k17] <= ai[i20]) {
-                        j19++;
+                    if (px[corner] <= px[other]) {
+                        leX++;
                     }
-                    if (ai1[k17] >= ai1[i20]) {
-                        k19++;
+                    if (pz[corner] >= pz[other]) {
+                        geZ++;
                     }
-                    if (ai1[k17] <= ai1[i20]) {
-                        l19++;
+                    if (pz[corner] <= pz[other]) {
+                        leZ++;
                     }
                 }
 
-                if (i18 == n) {
-                    j14 = ai2[k17];
+                if (geY == n) {
+                    maxY = py[corner];
                 }
-                if (k18 == n) {
-                    k15 = ai2[k17];
+                if (leY == n) {
+                    minY = py[corner];
                 }
-                if (i19 == n) {
-                    k16 = ai[k17];
+                if (geX == n) {
+                    maxX = px[corner];
                 }
-                if (j19 == n) {
-                    l16 = ai[k17];
+                if (leX == n) {
+                    minX = px[corner];
                 }
-                if (k19 == n) {
-                    i17 = ai1[k17];
+                if (geZ == n) {
+                    maxZ = pz[corner];
                 }
-                if (l19 == n) {
-                    j17 = ai1[k17];
+                if (leZ == n) {
+                    minZ = pz[corner];
                 }
             }
 
-            int l17 = (j14 + k15) / 2;
-            int j18 = (k16 + l16) / 2;
-            int l18 = (i17 + j17) / 2;
+            int midY = (maxY + minY) / 2;
+            int midX = (maxX + minX) / 2;
+            int midZ = (maxZ + minZ) / 2;
             av = (int) Math
-                    .sqrt((Medium.cy - l17) * (Medium.cy - l17) + (Medium.cx - j18) * (Medium.cx - j18) + l18 * l18 + i13 * i13 * i13);
+                    .sqrt((Medium.cy - midY) * (Medium.cy - midY) + (Medium.cx - midX) * (Medium.cx - midX) + midZ * midZ + bias * bias * bias);
             if (!Medium.trk && (av > Medium.fade[disline] || av == 0)) {
-                flag2 = false;
+                visible = false;
             }
-            if (i11 == -111 && av > 4500) {
-                flag2 = false;
+            if (facing == -111 && av > 4500) {
+                visible = false;
             }
-            if (i11 == -111 && av > 1500) {
-                flag = true;
+            if (facing == -111 && av > 1500) {
+                noOutline = true;
             }
             if (av > 3000 && Medium.adv <= 900) {
-                flag = true;
+                noOutline = true;
             }
             if (gr == -12 && av < 11200) {
-                Medium.lastmaf = i11;
+                Medium.lastmaf = facing;
             }
-            if (gr == -13 && (!Medium.lastcheck || i2 != -1)) {
-                flag2 = false;
+            if (gr == -13 && (!Medium.lastcheck || minSize != -1)) {
+                visible = false;
             }
             if (gr == -16 && av > 1500) {
-                flag2 = false;
+                visible = false;
             }
             if (flx != 0 && Medium.fxRandom() > 0.29999999999999999D) {
-                flag2 = false;
+                visible = false;
             }
         }
-        if (flag2) {
-            float f1 = (float) (projf / deltaf + 0.29999999999999999D);
-            if (flag && !solo) {
-                boolean flag3 = false;
-                if (f1 > 1.0F) {
-                    if (f1 >= 1.27D) {
-                        flag3 = true;
+        if (visible) {
+            float shade = (float) (projf / deltaf + 0.29999999999999999D);
+            if (noOutline && !solo) {
+                boolean steep = false;
+                if (shade > 1.0F) {
+                    if (shade >= 1.27D) {
+                        steep = true;
                     }
-                    f1 = 1.0F;
+                    shade = 1.0F;
                 }
-                if (flag3) {
-                    f1 = (float) (f1 * 0.89000000000000001D);
+                if (steep) {
+                    shade = (float) (shade * 0.89000000000000001D);
                 } else {
-                    f1 = (float) (f1 * 0.85999999999999999D);
+                    shade = (float) (shade * 0.85999999999999999D);
                 }
-                if (f1 < 0.37D) {
-                    f1 = 0.37F;
+                if (shade < 0.37D) {
+                    shade = 0.37F;
                 }
                 if (gr == -9) {
-                    f1 = 0.7F;
+                    shade = 0.7F;
                 }
                 if (gr == -4) {
-                    f1 = 0.74F;
+                    shade = 0.74F;
                 }
-                if (gr != -7 && flag1) {
-                    f1 = 0.32F;
+                if (gr != -7 && backFacing) {
+                    shade = 0.32F;
                 }
                 if (gr == -8 || gr == -14 || gr == -15) {
-                    f1 = 1.0F;
+                    shade = 1.0F;
                 }
                 if (gr == -11) {
-                    f1 = 0.67F;
-                    if (i2 == -1) {
+                    shade = 0.67F;
+                    if (minSize == -1) {
                         if (Medium.cpflik || Medium.nochekflk && !Medium.lastcheck) {
-                            f1 = 1.0F;
+                            shade = 1.0F;
                         } else {
-                            f1 = 0.76F;
+                            shade = 0.76F;
                         }
                     }
                 }
-                if (gr == -13 && i2 == -1) {
+                if (gr == -13 && minSize == -1) {
                     if (Medium.cpflik) {
-                        f1 = 0.0F;
+                        shade = 0.0F;
                     } else {
-                        f1 = 0.76F;
+                        shade = 0.76F;
                     }
                 }
                 if (gr == -6) {
-                    f1 = 0.62F;
+                    shade = 0.62F;
                 }
                 if (gr == -5) {
-                    f1 = 0.55F;
+                    shade = 0.55F;
                 }
             } else {
-                if (f1 > 1.0F) {
-                    f1 = 1.0F;
+                if (shade > 1.0F) {
+                    shade = 1.0F;
                 }
-                if (f1 < 0.59999999999999998D || flag1) {
-                    f1 = 0.6F;
+                if (shade < 0.59999999999999998D || backFacing) {
+                    shade = 0.6F;
                 }
             }
             Color color;
             if (!Medium.trk) {
-                color = Color.getHSBColor(hsb[0], hsb[1], hsb[2] * f1);
+                color = Color.getHSBColor(hsb[0], hsb[1], hsb[2] * shade);
             } else {
-                float af[] = new float[3];
-                Color.RGBtoHSB(oc[0], oc[1], oc[2], af);
-                color = Color.getHSBColor(hsb[0], hsb[1], hsb[2] * f1);
+                float trackHsb[] = new float[3];
+                Color.RGBtoHSB(oc[0], oc[1], oc[2], trackHsb);
+                color = Color.getHSBColor(hsb[0], hsb[1], hsb[2] * shade);
             }
-            int l11 = color.getRed();
-            int j13 = color.getGreen();
-            int k14 = color.getBlue();
+            int red = color.getRed();
+            int green = color.getGreen();
+            int blue = color.getBlue();
             if (Medium.lightson && light != 0) {
-                l11 = oc[0];
-                if (l11 > 255) {
-                    l11 = 255;
+                red = oc[0];
+                if (red > 255) {
+                    red = 255;
                 }
-                if (l11 < 0) {
-                    l11 = 0;
+                if (red < 0) {
+                    red = 0;
                 }
-                j13 = oc[1];
-                if (j13 > 255) {
-                    j13 = 255;
+                green = oc[1];
+                if (green > 255) {
+                    green = 255;
                 }
-                if (j13 < 0) {
-                    j13 = 0;
+                if (green < 0) {
+                    green = 0;
                 }
-                k14 = oc[2];
-                if (k14 > 255) {
-                    k14 = 255;
+                blue = oc[2];
+                if (blue > 255) {
+                    blue = 255;
                 }
-                if (k14 < 0) {
-                    k14 = 0;
+                if (blue < 0) {
+                    blue = 0;
                 }
             }
             if (!Medium.trk) {
-                int l15 = 0;
+                int band = 0;
                 do {
-                    if (av > Medium.fade[l15]) {
-                        l11 = (l11 * Medium.fogd + Medium.cfade[0]) / (Medium.fogd + 1);
-                        j13 = (j13 * Medium.fogd + Medium.cfade[1]) / (Medium.fogd + 1);
-                        k14 = (k14 * Medium.fogd + Medium.cfade[2]) / (Medium.fogd + 1);
+                    if (av > Medium.fade[band]) {
+                        red = (red * Medium.fogd + Medium.cfade[0]) / (Medium.fogd + 1);
+                        green = (green * Medium.fogd + Medium.cfade[1]) / (Medium.fogd + 1);
+                        blue = (blue * Medium.fogd + Medium.cfade[2]) / (Medium.fogd + 1);
                     }
-                } while (++l15 < 8);
+                } while (++band < 8);
             }
             if (blackout){
                 rd.setColor(new Color(0,0,0));
             } else {
-                rd.setColor(new Color(l11, j13, k14));
+                rd.setColor(new Color(red, green, blue));
             }
             if (exact) {
-                Precise.plane(ox, oy, oz, mirrored, n, i, j, k, l, i1, j1, k1, l1, wx, wy, wz, ai14, ai15);
+                Precise.plane(ox, oy, oz, mirrored, n, x, y, z, yaw, roll, pitch, wheelTurn, wheelSpin, wx, wy, wz, screenX, screenY);
             }
             boolean lamp = Medium.lightson && light != 0 && !blackout;
             if (lamp) {
                 Glow.set(Glow.LAMP);
             }
-            rd.fillPolygon(ai14, ai15, n);
+            rd.fillPolygon(screenX, screenY, n);
             if (Medium.trk && gr == -10) {
-                flag = false;
+                noOutline = false;
             }
-            if (!flag) {
+            if (!noOutline) {
                 if (flx == 0) {
                     if (!solo) {
-                        l11 = 0;
-                        j13 = 0;
-                        k14 = 0;
+                        red = 0;
+                        green = 0;
+                        blue = 0;
                         if (Medium.lightson && light != 0) {
-                            l11 = oc[0] / 2;
-                            if (l11 > 255) {
-                                l11 = 255;
+                            red = oc[0] / 2;
+                            if (red > 255) {
+                                red = 255;
                             }
-                            if (l11 < 0) {
-                                l11 = 0;
+                            if (red < 0) {
+                                red = 0;
                             }
-                            j13 = oc[1] / 2;
-                            if (j13 > 255) {
-                                j13 = 255;
+                            green = oc[1] / 2;
+                            if (green > 255) {
+                                green = 255;
                             }
-                            if (j13 < 0) {
-                                j13 = 0;
+                            if (green < 0) {
+                                green = 0;
                             }
-                            k14 = oc[2] / 2;
-                            if (k14 > 255) {
-                                k14 = 255;
+                            blue = oc[2] / 2;
+                            if (blue > 255) {
+                                blue = 255;
                             }
-                            if (k14 < 0) {
-                                k14 = 0;
+                            if (blue < 0) {
+                                blue = 0;
                             }
                         }
                         rd.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                        rd.setColor(new Color(l11, j13, k14));
-                        rd.drawPolygon(ai14, ai15, n);
+                        rd.setColor(new Color(red, green, blue));
+                        rd.drawPolygon(screenX, screenY, n);
                         rd.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
                     }
                 } else {
                     if (flx == 2) {
                         rd.setColor(new Color(0, 0, 0));
-                        rd.drawPolygon(ai14, ai15, n);
+                        rd.drawPolygon(screenX, screenY, n);
                     }
                     if (flx == 1) {
-                        l11 = 0;
-                        j13 = (int) (223F + 223F * (Medium.snap[1] / 100F));
-                        if (j13 > 255) {
-                            j13 = 255;
+                        red = 0;
+                        green = (int) (223F + 223F * (Medium.snap[1] / 100F));
+                        if (green > 255) {
+                            green = 255;
                         }
-                        if (j13 < 0) {
-                            j13 = 0;
+                        if (green < 0) {
+                            green = 0;
                         }
-                        k14 = (int) (255F + 255F * (Medium.snap[2] / 100F));
-                        if (k14 > 255) {
-                            k14 = 255;
+                        blue = (int) (255F + 255F * (Medium.snap[2] / 100F));
+                        if (blue > 255) {
+                            blue = 255;
                         }
-                        if (k14 < 0) {
-                            k14 = 0;
+                        if (blue < 0) {
+                            blue = 0;
                         }
-                        rd.setColor(new Color(l11, j13, k14));
+                        rd.setColor(new Color(red, green, blue));
                         Glow.set(Glow.REPAIR);
-                        rd.drawPolygon(ai14, ai15, n);
+                        rd.drawPolygon(screenX, screenY, n);
                         flx = 2;
                     }
                     if (flx == 3) {
-                        l11 = 0;
-                        j13 = (int) (255F + 255F * (Medium.snap[1] / 100F));
-                        if (j13 > 255) {
-                            j13 = 255;
+                        red = 0;
+                        green = (int) (255F + 255F * (Medium.snap[1] / 100F));
+                        if (green > 255) {
+                            green = 255;
                         }
-                        if (j13 < 0) {
-                            j13 = 0;
+                        if (green < 0) {
+                            green = 0;
                         }
-                        k14 = (int) (223F + 223F * (Medium.snap[2] / 100F));
-                        if (k14 > 255) {
-                            k14 = 255;
+                        blue = (int) (223F + 223F * (Medium.snap[2] / 100F));
+                        if (blue > 255) {
+                            blue = 255;
                         }
-                        if (k14 < 0) {
-                            k14 = 0;
+                        if (blue < 0) {
+                            blue = 0;
                         }
-                        rd.setColor(new Color(l11, j13, k14));
+                        rd.setColor(new Color(red, green, blue));
                         Glow.set(Glow.REPAIR);
-                        rd.drawPolygon(ai14, ai15, n);
+                        rd.drawPolygon(screenX, screenY, n);
                         flx = 2;
                     }
                 }
             } else if (road && av <= 3000 && !Medium.trk && Medium.fade[0] > 4000) {
-                if ((l11 -= 10) < 0) {
-                    l11 = 0;
+                if ((red -= 10) < 0) {
+                    red = 0;
                 }
-                if ((j13 -= 10) < 0) {
-                    j13 = 0;
+                if ((green -= 10) < 0) {
+                    green = 0;
                 }
-                if ((k14 -= 10) < 0) {
-                    k14 = 0;
+                if ((blue -= 10) < 0) {
+                    blue = 0;
                 }
-                rd.setColor(new Color(l11, j13, k14));
-                rd.drawPolygon(ai14, ai15, n);
+                rd.setColor(new Color(red, green, blue));
+                rd.drawPolygon(screenX, screenY, n);
             }
             Glow.off(); // a lamp's glow, or the repair flash's, ends with its polygon
             if (gr == -10) {
                 if (!Medium.trk) {
-                    int i12 = c[0];
-                    int k13 = c[1];
-                    int l14 = c[2];
-                    if (i2 == -1) {
+                    int lineRed = c[0];
+                    int lineGreen = c[1];
+                    int lineBlue = c[2];
+                    if (minSize == -1) {
                         if (Medium.nochekflk && !Medium.lastcheck) {
-                            i12 = (int) (i12 * 1.25D);
-                            if (i12 > 255) {
-                                i12 = 255;
+                            lineRed = (int) (lineRed * 1.25D);
+                            if (lineRed > 255) {
+                                lineRed = 255;
                             }
-                            k13 = (int) (k13 * 1.25D);
-                            if (k13 > 255) {
-                                k13 = 255;
+                            lineGreen = (int) (lineGreen * 1.25D);
+                            if (lineGreen > 255) {
+                                lineGreen = 255;
                             }
-                            l14 = (int) (l14 * 1.25D);
-                            if (l14 > 255) {
-                                l14 = 255;
+                            lineBlue = (int) (lineBlue * 1.25D);
+                            if (lineBlue > 255) {
+                                lineBlue = 255;
                             }
                         } else if (Medium.cpflik) {
-                            i12 = (int) (i12 * 1.5D);
-                            if (i12 > 255) {
-                                i12 = 255;
+                            lineRed = (int) (lineRed * 1.5D);
+                            if (lineRed > 255) {
+                                lineRed = 255;
                             }
-                            k13 = (int) (k13 * 1.5D);
-                            if (k13 > 255) {
-                                k13 = 255;
+                            lineGreen = (int) (lineGreen * 1.5D);
+                            if (lineGreen > 255) {
+                                lineGreen = 255;
                             }
-                            l14 = (int) (l14 * 1.5D);
-                            if (l14 > 255) {
-                                l14 = 255;
+                            lineBlue = (int) (lineBlue * 1.5D);
+                            if (lineBlue > 255) {
+                                lineBlue = 255;
                             }
                         }
                     }
-                    int i16 = 0;
+                    int band = 0;
                     do {
-                        if (av > Medium.fade[i16]) {
-                            i12 = (i12 * Medium.fogd + Medium.cfade[0]) / (Medium.fogd + 1);
-                            k13 = (k13 * Medium.fogd + Medium.cfade[1]) / (Medium.fogd + 1);
-                            l14 = (l14 * Medium.fogd + Medium.cfade[2]) / (Medium.fogd + 1);
+                        if (av > Medium.fade[band]) {
+                            lineRed = (lineRed * Medium.fogd + Medium.cfade[0]) / (Medium.fogd + 1);
+                            lineGreen = (lineGreen * Medium.fogd + Medium.cfade[1]) / (Medium.fogd + 1);
+                            lineBlue = (lineBlue * Medium.fogd + Medium.cfade[2]) / (Medium.fogd + 1);
                         }
-                    } while (++i16 < 8);
-                    rd.setColor(new Color(i12, k13, l14));
-                    rd.drawPolygon(ai14, ai15, n);
+                    } while (++band < 8);
+                    rd.setColor(new Color(lineRed, lineGreen, lineBlue));
+                    rd.drawPolygon(screenX, screenY, n);
                 } else if (Medium.cpflik && Medium.hit == 5000) {
-                    int l13 = (int) (Medium.fxRandom.nextDouble() * 115D);
-                    int j12 = l13 * 2 - 54;
-                    if (j12 < 0) {
-                        j12 = 0;
+                    int flicker = (int) (Medium.fxRandom.nextDouble() * 115D);
+                    int sparkRed = flicker * 2 - 54;
+                    if (sparkRed < 0) {
+                        sparkRed = 0;
                     }
-                    if (j12 > 255) {
-                        j12 = 255;
+                    if (sparkRed > 255) {
+                        sparkRed = 255;
                     }
-                    int i15 = 202 + l13 * 2;
-                    if (i15 < 0) {
-                        i15 = 0;
+                    int sparkBlue = 202 + flicker * 2;
+                    if (sparkBlue < 0) {
+                        sparkBlue = 0;
                     }
-                    if (i15 > 255) {
-                        i15 = 255;
+                    if (sparkBlue > 255) {
+                        sparkBlue = 255;
                     }
-                    if ((l13 += 101) < 0) {
-                        l13 = 0;
+                    if ((flicker += 101) < 0) {
+                        flicker = 0;
                     }
-                    if (l13 > 255) {
-                        l13 = 255;
+                    if (flicker > 255) {
+                        flicker = 255;
                     }
-                    rd.setColor(new Color(j12, l13, i15));
-                    rd.drawPolygon(ai14, ai15, n);
+                    rd.setColor(new Color(sparkRed, flicker, sparkBlue));
+                    rd.drawPolygon(screenX, screenY, n);
                 }
             }
             if (gr == -18 && !Medium.trk) {
-                int k12 = c[0];
-                int i14 = c[1];
-                int j15 = c[2];
+                int arcRed = c[0];
+                int arcGreen = c[1];
+                int arcBlue = c[2];
                 if (Medium.cpflik && Medium.elecr >= 0.0F) {
-                    k12 = (int) (25.5F * Medium.elecr);
-                    if (k12 > 255) {
-                        k12 = 255;
+                    arcRed = (int) (25.5F * Medium.elecr);
+                    if (arcRed > 255) {
+                        arcRed = 255;
                     }
-                    i14 = (int) (128F + 12.8F * Medium.elecr);
-                    if (i14 > 255) {
-                        i14 = 255;
+                    arcGreen = (int) (128F + 12.8F * Medium.elecr);
+                    if (arcGreen > 255) {
+                        arcGreen = 255;
                     }
-                    j15 = 255;
+                    arcBlue = 255;
                 }
-                int j16 = 0;
+                int band = 0;
                 do {
-                    if (av > Medium.fade[j16]) {
-                        k12 = (k12 * Medium.fogd + Medium.cfade[0]) / (Medium.fogd + 1);
-                        i14 = (i14 * Medium.fogd + Medium.cfade[1]) / (Medium.fogd + 1);
-                        j15 = (j15 * Medium.fogd + Medium.cfade[2]) / (Medium.fogd + 1);
+                    if (av > Medium.fade[band]) {
+                        arcRed = (arcRed * Medium.fogd + Medium.cfade[0]) / (Medium.fogd + 1);
+                        arcGreen = (arcGreen * Medium.fogd + Medium.cfade[1]) / (Medium.fogd + 1);
+                        arcBlue = (arcBlue * Medium.fogd + Medium.cfade[2]) / (Medium.fogd + 1);
                     }
-                } while (++j16 < 8);
-                rd.setColor(new Color(k12, i14, j15));
-                rd.drawPolygon(ai14, ai15, n);
+                } while (++band < 8);
+                rd.setColor(new Color(arcRed, arcGreen, arcBlue));
+                rd.drawPolygon(screenX, screenY, n);
             }
         }
     }
 
 
-    public void s(Graphics2D rd, int i, int j, int k, int l, int i1, int j1, int k1) {
+    public void s(Graphics2D rd, int x, int y, int z, int yaw, int roll, int pitch, int kind) {
         int[][] slots = SCRATCH.get();
         if (Precise.on) {
             Precise.recorder.unbind();
             Precise.recorder.tag(this, 1);
         }
-        int ai[] = scratch(slots, 0, n);
-        int ai1[] = scratch(slots, 1, n);
-        int ai2[] = scratch(slots, 2, n);
-        for (int l1 = 0; l1 < n; l1++) {
-            ai[l1] = ox[l1] + i;
-            ai2[l1] = oy[l1] + j;
-            ai1[l1] = oz[l1] + k;
+        int px[] = scratch(slots, 0, n);
+        int pz[] = scratch(slots, 1, n);
+        int py[] = scratch(slots, 2, n);
+        for (int corner = 0; corner < n; corner++) {
+            px[corner] = ox[corner] + x;
+            py[corner] = oy[corner] + y;
+            pz[corner] = oz[corner] + z;
         }
 
-        Utility.rot(ai, ai2, i, j, i1, n);
-        Utility.rot(ai2, ai1, j, k, j1, n);
-        Utility.rot(ai, ai1, i, k, l, n);
-        int i2 = (int) (Medium.cgrnd[0] / 1.5D);
-        int j2 = (int) (Medium.cgrnd[1] / 1.5D);
-        int k2 = (int) (Medium.cgrnd[2] / 1.5D);
-        for (int l2 = 0; l2 < n; l2++) {
-            ai2[l2] = Medium.ground;
+        Utility.rot(px, py, x, y, roll, n);
+        Utility.rot(py, pz, y, z, pitch, n);
+        Utility.rot(px, pz, x, z, yaw, n);
+        int red = (int) (Medium.cgrnd[0] / 1.5D);
+        int green = (int) (Medium.cgrnd[1] / 1.5D);
+        int blue = (int) (Medium.cgrnd[2] / 1.5D);
+        for (int corner = 0; corner < n; corner++) {
+            py[corner] = Medium.ground;
         }
 
-        if (k1 == 0) {
-            int i3 = 0;
-            int j3 = 0;
-            int k3 = 0;
-            int l3 = 0;
-            for (int l4 = 0; l4 < n; l4++) {
-                int l5 = 0;
-                int k6 = 0;
-                int j7 = 0;
-                int i8 = 0;
-                for (int k8 = 0; k8 < n; k8++) {
-                    if (ai[l4] >= ai[k8]) {
-                        l5++;
+        if (kind == 0) {
+            int maxX = 0;
+            int minX = 0;
+            int maxZ = 0;
+            int minZ = 0;
+            for (int corner = 0; corner < n; corner++) {
+                int geX = 0;
+                int leX = 0;
+                int geZ = 0;
+                int leZ = 0;
+                for (int other = 0; other < n; other++) {
+                    if (px[corner] >= px[other]) {
+                        geX++;
                     }
-                    if (ai[l4] <= ai[k8]) {
-                        k6++;
+                    if (px[corner] <= px[other]) {
+                        leX++;
                     }
-                    if (ai1[l4] >= ai1[k8]) {
-                        j7++;
+                    if (pz[corner] >= pz[other]) {
+                        geZ++;
                     }
-                    if (ai1[l4] <= ai1[k8]) {
-                        i8++;
+                    if (pz[corner] <= pz[other]) {
+                        leZ++;
                     }
                 }
 
-                if (l5 == n) {
-                    i3 = ai[l4];
+                if (geX == n) {
+                    maxX = px[corner];
                 }
-                if (k6 == n) {
-                    j3 = ai[l4];
+                if (leX == n) {
+                    minX = px[corner];
                 }
-                if (j7 == n) {
-                    k3 = ai1[l4];
+                if (geZ == n) {
+                    maxZ = pz[corner];
                 }
-                if (i8 == n) {
-                    l3 = ai1[l4];
+                if (leZ == n) {
+                    minZ = pz[corner];
                 }
             }
 
-            int i5 = (i3 + j3) / 2;
-            int i6 = (k3 + l3) / 2;
-            for (int l6 = t.nt - 1; l6 >= 0; l6--) {
-                int k7 = 0;
-                if (Math.abs(t.zy[l6]) != 90 && Math.abs(t.xy[l6]) != 90 && Math.abs(i5 - (t.x[l6] - Medium.x)) < t.radx[l6]
-                        && Math.abs(i6 - (t.z[l6] - Medium.z)) < t.radz[l6]) {
-                    k7++;
+            int midX = (maxX + minX) / 2;
+            int midZ = (maxZ + minZ) / 2;
+            for (int piece = t.nt - 1; piece >= 0; piece--) {
+                int under = 0;
+                if (Math.abs(t.zy[piece]) != 90 && Math.abs(t.xy[piece]) != 90 && Math.abs(midX - (t.x[piece] - Medium.x)) < t.radx[piece]
+                        && Math.abs(midZ - (t.z[piece] - Medium.z)) < t.radz[piece]) {
+                    under++;
                 }
-                if (k7 == 0) {
+                if (under == 0) {
                     continue;
                 }
-                for (int j8 = 0; j8 < n; j8++) {
-                    ai2[j8] = t.y[l6] - Medium.y;
-                    if (t.zy[l6] != 0) {
-                        ai2[j8] += ((ai1[j8] - (t.z[l6] - Medium.z - t.radz[l6])) * RadicalMath.sin(t.zy[l6]))
-                                / RadicalMath.sin(90 - t.zy[l6]) - (t.radz[l6] * RadicalMath.sin(t.zy[l6])) / RadicalMath.sin(90 - t.zy[l6]);
+                for (int corner = 0; corner < n; corner++) {
+                    py[corner] = t.y[piece] - Medium.y;
+                    if (t.zy[piece] != 0) {
+                        py[corner] += ((pz[corner] - (t.z[piece] - Medium.z - t.radz[piece])) * RadicalMath.sin(t.zy[piece]))
+                                / RadicalMath.sin(90 - t.zy[piece]) - (t.radz[piece] * RadicalMath.sin(t.zy[piece])) / RadicalMath.sin(90 - t.zy[piece]);
                     }
-                    if (t.xy[l6] != 0) {
-                        ai2[j8] += ((ai[j8] - (t.x[l6] - Medium.x - t.radx[l6])) * RadicalMath.sin(t.xy[l6]))
-                                / RadicalMath.sin(90 - t.xy[l6]) - (t.radx[l6] * RadicalMath.sin(t.xy[l6])) / RadicalMath.sin(90 - t.xy[l6]);
+                    if (t.xy[piece] != 0) {
+                        py[corner] += ((px[corner] - (t.x[piece] - Medium.x - t.radx[piece])) * RadicalMath.sin(t.xy[piece]))
+                                / RadicalMath.sin(90 - t.xy[piece]) - (t.radx[piece] * RadicalMath.sin(t.xy[piece])) / RadicalMath.sin(90 - t.xy[piece]);
                     }
                 }
 
-                i2 = (int) (t.c[l6][0] / 1.5D);
-                j2 = (int) (t.c[l6][1] / 1.5D);
-                k2 = (int) (t.c[l6][2] / 1.5D);
+                red = (int) (t.c[piece][0] / 1.5D);
+                green = (int) (t.c[piece][1] / 1.5D);
+                blue = (int) (t.c[piece][2] / 1.5D);
                 break;
             }
 
         }
-        boolean flag = true;
-        int ai3[] = scratch(slots, 3, n);
-        int ai4[] = scratch(slots, 4, n);
-        if (k1 == 2) {
-            i2 = 80;
-            j2 = 80;
-            k2 = 80;
+        boolean visible = true;
+        int screenX[] = scratch(slots, 3, n);
+        int screenY[] = scratch(slots, 4, n);
+        if (kind == 2) {
+            red = 80;
+            green = 80;
+            blue = 80;
         } else {
-            for (int i4 = 0; i4 < Medium.nsp; i4++) {
-                for (int j5 = 0; j5 < n; j5++) {
-                    if (Math.abs(ai[j5] - Medium.spx[i4]) < Medium.sprad[i4] && Math.abs(ai1[j5] - Medium.spz[i4]) < Medium.sprad[i4]) {
-                        flag = false;
+            for (int spot = 0; spot < Medium.nsp; spot++) {
+                for (int corner = 0; corner < n; corner++) {
+                    if (Math.abs(px[corner] - Medium.spx[spot]) < Medium.sprad[spot] && Math.abs(pz[corner] - Medium.spz[spot]) < Medium.sprad[spot]) {
+                        visible = false;
                     }
                 }
 
             }
 
         }
-        if (flag) {
+        if (visible) {
             if (Precise.on) {
-                Precise.keepGround(ai2, n);
+                Precise.keepGround(py, n);
             }
-            Utility.rot(ai, ai1, Medium.cx, Medium.cz, Medium.xz, n);
-            Utility.rot(ai2, ai1, Medium.cy, Medium.cz, Medium.zy, n);
-            int j4 = 0;
-            int k5 = 0;
-            int j6 = 0;
-            int i7 = 0;
-            for (int l7 = 0; l7 < n; l7++) {
-                ai3[l7] = Utility.xs(ai[l7], ai1[l7]);
-                ai4[l7] = Utility.ys(ai2[l7], ai1[l7], 0);
-                if (ai4[l7] < -Medium.cullY || ai1[l7] < 10) {
-                    j4++;
+            Utility.rot(px, pz, Medium.cx, Medium.cz, Medium.xz, n);
+            Utility.rot(py, pz, Medium.cy, Medium.cz, Medium.zy, n);
+            int above = 0;
+            int below = 0;
+            int leftOf = 0;
+            int rightOf = 0;
+            for (int corner = 0; corner < n; corner++) {
+                screenX[corner] = Utility.xs(px[corner], pz[corner]);
+                screenY[corner] = Utility.ys(py[corner], pz[corner], 0);
+                if (screenY[corner] < -Medium.cullY || pz[corner] < 10) {
+                    above++;
                 }
-                if (ai4[l7] > Medium.h + Medium.cullY || ai1[l7] < 10) {
-                    k5++;
+                if (screenY[corner] > Medium.h + Medium.cullY || pz[corner] < 10) {
+                    below++;
                 }
-                if (ai3[l7] < -Medium.cullX || ai1[l7] < 10) {
-                    j6++;
+                if (screenX[corner] < -Medium.cullX || pz[corner] < 10) {
+                    leftOf++;
                 }
-                if (ai3[l7] > Medium.w + Medium.cullX || ai1[l7] < 10) {
-                    i7++;
+                if (screenX[corner] > Medium.w + Medium.cullX || pz[corner] < 10) {
+                    rightOf++;
                 }
             }
 
-            if (j6 == n || j4 == n || k5 == n || i7 == n) {
-                flag = false;
+            if (leftOf == n || above == n || below == n || rightOf == n) {
+                visible = false;
             }
         }
-        if (flag) {
-            int k4 = 0;
+        if (visible) {
+            int band = 0;
             do {
-                if (av > Medium.fade[k4]) {
-                    i2 = (i2 * Medium.fogd + Medium.cfade[0]) / (Medium.fogd + 1);
-                    j2 = (j2 * Medium.fogd + Medium.cfade[1]) / (Medium.fogd + 1);
-                    k2 = (k2 * Medium.fogd + Medium.cfade[2]) / (Medium.fogd + 1);
+                if (av > Medium.fade[band]) {
+                    red = (red * Medium.fogd + Medium.cfade[0]) / (Medium.fogd + 1);
+                    green = (green * Medium.fogd + Medium.cfade[1]) / (Medium.fogd + 1);
+                    blue = (blue * Medium.fogd + Medium.cfade[2]) / (Medium.fogd + 1);
                 }
-            } while (++k4 < 8);
-            rd.setColor(new Color(i2, j2, k2));
+            } while (++band < 8);
+            rd.setColor(new Color(red, green, blue));
             if (Precise.on) {
-                Precise.shadow(ox, oy, oz, n, i, j, k, l, i1, j1, ai3, ai4);
+                Precise.shadow(ox, oy, oz, n, x, y, z, yaw, roll, pitch, screenX, screenY);
             }
-            rd.fillPolygon(ai3, ai4, n);
+            rd.fillPolygon(screenX, screenY, n);
         }
     }
 }
