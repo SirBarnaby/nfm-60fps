@@ -18,3 +18,5 @@
 /madness.aot
 /replays/
 /test/perf-baseline.json
+/test/sound-baseline.json
+/test/sound-renders/

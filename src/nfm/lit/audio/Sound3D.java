@@ -178,6 +178,16 @@ public final class Sound3D implements Runnable {
 
     private final ConcurrentLinkedQueue<Command> commands = new ConcurrentLinkedQueue<>();
     private volatile Moment latest;
+    /**
+     * Rendering a race check to a file, the sound runs in step with the
+     * race instead of the clock: the game's commands and ticks queue up in
+     * order, and each tick is mixed for exactly its own length, so the same
+     * race always gives the same samples, however fast it was played.
+     */
+    private final boolean lockstep;
+    private final ConcurrentLinkedQueue<Object> steps = new ConcurrentLinkedQueue<>();
+    /** The sound's own time: the clock, or in lockstep the race's ticks added up. */
+    private long clock;
     private final SoundManager clips;
     /** With a file, the sound is mixed into it instead of a device: for tests, never heard. */
     private final String renderTo;
@@ -188,6 +198,20 @@ public final class Sound3D implements Runnable {
     private Sound3D(SoundManager clips, String renderTo) {
         this.clips = clips;
         this.renderTo = renderTo;
+        this.lockstep = renderTo != null
+                && (System.getProperty("nfm.verify") != null || Boolean.getBoolean("nfm.sound.lockstep"));
+        if (lockstep) {
+            random.setSeed(1L);
+        }
+    }
+
+    /** Queues a command for the sound thread, in order with the ticks when in lockstep. */
+    private void post(Command c) {
+        if (lockstep) {
+            steps.add(c);
+        } else {
+            commands.add(c);
+        }
     }
 
     /**
@@ -229,6 +253,13 @@ public final class Sound3D implements Runnable {
             return;
         }
         Sound3D sound = new Sound3D(clips, file);
+        if (sound.lockstep) {
+            sound.stageWanted = false;
+            SteamAcoustics.Stage s = stage;
+            if (s != null) {
+                sound.steps.add(s);
+            }
+        }
         if (file != null) {
             // a test file needs its header written: close it when the game exits
             Runtime.getRuntime().addShutdownHook(new Thread(Sound3D::shutdown, "nfm-sound-close"));
@@ -248,7 +279,7 @@ public final class Sound3D implements Runnable {
             sound.running = false;
             LockSupport.unpark(sound.thread);
             try {
-                sound.thread.join(2_000L);
+                sound.thread.join(sound.lockstep ? 60_000L : 2_000L);
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
             }
@@ -267,7 +298,7 @@ public final class Sound3D implements Runnable {
             case "loop" -> LOOP;
             default -> STOP;
         };
-        sound.commands.add(new Command(kind, clip, -1, 0F, 0F));
+        sound.post(new Command(kind, clip, -1, 0F, 0F));
         return true;
     }
 
@@ -275,7 +306,7 @@ public final class Sound3D implements Runnable {
     public static void stopAll() {
         Sound3D sound = instance;
         if (sound != null) {
-            sound.commands.add(new Command(STOP_ALL, null, -1, 0F, 0F));
+            sound.post(new Command(STOP_ALL, null, -1, 0F, 0F));
         }
     }
 
@@ -288,7 +319,7 @@ public final class Sound3D implements Runnable {
     public static void carCrash(int car, float force, int kind) {
         Sound3D sound = instance;
         if (sound != null && !SoundManager.isDiscarding()) {
-            sound.commands.add(new Command(CRASH, null, car, force, kind));
+            sound.post(new Command(CRASH, null, car, force, kind));
         }
     }
 
@@ -296,7 +327,7 @@ public final class Sound3D implements Runnable {
     public static void carSkid(int car, int surface, float slide) {
         Sound3D sound = instance;
         if (sound != null && !SoundManager.isDiscarding() && slide > 150F) {
-            sound.commands.add(new Command(SKID, null, car, surface, slide));
+            sound.post(new Command(SKID, null, car, surface, slide));
         }
     }
 
@@ -315,9 +346,12 @@ public final class Sound3D implements Runnable {
      * @param kinds one per triangle, a SURFACE kind
      */
     public static void setStage(float[] vertices, int[] triangles, byte[] kinds) {
-        stage = new SteamAcoustics.Stage(vertices, triangles, kinds);
+        SteamAcoustics.Stage s = new SteamAcoustics.Stage(vertices, triangles, kinds);
+        stage = s;
         Sound3D sound = instance;
-        if (sound != null) {
+        if (sound != null && sound.lockstep) {
+            sound.steps.add(s); // at its place among the ticks
+        } else if (sound != null) {
             sound.stageWanted = true;
         }
     }
@@ -326,7 +360,11 @@ public final class Sound3D implements Runnable {
     public static void publish(Moment moment) {
         Sound3D sound = instance;
         if (sound != null && !SoundManager.isDiscarding()) {
-            sound.latest = moment;
+            if (sound.lockstep) {
+                sound.steps.add(moment);
+            } else {
+                sound.latest = moment;
+            }
         }
     }
 
@@ -381,10 +419,15 @@ public final class Sound3D implements Runnable {
             }
             Arrays.fill(through, 1F);
             Arrays.fill(traced, 1F);
-            acoustics = SteamAcoustics.open(MAX_CARS);
+            acoustics = SteamAcoustics.open(MAX_CARS, lockstep);
+            if (lockstep) {
+                runInStep();
+                return;
+            }
             long next = System.nanoTime();
             while (running) {
                 long now = System.nanoTime();
+                clock = now;
                 if (reopenWanted) {
                     reopen();
                 }
@@ -413,6 +456,49 @@ public final class Sound3D implements Runnable {
             instance = null;
         } finally {
             close();
+        }
+    }
+
+    /**
+     * The lockstep loop: commands as they come, and for each tick the
+     * updates and the samples of exactly its length, until the game has
+     * stopped and everything queued is mixed.
+     */
+    private void runInStep() throws IOException {
+        while (true) {
+            Object step = steps.poll();
+            if (step == null) {
+                if (!running) {
+                    return;
+                }
+                LockSupport.parkNanos(1_000_000L);
+                continue;
+            }
+            if (step instanceof Command c) {
+                handle(c);
+                continue;
+            }
+            if (step instanceof SteamAcoustics.Stage st) {
+                if (acoustics != null) {
+                    acoustics.stage(st);
+                }
+                continue;
+            }
+            Moment m = (Moment) step;
+            m.nanos = clock;
+            latest = m;
+            long end = clock + m.tickNanos;
+            while (clock < end) {
+                if (deferred) {
+                    SOFTDeferredUpdates.alDeferUpdatesSOFT();
+                }
+                update(clock);
+                if (deferred) {
+                    SOFTDeferredUpdates.alProcessUpdatesSOFT();
+                }
+                clock = Math.min(end, clock + UPDATE_NANOS);
+                render(clock);
+            }
         }
     }
 
@@ -621,13 +707,17 @@ public final class Sound3D implements Runnable {
 
     private void handleCommands() {
         for (Command c; (c = commands.poll()) != null;) {
-            switch (c.kind) {
-                case PLAY, LOOP, STOP -> clip(c.kind, c.clip);
-                case CRASH -> crash(c.car, c.a, (int) c.b);
-                case SKID -> skid(c.car, (int) c.a);
-                case STOP_ALL -> stopEverything();
-                default -> {
-                }
+            handle(c);
+        }
+    }
+
+    private void handle(Command c) {
+        switch (c.kind) {
+            case PLAY, LOOP, STOP -> clip(c.kind, c.clip);
+            case CRASH -> crash(c.car, c.a, (int) c.b);
+            case SKID -> skid(c.car, (int) c.a);
+            case STOP_ALL -> stopEverything();
+            default -> {
             }
         }
     }
@@ -1140,7 +1230,7 @@ public final class Sound3D implements Runnable {
 
     private void placeAtCar(int source, int car) {
         Moment m = current;
-        float ahead = m == null ? 0F : Math.min(m.tickNanos, Math.max(0L, System.nanoTime() - m.nanos)) / 1e9F;
+        float ahead = m == null ? 0F : Math.min(m.tickNanos, Math.max(0L, clock - m.nanos)) / 1e9F;
         if (carNow(car, ahead, where, moving)) {
             alSource3f(source, AL_POSITION, where[0], where[1], where[2]);
             alSource3f(source, AL_VELOCITY, moving[0], moving[1], moving[2]);
@@ -1370,7 +1460,7 @@ public final class Sound3D implements Runnable {
         renderFile.setLength(0L);
         renderFile.write(new byte[44]); // the header is written when the file is closed
         rendered = MemoryUtil.memAllocShort(RENDER_RATE * 2 / 10);
-        renderStart = System.nanoTime();
+        renderStart = lockstep ? 0L : System.nanoTime();
     }
 
     /** Mixes the sound up to now into the test file, as fast as a device would play it. */

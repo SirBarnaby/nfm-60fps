@@ -212,9 +212,21 @@ final class SteamAcoustics {
     private volatile boolean listenerKnown;
     private final float[] reverb = new float[3];
     private volatile float[] reverbTimes = new float[3];
+    private static final float[] IN_STEP_REVERB_TIMES = {0.8F, 0.8F, 0.8F};
     private volatile String described = "Steam Audio: no stage yet";
 
-    private SteamAcoustics(SymbolLookup lib, int cars) throws Throwable {
+    /**
+     * In step with a race check: no thread of its own and the stage built
+     * when asked, so a render comes out the same every time. Occlusion is
+     * traced as always, but reflections are not: Steam Audio draws their rays
+     * at random, so the reverb times would differ from run to run in the last
+     * bit; the reverb rings for a fixed time instead, still as loud as the
+     * place is closed in.
+     */
+    private final boolean inStep;
+
+    private SteamAcoustics(SymbolLookup lib, int cars, boolean inStep) throws Throwable {
+        this.inStep = inStep;
         Linker linker = Linker.nativeLinker();
         FunctionDescriptor create = FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, ADDRESS);
         FunctionDescriptor oneHandle = FunctionDescriptor.ofVoid(ADDRESS);
@@ -259,7 +271,7 @@ final class SteamAcoustics {
         sim.set(JAVA_FLOAT, at(SIMULATION_SETTINGS, "maxDuration"), DURATION);
         sim.set(JAVA_INT, at(SIMULATION_SETTINGS, "maxOrder"), 0);
         sim.set(JAVA_INT, at(SIMULATION_SETTINGS, "maxNumSources"), cars + PROBES.length + 1);
-        sim.set(JAVA_INT, at(SIMULATION_SETTINGS, "numThreads"), Math.max(1,
+        sim.set(JAVA_INT, at(SIMULATION_SETTINGS, "numThreads"), inStep ? 1 : Math.max(1,
                 Math.min(2, Runtime.getRuntime().availableProcessors() / 4)));
         sim.set(JAVA_INT, at(SIMULATION_SETTINGS, "rayBatchSize"), 1);
         sim.set(JAVA_INT, at(SIMULATION_SETTINGS, "samplingRate"), 48_000);
@@ -304,7 +316,9 @@ final class SteamAcoustics {
         thread = new Thread(this::work, "nfm-acoustics");
         thread.setDaemon(true);
         thread.setPriority(Thread.MIN_PRIORITY + 1);
-        thread.start();
+        if (!inStep) {
+            thread.start();
+        }
     }
 
     private MemorySegment inputs(int flags, int directFlags) {
@@ -337,7 +351,7 @@ final class SteamAcoustics {
      * Loads Steam Audio for this many cars; null if the library is not there
      * or does not start, and then the sound goes on without it.
      */
-    static SteamAcoustics open(int cars) {
+    static SteamAcoustics open(int cars, boolean inStep) {
         Path dll = Path.of(System.getProperty("nfm.steamaudio", "lib/dlls/win64/phonon.dll"));
         if (!Files.isRegularFile(dll)) {
             HLogger.info("3D sound: no Steam Audio library (" + dll + "), so no muffling or reverb from the track");
@@ -349,7 +363,7 @@ final class SteamAcoustics {
                     || INPUTS.byteSize() != 264 || SHARED_INPUTS.byteSize() != 88 || OUTPUTS.byteSize() != 216) {
                 throw new IllegalStateException("structure sizes do not match phonon.h 4.8");
             }
-            return new SteamAcoustics(SymbolLookup.libraryLookup(dll, Arena.global()), cars);
+            return new SteamAcoustics(SymbolLookup.libraryLookup(dll, Arena.global()), cars, inStep);
         } catch (Throwable ex) {
             HLogger.warn("3D sound: Steam Audio would not start, so no muffling or reverb from the track: " + ex);
             return null;
@@ -358,6 +372,10 @@ final class SteamAcoustics {
 
     /** Builds this stage on the acoustics thread; the newest one asked for wins. */
     void stage(Stage stage) {
+        if (inStep) {
+            build(stage);
+            return;
+        }
         pendingStage = stage;
         LockSupport.unpark(thread);
     }
@@ -371,7 +389,7 @@ final class SteamAcoustics {
 
     /** The reverb times (low, mid, high, in seconds) where the listener is, from the last reflections. */
     float[] reverbTimes() {
-        return reverbTimes;
+        return inStep ? IN_STEP_REVERB_TIMES : reverbTimes;
     }
 
     /**
@@ -439,6 +457,7 @@ final class SteamAcoustics {
                 closed += 1F - directOutputs.get(JAVA_FLOAT, OCCLUSION);
             }
             enclosure = closed / probeSources.length;
+
             for (int i = 0; i < n; i++) {
                 if (!active[i]) {
                     continue;
@@ -527,6 +546,10 @@ final class SteamAcoustics {
             }
             LockSupport.parkNanos(this, Math.max(1_000_000L, nextRoom - System.nanoTime()));
         }
+        releaseAll();
+    }
+
+    private void releaseAll() {
         lock.writeLock().lock();
         try {
             ready = false;
@@ -661,6 +684,10 @@ final class SteamAcoustics {
     /** Stops the acoustics thread, which lets go of everything. */
     void close() {
         running = false;
+        if (inStep) {
+            releaseAll();
+            return;
+        }
         LockSupport.unpark(thread);
         try {
             thread.join(2_000L);
