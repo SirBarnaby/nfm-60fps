@@ -134,6 +134,14 @@ In the menus the left stick and d-pad are the arrow keys, repeating while held a
 
 `gamepad` in the developer console says which pads are connected; `gamepad off` / `gamepad on` and `gamepad rumble off` / `gamepad rumble on` are saved. Hidden test runs never read pads, so a pad on the desk cannot drive them.
 
+## Sound
+
+Race sound is placed in 3D, mixed by OpenAL Soft (`lib\lwjgl-openal-*.jar`). Every car's engine is heard from where the car is, not only yours: the game's five recordings per engine play together, cross-faded and bent in pitch as the car rises through its speed bands, so the engine climbs smoothly instead of jumping between loops, and a car off the throttle sounds duller. Crashes and skids come from the car that made them, for every car, and the wreck and the repair from your car. Cars passing are heard passing (a gentle Doppler), far cars are quieter and lose their treble, and with headphones the sound is rendered for the ears (HRTF), so a car behind is heard behind. Your car, at the chase camera's distance, is as loud as Classic plays it; menus, the countdown and the wind are heard as they are; an output limiter keeps a pile-up from clipping. When Windows' default output changes (headphones plugged in, a Bluetooth headset connected), the sound moves to it without stopping, and an unplugged device is left for the default one within a second.
+
+What is heard follows what the game decides: an engine plays only while the game would play one, with the same speed bands, wheelspin and full-power rules, and the sound reads the race without changing it, so recordings, replays and the determinism check are untouched. Replays play as before. The music is unchanged.
+
+`sound classic` in the developer console goes back to the original sound, exactly as it was (Java Sound, your car's engine only); `sound 3d` (the default) brings the new one back, at once and saved. If no sound device can be opened for it, Classic plays.
+
 ## Replays
 
 Every race you play is kept in the `replays` folder next to the game, as the same kind of recording the determinism check uses (see below): the set-up, your input on every tick and where your car was after it. Each file is named for when the race was played, its stage and, if you finished it, in how many ticks (`race-20261116-221500-123-stage08-t01234.nfmr`, 1234 ticks of 53 ms). The 50 newest races are kept, and on every stage the fastest finish however old, so a best run is never lost. A race is about 200 KB. Hidden test runs and the smoke test keep nothing, unless `-Dnfm.replays=<folder>` names a folder to keep them in (which also moves a normal game's replays).
@@ -156,6 +164,9 @@ Every race you play is kept in the `replays` folder next to the game, as the sam
 | `-Dnfm.backend=d3d12` | With the GPU renderer, draw with Direct3D 12 instead of 11, see above. |
 | `-Dnfm.adapter=fast` | With the GPU renderer, draw with the graphics card Windows calls high-performance (the discrete one on a laptop with two) instead of the one Windows picks for the game, see below. |
 | `-Dnfm.hdr=<auto, off or force>` | HDR output with the GPU renderer for this run, see above; hidden test runs are SDR unless this asks. `force` sends HDR even to an SDR monitor, where Windows shows it as SDR again, and then also saves `<name>-glow.png` in races: how much each pixel of the scene glows. |
+| `-Dnfm.sound=<3d or classic>` | Race sound for this run, see above. Hidden test runs make no sound; with `-Dnfm.sound.render` they start the 3D sound only to render it. |
+| `-Dnfm.sound.render=<file.wav>` | With the 3D sound: mix into this file (48 kHz stereo, rendered for headphones) instead of a sound device, in step with the game, to listen to a hidden run afterwards. |
+| `-Dnfm.sound.debug=true` | With the 3D sound: print every car's engine state once a second (running, throttle, on the ground, speed, where it is from the listener, and the five recordings' gains). |
 | `-Dnfm.gamepad=<on or off>` | Read game controllers for this run, see above; `on` also in hidden test runs. |
 | `-Dnfm.gamepad.test=true` | With `-Dnfm.gamepad=on`: a made-up pad, which SDL presents as any other, holds the right trigger and the stick to the right in races, so the smoke test shows a car driven by a pad. |
 | `-Dnfm.presenter=false` | With the GPU renderer, draws and shows race frames on the game thread, between ticks, instead of on a drawing thread of their own. |

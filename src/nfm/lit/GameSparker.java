@@ -3280,6 +3280,131 @@ public class GameSparker extends Panel implements Runnable {
         }
     }
 
+    private static final String SOUND_COOKIE = "sound3d";
+    /** The new (3D) sound, or Classic: the game's own sound as it always played. */
+    private static volatile boolean newSound = true;
+    private static volatile boolean newSoundChanged;
+    /** The new sound was started (or found it could not be) for the current setting. */
+    private boolean newSoundTried;
+
+    /** True for "3d", "new" or "on", false for "classic" or "off", null for anything else. */
+    public static Boolean parseSound(String text) {
+        return switch (text.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "3d", "new", "on" -> Boolean.TRUE;
+            case "classic", "off" -> Boolean.FALSE;
+            default -> null;
+        };
+    }
+
+    /** Switches between the new sound and Classic, saved; takes effect on the next tick. */
+    public static void setNewSound(boolean on) {
+        newSound = on;
+        newSoundChanged = true;
+    }
+
+    /** The sound setting in words, with the device and HRTF when the new sound plays. */
+    public static String describeSound() {
+        if (!newSound) {
+            return "classic";
+        }
+        return nfm.lit.audio.Sound3D.isActive() ? "3d (" + nfm.lit.audio.Sound3D.status() + ")"
+                : "3d (" + nfm.lit.audio.Sound3D.status() + "; Classic plays meanwhile)";
+    }
+
+    /** -Dnfm.sound, else the saved choice, else the new sound. */
+    private void loadSound() {
+        String property = System.getProperty("nfm.sound");
+        boolean on = true;
+        if (property != null) {
+            Boolean parsed = parseSound(property);
+            if (parsed == null) {
+                HLogger.warn("Ignoring invalid nfm.sound value: " + property);
+            } else {
+                on = parsed;
+            }
+        } else if (readcookie(SOUND_COOKIE) == 0) {
+            on = false;
+        }
+        newSound = on;
+        newSoundChanged = false;
+    }
+
+    /**
+     * Saves a changed sound setting and starts or stops the new sound to
+     * match, once the game's clips are loaded; on the game thread, once a
+     * tick. Classic's clips are stopped when the new sound takes over, so a
+     * looping engine does not carry on underneath it.
+     */
+    private void applySound() {
+        if (newSoundChanged) {
+            newSoundChanged = false;
+            savecookie(SOUND_COOKIE, newSound ? "1" : "0");
+            newSoundTried = false;
+            if (!newSound) {
+                nfm.lit.audio.Sound3D.setWanted(false);
+            }
+        }
+        if (newSound && !newSoundTried && ui != null && !ui.sm.clips().isEmpty()) {
+            newSoundTried = true;
+            nfm.lit.audio.Sound3D.setWanted(true);
+            nfm.lit.audio.Sound3D.start(ui.sm);
+            if (nfm.lit.audio.Sound3D.isActive()) {
+                ui.sm.stopClassic();
+            }
+        }
+    }
+
+    /**
+     * Tells the new sound where every car and the camera are at the end of
+     * this tick, and what each engine is doing, judged the way the game
+     * judges the player's engine (see xtGraphics.playsounds).
+     */
+    private void publishSound() {
+        if (!nfm.lit.audio.Sound3D.isActive() || racers == null || sceneObjects == null) {
+            return;
+        }
+        nfm.lit.audio.Sound3D.Moment m = new nfm.lit.audio.Sound3D.Moment();
+        m.nanos = System.nanoTime();
+        m.tickNanos = currentTickNanos;
+        m.cameraX = Medium.x + Medium.cx;
+        m.cameraY = Medium.y + Medium.cy;
+        m.cameraZ = Medium.z + Medium.cz;
+        m.yaw = Medium.xz;
+        m.pitch = Medium.zy;
+        m.muted = Control.mutes;
+        m.player = 0;
+        boolean live = ui.fase == Phase.INGAME && ui.starcnt < 35;
+        int n = Math.min(GameFacts.numberOfPlayers, Math.min(racers.length, sceneObjects.length));
+        m.cars = new nfm.lit.audio.Sound3D.Car[n];
+        for (int i = 0; i < n; i++) {
+            Madness r = racers[i];
+            ContO c = sceneObjects[i];
+            Control k = u[i];
+            nfm.lit.audio.Sound3D.Car car = new nfm.lit.audio.Sound3D.Car();
+            if (r != null && c != null && k != null) {
+                car.x = c.x;
+                car.y = c.y;
+                car.z = c.z;
+                car.speed = r.speed;
+                car.engine = r.stat.engine;
+                car.bands = r.stat.swits;
+                car.running = live && !r.dest;
+                car.throttle = k.up && r.speed > 0F || k.down && r.speed < 10F;
+                car.spinning = r.capsized || r.skid == 1 && k.handb || slipping(r.scz) || slipping(r.scx)
+                        || k.up && r.speed < 10F;
+                car.grounded = r.mtouch;
+                car.fullPower = r.power == 98F;
+            }
+            m.cars[i] = car;
+        }
+        nfm.lit.audio.Sound3D.publish(m);
+    }
+
+    /** One wheel slides against the others, as xtGraphics.playsounds tells wheelspin. */
+    private static boolean slipping(float[] wheels) {
+        return Math.abs(wheels[0] - (wheels[1] + wheels[0] + wheels[2] + wheels[3]) / 4F) > 1.0F;
+    }
+
     /** A smoke test, a race check or another run with no window to show. */
     private static boolean runsHidden() {
         return HIDDEN_RUN;
@@ -3920,6 +4045,7 @@ public class GameSparker extends Panel implements Runnable {
         loadMultisample();
         loadDynamicResolution();
         loadHdr();
+        loadSound();
         startAutoTest();
         session = RaceSession.fromCommandLine(new SessionHost());
         startGamepads();
@@ -4001,6 +4127,7 @@ public class GameSparker extends Panel implements Runnable {
                 saveMultisampleIfChanged();
                 saveDynamicResolutionIfChanged();
                 saveHdrIfChanged();
+                applySound();
                 saveGamepadIfChanged();
                 if (session != null) {
                     session.beforeTick();
@@ -4626,6 +4753,7 @@ public class GameSparker extends Panel implements Runnable {
                     lostfcs = false;
             }
             xtgraphics.playsounds(amadness[0], u[0], checkpoints.stage);
+            publishSound();
             /*
              * The original loop passed the adaptive sleep target here. Feeding a
              * constant keeps the fog distance at the stage's intended value.

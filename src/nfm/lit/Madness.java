@@ -116,6 +116,7 @@ class Madness {
                 byte1 = 1;
             if (byte0 * byte1 == 0)
                 shakedam = (int) ((Math.abs(f) + shakedam) / 2.0F);
+            nfm.lit.audio.Sound3D.carCrash(im, f, byte1 * byte0);
             if (im == 0 || colidim)
                 events.crash(f, byte1 * byte0);
             if (byte1 * byte0 == 0 || mtouch) {
@@ -291,6 +292,7 @@ class Madness {
             if (f < -100F)
                 f += 100F;
             shakedam = (int) ((Math.abs(f) + shakedam) / 2.0F);
+            nfm.lit.audio.Sound3D.carCrash(im, f, 0); // heard from every car with the 3D sound
             if (im == 0 || colidim)
                 events.crash(f, 0);
             for (int j = 0; j < conto.npl; j++) {
@@ -567,6 +569,7 @@ class Madness {
             if (f < -100F)
                 f += 100F;
             shakedam = (int) ((Math.abs(f) + shakedam) / 2.0F);
+            nfm.lit.audio.Sound3D.carCrash(im, f, 0); // heard from every car with the 3D sound
             if (im == 0 || colidim)
                 events.crash(f, 0);
             for (int j = 0; j < conto.npl; j++) {
@@ -1039,6 +1042,8 @@ class Madness {
                         if (world.random() > 0.75D) {
                             conto.dust(l6, af[l6], af2[l6], af1[l6], scx[l6], scz[l6], f11 * stat.simag, true,
                                     (int) tilt);
+                            if (!capsized)
+                                nfm.lit.audio.Sound3D.carSkid(im, k3, (float) Math.sqrt(scx[l6] * scx[l6] + scz[l6] * scz[l6]));
                             if (im == 0 && !capsized)
                                 events.skid(k3, (float) Math.sqrt(scx[l6] * scx[l6] + scz[l6] * scz[l6]));
                         }

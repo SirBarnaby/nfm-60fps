@@ -1,7 +1,9 @@
 package nfm.lit.audio;
 import fallk.logmaster.HLogger;
 
-import java.util.HashMap;
+import java.util.Collections;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -9,7 +11,8 @@ public class SoundManager {
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
-    private final HashMap<String, SoundClip> clips = new HashMap<>();
+    /* the game loads clips on its loading thread while the 3D sound may already read them */
+    private final Map<String, SoundClip> clips = new ConcurrentHashMap<>();
 
     /**
      * Set for the hidden developer runs (race recording and verification), which
@@ -69,8 +72,22 @@ public class SoundManager {
         clips.put(name, clip);
     }
 
+    /** Every clip the game loaded, by name, for the 3D sound to load too. */
+    public Map<String, SoundClip> clips() {
+        return Collections.unmodifiableMap(clips);
+    }
+
+    /** Stops every Classic clip now, when the 3D sound takes over in the middle of a race. */
+    public void stopClassic() {
+        for (SoundClip clip : clips.values()) {
+            if (clip instanceof SoundClipUnthreaded) {
+                clip.stop();
+            }
+        }
+    }
+
     public void play(String name) {
-        if (!pass("play", name) || silenced) {
+        if (!pass("play", name) || Sound3D.command("play", name) || silenced) {
             return;
         }
         SoundClip soundClip = clips.get(name);
@@ -87,7 +104,7 @@ public class SoundManager {
     }
 
     public void stop(String name) {
-        if (!pass("stop", name)) {
+        if (!pass("stop", name) || Sound3D.command("stop", name)) {
             return;
         }
         SoundClip soundClip = clips.get(name);
@@ -103,7 +120,7 @@ public class SoundManager {
     }
 
     public void loop(String name) {
-        if (!pass("loop", name) || silenced) {
+        if (!pass("loop", name) || Sound3D.command("loop", name) || silenced) {
             return;
         }
         SoundClip soundClip = clips.get(name);

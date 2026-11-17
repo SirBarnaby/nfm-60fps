@@ -1,0 +1,10 @@
+The new (3D) sound plays through OpenAL Soft, shipped in this folder as
+lwjgl-openal-3.4.3.jar and lwjgl-openal-3.4.3-natives-windows.jar (LWJGL's
+binding and OpenAL.dll; LWJGL's own license is in LICENSES-lwjgl-bgfx.txt):
+
+  OpenAL Soft   https://openal-soft.org/   GNU LGPL, version 2.1 or later
+
+OpenAL.dll is LWJGL's unmodified build of OpenAL Soft, loaded at run time.
+Its source is at https://github.com/kcat/openal-soft, and you may replace the
+DLL inside lwjgl-openal-3.4.3-natives-windows.jar with your own build. The
+full license text: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html

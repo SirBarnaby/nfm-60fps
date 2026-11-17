@@ -15,7 +15,10 @@ public class SoundClipUnthreaded implements SoundClip {
     int lfrpo = -1;
     int cntcheck = 0;
 
+    private final byte[] data;
+
     public SoundClipUnthreaded(byte[] byteInput) {
+        data = byteInput;
         try {
             ByteArrayInputStream var2 = new ByteArrayInputStream(byteInput);
             sound = AudioSystem.getAudioInputStream(var2);
@@ -84,4 +87,8 @@ public class SoundClipUnthreaded implements SoundClip {
         }
     }
 
+    @Override
+    public byte[] data() {
+        return data;
+    }
 }

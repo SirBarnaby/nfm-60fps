@@ -11,7 +11,10 @@ public class SoundClipThreaded implements Runnable, SoundClip {
     boolean isPlaying = false;
     boolean loaded;
 
+    private final byte[] data;
+
     public SoundClipThreaded(byte[] byteInput) {
+        data = byteInput;
         try {
             this.clipBytes = byteInput;
             loaded = true;
@@ -78,4 +81,8 @@ public class SoundClipThreaded implements Runnable, SoundClip {
         play();
     }
 
+    @Override
+    public byte[] data() {
+        return data;
+    }
 }

@@ -3,6 +3,7 @@ package nfm.lit;
 import fallk.logmaster.HLogger;
 import nfm.lit.audio.RadicalMod;
 import nfm.lit.audio.RadicalMusic;
+import nfm.lit.audio.Sound3D;
 import nfm.lit.audio.SoundClipThreaded;
 import nfm.lit.audio.SoundClipUnthreaded;
 import nfm.lit.audio.SoundManager;
@@ -4847,6 +4848,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
     }
 
     public void stopallnow() {
+        Sound3D.stopAll();
         int i = 0;
         if (loadedt) {
             strack.unload();
