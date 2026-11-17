@@ -121,6 +121,10 @@ Frames wait in at most one place on their way to the display (the swap chain's f
 
 The graphics card is the one Windows picks for the game, which Windows' graphics settings can change per program. On a laptop with Intel UHD 620 and an NVIDIA Quadro P500, drawing on the discrete card was no faster (the game is limited by the processor) and costs battery, so the game does not override Windows; `-Dnfm.adapter=fast` does.
 
+## Keyboard and mouse
+
+The game was written for AWT 1.0's input methods (`keyDown(Event, int)` and the like), deprecated since 1997, which Java still fed by converting every event back into its 1.0 form. It now listens to the keyboard, mouse and focus events themselves (`GameInput`) and hands the game the same key numbers AWT 1.0 did, so every key does exactly what it did: checked against Java's own conversion for every key code, with and without Shift and Alt, pressed and released (28,458 events, none different). Each key carries the time Windows saw it, so the profile's key-to-screen time starts there, not when the game got round to it.
+
 ## Game controllers
 
 Any game controller Windows knows (Xbox, PlayStation, Switch Pro and most others) can drive the game, read through SDL 3 (`lib\lwjgl-sdl-*.jar`). A pad presses the game's own keys, so it works everywhere the keyboard does and a race driven with one is recorded and replays as if typed:

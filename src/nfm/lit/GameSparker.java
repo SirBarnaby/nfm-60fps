@@ -467,11 +467,13 @@ public class GameSparker extends Panel implements Runnable {
     public boolean reverseYRot = false;
 
     /**
-     * <a href=
-     * "http://www.expandinghead.net/keycode.html">http://www.expandinghead.net/keycode.html</a>
+     * A key went down. {@code i} is the key as the game has always numbered
+     * it, AWT 1.0's ({@link GameInput#legacyCode}): the character it types,
+     * or 1000 and up for the arrows, F keys and the like; {@code age} is how
+     * long ago Windows saw it, in nanoseconds. The autopilot, recorded races
+     * and gamepads press keys here too, with no age.
      */
-    @Override
-    public boolean keyDown(Event event, int i) {
+    void pressKey(int i, boolean alt, long age) {
         if (!exwist) {
             synchronized (inputLock) {
                 if (i == 1004)
@@ -488,9 +490,7 @@ public class GameSparker extends Panel implements Runnable {
                     liveLookback = -1;
                 if (i == 122 || i == 90)
                     liveLookback = 1;
-                // the autopilot and recorded races press keys with no event
-                boolean alt = event != null && (event.modifiers & Event.ALT_MASK) != 0;
-                boolean fullscreenKey = i == Event.F11 || i == 10 && alt;
+                boolean fullscreenKey = i == GameInput.F11 || i == 10 && alt;
                 if (fullscreenKey) {
                     RunApp.toggleFullscreen();
                 } else if (i == 10 || i == 80 || i == 112 || i == 27)
@@ -510,10 +510,9 @@ public class GameSparker extends Panel implements Runnable {
                     u[0].mutes = !u[0].mutes;
                 if (i == 97 || i == 65)
                     u[0].arrace = !u[0].arrace;
-                noteKeys();
+                noteKeys(age);
             }
         }
-        return false;
     }
 
     /* for the profile's key-to-screen readout: when the driving keys or the camera last changed (inputLock) */
@@ -523,12 +522,12 @@ public class GameSparker extends Panel implements Runnable {
     private long tickKeysNanos;
     private long aheadKeysNanos;
 
-    /** Under {@link #inputLock}: notes when the keys held changed. */
-    private void noteKeys() {
+    /** Under {@link #inputLock}: notes when the keys held changed, {@code age} nanoseconds ago. */
+    private void noteKeys(long age) {
         int keys = heldKeys();
         if (keys != keysNoted) {
             keysNoted = keys;
-            keysChangedNanos = System.nanoTime();
+            keysChangedNanos = System.nanoTime() - age;
         }
     }
 
@@ -606,8 +605,8 @@ public class GameSparker extends Panel implements Runnable {
         exwist = true;
     }
 
-    @Override
-    public boolean lostFocus(Event event, Object obj) {
+    /** The window lost the keyboard: every key is let go. */
+    void focusLost() {
         if (!exwist && !lostfcs) {
             lostfcs = true;
             mouses = 0;
@@ -623,14 +622,11 @@ public class GameSparker extends Panel implements Runnable {
             }
             setCursor(new Cursor(0));
         }
-        return false;
     }
 
-    @Override
-    public boolean gotFocus(Event event, Object obj) {
+    void focusGained() {
         if (!exwist && lostfcs)
             lostfcs = false;
-        return false;
     }
 
     private void savecookie(String filename, String num) {
@@ -979,12 +975,8 @@ public class GameSparker extends Panel implements Runnable {
         paint(g);
     }
 
-    /**
-     * <a href=
-     * "http://www.expandinghead.net/keycode.html">http://www.expandinghead.net/keycode.html</a>
-     */
-    @Override
-    public boolean keyUp(Event event, int i) {
+    /** A key came up; see {@link #pressKey}. */
+    void releaseKey(int i, long age) {
         if (!exwist) {
             synchronized (inputLock) {
                 if (i == 1004)
@@ -1002,10 +994,9 @@ public class GameSparker extends Panel implements Runnable {
                 if (!latching) {
                     applyHeldKeys();
                 }
-                noteKeys();
+                noteKeys(age);
             }
         }
-        return false;
     }
 
     public void start() {
@@ -1015,14 +1006,13 @@ public class GameSparker extends Panel implements Runnable {
             gamer.start();
     }
 
-    @Override
-    public boolean mouseDown(Event event, int i, int j) {
+    /** A mouse button went down at (i, j) in the panel. */
+    void mousePressedAt(int i, int j) {
         if (!exwist && mouses == 0) {
             xm = toPictureX(i);
             ym = toPictureY(j);
             mouses = 1;
         }
-        return false;
     }
 
     /**
@@ -3307,9 +3297,9 @@ public class GameSparker extends Panel implements Runnable {
             @Override
             public void key(int code, boolean down) {
                 if (down) {
-                    keyDown(null, code);
+                    pressKey(code, false, 0L);
                 } else {
-                    keyUp(null, code);
+                    releaseKey(code, 0L);
                 }
             }
 
@@ -5497,6 +5487,7 @@ public class GameSparker extends Panel implements Runnable {
     }
 
     public void init() {
+        GameInput.attach(this);
         /*
          * load some fonts
          */
@@ -5622,13 +5613,12 @@ public class GameSparker extends Panel implements Runnable {
         }
     }
 
-    @Override
-    public boolean mouseMove(Event event, int i, int j) {
+    /** The pointer moved to (i, j) in the panel with no button held. */
+    void mouseMovedTo(int i, int j) {
         if (!exwist && !lostfcs) {
             xm = toPictureX(i);
             ym = toPictureY(j);
         }
-        return false;
     }
 
     /** What {@link RaceSession} may see and do. Called on the game thread only. */
@@ -5667,9 +5657,9 @@ public class GameSparker extends Panel implements Runnable {
         @Override
         public void key(int code, boolean down) {
             if (down) {
-                keyDown(null, code);
+                pressKey(code, false, 0L);
             } else {
-                keyUp(null, code);
+                releaseKey(code, 0L);
             }
         }
 

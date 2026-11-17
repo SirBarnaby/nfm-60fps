@@ -77,7 +77,7 @@ final class RaceSession {
 
     private static final String TAG_RECORD = "[record] ";
     private static final String TAG_VERIFY = "[verify] ";
-    /* AWT key codes the autopilot presses, as GameSparker.keyDown reads them. */
+    /* AWT 1.0 key codes the autopilot presses, as GameSparker.pressKey reads them. */
     private static final int CODE_ENTER = 10;
     private static final int CODE_SPACE = 32;
     private static final int CODE_UP = 1004;
