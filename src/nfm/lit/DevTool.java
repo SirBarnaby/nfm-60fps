@@ -354,7 +354,14 @@ public class DevTool {
                 }
                 break;
             case "fps":
-                if (args.length == 1) {
+                if (args.length == 2 && args[0].equalsIgnoreCase("battery")) {
+                    Integer cap = GameSparker.parseFpsLimit(args[1]);
+                    if (cap != null && cap != GameSparker.FPS_MATCH_DISPLAY && GameSparker.setBatteryFps(cap)) {
+                        print("On battery frames are held to " + GameSparker.describeBatteryFps() + " (saved).");
+                    } else {
+                        print("Usage: fps battery <off|" + GameSparker.FPS_MIN + "-" + GameSparker.FPS_MAX + ">");
+                    }
+                } else if (args.length == 1) {
                     Integer limit = GameSparker.parseFpsLimit(args[0]);
                     if (limit != null && GameSparker.setFpsLimit(limit)) {
                         print("Frame rate limit set to " + GameSparker.describeFpsLimit() + " (saved).");
@@ -362,8 +369,10 @@ public class DevTool {
                         print("Usage: fps <auto|unlimited|" + GameSparker.FPS_MIN + "-" + GameSparker.FPS_MAX + ">");
                     }
                 } else {
-                    print("Frame rate limit is " + GameSparker.describeFpsLimit()
-                            + ".\nUsage: fps <auto|unlimited|" + GameSparker.FPS_MIN + "-" + GameSparker.FPS_MAX + ">");
+                    print("Frame rate limit is " + GameSparker.describeFpsLimit() + "; on battery "
+                            + GameSparker.describeBatteryFps() + ".\nUsage: fps <auto|unlimited|" + GameSparker.FPS_MIN
+                            + "-" + GameSparker.FPS_MAX + ">, fps battery <off|" + GameSparker.FPS_MIN + "-"
+                            + GameSparker.FPS_MAX + ">");
                 }
                 break;
             case "scale":
@@ -466,7 +475,7 @@ public class DevTool {
         commandDescriptions.put("msaa", "Smooths the edges of the polygons in races drawn on the graphics card by taking 2, 4 or 8 samples per pixel (multisampling); off keeps the game's own hard edges. Usage: msaa <off|2|4|8>");
         commandDescriptions.put("renderer", "gpu puts frames on screen through the graphics card (Direct3D 11), which scales them for free; software draws them with Java2D. Usage: renderer <gpu|software>");
         commandDescriptions.put("runahead", "Shows race frames one tick ahead with the keys held now, for 53 ms less input lag. Usage: runahead <on|off>");
-        commandDescriptions.put("fps", "Sets the frame rate limit. auto matches the monitor, unlimited removes the cap. Usage: fps <auto|unlimited|30-1000>");
+        commandDescriptions.put("fps", "Sets the frame rate limit. auto matches the monitor, unlimited removes the cap. On battery frames are held to 60 a second unless fps battery says otherwise. Usage: fps <auto|unlimited|30-1000>, fps battery <off|30-1000>");
         commandDescriptions.put("clear", "Clears the console.");
         commandDescriptions.put("connect", "Connects to a test server. Usage: connect <ip:port>");
         commandDescriptions.put("help", "Displays help information. Usage: help <command>");

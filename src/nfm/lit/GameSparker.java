@@ -160,6 +160,15 @@ public class GameSparker extends Panel implements Runnable {
     private static final int FPS_COOKIE_MATCH_DISPLAY = 1;
     private static volatile int fpsLimit = FPS_MATCH_DISPLAY;
     private static volatile boolean fpsLimitChanged;
+    /** On battery, frames a second are held to this, 0 for no cap. */
+    private static volatile int batteryFps = 60;
+    private static volatile boolean batteryFpsChanged;
+    private static final String BATTERY_FPS_COOKIE = "batteryfps";
+    /* whether the machine was on battery when last asked, and when that was */
+    private static volatile boolean onBattery;
+    private static volatile long powerCheckedAt;
+    /** The battery cap is what holds frames back now, below the display's own rate. */
+    private static volatile boolean batteryHolds;
     private static final String RUN_AHEAD_COOKIE = "runahead";
     /**
      * Run-ahead (on unless turned off): race frames show where the race will
@@ -2234,6 +2243,9 @@ public class GameSparker extends Panel implements Runnable {
 
         @Override
         public void run() {
+            if (!runsHidden()) {
+                WindowsScheduling.joinGamesTask(false);
+            }
             while (!exwist) {
                 boolean doJob;
                 Kept frame = null;
@@ -2347,7 +2359,7 @@ public class GameSparker extends Panel implements Runnable {
                 Thread.yield();
                 return;
             }
-            if (fpsLimit == FPS_MATCH_DISPLAY) {
+            if (fpsLimit == FPS_MATCH_DISPLAY && !batteryHolds) {
                 // showing waits for the display; this only keeps a window that never waits from spinning
                 nextFrameNanos = now + interval / 4L;
             } else {
@@ -3041,7 +3053,7 @@ public class GameSparker extends Panel implements Runnable {
      */
     private void startGamepads() {
         String property = System.getProperty("nfm.gamepad");
-        boolean hidden = System.getProperty("nfm.autotest") != null || RaceSession.runsHidden();
+        boolean hidden = runsHidden();
         if (property != null ? property.trim().equalsIgnoreCase("off") || property.trim().equalsIgnoreCase("false")
                 : hidden) {
             Gamepads.setOn(false);
@@ -3122,7 +3134,7 @@ public class GameSparker extends Panel implements Runnable {
                 HLogger.warn("Ignoring invalid nfm.hdr value: " + property);
                 mode = nfm.lit.gpu.GpuDisplay.HDR_AUTO;
             }
-        } else if (System.getProperty("nfm.autotest") != null || RaceSession.runsHidden()) {
+        } else if (runsHidden()) {
             mode = nfm.lit.gpu.GpuDisplay.HDR_OFF;
         } else if (readcookie(HDR_COOKIE) == 0) {
             mode = nfm.lit.gpu.GpuDisplay.HDR_OFF;
@@ -3137,6 +3149,13 @@ public class GameSparker extends Panel implements Runnable {
             savecookie(HDR_COOKIE, hdrMode == nfm.lit.gpu.GpuDisplay.HDR_OFF ? "0" : "1");
         }
     }
+
+    /** A smoke test, a race check or another run with no window to show. */
+    private static boolean runsHidden() {
+        return HIDDEN_RUN;
+    }
+
+    private static final boolean HIDDEN_RUN = System.getProperty("nfm.autotest") != null || RaceSession.runsHidden();
 
     private void saveGamepadIfChanged() {
         if (gamepadChanged) {
@@ -3156,7 +3175,7 @@ public class GameSparker extends Panel implements Runnable {
                 HLogger.warn("Ignoring invalid nfm.msaa value: " + property);
                 samples = 1;
             }
-        } else if (System.getProperty("nfm.autotest") == null && !RaceSession.runsHidden()) {
+        } else if (!runsHidden()) {
             int saved = readcookie(MSAA_COOKIE);
             samples = saved == 2 || saved == 4 || saved == 8 ? saved : 1;
         }
@@ -3186,7 +3205,7 @@ public class GameSparker extends Panel implements Runnable {
         String property = System.getProperty("nfm.renderer");
         if (property != null) {
             gpuRenderer = !property.trim().equalsIgnoreCase("software");
-        } else if (System.getProperty("nfm.autotest") != null || RaceSession.runsHidden()) {
+        } else if (runsHidden()) {
             gpuRenderer = false;
         } else {
             gpuRenderer = readcookie(RENDERER_COOKIE) != 0;
@@ -3208,20 +3227,95 @@ public class GameSparker extends Panel implements Runnable {
      */
     private long frameIntervalNanos(long now) {
         int limit = fpsLimit;
-        if (limit == FPS_UNLIMITED) {
-            return 0L;
-        }
         if (limit == FPS_MATCH_DISPLAY) {
             if (displayRefreshHz == 0 || now - displayRefreshCheckedAt > 1_000_000_000L) {
                 displayRefreshHz = queryRefreshRate();
                 displayRefreshCheckedAt = now;
             }
             limit = displayRefreshHz;
-            if (limit <= 0) {
-                return 0L;
+        }
+        int cap = batteryCap(now);
+        boolean capped = cap > 0 && (limit <= 0 || limit > cap);
+        batteryHolds = capped;
+        if (capped) {
+            limit = cap;
+        }
+        return limit <= 0 ? 0L : 1_000_000_000L / limit;
+    }
+
+    /**
+     * The battery frame cap while the machine runs on battery, 0 otherwise or
+     * when it is off. Windows is asked every few seconds, so pulling the plug
+     * takes effect within them. Hidden test runs measure the game as it is, so
+     * they are never capped.
+     */
+    private static int batteryCap(long now) {
+        int cap = batteryFps;
+        if (cap <= 0 || runsHidden()) {
+            return 0;
+        }
+        if (powerCheckedAt == 0L || now - powerCheckedAt > 3_000_000_000L) {
+            powerCheckedAt = now;
+            boolean battery = WindowsScheduling.onBattery();
+            if (battery != onBattery) {
+                HLogger.info(battery ? "On battery: frames held to " + cap + " a second" : "Plugged in: frame limit as set");
+            }
+            onBattery = battery;
+        }
+        return onBattery ? cap : 0;
+    }
+
+    /**
+     * Sets the frame cap on battery (FPS_MIN to FPS_MAX, or 0 for none), saved
+     * with the rest of the settings on the next tick.
+     *
+     * @return false if the value is out of range
+     */
+    public static boolean setBatteryFps(int cap) {
+        if (cap != 0 && (cap < FPS_MIN || cap > FPS_MAX)) {
+            return false;
+        }
+        batteryFps = cap;
+        batteryFpsChanged = true;
+        powerCheckedAt = 0L; // look again now
+        return true;
+    }
+
+    /** The battery cap in words, and whether it holds now. */
+    public static String describeBatteryFps() {
+        int cap = batteryFps;
+        if (cap <= 0) {
+            return "off";
+        }
+        return cap + " fps" + (onBattery && !runsHidden() ? " (on battery now)" : " (plugged in now)");
+    }
+
+    /** -Dnfm.batteryfps, else the saved choice, else 60. */
+    private void loadBatteryFps() {
+        String property = System.getProperty("nfm.batteryfps");
+        int cap = 60;
+        if (property != null) {
+            Integer parsed = parseFpsLimit(property);
+            cap = parsed == null ? -1 : parsed == FPS_UNLIMITED ? 0 : parsed;
+            if (cap != 0 && (cap < FPS_MIN || cap > FPS_MAX)) {
+                HLogger.warn("Ignoring invalid nfm.batteryfps value: " + property);
+                cap = 60;
+            }
+        } else {
+            int saved = readcookie(BATTERY_FPS_COOKIE);
+            if (saved == 0 || saved >= FPS_MIN && saved <= FPS_MAX) {
+                cap = saved;
             }
         }
-        return 1_000_000_000L / limit;
+        batteryFps = cap;
+        batteryFpsChanged = false;
+    }
+
+    private void saveBatteryFpsIfChanged() {
+        if (batteryFpsChanged) {
+            batteryFpsChanged = false;
+            savecookie(BATTERY_FPS_COOKIE, String.valueOf(batteryFps));
+        }
     }
 
     private int queryRefreshRate() {
@@ -3618,6 +3712,11 @@ public class GameSparker extends Panel implements Runnable {
 
     @Override
     public void run() {
+        if (!runsHidden()) {
+            // a test run hidden in the background should stay out of the way of what the machine is doing
+            WindowsScheduling.noPowerThrottling();
+            WindowsScheduling.joinGamesTask(true);
+        }
         rd.setColor(new Color(0, 0, 0));
         rd.fillRect(0, 0, GameFacts.screenWidth, GameFacts.screenHeight);
         repaint();
@@ -3682,6 +3781,7 @@ public class GameSparker extends Panel implements Runnable {
         raceTrackers = trackers;
 
         loadFpsLimit();
+        loadBatteryFps();
         loadRunAhead();
         loadScaleToWindow();
         loadRenderer();
@@ -3761,6 +3861,7 @@ public class GameSparker extends Panel implements Runnable {
                     syncBackBuffer(); // menus and overlays draw on top of the last frame
                 }
                 saveFpsLimitIfChanged();
+                saveBatteryFpsIfChanged();
                 saveRunAheadIfChanged();
                 saveScaleToWindowIfChanged();
                 saveRendererIfChanged();

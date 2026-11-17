@@ -44,7 +44,7 @@ Between frames the game thread sleeps on Windows' high-resolution waitable timer
 
 The car physics (`Madness.drive`) and the AI (`Control.preform`) are each over HotSpot's 8,000-byte limit for compiling a method, so by default they would only ever be interpreted. The runtime that `build.ps1` makes carries `-XX:-DontCompileHugeMethods`, which lets them be compiled: in a profile of two races their share of CPU time fell from about 9% to 2%. It also carries `-XX:PerMethodTrapLimit=0 -XX:PerBytecodeTrapLimit=0`, so the compiler keeps the branches it has not seen taken yet. Without them the first time something new happens in a race (a wreck, say) the compiled drawing code is thrown back to the interpreter, and for seconds ticks took 15-40 ms instead of 3-5 while it was compiled again. The race results are the same either way, since compiled and interpreted Java compute identical results.
 
-The runtime collects garbage with generational ZGC, which does its work beside the game: the default collector (G1) stopped every thread for about 4 ms every half minute of racing, a missed frame at 300 frames a second, where ZGC's pauses stay under a tenth of a millisecond. The game also starts from an ahead-of-time cache (`madness.aot`, Java 25 and later), which `build.ps1` trains by playing the smoke test: the classes the game uses come already loaded and linked, and the JIT knows from the training which methods are hot, so they are compiled sooner on the first race. Loading to the menu takes about 15% less time. The cache belongs to that exact `madness.jar` and runtime; after any change Java ignores it (printing why), and the game runs as before.
+The runtime collects garbage with generational ZGC, which does its work beside the game: the default collector (G1) stopped every thread for about 4 ms every half minute of racing, a missed frame at 300 frames a second, where ZGC's pauses stay under a tenth of a millisecond. Compact object headers (8 bytes per object instead of 12) leave a few percent less live heap after each collection. The game also starts from an ahead-of-time cache (`madness.aot`, Java 25 and later), which `build.ps1` trains by playing the smoke test: the classes the game uses come already loaded and linked, and the JIT knows from the training which methods are hot, so they are compiled sooner on the first race. Loading to the menu takes about 15% less time. The cache belongs to that exact `madness.jar` and runtime; after any change Java ignores it (printing why), and the game runs as before.
 
 Drawing is not free of side effects in this engine: it advances the repair hoop sequence, dust, wreck flames, flying debris and the checkpoint flicker, and the race reads the distances it works out (a car out of view is repaired at once, a car in view waits for the hoop). So every tick draws the scene once into an invisible surface, at the point where the original drew it, and every frame that reaches the screen is drawn and then rolled back. The frame rate, a minimised window or a run with no window at all therefore never speeds up an animation or changes how a race plays out. Cosmetic effects take their random numbers from a stream of their own, so they cannot shift the AI's choices either.
 
@@ -98,10 +98,19 @@ By default the frame rate matches the refresh rate of the monitor the window is 
 | `fps auto` | Match the monitor's refresh rate (default). |
 | `fps unlimited` | No limit: draw as fast as the CPU allows. |
 | `fps 144` | Any fixed cap from 30 to 1000. |
+| `fps battery 60` | On battery, hold frames to this many a second (default 60), or `off`. |
 
-The setting is saved with the rest of the game's settings. Adding `vm.arg.2=-Dnfm.fps=unlimited` (or `auto`, or a number) to `madness64.ini` overrides the saved value at every start.
+On a laptop running on its battery, frames are held to 60 a second (or the limit above, if lower) so the battery lasts and the laptop stays cool; plugged in again, the limit returns within a few seconds. The settings are saved with the rest of the game's settings. Adding `vm.arg.2=-Dnfm.fps=unlimited` (or `auto`, or a number) to `madness64.ini` overrides the saved value at every start.
 
 All drawing is done on the CPU by Java2D, so the ceiling depends on the processor: on a laptop i7-8550U it is roughly 100-170 FPS mid-race and 25-40 FPS during the opening fly-over of the whole track.
+
+## Windows scheduling and power
+
+The thread that runs the race and the one that draws it join the Games task of Windows' Multimedia Class Scheduler (MMCSS), so a Windows update, a virus scan or a browser in the background waits for them rather than the other way round; MMCSS still keeps a fifth of the processor for everything else. The game also asks Windows not to throttle it to save power (EcoQoS), which otherwise moves programs it thinks unimportant to slower clocks or efficiency cores. Neither needs administrator rights. Hidden test runs do neither, so they stay out of the way of whatever the machine is doing.
+
+Frames wait in at most one place on their way to the display (the swap chain's frame latency is 1), so with the limit on "match display" what is drawn is shown at the next refresh rather than queued behind two or three older frames. Without vsync, frames go out at once, torn if they must.
+
+The graphics card is the one Windows picks for the game, which Windows' graphics settings can change per program. On a laptop with Intel UHD 620 and an NVIDIA Quadro P500, drawing on the discrete card was no faster (the game is limited by the processor) and costs battery, so the game does not override Windows; `-Dnfm.adapter=fast` does.
 
 ## Game controllers
 
@@ -137,6 +146,9 @@ Every race you play is kept in the `replays` folder next to the game, as the sam
 | `-Dnfm.renderer=<gpu or software>` | How frames reach the screen for this run, see above. Hidden test runs use software unless this asks for the GPU; they then also save `<name>-gpu.png`, the window read back from the graphics card, and in races `<name>-gpuscene.png`, the frame the card drew (at the window's size when that is larger than 1280x720), to compare with `<name>.png`, the same frame drawn in software. |
 | `-Dnfm.motiontest=<dir>` | With `-Dnfm.autotest`: at race ticks 200 to 450 records the scene at 49 points between two ticks into `<dir>\motion-<tick>.bin`, to check that every corner moves smoothly (`python test\motion.py <dir>` measures how far each corner strays from smooth motion), and the scene kept for the tick moved to the same points into `kept-<tick>.bin` (`python test\kept.py <dir>` compares the two). |
 | `-Dnfm.msaa=<off, 2, 4 or 8>` | Smooth polygon edges with the GPU renderer for this run, see above. |
+| `-Dnfm.batteryfps=<off or a number>` | Frame cap on battery for this run, see above. |
+| `-Dnfm.mmcss=false` | Leave the game's threads out of Windows' Games scheduling, and let Windows throttle it to save power, see below. |
+| `-Dnfm.adapter=fast` | With the GPU renderer, draw with the graphics card Windows calls high-performance (the discrete one on a laptop with two) instead of the one Windows picks for the game, see below. |
 | `-Dnfm.hdr=<auto, off or force>` | HDR output with the GPU renderer for this run, see above; hidden test runs are SDR unless this asks. `force` sends HDR even to an SDR monitor, where Windows shows it as SDR again, and then also saves `<name>-glow.png` in races: how much each pixel of the scene glows. |
 | `-Dnfm.gamepad=<on or off>` | Read game controllers for this run, see above; `on` also in hidden test runs. |
 | `-Dnfm.gamepad.test=true` | With `-Dnfm.gamepad=on`: a made-up pad, which SDL presents as any other, holds the right trigger and the stick to the right in races, so the smoke test shows a car driven by a pad. |

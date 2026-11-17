@@ -66,10 +66,12 @@ if ($LASTEXITCODE -ne 0) { throw 'Packaging madness.jar failed.' }
 # runtime, so madness64.exe and java.exe both get them. Generational ZGC
 # collects while the game runs: G1 stops every thread for about 4 ms every half
 # minute of racing, which at 300 frames a second is a frame missed; ZGC's pauses
-# are under 0.1 ms.
+# are under 0.1 ms. Compact object headers (8 bytes instead of 12) leave a few
+# percent less live heap after each collection; the game's data is mostly
+# large arrays, so not more.
 $jlinkArgs = @('--add-modules', 'java.base,java.desktop,java.logging', '--strip-debug', '--no-header-files',
     '--no-man-pages',
-    '--add-options=-XX:+UseZGC -XX:-DontCompileHugeMethods -XX:PerMethodTrapLimit=0 -XX:PerBytecodeTrapLimit=0')
+    '--add-options=-XX:+UseZGC -XX:+UseCompactObjectHeaders -XX:-DontCompileHugeMethods -XX:PerMethodTrapLimit=0 -XX:PerBytecodeTrapLimit=0')
 # Rebuilt only when the JDK or these arguments change: a runtime just written
 # is often held by the antivirus for a while, so it cannot be deleted at once.
 $stampFile = 'runtime\nfm-runtime.txt'

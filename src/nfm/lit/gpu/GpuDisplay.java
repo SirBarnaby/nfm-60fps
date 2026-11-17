@@ -133,6 +133,7 @@ public final class GpuDisplay {
     private final long window;
 
     private boolean started;
+    private String adapterName = "";
     private BGFXVertexLayout pictureLayout;
     private BGFXVertexLayout colorLayout;
     private short pictureProgram = BGFX_INVALID_HANDLE;
@@ -193,13 +194,19 @@ public final class GpuDisplay {
         GpuDisplay display = new GpuDisplay(window, pictureWidth, pictureHeight);
         try {
             display.start(Math.max(1, size.width), Math.max(1, size.height));
-            HLogger.info("Drawing through the graphics card (Direct3D 11)");
+            HLogger.info("Drawing through the graphics card (Direct3D 11" + display.adapterName() + ")");
             return display;
         } catch (Throwable ex) {
             HLogger.warn("Cannot draw through the graphics card, drawing in software: " + ex);
             display.close();
             return null;
         }
+    }
+
+    /** ", " and the name of the card bgfx drew with, or "" if it cannot say. */
+    private String adapterName() {
+        String name = adapterName;
+        return name.isEmpty() ? "" : ", " + name;
     }
 
     /** The window this display draws into. */
@@ -254,17 +261,29 @@ public final class GpuDisplay {
         byte[] colorFs = hlsl.compile("color_fs", COLOR_FS, "ps_5_0");
         byte[] hdrFs = hlsl.compile("hdr_fs", HDR_FS, "ps_5_0");
 
+        // Windows' choice of card (its graphics settings can set one per program), unless asked for the fast one
+        GpuAdapter adapter = "fast".equalsIgnoreCase(System.getProperty("nfm.adapter"))
+                ? GpuAdapter.highPerformance() : null;
         BGFXPlatform.bgfx_render_frame(-1); // no render thread: bgfx works on the calling thread
         try (BGFXInit init = BGFXInit.calloc()) {
             bgfx_init_ctor(init);
             init.type(BGFX_RENDERER_TYPE_DIRECT3D11);
-            init.resolution(r -> r.width(width).height(height).reset(resetFlags).formatColor(swapFormat));
+            if (adapter != null) {
+                init.vendorId(adapter.vendor).deviceId(adapter.device);
+            }
+            // at most one frame queued for the display: what is drawn is shown as soon as it can be
+            init.resolution(r -> r.width(width).height(height).reset(resetFlags).formatColor(swapFormat)
+                    .maxFrameLatency((byte) 1));
             init.platformData(p -> p.nwh(window));
             if (!bgfx_init(init)) {
                 throw new IllegalStateException("bgfx_init failed");
             }
         }
         started = true;
+        if (adapter != null && adapter.vendor == bgfx_get_caps().vendorId()
+                && adapter.device == bgfx_get_caps().deviceId()) {
+            adapterName = adapter.name;
+        }
         this.width = width;
         this.height = height;
         if (bgfx_get_renderer_type() != BGFX_RENDERER_TYPE_DIRECT3D11) {
