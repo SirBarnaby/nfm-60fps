@@ -48,8 +48,9 @@ thread pinning, large pages, GraalVM) are left out.
 | 5 | A slow frame never delays a tick | ✅ | 8d82520, drawing on thread `nfm-presenter` |
 | 6 | No per-tick allocations | ✅ | 3e4833e packed-long sorts |
 | 7 | ZGC + AOT cache | ✅ | 06ab760 |
-| 7 | Parallel asset loading | ❌ | |
-| 8 | Rename decompiler names, split run() and xtGraphics | ❌ | only `advanceRace()` extracted |
+| 7 | Parallel asset loading | ✅ | 33232d8 (picture at 2.2–2.5 s, was 3.0–3.4 s) |
+| 8 | Rename decompiler names | ✅ | e3c72f5 … a5cc623 (bytecode unchanged); `xtGraphics` is now `GameUi` |
+| 8 | Split run() and xtGraphics | ❌ | only `advanceRace()` extracted |
 | 9 | Stable O(n log n) painter's sorts | ✅ | 3e4833e |
 | 10 | View test above and below | ❌ | |
 | 11 | Grid culling | ❌ | |
@@ -166,7 +167,7 @@ thread pinning, large pages, GraalVM) are left out.
 | Item | | Proof |
 | --- | --- | --- |
 | World object for the race | ✅ | f278979 |
-| Sealed core with no static state | ❌ | statics remain in Medium and xtGraphics |
+| Sealed core with no static state | ❌ | statics remain in Medium and GameUi |
 | Drawing and sound never write the race | ✅ | AGENTS.md invariant 5, checked by verify-races |
 | Content as data files | ❌ | |
 | Mods folder with load order and reload | ✅ | eaf584d, `mods\README.txt`, console `mods reload` |
