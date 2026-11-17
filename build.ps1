@@ -47,6 +47,11 @@ if ($LASTEXITCODE -ne 0) { throw 'Compilation failed.' }
 # Images loaded with getResource() live next to the classes
 Copy-Item src\nfm\lit\aimg "$classes\nfm\lit\aimg" -Recurse
 
+# The renderer's shaders, compiled now by Windows' shader compiler so the game
+# does not compile them at every start (it still can, if one is missing)
+& "$jdkHome\bin\java.exe" --enable-native-access=ALL-UNNAMED -cp $classes nfm.lit.gpu.ShaderBaker $classes
+if ($LASTEXITCODE -ne 0) { Write-Warning 'Baking the shaders failed: the game will compile them when it starts.' }
+
 @(
     'Main-Class: nfm.lit.RunApp'
     "Class-Path: $($libJars -join ' ')"
