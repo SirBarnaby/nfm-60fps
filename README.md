@@ -86,6 +86,8 @@ On a monitor with HDR turned on in Windows, frames go out in HDR (an scRGB swap 
 
 Its shaders are compiled when the game starts by Windows' own shader compiler (`d3dcompiler_47.dll`) and packed into bgfx's shader format by the game, so the project needs no shader tools. With the frame limit on "match display" frames wait for the display's refresh, so they are never shown torn; with any other limit they are shown at once.
 
+bgfx can also draw with Direct3D 12: start with `-Dnfm.backend=d3d12`. Everything works the same there, HDR included, and what it draws reads back identical to what reaches the screen; but on the laptop above it ran at about 220 frames a second in races against 350 with Direct3D 11, as the game sends many small draws each frame, which Direct3D 11's driver handles with less work. So Direct3D 11 stays the default.
+
 If the graphics card cannot be used (no Direct3D 11, the libraries missing, or an error while drawing) the game says so in its log and draws in software as before, in a fresh window. Type `renderer software` or `renderer gpu` in the developer console to switch (saved), or start with `-Dnfm.renderer=software`. Menus and the HUD are still drawn by Java2D on the processor.
 
 ## Frame rate limit
@@ -148,6 +150,7 @@ Every race you play is kept in the `replays` folder next to the game, as the sam
 | `-Dnfm.msaa=<off, 2, 4 or 8>` | Smooth polygon edges with the GPU renderer for this run, see above. |
 | `-Dnfm.batteryfps=<off or a number>` | Frame cap on battery for this run, see above. |
 | `-Dnfm.mmcss=false` | Leave the game's threads out of Windows' Games scheduling, and let Windows throttle it to save power, see below. |
+| `-Dnfm.backend=d3d12` | With the GPU renderer, draw with Direct3D 12 instead of 11, see above. |
 | `-Dnfm.adapter=fast` | With the GPU renderer, draw with the graphics card Windows calls high-performance (the discrete one on a laptop with two) instead of the one Windows picks for the game, see below. |
 | `-Dnfm.hdr=<auto, off or force>` | HDR output with the GPU renderer for this run, see above; hidden test runs are SDR unless this asks. `force` sends HDR even to an SDR monitor, where Windows shows it as SDR again, and then also saves `<name>-glow.png` in races: how much each pixel of the scene glows. |
 | `-Dnfm.gamepad=<on or off>` | Read game controllers for this run, see above; `on` also in hidden test runs. |

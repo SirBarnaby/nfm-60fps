@@ -133,6 +133,9 @@ public final class GpuDisplay {
     private final long window;
 
     private boolean started;
+    /** bgfx's renderer: Direct3D 11, or 12 with -Dnfm.backend=d3d12. */
+    private final int backend = "d3d12".equalsIgnoreCase(System.getProperty("nfm.backend"))
+            ? BGFX_RENDERER_TYPE_DIRECT3D12 : BGFX_RENDERER_TYPE_DIRECT3D11;
     private String adapterName = "";
     private BGFXVertexLayout pictureLayout;
     private BGFXVertexLayout colorLayout;
@@ -194,7 +197,8 @@ public final class GpuDisplay {
         GpuDisplay display = new GpuDisplay(window, pictureWidth, pictureHeight);
         try {
             display.start(Math.max(1, size.width), Math.max(1, size.height));
-            HLogger.info("Drawing through the graphics card (Direct3D 11" + display.adapterName() + ")");
+            HLogger.info("Drawing through the graphics card (" + backendName(display.backend) + display.adapterName()
+                    + ")");
             return display;
         } catch (Throwable ex) {
             HLogger.warn("Cannot draw through the graphics card, drawing in software: " + ex);
@@ -207,6 +211,10 @@ public final class GpuDisplay {
     private String adapterName() {
         String name = adapterName;
         return name.isEmpty() ? "" : ", " + name;
+    }
+
+    private static String backendName(int backend) {
+        return backend == BGFX_RENDERER_TYPE_DIRECT3D12 ? "Direct3D 12" : "Direct3D 11";
     }
 
     /** The window this display draws into. */
@@ -267,7 +275,7 @@ public final class GpuDisplay {
         BGFXPlatform.bgfx_render_frame(-1); // no render thread: bgfx works on the calling thread
         try (BGFXInit init = BGFXInit.calloc()) {
             bgfx_init_ctor(init);
-            init.type(BGFX_RENDERER_TYPE_DIRECT3D11);
+            init.type(backend);
             if (adapter != null) {
                 init.vendorId(adapter.vendor).deviceId(adapter.device);
             }
@@ -286,8 +294,8 @@ public final class GpuDisplay {
         }
         this.width = width;
         this.height = height;
-        if (bgfx_get_renderer_type() != BGFX_RENDERER_TYPE_DIRECT3D11) {
-            throw new IllegalStateException("Direct3D 11 is not available");
+        if (bgfx_get_renderer_type() != backend) {
+            throw new IllegalStateException(backendName(backend) + " is not available");
         }
 
         int[] pictureAttributes = {BgfxShaderBinary.ATTRIB_POSITION, BgfxShaderBinary.ATTRIB_TEXCOORD0};
@@ -306,12 +314,12 @@ public final class GpuDisplay {
         hdrBackBuffer = (bgfx_get_caps().formats(BGFX_TEXTURE_FORMAT_RGBA16F)
                 & BGFX_CAPS_FORMAT_TEXTURE_BACKBUFFER) != 0;
         pictureLayout = BGFXVertexLayout.calloc();
-        bgfx_vertex_layout_begin(pictureLayout, BGFX_RENDERER_TYPE_DIRECT3D11);
+        bgfx_vertex_layout_begin(pictureLayout, backend);
         bgfx_vertex_layout_add(pictureLayout, BGFX_ATTRIB_POSITION, 2, BGFX_ATTRIB_TYPE_FLOAT, false, false);
         bgfx_vertex_layout_add(pictureLayout, BGFX_ATTRIB_TEXCOORD0, 2, BGFX_ATTRIB_TYPE_FLOAT, false, false);
         bgfx_vertex_layout_end(pictureLayout);
         colorLayout = BGFXVertexLayout.calloc();
-        bgfx_vertex_layout_begin(colorLayout, BGFX_RENDERER_TYPE_DIRECT3D11);
+        bgfx_vertex_layout_begin(colorLayout, backend);
         bgfx_vertex_layout_add(colorLayout, BGFX_ATTRIB_POSITION, 2, BGFX_ATTRIB_TYPE_FLOAT, false, false);
         bgfx_vertex_layout_add(colorLayout, BGFX_ATTRIB_COLOR0, 4, BGFX_ATTRIB_TYPE_UINT8, true, false);
         bgfx_vertex_layout_add(colorLayout, BGFX_ATTRIB_TEXCOORD0, 2, BGFX_ATTRIB_TYPE_FLOAT, false, false);
