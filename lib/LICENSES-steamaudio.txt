@@ -1,0 +1,10 @@
+The 3D sound muffles cars behind the track and adds the track's reverb with
+Steam Audio, shipped as dlls/win64/phonon.dll (version 4.8.1, Valve's own
+build from the release at https://github.com/ValveSoftware/steam-audio,
+unmodified, loaded at run time through Java's foreign function API):
+
+  Steam Audio   https://valvesoftware.github.io/steam-audio/   Apache License 2.0
+
+The full license text: https://www.apache.org/licenses/LICENSE-2.0
+Steam Audio's third-party notices are in its repository.
+Without the DLL the 3D sound plays on, without muffling or reverb.
