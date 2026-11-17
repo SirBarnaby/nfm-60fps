@@ -161,6 +161,10 @@ The new sound has a volume for each part of the mix: `volume <master|engines|eff
 
 Every race you play is kept in the `replays` folder next to the game, as the same kind of recording the determinism check uses (see below): the set-up, your input on every tick and where your car was after it. Each file is named for when the race was played, its stage and, if you finished it, in how many ticks (`race-20261116-221500-123-stage08-t01234.nfmr`, 1234 ticks of 53 ms). The 50 newest races are kept, and on every stage the fastest finish however old, so a best run is never lost. A race is about 200 KB. Hidden test runs and the smoke test keep nothing, unless `-Dnfm.replays=<folder>` names a folder to keep them in (which also moves a normal game's replays).
 
+## Mods
+
+The `mods` folder holds mods: each is a folder that mirrors `data`, its files replacing the game's files of the same name. The archives become folders (`models`, `images` and `sounds` for `models.radq`, `images.radq` and `sounds.radq`), and stages and music keep their paths, a mod's stage music replacing the game's whatever format either is in. Mods apply in the order `mods\load-order.txt` lists them, a later one winning where two replace the same file; `-name` turns one off, and folders it does not list come after, alphabetically. A file the game does not have is reported in the log, not added. `mods` in the developer console lists what applies; `mods reload` reads the folder again while the game runs: models the next time it is at the main menu, stages and music with the next race (they are read for every race), images and sounds at the next start. A replay notes the mods it was recorded with. Test runs (`nfm.verify`, `nfm.record`, `nfm.autotest`) leave mods out, so the checks always test the game itself, unless `-Dnfm.mods=on`; `-Dnfm.mods=off` leaves them out of any run. `mods\README.txt` explains it for mod makers.
+
 ## Developer options
 
 | Property | Meaning |
@@ -172,6 +176,7 @@ Every race you play is kept in the `replays` folder next to the game, as the sam
 | `-Dnfm.scale=<fit or off>` | Window scaling for this run, see above. |
 | `-Dnfm.renderer=<gpu or software>` | How frames reach the screen for this run, see above. Hidden test runs use software unless this asks for the GPU; they then also save `<name>-gpu.png`, the window read back from the graphics card, and in races `<name>-gpuscene.png`, the frame the card drew (at the window's size when that is larger than 1280x720), to compare with `<name>.png`, the same frame drawn in software. |
 | `-Dnfm.motiontest=<dir>` | With `-Dnfm.autotest`: at race ticks 200 to 450 records the scene at 49 points between two ticks into `<dir>\motion-<tick>.bin`, to check that every corner moves smoothly (`python test\motion.py <dir>` measures how far each corner strays from smooth motion), and the scene kept for the tick moved to the same points into `kept-<tick>.bin` (`python test\kept.py <dir>` compares the two). |
+| `-Dnfm.mods=<on or off>` | Use the mods folder in this run, see above (default: on, but off in test runs). |
 | `-Dnfm.msaa=<off, 2, 4 or 8>` | Smooth polygon edges with the GPU renderer for this run, see above. |
 | `-Dnfm.ssaa=<on or off>` | Supersample races with the GPU renderer for this run, see above. |
 | `-Dnfm.dynres=<on, off or 25-100>` | Dynamic resolution with the GPU renderer for this run, see above: the lowest share of the window, in percent, races may be drawn at. Hidden test runs draw the scene whole unless this asks. |

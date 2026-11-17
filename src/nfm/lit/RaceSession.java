@@ -325,7 +325,8 @@ final class RaceSession {
         log.carsAfter = Arrays.copyOf(ui.sc, players);
         log.mountains = mountainsBefore;
         log.note = (autopilot != null ? "autopilot " + autopilot.describe() : "played")
-                + (unpaced ? ", unpaced" : ", real time") + ", " + timestamp();
+                + (unpaced ? ", unpaced" : ", real time") + ", " + timestamp()
+                + (GameFiles.names().isEmpty() ? "" : ", mods: " + GameFiles.names());
     }
 
     /** A sound command, from any thread; only the in-game tick's are kept. */

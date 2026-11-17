@@ -410,6 +410,13 @@ public class DevTool {
                 }
                 break;
             }
+            case "mods":
+                if (args.length == 1 && args[0].equalsIgnoreCase("reload")) {
+                    print(GameSparker.reloadMods());
+                } else {
+                    print(GameSparker.describeMods() + "\nUsage: mods, mods reload");
+                }
+                break;
             case "ssaa": {
                 int factor = args.length == 1 ? GameSparker.parseSupersample(args[0]) : 0;
                 if (factor != 0) {
@@ -562,6 +569,7 @@ public class DevTool {
         commandDescriptions.put("volume", "The 3D sound's volumes, in percent: master, engines, effects (crashes, skids, the wreck, the repair, the wind), music and interface (countdown, checkpoints, menus). Classic plays at its own levels. Usage: volume <bus> <0-100>");
         commandDescriptions.put("music", "In 3d sound the stage and menu music plays through libopenmpt; separation sets how far apart its left and right are, 0 (mono) to 200, 100 being an Amiga's hard left and right (default 70). Usage: music separation <0-200>");
         commandDescriptions.put("sound", "3d (the default) hears every car where it is, with smooth engines, HRTF on headphones, Doppler and distance; classic plays the game's own sound exactly as before; mono mixes the 3D sound to one channel, the same in both ears. Usage: sound <3d|classic>, sound mono <on|off>");
+        commandDescriptions.put("mods", "Lists the mods in the mods folder in the order they apply; a mod is a folder that mirrors data (models, images and sounds for the .radq archives, stages and music as they are) and replaces the game's files of the same name. mods/load-order.txt sets the order (a later mod wins, -name turns one off). mods reload reads the folder again: models at the main menu, stages and music with the next race, images and sounds at the next start. Usage: mods, mods reload");
         commandDescriptions.put("ssaa", "Ultra quality for races drawn on the graphics card: draws the scene at twice the width and height it is shown at (four times the pixels) and scales it down, which smooths every edge and outline and stops thin lines shimmering. Works with msaa. With dynres on, it gives way first when the card cannot keep up. Off by default. Usage: ssaa <on|off>");
         commandDescriptions.put("dynres", "When the graphics card cannot draw a race at the window's full size in time for the next frame, draws it smaller (down to the given percent of the window, never below the game's own 1280x720) and scales it up smoothly; the HUD stays sharp. Steps down at once and back up slowly, so the picture does not pump. On by default, down to 50%. Usage: dynres <on|off|25-100>");
         commandDescriptions.put("renderer", "gpu puts frames on screen through the graphics card (Direct3D 11), which scales them for free; software draws them with Java2D. Usage: renderer <gpu|software>");

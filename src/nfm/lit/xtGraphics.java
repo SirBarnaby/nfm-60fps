@@ -1940,13 +1940,8 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         String fileFormat = CheckPoints.trackformat;
 
         
-        File mp3 = new File(path + ".mp3");
-        File ogg = new File(path + ".ogg");
-        File mid = new File(path + ".mid");
-        File wav = new File(path + ".wav");
-        File radq = new File(path + ".radq");
-        File zip = new File(path + ".zip");
-        File zipo = new File(path + ".zipo");
+        // the first of these that is there, a mod's before the game's
+        String found = GameFiles.find(path, ".radq", ".zip", ".zipo", ".ogg", ".mp3", ".wav", ".mid");
 
         // if (i < 1) {
         if (CheckPoints.customTrack) {
@@ -1976,20 +1971,8 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         // }
 
         try {
-            if (radq.exists()) {
-                strack = TrackZipLoader.loadZip(path + ".radq", false);
-            } else if (zip.exists()) {
-                strack = TrackZipLoader.loadZip(path + ".zip", false);
-            } else if (zipo.exists()) {
-                strack = TrackZipLoader.loadZip(path + ".zipo", false);
-            } else if (ogg.exists()) {
-                strack = TrackZipLoader.loadMusic(path + ".ogg");
-            } else if (mp3.exists()) {
-                strack = TrackZipLoader.loadMusic(path + ".mp3");
-            } else if (wav.exists()) {
-                strack = TrackZipLoader.loadMusic(path + ".wav");
-            } else if (mid.exists()) {
-                strack = TrackZipLoader.loadMusic(path + ".mid");
+            if (found != null) {
+                strack = isZip(found) ? TrackZipLoader.loadZip(found, false) : TrackZipLoader.loadMusic(found);
             }
         } catch (final IOException ex) {
             System.out.println("Error loading music file music/stage" + i);
@@ -2050,19 +2033,9 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         int howManyImages = 0;
 
         try {
-            URL url = new URL(app.getCodeBase(), "data/images.radq");
-            ZipInputStream zipinputstream = new ZipInputStream(url.openStream());
-            for (ZipEntry zipentry = zipinputstream.getNextEntry(); zipentry != null; zipentry = zipinputstream
-                    .getNextEntry()) {
-                int i = (int) zipentry.getSize();
-                String s = zipentry.getName();
-                byte abyte0[] = new byte[i];
-                int j = 0;
-                int k;
-                for (; i > 0; i -= k) {
-                    k = zipinputstream.read(abyte0, j, i);
-                    j += k;
-                }
+            for (GameFiles.Entry zipentry : GameFiles.archive("images")) {
+                String s = zipentry.name();
+                byte abyte0[] = zipentry.data();
                 if ("cars.gif".equals(s)) {
                     carsbg = loadimage(abyte0, mediatracker, toolkit);
                 }
@@ -2276,7 +2249,6 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                 howManyImages++;
                 dnload += 3;
             }
-            zipinputstream.close();
             HLogger.info("Images loaded: " + howManyImages);
         } catch (IOException e) {
             HLogger.error("Error Reading Images: " + e);
@@ -4517,20 +4489,9 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         this.dnload += 3;
 
         try {
-            File soundsZip = new File("data/sounds.radq");
-            ZipInputStream soundsInputStream = new ZipInputStream(new FileInputStream(soundsZip));
-
-            for (ZipEntry soundEntry = soundsInputStream
-                    .getNextEntry(); soundEntry != null; soundEntry = soundsInputStream.getNextEntry()) {
-                int size = (int) soundEntry.getSize();
-                String name = soundEntry.getName();
-                byte[] sound = new byte[size];
-
-                int z;
-                for (int x = 0; size > 0; size -= z) {
-                    z = soundsInputStream.read(sound, x, size);
-                    x += z;
-                }
+            for (GameFiles.Entry soundEntry : GameFiles.archive("sounds")) {
+                String name = soundEntry.name();
+                byte[] sound = soundEntry.data();
 
                 int i;
                 for (i = 0; i < 5; ++i) {
@@ -4693,7 +4654,6 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
              * dnload += 10;
              */
 
-            soundsInputStream.close();
         } catch (Exception var12) {
             HLogger.error("Error Loading Sounds: " + var12);
 
@@ -4877,33 +4837,22 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
     }
 
     void loadIntertrack(String track) {     //load interface track
-        File mp3 = new File("data/music/interface/" + track + ".mp3");
-        File ogg = new File("data/music/interface/" + track + ".ogg");
-        File mid = new File("data/music/interface/" + track + ".mid");
-        File wav = new File("data/music/interface/" + track + ".wav");
-        File radq = new File("data/music/interface/" + track + ".radq");
-        File zip = new File("data/music/interface/" + track + ".zip");
-        File zipo = new File("data/music/interface/" + track + ".zipo");
-
+        // the first of these that is there, a mod's before the game's
+        String found = GameFiles.find("data/music/interface/" + track, ".mp3", ".ogg", ".mid", ".wav", ".zip", ".radq",
+                ".zipo");
         try {
-            if (mp3.exists()) {
-                intertrack = TrackZipLoader.loadMusic("data/music/interface/" + track + ".mp3");
-            } else if (ogg.exists()) {
-                intertrack = TrackZipLoader.loadMusic("data/music/interface/" + track + ".ogg");
-            } else if (mid.exists()) {
-                intertrack = TrackZipLoader.loadMusic("data/music/interface/" + track + ".mid");
-            } else if (wav.exists()) {
-                intertrack = TrackZipLoader.loadMusic("data/music/interface/" + track + ".wav");
-            } else if (zip.exists()) {
-                intertrack = TrackZipLoader.loadZip("data/music/interface/" + track + ".zip", false);
-            } else if (radq.exists()) {
-                intertrack = TrackZipLoader.loadZip("data/music/interface/" + track + ".radq", false);
-            } else if (zipo.exists()) {
-                intertrack = TrackZipLoader.loadZip("data/music/interface/" + track + ".zipo", false);
+            if (found != null) {
+                intertrack = isZip(found) ? TrackZipLoader.loadZip(found, false) : TrackZipLoader.loadMusic(found);
             }
         } catch (final IOException e) {
             e.printStackTrace();
         }
+    }
+
+    /** Whether a music file is a zip of a module (.radq, .zip or .zipo) rather than a recording. */
+    private static boolean isZip(String path) {
+        String p = path.toLowerCase(java.util.Locale.ROOT);
+        return p.endsWith(".radq") || p.endsWith(".zip") || p.endsWith(".zipo");
     }
 
     public void inishcarselect() {

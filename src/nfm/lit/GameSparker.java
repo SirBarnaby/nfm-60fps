@@ -336,6 +336,25 @@ public class GameSparker extends Panel implements Runnable {
     /** The graphics card could not draw this session; cleared by asking for it again. */
     private static volatile boolean gpuUnavailable;
     private static final String MSAA_COOKIE = "msaa";
+    /* models.radq is read again at the main menu after "mods reload" */
+    private static volatile boolean modelReloadWanted;
+    private static volatile boolean modelsLoaded;
+
+    /**
+     * Reads the mods folder and its load order again, and the models with
+     * them the next time the game is at the main menu; stages and music are
+     * read for every race anyway. Images and sounds need a restart.
+     */
+    public static String reloadMods() {
+        GameFiles.rescan();
+        modelReloadWanted = modelsLoaded;
+        return GameFiles.describe() + " Models are read again at the main menu; stages and music with the next"
+                + " race; images and sounds when the game starts again.";
+    }
+
+    public static String describeMods() {
+        return GameFiles.describe();
+    }
     private static final String SUPERSAMPLE_COOKIE = "ssaa";
     /**
      * Supersampling for races drawn on the graphics card: 2 draws the scene at
@@ -922,11 +941,7 @@ public class GameSparker extends Panel implements Runnable {
     private void loadbase(final ContO conto[], Trackers trackers, xtGraphics xtgraphics) {
         xtgraphics.dnload += 6;
         try {
-            ZipInputStream zipinputstream;
-            final File file = new File(new StringBuilder().append("").append("data/models.radq").toString());
-            zipinputstream = new ZipInputStream(new FileInputStream(file));
-            ZipEntry zipentry = zipinputstream.getNextEntry();
-            for (; zipentry != null; zipentry = zipinputstream.getNextEntry()) {
+            for (GameFiles.Entry zipentry : GameFiles.archive("models")) {
                 int modelId = -1;
 
                 final int carCount = carModels.length;
@@ -934,27 +949,18 @@ public class GameSparker extends Panel implements Runnable {
                 // final int extraCount = extraModels.length;
 
                 for (int car = 0; car < carModels.length; car++)
-                    if (zipentry.getName().startsWith(carModels[car]))
+                    if (zipentry.name().startsWith(carModels[car]))
                         modelId = car;
 
                 for (int track = 0; track < trackModels.length; track++)
-                    if (zipentry.getName().startsWith(trackModels[track]))
+                    if (zipentry.name().startsWith(trackModels[track]))
                         modelId = track + carCount;
 
                 for (int extra = 0; extra < extraModels.length; extra++)
-                    if (zipentry.getName().startsWith(extraModels[extra]))
+                    if (zipentry.name().startsWith(extraModels[extra]))
                         modelId = extra + trackCount + carCount;
 
-                int entireSize = (int) zipentry.getSize();
-                final byte[] modelData = new byte[entireSize];
-
-                int unknown1 = 0;
-                int unknown2;
-                for (; entireSize > 0; entireSize -= unknown2) {
-                    unknown2 = zipinputstream.read(modelData, unknown1, entireSize);
-                    unknown1 += unknown2;
-                }
-                conto[modelId] = new ContO(modelData, trackers);
+                conto[modelId] = new ContO(zipentry.data(), trackers);
                 xtgraphics.dnload++;
             }
             /*
@@ -962,7 +968,6 @@ public class GameSparker extends Panel implements Runnable {
              */
             HLogger.info("Contos loaded: " + (carModels.length + trackModels.length + extraModels.length));
             ContosCount = carModels.length + trackModels.length + extraModels.length;
-            zipinputstream.close();
         } catch (IOException e) {
             HLogger.error("Error Reading Models: " + e);
             e.printStackTrace();
@@ -1083,7 +1088,7 @@ public class GameSparker extends Panel implements Runnable {
 
         String string = "";
 
-        try (BufferedReader bufferedreader = new BufferedReader(new FileReader(new File(loadStage)))) {
+        try (BufferedReader bufferedreader = new BufferedReader(new FileReader(GameFiles.file(loadStage)))) {
             for (String line; (line = bufferedreader.readLine()) != null;) {
                 line = line.trim();
 
@@ -4461,6 +4466,7 @@ public class GameSparker extends Panel implements Runnable {
         ContO aconto[] = new ContO[carModels.length + trackModels.length + extraModels.length]; // be sure all your
                                                                                                 // arrays get in here
         loadbase(aconto, trackers, xtgraphics);
+        modelsLoaded = true;
         ContO aconto1[] = new ContO[5000];
         Madness amadness[] = new Madness[51];
         int l = 0;
@@ -4608,6 +4614,12 @@ public class GameSparker extends Panel implements Runnable {
                 saveMusicSeparationIfChanged();
                 saveVolumesIfChanged();
                 saveGamepadIfChanged();
+                if (modelReloadWanted && xtgraphics.fase == Phase.MAINMENU) {
+                    modelReloadWanted = false;
+                    loadbase(aconto, trackers, xtgraphics); // the next race and car select use them
+                    HLogger.info("Models loaded again" + (GameFiles.names().isEmpty() ? "" : " with mods: "
+                            + GameFiles.names()));
+                }
                 if (session != null) {
                     session.beforeTick();
                 }
@@ -5488,6 +5500,7 @@ public class GameSparker extends Panel implements Runnable {
 
     public void init() {
         GameInput.attach(this);
+        GameFiles.setUp(runsHidden());
         /*
          * load some fonts
          */
