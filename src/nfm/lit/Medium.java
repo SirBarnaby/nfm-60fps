@@ -271,14 +271,14 @@ public class Medium {
         }
     }
 
-    public static void newpolys(int i, int j, int k, int l, Trackers trackers, int i1) {
+    public static void newpolys(int minX, int spanX, int minZ, int spanZ, Trackers trackers, int seed) {
         if (detailtype == 0)
             return;
-        Random random1 = new Random((i1 + cgrnd[0] + cgrnd[1] + cgrnd[2]) * 1671);
-        nrw = j / 1200 + 9;
-        ncl = l / 1200 + 9;
-        sgpx = i - 4800;
-        sgpz = k - 4800;
+        Random patchRandom = new Random((seed + cgrnd[0] + cgrnd[1] + cgrnd[2]) * 1671);
+        nrw = spanX / 1200 + 9;
+        ncl = spanZ / 1200 + 9;
+        sgpx = minX - 4800;
+        sgpz = minZ - 4800;
         ogpx = null;
         ogpz = null;
         pvr = null;
@@ -293,257 +293,257 @@ public class Medium {
         cgpz = new int[nrw * ncl];
         pmx = new int[nrw * ncl];
         pcv = new float[nrw * ncl];
-        int j1 = 0;
-        int k1 = 0;
-        for (int l1 = 0; l1 < nrw * ncl; l1++) {
-            cgpx[l1] = sgpx + j1 * 1200 + (int) (random1.nextDouble() * 1000D - 500D);
-            cgpz[l1] = sgpz + k1 * 1200 + (int) (random1.nextDouble() * 1000D - 500D);
-            for (int j2 = 0; j2 < trackers.nt; j2++) {
-                if (trackers.zy[j2] != 0 || trackers.xy[j2] != 0) {
+        int column = 0;
+        int row = 0;
+        for (int patch = 0; patch < nrw * ncl; patch++) {
+            cgpx[patch] = sgpx + column * 1200 + (int) (patchRandom.nextDouble() * 1000D - 500D);
+            cgpz[patch] = sgpz + row * 1200 + (int) (patchRandom.nextDouble() * 1000D - 500D);
+            for (int piece = 0; piece < trackers.nt; piece++) {
+                if (trackers.zy[piece] != 0 || trackers.xy[piece] != 0) {
                     continue;
                 }
-                if (trackers.radx[j2] < trackers.radz[j2] && Math.abs(cgpz[l1] - trackers.z[j2]) < trackers.radz[j2]) {
-                    for (; Math.abs(cgpx[l1] - trackers.x[j2]) < trackers.radx[j2]; cgpx[l1] += random1.nextDouble()
-                            * trackers.radx[j2] * 2D - trackers.radx[j2]) {
+                if (trackers.radx[piece] < trackers.radz[piece] && Math.abs(cgpz[patch] - trackers.z[piece]) < trackers.radz[piece]) {
+                    for (; Math.abs(cgpx[patch] - trackers.x[piece]) < trackers.radx[piece]; cgpx[patch] += patchRandom.nextDouble()
+                            * trackers.radx[piece] * 2D - trackers.radx[piece]) {
                     }
                 }
-                if (trackers.radz[j2] >= trackers.radx[j2]
-                        || Math.abs(cgpx[l1] - trackers.x[j2]) >= trackers.radx[j2]) {
+                if (trackers.radz[piece] >= trackers.radx[piece]
+                        || Math.abs(cgpx[patch] - trackers.x[piece]) >= trackers.radx[piece]) {
                     continue;
                 }
-                for (; Math.abs(cgpz[l1] - trackers.z[j2]) < trackers.radz[j2]; cgpz[l1] += random1.nextDouble()
-                        * trackers.radz[j2] * 2D - trackers.radz[j2]) {
+                for (; Math.abs(cgpz[patch] - trackers.z[piece]) < trackers.radz[piece]; cgpz[patch] += patchRandom.nextDouble()
+                        * trackers.radz[piece] * 2D - trackers.radz[piece]) {
                 }
             }
 
-            if (++j1 == nrw) {
-                j1 = 0;
-                k1++;
+            if (++column == nrw) {
+                column = 0;
+                row++;
             }
         }
 
-        for (int i2 = 0; i2 < nrw * ncl; i2++) {
-            float f = (float) (0.29999999999999999D + 1.6000000000000001D * random1.nextDouble());
-            ogpx[i2][0] = 0;
-            ogpz[i2][0] = (int) ((100D + random1.nextDouble() * 760D) * f);
-            ogpx[i2][1] = (int) ((100D + random1.nextDouble() * 760D) * 0.70709999999999995D * f);
-            ogpz[i2][1] = ogpx[i2][1];
-            ogpx[i2][2] = (int) ((100D + random1.nextDouble() * 760D) * f);
-            ogpz[i2][2] = 0;
-            ogpx[i2][3] = (int) ((100D + random1.nextDouble() * 760D) * 0.70709999999999995D * f);
-            ogpz[i2][3] = -ogpx[i2][3];
-            ogpx[i2][4] = 0;
-            ogpz[i2][4] = -(int) ((100D + random1.nextDouble() * 760D) * f);
-            ogpx[i2][5] = -(int) ((100D + random1.nextDouble() * 760D) * 0.70709999999999995D * f);
-            ogpz[i2][5] = ogpx[i2][5];
-            ogpx[i2][6] = -(int) ((100D + random1.nextDouble() * 760D) * f);
-            ogpz[i2][6] = 0;
-            ogpx[i2][7] = -(int) ((100D + random1.nextDouble() * 760D) * 0.70709999999999995D * f);
-            ogpz[i2][7] = -ogpx[i2][7];
-            for (int k2 = 0; k2 < 8; k2++) {
-                int l2 = k2 - 1;
-                if (l2 == -1) {
-                    l2 = 7;
+        for (int patch = 0; patch < nrw * ncl; patch++) {
+            float size = (float) (0.29999999999999999D + 1.6000000000000001D * patchRandom.nextDouble());
+            ogpx[patch][0] = 0;
+            ogpz[patch][0] = (int) ((100D + patchRandom.nextDouble() * 760D) * size);
+            ogpx[patch][1] = (int) ((100D + patchRandom.nextDouble() * 760D) * 0.70709999999999995D * size);
+            ogpz[patch][1] = ogpx[patch][1];
+            ogpx[patch][2] = (int) ((100D + patchRandom.nextDouble() * 760D) * size);
+            ogpz[patch][2] = 0;
+            ogpx[patch][3] = (int) ((100D + patchRandom.nextDouble() * 760D) * 0.70709999999999995D * size);
+            ogpz[patch][3] = -ogpx[patch][3];
+            ogpx[patch][4] = 0;
+            ogpz[patch][4] = -(int) ((100D + patchRandom.nextDouble() * 760D) * size);
+            ogpx[patch][5] = -(int) ((100D + patchRandom.nextDouble() * 760D) * 0.70709999999999995D * size);
+            ogpz[patch][5] = ogpx[patch][5];
+            ogpx[patch][6] = -(int) ((100D + patchRandom.nextDouble() * 760D) * size);
+            ogpz[patch][6] = 0;
+            ogpx[patch][7] = -(int) ((100D + patchRandom.nextDouble() * 760D) * 0.70709999999999995D * size);
+            ogpz[patch][7] = -ogpx[patch][7];
+            for (int corner = 0; corner < 8; corner++) {
+                int before = corner - 1;
+                if (before == -1) {
+                    before = 7;
                 }
-                int i3 = k2 + 1;
-                if (i3 == 8) {
-                    i3 = 0;
+                int after = corner + 1;
+                if (after == 8) {
+                    after = 0;
                 }
-                ogpx[i2][k2] = ((ogpx[i2][l2] + ogpx[i2][i3]) / 2 + ogpx[i2][k2]) / 2;
-                ogpz[i2][k2] = ((ogpz[i2][l2] + ogpz[i2][i3]) / 2 + ogpz[i2][k2]) / 2;
-                pvr[i2][k2] = (float) (1.1000000000000001D + random1.nextDouble() * 0.80000000000000004D);
-                int j3 = (int) Math.sqrt((int) (ogpx[i2][k2] * ogpx[i2][k2] * pvr[i2][k2] * pvr[i2][k2]
-                        + ogpz[i2][k2] * ogpz[i2][k2] * pvr[i2][k2] * pvr[i2][k2]));
-                if (j3 > pmx[i2]) {
-                    pmx[i2] = j3;
+                ogpx[patch][corner] = ((ogpx[patch][before] + ogpx[patch][after]) / 2 + ogpx[patch][corner]) / 2;
+                ogpz[patch][corner] = ((ogpz[patch][before] + ogpz[patch][after]) / 2 + ogpz[patch][corner]) / 2;
+                pvr[patch][corner] = (float) (1.1000000000000001D + patchRandom.nextDouble() * 0.80000000000000004D);
+                int reach = (int) Math.sqrt((int) (ogpx[patch][corner] * ogpx[patch][corner] * pvr[patch][corner] * pvr[patch][corner]
+                        + ogpz[patch][corner] * ogpz[patch][corner] * pvr[patch][corner] * pvr[patch][corner]));
+                if (reach > pmx[patch]) {
+                    pmx[patch] = reach;
                 }
             }
 
-            pcv[i2] = (float) (0.96999999999999997D + random1.nextDouble() * 0.029999999999999999D);
-            if (pcv[i2] > 1.0F) {
-                pcv[i2] = 1.0F;
+            pcv[patch] = (float) (0.96999999999999997D + patchRandom.nextDouble() * 0.029999999999999999D);
+            if (pcv[patch] > 1.0F) {
+                pcv[patch] = 1.0F;
             }
-            if (random1.nextDouble() > random1.nextDouble()) {
-                pcv[i2] = 1.0F;
+            if (patchRandom.nextDouble() > patchRandom.nextDouble()) {
+                pcv[patch] = 1.0F;
             }
         }
 
     }
 
-    private static void groundpolys(Graphics2D graphics2d) {
+    private static void groundpolys(Graphics2D rd) {
         if (detailtype == 0)
             return;
-        int i = (x - sgpx) / 1200 - 12;
-        if (i < 0) {
-            i = 0;
+        int firstColumn = (x - sgpx) / 1200 - 12;
+        if (firstColumn < 0) {
+            firstColumn = 0;
         }
-        int j = i + 25;
-        if (j > nrw) {
-            j = nrw;
+        int endColumn = firstColumn + 25;
+        if (endColumn > nrw) {
+            endColumn = nrw;
         }
-        if (j < i) {
-            j = i;
+        if (endColumn < firstColumn) {
+            endColumn = firstColumn;
         }
-        int k = (z - sgpz) / 1200 - 12;
-        if (k < 0) {
-            k = 0;
+        int firstRow = (z - sgpz) / 1200 - 12;
+        if (firstRow < 0) {
+            firstRow = 0;
         }
-        int l = k + 25;
-        if (l > ncl) {
-            l = ncl;
+        int endRow = firstRow + 25;
+        if (endRow > ncl) {
+            endRow = ncl;
         }
-        if (l < k) {
-            l = k;
+        if (endRow < firstRow) {
+            endRow = firstRow;
         }
-        int ai[][] = new int[j - i][l - k];
-        for (int i1 = i; i1 < j; i1++) {
-            for (int k1 = k; k1 < l; k1++) {
-                ai[i1 - i][k1 - k] = 0;
-                int i2 = i1 + k1 * nrw;
-                if (resdown >= 2 && i2 % 2 != 0) {
+        int patchDepth[][] = new int[endColumn - firstColumn][endRow - firstRow];
+        for (int column = firstColumn; column < endColumn; column++) {
+            for (int row = firstRow; row < endRow; row++) {
+                patchDepth[column - firstColumn][row - firstRow] = 0;
+                int patch = column + row * nrw;
+                if (resdown >= 2 && patch % 2 != 0) {
                     continue;
                 }
-                int k2 = cx + (int) ((cgpx[i2] - x - cx) * RadicalMath.cos(xz) - (cgpz[i2] - z - cz) * RadicalMath.sin(xz));
-                int l2 = cz + (int) ((cgpx[i2] - x - cx) * RadicalMath.sin(xz) + (cgpz[i2] - z - cz) * RadicalMath.cos(xz));
-                int i3 = cz + (int) ((250 - y - cy) * RadicalMath.sin(zy) + (l2 - cz) * RadicalMath.cos(zy));
-                if (Utility.xs(k2 + pmx[i2], i3) <= -cullX || Utility.xs(k2 - pmx[i2], i3) >= w + cullX || i3 <= -pmx[i2] || i3 >= fade[2]) {
+                int viewX = cx + (int) ((cgpx[patch] - x - cx) * RadicalMath.cos(xz) - (cgpz[patch] - z - cz) * RadicalMath.sin(xz));
+                int viewZ = cz + (int) ((cgpx[patch] - x - cx) * RadicalMath.sin(xz) + (cgpz[patch] - z - cz) * RadicalMath.cos(xz));
+                int depth = cz + (int) ((250 - y - cy) * RadicalMath.sin(zy) + (viewZ - cz) * RadicalMath.cos(zy));
+                if (Utility.xs(viewX + pmx[patch], depth) <= -cullX || Utility.xs(viewX - pmx[patch], depth) >= w + cullX || depth <= -pmx[patch] || depth >= fade[2]) {
                     continue;
                 }
-                ai[i1 - i][k1 - k] = i3;
-                int ai4[] = new int[8];
-                int ai6[] = new int[8];
-                int ai8[] = new int[8];
-                for (int l3 = 0; l3 < 8; l3++) {
-                    ai4[l3] = (int) ((ogpx[i2][l3] * pvr[i2][l3] + cgpx[i2]) - x);
-                    ai6[l3] = (int) ((ogpz[i2][l3] * pvr[i2][l3] + cgpz[i2]) - z);
-                    ai8[l3] = ground;
+                patchDepth[column - firstColumn][row - firstRow] = depth;
+                int cornerX[] = new int[8];
+                int cornerZ[] = new int[8];
+                int cornerY[] = new int[8];
+                for (int corner = 0; corner < 8; corner++) {
+                    cornerX[corner] = (int) ((ogpx[patch][corner] * pvr[patch][corner] + cgpx[patch]) - x);
+                    cornerZ[corner] = (int) ((ogpz[patch][corner] * pvr[patch][corner] + cgpz[patch]) - z);
+                    cornerY[corner] = ground;
                 }
                 if (Precise.on) {
-                    Precise.camera(ai4, ai8, ai6, 8, 1, 10, EXACT_X, EXACT_Y);
+                    Precise.camera(cornerX, cornerY, cornerZ, 8, 1, 10, EXACT_X, EXACT_Y);
                 }
 
-                Utility.rot(ai4, ai6, cx, cz, xz, 8);
-                Utility.rot(ai8, ai6, cy, cz, zy, 8);
-                int ai9[] = new int[8];
-                int ai10[] = new int[8];
-                int k4 = 0;
-                int i5 = 0;
-                int j5 = 0;
-                int i6 = 0;
-                boolean flag1 = true;
-                for (int l6 = 0; l6 < 8; l6++) {
-                    ai9[l6] = Utility.xs(ai4[l6], ai6[l6]);
-                    ai10[l6] = Utility.ys(ai8[l6], ai6[l6], 1);
-                    if (ai10[l6] < -cullY || ai6[l6] < 10) {
-                        k4++;
+                Utility.rot(cornerX, cornerZ, cx, cz, xz, 8);
+                Utility.rot(cornerY, cornerZ, cy, cz, zy, 8);
+                int screenX[] = new int[8];
+                int screenY[] = new int[8];
+                int above = 0;
+                int below = 0;
+                int leftOf = 0;
+                int rightOf = 0;
+                boolean onScreen = true;
+                for (int corner = 0; corner < 8; corner++) {
+                    screenX[corner] = Utility.xs(cornerX[corner], cornerZ[corner]);
+                    screenY[corner] = Utility.ys(cornerY[corner], cornerZ[corner], 1);
+                    if (screenY[corner] < -cullY || cornerZ[corner] < 10) {
+                        above++;
                     }
-                    if (ai10[l6] > h + cullY || ai6[l6] < 10) {
-                        i5++;
+                    if (screenY[corner] > h + cullY || cornerZ[corner] < 10) {
+                        below++;
                     }
-                    if (ai9[l6] < -cullX || ai6[l6] < 10) {
-                        j5++;
+                    if (screenX[corner] < -cullX || cornerZ[corner] < 10) {
+                        leftOf++;
                     }
-                    if (ai9[l6] > w + cullX || ai6[l6] < 10) {
-                        i6++;
+                    if (screenX[corner] > w + cullX || cornerZ[corner] < 10) {
+                        rightOf++;
                     }
                 }
 
-                if (j5 == 8 || k4 == 8 || i5 == 8 || i6 == 8) {
-                    flag1 = false;
+                if (leftOf == 8 || above == 8 || below == 8 || rightOf == 8) {
+                    onScreen = false;
                 }
-                if (!flag1) {
+                if (!onScreen) {
                     continue;
                 }
-                int i7 = (int) ((cpol[0] * pcv[i2] + cgrnd[0]) / 2.0F);
-                int j7 = (int) ((cpol[1] * pcv[i2] + cgrnd[1]) / 2.0F);
-                int k7 = (int) ((cpol[2] * pcv[i2] + cgrnd[2]) / 2.0F);
-                if (i3 - pmx[i2] > fade[0]) {
-                    i7 = (i7 * 7 + cfade[0]) / 8;
-                    j7 = (j7 * 7 + cfade[1]) / 8;
-                    k7 = (k7 * 7 + cfade[2]) / 8;
+                int red = (int) ((cpol[0] * pcv[patch] + cgrnd[0]) / 2.0F);
+                int green = (int) ((cpol[1] * pcv[patch] + cgrnd[1]) / 2.0F);
+                int blue = (int) ((cpol[2] * pcv[patch] + cgrnd[2]) / 2.0F);
+                if (depth - pmx[patch] > fade[0]) {
+                    red = (red * 7 + cfade[0]) / 8;
+                    green = (green * 7 + cfade[1]) / 8;
+                    blue = (blue * 7 + cfade[2]) / 8;
                 }
-                if (i3 - pmx[i2] > fade[1]) {
-                    i7 = (i7 * 7 + cfade[0]) / 8;
-                    j7 = (j7 * 7 + cfade[1]) / 8;
-                    k7 = (k7 * 7 + cfade[2]) / 8;
+                if (depth - pmx[patch] > fade[1]) {
+                    red = (red * 7 + cfade[0]) / 8;
+                    green = (green * 7 + cfade[1]) / 8;
+                    blue = (blue * 7 + cfade[2]) / 8;
                 }
-                graphics2d.setColor(new Color(i7, j7, k7));
+                rd.setColor(new Color(red, green, blue));
                 if (Precise.on) {
-                    Precise.bind(ai9, ai10, EXACT_X, EXACT_Y, 8, 10_000_000 + i2);
+                    Precise.bind(screenX, screenY, EXACT_X, EXACT_Y, 8, 10_000_000 + patch);
                 }
-                graphics2d.fillPolygon(ai9, ai10, 8);
+                rd.fillPolygon(screenX, screenY, 8);
             }
 
         }
 
-        for (int j1 = i; j1 < j; j1++) {
-            for (int l1 = k; l1 < l; l1++) {
-                if (ai[j1 - i][l1 - k] == 0) {
+        for (int column = firstColumn; column < endColumn; column++) {
+            for (int row = firstRow; row < endRow; row++) {
+                if (patchDepth[column - firstColumn][row - firstRow] == 0) {
                     continue;
                 }
-                int j2 = j1 + l1 * nrw;
-                int ai1[] = new int[8];
-                int ai2[] = new int[8];
-                int ai3[] = new int[8];
-                for (int j3 = 0; j3 < 8; j3++) {
-                    ai1[j3] = (ogpx[j2][j3] + cgpx[j2]) - x;
-                    ai2[j3] = (ogpz[j2][j3] + cgpz[j2]) - z;
-                    ai3[j3] = ground;
+                int patch = column + row * nrw;
+                int cornerX[] = new int[8];
+                int cornerZ[] = new int[8];
+                int cornerY[] = new int[8];
+                for (int corner = 0; corner < 8; corner++) {
+                    cornerX[corner] = (ogpx[patch][corner] + cgpx[patch]) - x;
+                    cornerZ[corner] = (ogpz[patch][corner] + cgpz[patch]) - z;
+                    cornerY[corner] = ground;
                 }
                 if (Precise.on) {
-                    Precise.camera(ai1, ai3, ai2, 8, 1, 10, EXACT_X, EXACT_Y);
+                    Precise.camera(cornerX, cornerY, cornerZ, 8, 1, 10, EXACT_X, EXACT_Y);
                 }
 
-                Utility.rot(ai1, ai2, cx, cz, xz, 8);
-                Utility.rot(ai3, ai2, cy, cz, zy, 8);
-                int ai5[] = new int[8];
-                int ai7[] = new int[8];
-                int k3 = 0;
-                int i4 = 0;
-                int j4 = 0;
-                int l4 = 0;
-                boolean flag = true;
-                for (int k5 = 0; k5 < 8; k5++) {
-                    ai5[k5] = Utility.xs(ai1[k5], ai2[k5]);
-                    ai7[k5] = Utility.ys(ai3[k5], ai2[k5], 1);
-                    if (ai7[k5] < -cullY || ai2[k5] < 10) {
-                        k3++;
+                Utility.rot(cornerX, cornerZ, cx, cz, xz, 8);
+                Utility.rot(cornerY, cornerZ, cy, cz, zy, 8);
+                int screenX[] = new int[8];
+                int screenY[] = new int[8];
+                int above = 0;
+                int below = 0;
+                int leftOf = 0;
+                int rightOf = 0;
+                boolean onScreen = true;
+                for (int corner = 0; corner < 8; corner++) {
+                    screenX[corner] = Utility.xs(cornerX[corner], cornerZ[corner]);
+                    screenY[corner] = Utility.ys(cornerY[corner], cornerZ[corner], 1);
+                    if (screenY[corner] < -cullY || cornerZ[corner] < 10) {
+                        above++;
                     }
-                    if (ai7[k5] > h + cullY || ai2[k5] < 10) {
-                        i4++;
+                    if (screenY[corner] > h + cullY || cornerZ[corner] < 10) {
+                        below++;
                     }
-                    if (ai5[k5] < -cullX || ai2[k5] < 10) {
-                        j4++;
+                    if (screenX[corner] < -cullX || cornerZ[corner] < 10) {
+                        leftOf++;
                     }
-                    if (ai5[k5] > w + cullX || ai2[k5] < 10) {
-                        l4++;
+                    if (screenX[corner] > w + cullX || cornerZ[corner] < 10) {
+                        rightOf++;
                     }
                 }
 
-                if (j4 == 8 || k3 == 8 || i4 == 8 || l4 == 8) {
-                    flag = false;
+                if (leftOf == 8 || above == 8 || below == 8 || rightOf == 8) {
+                    onScreen = false;
                 }
-                if (!flag) {
+                if (!onScreen) {
                     continue;
                 }
-                int l5 = (int) (cpol[0] * pcv[j2]);
-                int j6 = (int) (cpol[1] * pcv[j2]);
-                int k6 = (int) (cpol[2] * pcv[j2]);
-                if (ai[j1 - i][l1 - k] - pmx[j2] > fade[0]) {
-                    l5 = (l5 * 7 + cfade[0]) / 8;
-                    j6 = (j6 * 7 + cfade[1]) / 8;
-                    k6 = (k6 * 7 + cfade[2]) / 8;
+                int red = (int) (cpol[0] * pcv[patch]);
+                int green = (int) (cpol[1] * pcv[patch]);
+                int blue = (int) (cpol[2] * pcv[patch]);
+                if (patchDepth[column - firstColumn][row - firstRow] - pmx[patch] > fade[0]) {
+                    red = (red * 7 + cfade[0]) / 8;
+                    green = (green * 7 + cfade[1]) / 8;
+                    blue = (blue * 7 + cfade[2]) / 8;
                 }
-                if (ai[j1 - i][l1 - k] - pmx[j2] > fade[1]) {
-                    l5 = (l5 * 7 + cfade[0]) / 8;
-                    j6 = (j6 * 7 + cfade[1]) / 8;
-                    k6 = (k6 * 7 + cfade[2]) / 8;
+                if (patchDepth[column - firstColumn][row - firstRow] - pmx[patch] > fade[1]) {
+                    red = (red * 7 + cfade[0]) / 8;
+                    green = (green * 7 + cfade[1]) / 8;
+                    blue = (blue * 7 + cfade[2]) / 8;
                 }
-                graphics2d.setColor(new Color(l5, j6, k6));
+                rd.setColor(new Color(red, green, blue));
                 if (Precise.on) {
-                    Precise.bind(ai5, ai7, EXACT_X, EXACT_Y, 8, 20_000_000 + j2);
+                    Precise.bind(screenX, screenY, EXACT_X, EXACT_Y, 8, 20_000_000 + patch);
                 }
-                graphics2d.fillPolygon(ai5, ai7, 8);
+                rd.fillPolygon(screenX, screenY, 8);
             }
         }
     }
@@ -614,7 +614,7 @@ public class Medium {
         noclouds = false;
     }
 
-    public static void newclouds(int i, int j, int k, int l) {
+    public static void newclouds(int minX, int maxX, int minZ, int maxZ) {
         if (detailtype == 0 || detailtype == 1 || noclouds)
             return;
         clx = null;
@@ -624,11 +624,11 @@ public class Medium {
         clay = null;
         claz = null;
         clc = null;
-        i = i / 20 - 10000;
-        j = j / 20 + 10000;
-        k = k / 20 - 10000;
-        l = l / 20 + 10000;
-        noc = ((j - i) * (l - k)) / 0xfe502b;
+        minX = minX / 20 - 10000;
+        maxX = maxX / 20 + 10000;
+        minZ = minZ / 20 - 10000;
+        maxZ = maxZ / 20 + 10000;
+        noc = ((maxX - minX) * (maxZ - minZ)) / 0xfe502b;
         clx = new int[noc];
         clz = new int[noc];
         cmx = new int[noc];
@@ -636,119 +636,119 @@ public class Medium {
         clay = new int[noc][3][12];
         claz = new int[noc][3][12];
         clc = new int[noc][2][6][3];
-        for (int i1 = 0; i1 < noc; i1++) {
-            clx[i1] = (int) (i + (j - i) * fxRandom.nextDouble());
-            clz[i1] = (int) (k + (l - k) * fxRandom.nextDouble());
-            float f = (float) (0.25D + fxRandom.nextDouble() * 1.25D);
-            float f1 = (float) ((200D + fxRandom.nextDouble() * 700D) * f);
-            clax[i1][0][0] = (int) (f1 * 0.3826D);
-            claz[i1][0][0] = (int) (f1 * 0.92379999999999995D);
-            clay[i1][0][0] = (int) ((25D - fxRandom.nextDouble() * 50D) * f);
-            f1 = (float) ((200D + fxRandom.nextDouble() * 700D) * f);
-            clax[i1][0][1] = (int) (f1 * 0.70709999999999995D);
-            claz[i1][0][1] = (int) (f1 * 0.70709999999999995D);
-            clay[i1][0][1] = (int) ((25D - fxRandom.nextDouble() * 50D) * f);
-            f1 = (float) ((200D + fxRandom.nextDouble() * 700D) * f);
-            clax[i1][0][2] = (int) (f1 * 0.92379999999999995D);
-            claz[i1][0][2] = (int) (f1 * 0.3826D);
-            clay[i1][0][2] = (int) ((25D - fxRandom.nextDouble() * 50D) * f);
-            f1 = (float) ((200D + fxRandom.nextDouble() * 700D) * f);
-            clax[i1][0][3] = (int) (f1 * 0.92379999999999995D);
-            claz[i1][0][3] = -(int) (f1 * 0.3826D);
-            clay[i1][0][3] = (int) ((25D - fxRandom.nextDouble() * 50D) * f);
-            f1 = (float) ((200D + fxRandom.nextDouble() * 700D) * f);
-            clax[i1][0][4] = (int) (f1 * 0.70709999999999995D);
-            claz[i1][0][4] = -(int) (f1 * 0.70709999999999995D);
-            clay[i1][0][4] = (int) ((25D - fxRandom.nextDouble() * 50D) * f);
-            f1 = (float) ((200D + fxRandom.nextDouble() * 700D) * f);
-            clax[i1][0][5] = (int) (f1 * 0.3826D);
-            claz[i1][0][5] = -(int) (f1 * 0.92379999999999995D);
-            clay[i1][0][5] = (int) ((25D - fxRandom.nextDouble() * 50D) * f);
-            f1 = (float) ((200D + fxRandom.nextDouble() * 700D) * f);
-            clax[i1][0][6] = -(int) (f1 * 0.3826D);
-            claz[i1][0][6] = -(int) (f1 * 0.92379999999999995D);
-            clay[i1][0][6] = (int) ((25D - fxRandom.nextDouble() * 50D) * f);
-            f1 = (float) ((200D + fxRandom.nextDouble() * 700D) * f);
-            clax[i1][0][7] = -(int) (f1 * 0.70709999999999995D);
-            claz[i1][0][7] = -(int) (f1 * 0.70709999999999995D);
-            clay[i1][0][7] = (int) ((25D - fxRandom.nextDouble() * 50D) * f);
-            f1 = (float) ((200D + fxRandom.nextDouble() * 700D) * f);
-            clax[i1][0][8] = -(int) (f1 * 0.92379999999999995D);
-            claz[i1][0][8] = -(int) (f1 * 0.3826D);
-            clay[i1][0][8] = (int) ((25D - fxRandom.nextDouble() * 50D) * f);
-            f1 = (float) ((200D + fxRandom.nextDouble() * 700D) * f);
-            clax[i1][0][9] = -(int) (f1 * 0.92379999999999995D);
-            claz[i1][0][9] = (int) (f1 * 0.3826D);
-            clay[i1][0][9] = (int) ((25D - fxRandom.nextDouble() * 50D) * f);
-            f1 = (float) ((200D + fxRandom.nextDouble() * 700D) * f);
-            clax[i1][0][10] = -(int) (f1 * 0.70709999999999995D);
-            claz[i1][0][10] = (int) (f1 * 0.70709999999999995D);
-            clay[i1][0][10] = (int) ((25D - fxRandom.nextDouble() * 50D) * f);
-            f1 = (float) ((200D + fxRandom.nextDouble() * 700D) * f);
-            clax[i1][0][11] = -(int) (f1 * 0.3826D);
-            claz[i1][0][11] = (int) (f1 * 0.92379999999999995D);
-            clay[i1][0][11] = (int) ((25D - fxRandom.nextDouble() * 50D) * f);
-            for (int j1 = 0; j1 < 12; j1++) {
-                int j2 = j1 - 1;
-                if (j2 == -1) {
-                    j2 = 11;
+        for (int cloud = 0; cloud < noc; cloud++) {
+            clx[cloud] = (int) (minX + (maxX - minX) * fxRandom.nextDouble());
+            clz[cloud] = (int) (minZ + (maxZ - minZ) * fxRandom.nextDouble());
+            float size = (float) (0.25D + fxRandom.nextDouble() * 1.25D);
+            float reach = (float) ((200D + fxRandom.nextDouble() * 700D) * size);
+            clax[cloud][0][0] = (int) (reach * 0.3826D);
+            claz[cloud][0][0] = (int) (reach * 0.92379999999999995D);
+            clay[cloud][0][0] = (int) ((25D - fxRandom.nextDouble() * 50D) * size);
+            reach = (float) ((200D + fxRandom.nextDouble() * 700D) * size);
+            clax[cloud][0][1] = (int) (reach * 0.70709999999999995D);
+            claz[cloud][0][1] = (int) (reach * 0.70709999999999995D);
+            clay[cloud][0][1] = (int) ((25D - fxRandom.nextDouble() * 50D) * size);
+            reach = (float) ((200D + fxRandom.nextDouble() * 700D) * size);
+            clax[cloud][0][2] = (int) (reach * 0.92379999999999995D);
+            claz[cloud][0][2] = (int) (reach * 0.3826D);
+            clay[cloud][0][2] = (int) ((25D - fxRandom.nextDouble() * 50D) * size);
+            reach = (float) ((200D + fxRandom.nextDouble() * 700D) * size);
+            clax[cloud][0][3] = (int) (reach * 0.92379999999999995D);
+            claz[cloud][0][3] = -(int) (reach * 0.3826D);
+            clay[cloud][0][3] = (int) ((25D - fxRandom.nextDouble() * 50D) * size);
+            reach = (float) ((200D + fxRandom.nextDouble() * 700D) * size);
+            clax[cloud][0][4] = (int) (reach * 0.70709999999999995D);
+            claz[cloud][0][4] = -(int) (reach * 0.70709999999999995D);
+            clay[cloud][0][4] = (int) ((25D - fxRandom.nextDouble() * 50D) * size);
+            reach = (float) ((200D + fxRandom.nextDouble() * 700D) * size);
+            clax[cloud][0][5] = (int) (reach * 0.3826D);
+            claz[cloud][0][5] = -(int) (reach * 0.92379999999999995D);
+            clay[cloud][0][5] = (int) ((25D - fxRandom.nextDouble() * 50D) * size);
+            reach = (float) ((200D + fxRandom.nextDouble() * 700D) * size);
+            clax[cloud][0][6] = -(int) (reach * 0.3826D);
+            claz[cloud][0][6] = -(int) (reach * 0.92379999999999995D);
+            clay[cloud][0][6] = (int) ((25D - fxRandom.nextDouble() * 50D) * size);
+            reach = (float) ((200D + fxRandom.nextDouble() * 700D) * size);
+            clax[cloud][0][7] = -(int) (reach * 0.70709999999999995D);
+            claz[cloud][0][7] = -(int) (reach * 0.70709999999999995D);
+            clay[cloud][0][7] = (int) ((25D - fxRandom.nextDouble() * 50D) * size);
+            reach = (float) ((200D + fxRandom.nextDouble() * 700D) * size);
+            clax[cloud][0][8] = -(int) (reach * 0.92379999999999995D);
+            claz[cloud][0][8] = -(int) (reach * 0.3826D);
+            clay[cloud][0][8] = (int) ((25D - fxRandom.nextDouble() * 50D) * size);
+            reach = (float) ((200D + fxRandom.nextDouble() * 700D) * size);
+            clax[cloud][0][9] = -(int) (reach * 0.92379999999999995D);
+            claz[cloud][0][9] = (int) (reach * 0.3826D);
+            clay[cloud][0][9] = (int) ((25D - fxRandom.nextDouble() * 50D) * size);
+            reach = (float) ((200D + fxRandom.nextDouble() * 700D) * size);
+            clax[cloud][0][10] = -(int) (reach * 0.70709999999999995D);
+            claz[cloud][0][10] = (int) (reach * 0.70709999999999995D);
+            clay[cloud][0][10] = (int) ((25D - fxRandom.nextDouble() * 50D) * size);
+            reach = (float) ((200D + fxRandom.nextDouble() * 700D) * size);
+            clax[cloud][0][11] = -(int) (reach * 0.3826D);
+            claz[cloud][0][11] = (int) (reach * 0.92379999999999995D);
+            clay[cloud][0][11] = (int) ((25D - fxRandom.nextDouble() * 50D) * size);
+            for (int corner = 0; corner < 12; corner++) {
+                int before = corner - 1;
+                if (before == -1) {
+                    before = 11;
                 }
-                int l2 = j1 + 1;
-                if (l2 == 12) {
-                    l2 = 0;
+                int after = corner + 1;
+                if (after == 12) {
+                    after = 0;
                 }
-                clax[i1][0][j1] = ((clax[i1][0][j2] + clax[i1][0][l2]) / 2 + clax[i1][0][j1]) / 2;
-                clay[i1][0][j1] = ((clay[i1][0][j2] + clay[i1][0][l2]) / 2 + clay[i1][0][j1]) / 2;
-                claz[i1][0][j1] = ((claz[i1][0][j2] + claz[i1][0][l2]) / 2 + claz[i1][0][j1]) / 2;
+                clax[cloud][0][corner] = ((clax[cloud][0][before] + clax[cloud][0][after]) / 2 + clax[cloud][0][corner]) / 2;
+                clay[cloud][0][corner] = ((clay[cloud][0][before] + clay[cloud][0][after]) / 2 + clay[cloud][0][corner]) / 2;
+                claz[cloud][0][corner] = ((claz[cloud][0][before] + claz[cloud][0][after]) / 2 + claz[cloud][0][corner]) / 2;
             }
 
-            for (int k1 = 0; k1 < 12; k1++) {
-                float f2 = (float) (1.2D + 0.59999999999999998D * fxRandom.nextDouble());
-                clax[i1][1][k1] = (int) (clax[i1][0][k1] * f2);
-                claz[i1][1][k1] = (int) (claz[i1][0][k1] * f2);
-                clay[i1][1][k1] = (int) (clay[i1][0][k1] - 100D * fxRandom.nextDouble());
-                f2 = (float) (1.1000000000000001D + 0.29999999999999999D * fxRandom.nextDouble());
-                clax[i1][2][k1] = (int) (clax[i1][1][k1] * f2);
-                claz[i1][2][k1] = (int) (claz[i1][1][k1] * f2);
-                clay[i1][2][k1] = (int) (clay[i1][1][k1] - 240D * fxRandom.nextDouble());
+            for (int corner = 0; corner < 12; corner++) {
+                float spread = (float) (1.2D + 0.59999999999999998D * fxRandom.nextDouble());
+                clax[cloud][1][corner] = (int) (clax[cloud][0][corner] * spread);
+                claz[cloud][1][corner] = (int) (claz[cloud][0][corner] * spread);
+                clay[cloud][1][corner] = (int) (clay[cloud][0][corner] - 100D * fxRandom.nextDouble());
+                spread = (float) (1.1000000000000001D + 0.29999999999999999D * fxRandom.nextDouble());
+                clax[cloud][2][corner] = (int) (clax[cloud][1][corner] * spread);
+                claz[cloud][2][corner] = (int) (claz[cloud][1][corner] * spread);
+                clay[cloud][2][corner] = (int) (clay[cloud][1][corner] - 240D * fxRandom.nextDouble());
             }
 
-            cmx[i1] = 0;
-            for (int l1 = 0; l1 < 12; l1++) {
-                int k2 = l1 - 1;
-                if (k2 == -1) {
-                    k2 = 11;
+            cmx[cloud] = 0;
+            for (int corner = 0; corner < 12; corner++) {
+                int before = corner - 1;
+                if (before == -1) {
+                    before = 11;
                 }
-                int i3 = l1 + 1;
-                if (i3 == 12) {
-                    i3 = 0;
+                int after = corner + 1;
+                if (after == 12) {
+                    after = 0;
                 }
-                clay[i1][1][l1] = ((clay[i1][1][k2] + clay[i1][1][i3]) / 2 + clay[i1][1][l1]) / 2;
-                clay[i1][2][l1] = ((clay[i1][2][k2] + clay[i1][2][i3]) / 2 + clay[i1][2][l1]) / 2;
-                int j3 = (int) Math.sqrt(clax[i1][2][l1] * clax[i1][2][l1] + claz[i1][2][l1] * claz[i1][2][l1]);
-                if (j3 > cmx[i1]) {
-                    cmx[i1] = j3;
+                clay[cloud][1][corner] = ((clay[cloud][1][before] + clay[cloud][1][after]) / 2 + clay[cloud][1][corner]) / 2;
+                clay[cloud][2][corner] = ((clay[cloud][2][before] + clay[cloud][2][after]) / 2 + clay[cloud][2][corner]) / 2;
+                int radius = (int) Math.sqrt(clax[cloud][2][corner] * clax[cloud][2][corner] + claz[cloud][2][corner] * claz[cloud][2][corner]);
+                if (radius > cmx[cloud]) {
+                    cmx[cloud] = radius;
                 }
             }
 
-            for (int i2 = 0; i2 < 6; i2++) {
-                double d1 = fxRandom.nextDouble();
-                double d2 = fxRandom.nextDouble();
-                for (int k3 = 0; k3 < 3; k3++) {
-                    float f3 = clds[k3] * 1.05F - clds[k3];
-                    clc[i1][0][i2][k3] = (int) (clds[k3] + f3 * d1);
-                    if (clc[i1][0][i2][k3] > 255) {
-                        clc[i1][0][i2][k3] = 255;
+            for (int shade = 0; shade < 6; shade++) {
+                double lowShade = fxRandom.nextDouble();
+                double highShade = fxRandom.nextDouble();
+                for (int channel = 0; channel < 3; channel++) {
+                    float range = clds[channel] * 1.05F - clds[channel];
+                    clc[cloud][0][shade][channel] = (int) (clds[channel] + range * lowShade);
+                    if (clc[cloud][0][shade][channel] > 255) {
+                        clc[cloud][0][shade][channel] = 255;
                     }
-                    if (clc[i1][0][i2][k3] < 0) {
-                        clc[i1][0][i2][k3] = 0;
+                    if (clc[cloud][0][shade][channel] < 0) {
+                        clc[cloud][0][shade][channel] = 0;
                     }
-                    clc[i1][1][i2][k3] = (int) (clds[k3] * 1.05F + f3 * d2);
-                    if (clc[i1][1][i2][k3] > 255) {
-                        clc[i1][1][i2][k3] = 255;
+                    clc[cloud][1][shade][channel] = (int) (clds[channel] * 1.05F + range * highShade);
+                    if (clc[cloud][1][shade][channel] > 255) {
+                        clc[cloud][1][shade][channel] = 255;
                     }
-                    if (clc[i1][1][i2][k3] < 0) {
-                        clc[i1][1][i2][k3] = 0;
+                    if (clc[cloud][1][shade][channel] < 0) {
+                        clc[cloud][1][shade][channel] = 0;
                     }
                 }
 
@@ -758,308 +758,308 @@ public class Medium {
 
     }
 
-    private static void drawclouds(Graphics2D graphics2d) {
+    private static void drawclouds(Graphics2D rd) {
         if (detailtype == 0 || detailtype == 1 || noclouds)
             return;
-        for (int i = 0; i < noc; i++) {
-            int j = cx + (int) ((clx[i] - x / 20 - cx) * RadicalMath.cos(xz) - (clz[i] - z / 20 - cz) * RadicalMath.sin(xz));
-            int k = cz + (int) ((clx[i] - x / 20 - cx) * RadicalMath.sin(xz) + (clz[i] - z / 20 - cz) * RadicalMath.cos(xz));
-            int l = cz + (int) ((cldd[4] - y / 20 - cy) * RadicalMath.sin(zy) + (k - cz) * RadicalMath.cos(zy));
-            int i1 = Utility.xs(j + cmx[i], l);
-            int j1 = Utility.xs(j - cmx[i], l);
-            if (i1 <= -cullX || j1 >= w + cullX || l <= -cmx[i] || i1 - j1 <= 20) {
+        for (int cloud = 0; cloud < noc; cloud++) {
+            int viewX = cx + (int) ((clx[cloud] - x / 20 - cx) * RadicalMath.cos(xz) - (clz[cloud] - z / 20 - cz) * RadicalMath.sin(xz));
+            int viewZ = cz + (int) ((clx[cloud] - x / 20 - cx) * RadicalMath.sin(xz) + (clz[cloud] - z / 20 - cz) * RadicalMath.cos(xz));
+            int depth = cz + (int) ((cldd[4] - y / 20 - cy) * RadicalMath.sin(zy) + (viewZ - cz) * RadicalMath.cos(zy));
+            int rightEdge = Utility.xs(viewX + cmx[cloud], depth);
+            int leftEdge = Utility.xs(viewX - cmx[cloud], depth);
+            if (rightEdge <= -cullX || leftEdge >= w + cullX || depth <= -cmx[cloud] || rightEdge - leftEdge <= 20) {
                 continue;
             }
-            int ai[][] = new int[3][12];
-            int ai1[][] = new int[3][12];
-            int ai2[][] = new int[3][12];
-            int ai3[] = new int[12];
-            int ai4[] = new int[12];
-            int k1;
-            int l1;
-            int i2;
-            int j2;
-            boolean flag;
-            int k2;
-            int l2;
-            int i3;
-            for (int j3 = 0; j3 < 3; j3++) {
-                for (int k4 = 0; k4 < 12; k4++) {
-                    ai[j3][k4] = (clax[i][j3][k4] + clx[i]) - x / 20;
-                    ai2[j3][k4] = (claz[i][j3][k4] + clz[i]) - z / 20;
-                    ai1[j3][k4] = (clay[i][j3][k4] + cldd[4]) - y / 20;
+            int cloudX[][] = new int[3][12];
+            int cloudY[][] = new int[3][12];
+            int cloudZ[][] = new int[3][12];
+            int screenX[] = new int[12];
+            int screenY[] = new int[12];
+            int above;
+            int below;
+            int leftOf;
+            int rightOf;
+            boolean onScreen;
+            int midY;
+            int midX;
+            int midZ;
+            for (int ring = 0; ring < 3; ring++) {
+                for (int point = 0; point < 12; point++) {
+                    cloudX[ring][point] = (clax[cloud][ring][point] + clx[cloud]) - x / 20;
+                    cloudZ[ring][point] = (claz[cloud][ring][point] + clz[cloud]) - z / 20;
+                    cloudY[ring][point] = (clay[cloud][ring][point] + cldd[4]) - y / 20;
                 }
 
                 if (Precise.on) {
-                    Precise.camera(ai[j3], ai1[j3], ai2[j3], 12, 20, 10, CLOUD_X[j3], CLOUD_Y[j3]);
+                    Precise.camera(cloudX[ring], cloudY[ring], cloudZ[ring], 12, 20, 10, CLOUD_X[ring], CLOUD_Y[ring]);
                 }
-                Utility.rot(ai[j3], ai2[j3], cx, cz, xz, 12);
-                Utility.rot(ai1[j3], ai2[j3], cy, cz, zy, 12);
+                Utility.rot(cloudX[ring], cloudZ[ring], cx, cz, xz, 12);
+                Utility.rot(cloudY[ring], cloudZ[ring], cy, cz, zy, 12);
             }
 
-            for (int k3 = 0; k3 < 12; k3 += 2) {
-                k1 = 0;
-                l1 = 0;
-                i2 = 0;
-                j2 = 0;
-                flag = true;
-                k2 = 0;
-                l2 = 0;
-                i3 = 0;
-                for (int l4 = 0; l4 < 6; l4++) {
-                    int i6 = 0;
-                    byte byte0 = 1;
-                    if (l4 == 0) {
-                        i6 = k3;
+            for (int side = 0; side < 12; side += 2) {
+                above = 0;
+                below = 0;
+                leftOf = 0;
+                rightOf = 0;
+                onScreen = true;
+                midY = 0;
+                midX = 0;
+                midZ = 0;
+                for (int vertex = 0; vertex < 6; vertex++) {
+                    int point = 0;
+                    byte ring = 1;
+                    if (vertex == 0) {
+                        point = side;
                     }
-                    if (l4 == 1) {
-                        i6 = k3 + 1;
-                        if (i6 >= 12) {
-                            i6 -= 12;
+                    if (vertex == 1) {
+                        point = side + 1;
+                        if (point >= 12) {
+                            point -= 12;
                         }
                     }
-                    if (l4 == 2) {
-                        i6 = k3 + 2;
-                        if (i6 >= 12) {
-                            i6 -= 12;
+                    if (vertex == 2) {
+                        point = side + 2;
+                        if (point >= 12) {
+                            point -= 12;
                         }
                     }
-                    if (l4 == 3) {
-                        i6 = k3 + 2;
-                        if (i6 >= 12) {
-                            i6 -= 12;
+                    if (vertex == 3) {
+                        point = side + 2;
+                        if (point >= 12) {
+                            point -= 12;
                         }
-                        byte0 = 2;
+                        ring = 2;
                     }
-                    if (l4 == 4) {
-                        i6 = k3 + 1;
-                        if (i6 >= 12) {
-                            i6 -= 12;
+                    if (vertex == 4) {
+                        point = side + 1;
+                        if (point >= 12) {
+                            point -= 12;
                         }
-                        byte0 = 2;
+                        ring = 2;
                     }
-                    if (l4 == 5) {
-                        i6 = k3;
-                        byte0 = 2;
+                    if (vertex == 5) {
+                        point = side;
+                        ring = 2;
                     }
-                    ai3[l4] = Utility.xs(ai[byte0][i6], ai2[byte0][i6]);
-                    ai4[l4] = Utility.ys(ai1[byte0][i6], ai2[byte0][i6], 1);
-                    EXACT_X[l4] = CLOUD_X[byte0][i6];
-                    EXACT_Y[l4] = CLOUD_Y[byte0][i6];
-                    l2 += ai[byte0][i6];
-                    k2 += ai1[byte0][i6];
-                    i3 += ai2[byte0][i6];
-                    if (ai4[l4] < -cullY || ai2[0][l4] < 10) {
-                        k1++;
+                    screenX[vertex] = Utility.xs(cloudX[ring][point], cloudZ[ring][point]);
+                    screenY[vertex] = Utility.ys(cloudY[ring][point], cloudZ[ring][point], 1);
+                    EXACT_X[vertex] = CLOUD_X[ring][point];
+                    EXACT_Y[vertex] = CLOUD_Y[ring][point];
+                    midX += cloudX[ring][point];
+                    midY += cloudY[ring][point];
+                    midZ += cloudZ[ring][point];
+                    if (screenY[vertex] < -cullY || cloudZ[0][vertex] < 10) {
+                        above++;
                     }
-                    if (ai4[l4] > h + cullY || ai2[0][l4] < 10) {
-                        l1++;
+                    if (screenY[vertex] > h + cullY || cloudZ[0][vertex] < 10) {
+                        below++;
                     }
-                    if (ai3[l4] < -cullX || ai2[0][l4] < 10) {
-                        i2++;
+                    if (screenX[vertex] < -cullX || cloudZ[0][vertex] < 10) {
+                        leftOf++;
                     }
-                    if (ai3[l4] > w + cullX || ai2[0][l4] < 10) {
-                        j2++;
+                    if (screenX[vertex] > w + cullX || cloudZ[0][vertex] < 10) {
+                        rightOf++;
                     }
                 }
 
-                if (i2 == 6 || k1 == 6 || l1 == 6 || j2 == 6) {
-                    flag = false;
+                if (leftOf == 6 || above == 6 || below == 6 || rightOf == 6) {
+                    onScreen = false;
                 }
-                if (!flag) {
+                if (!onScreen) {
                     continue;
                 }
-                l2 /= 6;
-                k2 /= 6;
-                i3 /= 6;
-                int i5 = (int) Math.sqrt((cy - k2) * (cy - k2) + (cx - l2) * (cx - l2) + i3 * i3);
-                if (i5 >= fade[7]) {
+                midX /= 6;
+                midY /= 6;
+                midZ /= 6;
+                int distance = (int) Math.sqrt((cy - midY) * (cy - midY) + (cx - midX) * (cx - midX) + midZ * midZ);
+                if (distance >= fade[7]) {
                     continue;
                 }
-                int j6 = clc[i][1][k3 / 2][0];
-                int j7 = clc[i][1][k3 / 2][1];
-                int j8 = clc[i][1][k3 / 2][2];
-                for (int i9 = 0; i9 < 16; i9++) {
-                    if (i5 > fade[i9]) {
-                        j6 = (j6 * fogd + cfade[0]) / (fogd + 1);
-                        j7 = (j7 * fogd + cfade[1]) / (fogd + 1);
-                        j8 = (j8 * fogd + cfade[2]) / (fogd + 1);
+                int red = clc[cloud][1][side / 2][0];
+                int green = clc[cloud][1][side / 2][1];
+                int blue = clc[cloud][1][side / 2][2];
+                for (int band = 0; band < 16; band++) {
+                    if (distance > fade[band]) {
+                        red = (red * fogd + cfade[0]) / (fogd + 1);
+                        green = (green * fogd + cfade[1]) / (fogd + 1);
+                        blue = (blue * fogd + cfade[2]) / (fogd + 1);
                     }
                 }
 
-                graphics2d.setColor(new Color(j6, j7, j8));
+                rd.setColor(new Color(red, green, blue));
                 if (Precise.on) {
-                    Precise.bind(ai3, ai4, EXACT_X, EXACT_Y, 6, 30_000_000 + i * 100 + k3);
+                    Precise.bind(screenX, screenY, EXACT_X, EXACT_Y, 6, 30_000_000 + cloud * 100 + side);
                 }
-                graphics2d.fillPolygon(ai3, ai4, 6);
+                rd.fillPolygon(screenX, screenY, 6);
             }
 
-            for (int l3 = 0; l3 < 12; l3 += 2) {
-                k1 = 0;
-                l1 = 0;
-                i2 = 0;
-                j2 = 0;
-                flag = true;
-                k2 = 0;
-                l2 = 0;
-                i3 = 0;
-                for (int j5 = 0; j5 < 6; j5++) {
-                    int k6 = 0;
-                    int k7 = 0;
-                    if (j5 == 0) {
-                        k6 = l3;
+            for (int side = 0; side < 12; side += 2) {
+                above = 0;
+                below = 0;
+                leftOf = 0;
+                rightOf = 0;
+                onScreen = true;
+                midY = 0;
+                midX = 0;
+                midZ = 0;
+                for (int vertex = 0; vertex < 6; vertex++) {
+                    int point = 0;
+                    int ring = 0;
+                    if (vertex == 0) {
+                        point = side;
                     }
-                    if (j5 == 1) {
-                        k6 = l3 + 1;
-                        if (k6 >= 12) {
-                            k6 -= 12;
+                    if (vertex == 1) {
+                        point = side + 1;
+                        if (point >= 12) {
+                            point -= 12;
                         }
                     }
-                    if (j5 == 2) {
-                        k6 = l3 + 2;
-                        if (k6 >= 12) {
-                            k6 -= 12;
+                    if (vertex == 2) {
+                        point = side + 2;
+                        if (point >= 12) {
+                            point -= 12;
                         }
                     }
-                    if (j5 == 3) {
-                        k6 = l3 + 2;
-                        if (k6 >= 12) {
-                            k6 -= 12;
+                    if (vertex == 3) {
+                        point = side + 2;
+                        if (point >= 12) {
+                            point -= 12;
                         }
-                        k7 = 1;
+                        ring = 1;
                     }
-                    if (j5 == 4) {
-                        k6 = l3 + 1;
-                        if (k6 >= 12) {
-                            k6 -= 12;
+                    if (vertex == 4) {
+                        point = side + 1;
+                        if (point >= 12) {
+                            point -= 12;
                         }
-                        k7 = 1;
+                        ring = 1;
                     }
-                    if (j5 == 5) {
-                        k6 = l3;
-                        k7 = 1;
+                    if (vertex == 5) {
+                        point = side;
+                        ring = 1;
                     }
-                    ai3[j5] = Utility.xs(ai[k7][k6], ai2[k7][k6]);
-                    ai4[j5] = Utility.ys(ai1[k7][k6], ai2[k7][k6], 1);
-                    EXACT_X[j5] = CLOUD_X[k7][k6];
-                    EXACT_Y[j5] = CLOUD_Y[k7][k6];
-                    l2 += ai[k7][k6];
-                    k2 += ai1[k7][k6];
-                    i3 += ai2[k7][k6];
-                    if (ai4[j5] < -cullY || ai2[0][j5] < 10) {
-                        k1++;
+                    screenX[vertex] = Utility.xs(cloudX[ring][point], cloudZ[ring][point]);
+                    screenY[vertex] = Utility.ys(cloudY[ring][point], cloudZ[ring][point], 1);
+                    EXACT_X[vertex] = CLOUD_X[ring][point];
+                    EXACT_Y[vertex] = CLOUD_Y[ring][point];
+                    midX += cloudX[ring][point];
+                    midY += cloudY[ring][point];
+                    midZ += cloudZ[ring][point];
+                    if (screenY[vertex] < -cullY || cloudZ[0][vertex] < 10) {
+                        above++;
                     }
-                    if (ai4[j5] > h + cullY || ai2[0][j5] < 10) {
-                        l1++;
+                    if (screenY[vertex] > h + cullY || cloudZ[0][vertex] < 10) {
+                        below++;
                     }
-                    if (ai3[j5] < -cullX || ai2[0][j5] < 10) {
-                        i2++;
+                    if (screenX[vertex] < -cullX || cloudZ[0][vertex] < 10) {
+                        leftOf++;
                     }
-                    if (ai3[j5] > w + cullX || ai2[0][j5] < 10) {
-                        j2++;
+                    if (screenX[vertex] > w + cullX || cloudZ[0][vertex] < 10) {
+                        rightOf++;
                     }
                 }
 
-                if (i2 == 6 || k1 == 6 || l1 == 6 || j2 == 6) {
-                    flag = false;
+                if (leftOf == 6 || above == 6 || below == 6 || rightOf == 6) {
+                    onScreen = false;
                 }
-                if (!flag) {
+                if (!onScreen) {
                     continue;
                 }
-                l2 /= 6;
-                k2 /= 6;
-                i3 /= 6;
-                int k5 = (int) Math.sqrt((cy - k2) * (cy - k2) + (cx - l2) * (cx - l2) + i3 * i3);
-                if (k5 >= fade[7]) {
+                midX /= 6;
+                midY /= 6;
+                midZ /= 6;
+                int distance = (int) Math.sqrt((cy - midY) * (cy - midY) + (cx - midX) * (cx - midX) + midZ * midZ);
+                if (distance >= fade[7]) {
                     continue;
                 }
-                int l6 = clc[i][0][l3 / 2][0];
-                int l7 = clc[i][0][l3 / 2][1];
-                int k8 = clc[i][0][l3 / 2][2];
-                for (int j9 = 0; j9 < 16; j9++) {
-                    if (k5 > fade[j9]) {
-                        l6 = (l6 * fogd + cfade[0]) / (fogd + 1);
-                        l7 = (l7 * fogd + cfade[1]) / (fogd + 1);
-                        k8 = (k8 * fogd + cfade[2]) / (fogd + 1);
+                int red = clc[cloud][0][side / 2][0];
+                int green = clc[cloud][0][side / 2][1];
+                int blue = clc[cloud][0][side / 2][2];
+                for (int band = 0; band < 16; band++) {
+                    if (distance > fade[band]) {
+                        red = (red * fogd + cfade[0]) / (fogd + 1);
+                        green = (green * fogd + cfade[1]) / (fogd + 1);
+                        blue = (blue * fogd + cfade[2]) / (fogd + 1);
                     }
                 }
 
-                graphics2d.setColor(new Color(l6, l7, k8));
+                rd.setColor(new Color(red, green, blue));
                 if (Precise.on) {
-                    Precise.bind(ai3, ai4, EXACT_X, EXACT_Y, 6, 40_000_000 + i * 100 + l3);
+                    Precise.bind(screenX, screenY, EXACT_X, EXACT_Y, 6, 40_000_000 + cloud * 100 + side);
                 }
-                graphics2d.fillPolygon(ai3, ai4, 6);
+                rd.fillPolygon(screenX, screenY, 6);
             }
 
-            k1 = 0;
-            l1 = 0;
-            i2 = 0;
-            j2 = 0;
-            flag = true;
-            k2 = 0;
-            l2 = 0;
-            i3 = 0;
-            for (int i4 = 0; i4 < 12; i4++) {
-                ai3[i4] = Utility.xs(ai[0][i4], ai2[0][i4]);
-                ai4[i4] = Utility.ys(ai1[0][i4], ai2[0][i4], 1);
-                l2 += ai[0][i4];
-                k2 += ai1[0][i4];
-                i3 += ai2[0][i4];
-                if (ai4[i4] < -cullY || ai2[0][i4] < 10) {
-                    k1++;
+            above = 0;
+            below = 0;
+            leftOf = 0;
+            rightOf = 0;
+            onScreen = true;
+            midY = 0;
+            midX = 0;
+            midZ = 0;
+            for (int point = 0; point < 12; point++) {
+                screenX[point] = Utility.xs(cloudX[0][point], cloudZ[0][point]);
+                screenY[point] = Utility.ys(cloudY[0][point], cloudZ[0][point], 1);
+                midX += cloudX[0][point];
+                midY += cloudY[0][point];
+                midZ += cloudZ[0][point];
+                if (screenY[point] < -cullY || cloudZ[0][point] < 10) {
+                    above++;
                 }
-                if (ai4[i4] > h + cullY || ai2[0][i4] < 10) {
-                    l1++;
+                if (screenY[point] > h + cullY || cloudZ[0][point] < 10) {
+                    below++;
                 }
-                if (ai3[i4] < -cullX || ai2[0][i4] < 10) {
-                    i2++;
+                if (screenX[point] < -cullX || cloudZ[0][point] < 10) {
+                    leftOf++;
                 }
-                if (ai3[i4] > w + cullX || ai2[0][i4] < 10) {
-                    j2++;
+                if (screenX[point] > w + cullX || cloudZ[0][point] < 10) {
+                    rightOf++;
                 }
             }
 
-            if (i2 == 12 || k1 == 12 || l1 == 12 || j2 == 12) {
-                flag = false;
+            if (leftOf == 12 || above == 12 || below == 12 || rightOf == 12) {
+                onScreen = false;
             }
-            if (!flag) {
+            if (!onScreen) {
                 continue;
             }
-            l2 /= 12;
-            k2 /= 12;
-            i3 /= 12;
-            int j4 = (int) Math.sqrt((cy - k2) * (cy - k2) + (cx - l2) * (cx - l2) + i3 * i3);
-            if (j4 >= fade[7]) {
+            midX /= 12;
+            midY /= 12;
+            midZ /= 12;
+            int distance = (int) Math.sqrt((cy - midY) * (cy - midY) + (cx - midX) * (cx - midX) + midZ * midZ);
+            if (distance >= fade[7]) {
                 continue;
             }
-            int l5 = clds[0];
-            int i7 = clds[1];
-            int i8 = clds[2];
-            for (int l8 = 0; l8 < 16; l8++) {
-                if (j4 > fade[l8]) {
-                    l5 = (l5 * fogd + cfade[0]) / (fogd + 1);
-                    i7 = (i7 * fogd + cfade[1]) / (fogd + 1);
-                    i8 = (i8 * fogd + cfade[2]) / (fogd + 1);
+            int red = clds[0];
+            int green = clds[1];
+            int blue = clds[2];
+            for (int band = 0; band < 16; band++) {
+                if (distance > fade[band]) {
+                    red = (red * fogd + cfade[0]) / (fogd + 1);
+                    green = (green * fogd + cfade[1]) / (fogd + 1);
+                    blue = (blue * fogd + cfade[2]) / (fogd + 1);
                 }
             }
 
-            graphics2d.setColor(new Color(l5, i7, i8));
+            rd.setColor(new Color(red, green, blue));
             if (Precise.on) {
-                Precise.bind(ai3, ai4, CLOUD_X[0], CLOUD_Y[0], 12, 50_000_000 + i);
+                Precise.bind(screenX, screenY, CLOUD_X[0], CLOUD_Y[0], 12, 50_000_000 + cloud);
             }
-            graphics2d.fillPolygon(ai3, ai4, 12);
+            rd.fillPolygon(screenX, screenY, 12);
         }
 
     }
 
-    public static void newmountains(int i, int i_167_, int i_168_, int i_169_) {
+    public static void newmountains(int minX, int maxX, int minZ, int maxZ) {
         if (detailtype == 0 || detailtype == 1)
             return;
         Random random = new Random(mgen);
         nmt = (int) (20.0 + 10.0 * random.nextDouble());
-        int i_170_ = (i + i_167_) / 60;
-        int i_171_ = (i_168_ + i_169_) / 60;
-        int i_172_ = Math.max(i_167_ - i, i_169_ - i_168_) / 60;
+        int centerX = (minX + maxX) / 60;
+        int centerZ = (minZ + maxZ) / 60;
+        int span = Math.max(maxX - minX, maxZ - minZ) / 60;
         mrd = null;
         nmv = null;
         mtx = null;
@@ -1072,168 +1072,168 @@ public class Medium {
         mty = new int[nmt][];
         mtz = new int[nmt][];
         mtc = new int[nmt][][];
-        int[] is = new int[nmt];
-        int[] is_173_ = new int[nmt];
-        for (int i_174_ = 0; i_174_ < nmt; i_174_++) {
-            int i_175_;
-            float f;
-            float f_176_;
-            is[i_174_] = (int) (10000.0 + random.nextDouble() * 10000.0);
-            int i_177_ = (int) (random.nextDouble() * 360.0);
+        int[] distance = new int[nmt];
+        int[] rank = new int[nmt];
+        for (int mountain = 0; mountain < nmt; mountain++) {
+            int green;
+            float width;
+            float height;
+            distance[mountain] = (int) (10000.0 + random.nextDouble() * 10000.0);
+            int turn = (int) (random.nextDouble() * 360.0);
             if (random.nextDouble() > random.nextDouble()) {
-                f = (float) (0.2 + random.nextDouble() * 0.35);
-                f_176_ = (float) (0.2 + random.nextDouble() * 0.35);
-                nmv[i_174_] = (int) (f * (24.0 + 16.0 * random.nextDouble()));
-                i_175_ = (int) (85.0 + 10.0 * random.nextDouble());
+                width = (float) (0.2 + random.nextDouble() * 0.35);
+                height = (float) (0.2 + random.nextDouble() * 0.35);
+                nmv[mountain] = (int) (width * (24.0 + 16.0 * random.nextDouble()));
+                green = (int) (85.0 + 10.0 * random.nextDouble());
             } else {
-                f = (float) (0.3 + random.nextDouble() * 1.1);
-                f_176_ = (float) (0.2 + random.nextDouble() * 0.35);
-                nmv[i_174_] = (int) (f * (12.0 + 8.0 * random.nextDouble()));
-                i_175_ = (int) (104.0 - 10.0 * random.nextDouble());
+                width = (float) (0.3 + random.nextDouble() * 1.1);
+                height = (float) (0.2 + random.nextDouble() * 0.35);
+                nmv[mountain] = (int) (width * (12.0 + 8.0 * random.nextDouble()));
+                green = (int) (104.0 - 10.0 * random.nextDouble());
             }
-            mtx[i_174_] = new int[nmv[i_174_] * 2];
-            mty[i_174_] = new int[nmv[i_174_] * 2];
-            mtz[i_174_] = new int[nmv[i_174_] * 2];
-            mtc[i_174_] = new int[nmv[i_174_]][3];
-            for (int i_178_ = 0; i_178_ < nmv[i_174_]; i_178_++) {
-                mtx[i_174_][i_178_] = (int) ((i_178_ * 500 + (random.nextDouble() * 800.0 - 400.0)
-                        - 250 * (nmv[i_174_] - 1)) * f);
-                mtx[i_174_][i_178_ + nmv[i_174_]] = (int) ((i_178_ * 500
-                        + (random.nextDouble() * 800.0 - 400.0) - 250 * (nmv[i_174_] - 1)) * f);
-                mtx[i_174_][nmv[i_174_]] = (int) (mtx[i_174_][0]
-                        - (100.0 + random.nextDouble() * 600.0) * f);
-                mtx[i_174_][nmv[i_174_] * 2 - 1] = (int) (mtx[i_174_][nmv[i_174_] - 1]
-                        + (100.0 + random.nextDouble() * 600.0) * f);
-                if (i_178_ == 0 || i_178_ == nmv[i_174_] - 1)
-                    mty[i_174_][i_178_] = (int) ((-400.0 - 1200.0 * random.nextDouble()) * f_176_
+            mtx[mountain] = new int[nmv[mountain] * 2];
+            mty[mountain] = new int[nmv[mountain] * 2];
+            mtz[mountain] = new int[nmv[mountain] * 2];
+            mtc[mountain] = new int[nmv[mountain]][3];
+            for (int peak = 0; peak < nmv[mountain]; peak++) {
+                mtx[mountain][peak] = (int) ((peak * 500 + (random.nextDouble() * 800.0 - 400.0)
+                        - 250 * (nmv[mountain] - 1)) * width);
+                mtx[mountain][peak + nmv[mountain]] = (int) ((peak * 500
+                        + (random.nextDouble() * 800.0 - 400.0) - 250 * (nmv[mountain] - 1)) * width);
+                mtx[mountain][nmv[mountain]] = (int) (mtx[mountain][0]
+                        - (100.0 + random.nextDouble() * 600.0) * width);
+                mtx[mountain][nmv[mountain] * 2 - 1] = (int) (mtx[mountain][nmv[mountain] - 1]
+                        + (100.0 + random.nextDouble() * 600.0) * width);
+                if (peak == 0 || peak == nmv[mountain] - 1)
+                    mty[mountain][peak] = (int) ((-400.0 - 1200.0 * random.nextDouble()) * height
                             + ground);
-                if (i_178_ == 1 || i_178_ == nmv[i_174_] - 2)
-                    mty[i_174_][i_178_] = (int) ((-1000.0 - 1450.0 * random.nextDouble()) * f_176_
+                if (peak == 1 || peak == nmv[mountain] - 2)
+                    mty[mountain][peak] = (int) ((-1000.0 - 1450.0 * random.nextDouble()) * height
                             + ground);
-                if (i_178_ > 1 && i_178_ < nmv[i_174_] - 2)
-                    mty[i_174_][i_178_] = (int) ((-1600.0 - 1700.0 * random.nextDouble()) * f_176_
+                if (peak > 1 && peak < nmv[mountain] - 2)
+                    mty[mountain][peak] = (int) ((-1600.0 - 1700.0 * random.nextDouble()) * height
                             + ground);
-                mty[i_174_][i_178_ + nmv[i_174_]] = ground - 70;
-                mtz[i_174_][i_178_] = i_171_ + i_172_ + is[i_174_];
-                mtz[i_174_][i_178_ + nmv[i_174_]] = i_171_ + i_172_ + is[i_174_];
-                float f_179_ = (float) (0.5 + random.nextDouble() * 0.5);
-                mtc[i_174_][i_178_][0] = (int) (170.0F * f_179_ + 170.0F * f_179_ * (snap[0] / 100.0F));
-                if (mtc[i_174_][i_178_][0] > 255)
-                    mtc[i_174_][i_178_][0] = 255;
-                if (mtc[i_174_][i_178_][0] < 0)
-                    mtc[i_174_][i_178_][0] = 0;
-                mtc[i_174_][i_178_][1] = (int) (i_175_ * f_179_ + 85.0F * f_179_ * (snap[1] / 100.0F));
-                if (mtc[i_174_][i_178_][1] > 255)
-                    mtc[i_174_][i_178_][1] = 255;
-                if (mtc[i_174_][i_178_][1] < 1)
-                    mtc[i_174_][i_178_][1] = 0;
-                mtc[i_174_][i_178_][2] = 0;
+                mty[mountain][peak + nmv[mountain]] = ground - 70;
+                mtz[mountain][peak] = centerZ + span + distance[mountain];
+                mtz[mountain][peak + nmv[mountain]] = centerZ + span + distance[mountain];
+                float shade = (float) (0.5 + random.nextDouble() * 0.5);
+                mtc[mountain][peak][0] = (int) (170.0F * shade + 170.0F * shade * (snap[0] / 100.0F));
+                if (mtc[mountain][peak][0] > 255)
+                    mtc[mountain][peak][0] = 255;
+                if (mtc[mountain][peak][0] < 0)
+                    mtc[mountain][peak][0] = 0;
+                mtc[mountain][peak][1] = (int) (green * shade + 85.0F * shade * (snap[1] / 100.0F));
+                if (mtc[mountain][peak][1] > 255)
+                    mtc[mountain][peak][1] = 255;
+                if (mtc[mountain][peak][1] < 1)
+                    mtc[mountain][peak][1] = 0;
+                mtc[mountain][peak][2] = 0;
             }
-            for (int i_180_ = 1; i_180_ < nmv[i_174_] - 1; i_180_++) {
-                int i_181_ = i_180_ - 1;
-                int i_182_ = i_180_ + 1;
-                mty[i_174_][i_180_] = ((mty[i_174_][i_181_] + mty[i_174_][i_182_]) / 2 + mty[i_174_][i_180_]) / 2;
+            for (int peak = 1; peak < nmv[mountain] - 1; peak++) {
+                int before = peak - 1;
+                int after = peak + 1;
+                mty[mountain][peak] = ((mty[mountain][before] + mty[mountain][after]) / 2 + mty[mountain][peak]) / 2;
             }
-            Utility.rot(mtx[i_174_], mtz[i_174_], i_170_, i_171_, i_177_, nmv[i_174_] * 2);
-            is_173_[i_174_] = 0;
+            Utility.rot(mtx[mountain], mtz[mountain], centerX, centerZ, turn, nmv[mountain] * 2);
+            rank[mountain] = 0;
         }
-        for (int i_183_ = 0; i_183_ < nmt; i_183_++) {
-            for (int i_184_ = i_183_ + 1; i_184_ < nmt; i_184_++) {
-                if (is[i_183_] < is[i_184_])
-                    is_173_[i_183_]++;
+        for (int mountain = 0; mountain < nmt; mountain++) {
+            for (int other = mountain + 1; other < nmt; other++) {
+                if (distance[mountain] < distance[other])
+                    rank[mountain]++;
                 else
-                    is_173_[i_184_]++;
+                    rank[other]++;
             }
-            mrd[is_173_[i_183_]] = i_183_;
+            mrd[rank[mountain]] = mountain;
         }
     }
 
     private static void drawmountains(Graphics2D rd) {
         if (detailtype == 0 || detailtype == 1)
             return;
-        for (int i = 0; i < nmt; i++) {
-            int i_185_ = mrd[i];
-            int i_186_ = cx + (int) ((mtx[i_185_][0] - x / 30 - cx) * RadicalMath.cos(xz)
-                    - (mtz[i_185_][0] - z / 30 - cz) * RadicalMath.sin(xz));
-            int i_187_ = cz + (int) ((mtx[i_185_][0] - x / 30 - cx) * RadicalMath.sin(xz)
-                    + (mtz[i_185_][0] - z / 30 - cz) * RadicalMath.cos(xz));
-            int i_188_ = cz
-                    + (int) ((mty[i_185_][0] - y / 30 - cy) * RadicalMath.sin(zy) + (i_187_ - cz) * RadicalMath.cos(zy));
-            int i_189_ = cx + (int) ((mtx[i_185_][nmv[i_185_] - 1] - x / 30 - cx) * RadicalMath.cos(xz)
-                    - (mtz[i_185_][nmv[i_185_] - 1] - z / 30 - cz) * RadicalMath.sin(xz));
-            int i_190_ = cz + (int) ((mtx[i_185_][nmv[i_185_] - 1] - x / 30 - cx) * RadicalMath.sin(xz)
-                    + (mtz[i_185_][nmv[i_185_] - 1] - z / 30 - cz) * RadicalMath.cos(xz));
-            int i_191_ = cz + (int) ((mty[i_185_][nmv[i_185_] - 1] - y / 30 - cy) * RadicalMath.sin(zy)
-                    + (i_190_ - cz) * RadicalMath.cos(zy));
-            if (Utility.xs(i_189_, i_191_) > -cullX && Utility.xs(i_186_, i_188_) < w + cullX) {
-                int[] is = new int[nmv[i_185_] * 2];
-                int[] is_192_ = new int[nmv[i_185_] * 2];
-                int[] is_193_ = new int[nmv[i_185_] * 2];
-                for (int i_194_ = 0; i_194_ < nmv[i_185_] * 2; i_194_++) {
-                    is[i_194_] = mtx[i_185_][i_194_] - x / 30;
-                    is_192_[i_194_] = mty[i_185_][i_194_] - y / 30;
-                    is_193_[i_194_] = mtz[i_185_][i_194_] - z / 30;
+        for (int order = 0; order < nmt; order++) {
+            int mountain = mrd[order];
+            int leftX = cx + (int) ((mtx[mountain][0] - x / 30 - cx) * RadicalMath.cos(xz)
+                    - (mtz[mountain][0] - z / 30 - cz) * RadicalMath.sin(xz));
+            int leftViewZ = cz + (int) ((mtx[mountain][0] - x / 30 - cx) * RadicalMath.sin(xz)
+                    + (mtz[mountain][0] - z / 30 - cz) * RadicalMath.cos(xz));
+            int leftDepth = cz
+                    + (int) ((mty[mountain][0] - y / 30 - cy) * RadicalMath.sin(zy) + (leftViewZ - cz) * RadicalMath.cos(zy));
+            int rightX = cx + (int) ((mtx[mountain][nmv[mountain] - 1] - x / 30 - cx) * RadicalMath.cos(xz)
+                    - (mtz[mountain][nmv[mountain] - 1] - z / 30 - cz) * RadicalMath.sin(xz));
+            int rightViewZ = cz + (int) ((mtx[mountain][nmv[mountain] - 1] - x / 30 - cx) * RadicalMath.sin(xz)
+                    + (mtz[mountain][nmv[mountain] - 1] - z / 30 - cz) * RadicalMath.cos(xz));
+            int rightDepth = cz + (int) ((mty[mountain][nmv[mountain] - 1] - y / 30 - cy) * RadicalMath.sin(zy)
+                    + (rightViewZ - cz) * RadicalMath.cos(zy));
+            if (Utility.xs(rightX, rightDepth) > -cullX && Utility.xs(leftX, leftDepth) < w + cullX) {
+                int[] pointX = new int[nmv[mountain] * 2];
+                int[] pointY = new int[nmv[mountain] * 2];
+                int[] pointZ = new int[nmv[mountain] * 2];
+                for (int point = 0; point < nmv[mountain] * 2; point++) {
+                    pointX[point] = mtx[mountain][point] - x / 30;
+                    pointY[point] = mty[mountain][point] - y / 30;
+                    pointZ[point] = mtz[mountain][point] - z / 30;
                 }
-                int i_195_ = (int) Math.sqrt(is[nmv[i_185_] / 4] * is[nmv[i_185_] / 4]
-                        + is_193_[nmv[i_185_] / 4] * is_193_[nmv[i_185_] / 4]);
+                int distance = (int) Math.sqrt(pointX[nmv[mountain] / 4] * pointX[nmv[mountain] / 4]
+                        + pointZ[nmv[mountain] / 4] * pointZ[nmv[mountain] / 4]);
                 float[] mountainX = null;
                 float[] mountainY = null;
                 if (Precise.on) {
-                    mountainX = new float[nmv[i_185_] * 2];
-                    mountainY = new float[nmv[i_185_] * 2];
-                    Precise.camera(is, is_192_, is_193_, nmv[i_185_] * 2, 30, 10, mountainX, mountainY);
+                    mountainX = new float[nmv[mountain] * 2];
+                    mountainY = new float[nmv[mountain] * 2];
+                    Precise.camera(pointX, pointY, pointZ, nmv[mountain] * 2, 30, 10, mountainX, mountainY);
                 }
-                Utility.rot(is, is_193_, cx, cz, xz, nmv[i_185_] * 2);
-                Utility.rot(is_192_, is_193_, cy, cz, zy, nmv[i_185_] * 2);
-                int[] is_196_ = new int[4];
-                int[] is_197_ = new int[4];
-                boolean bool_201_;
-                for (int i_202_ = 0; i_202_ < nmv[i_185_] - 1; i_202_++) {
-                    int i_203_ = 0;
-                    int i_204_ = 0;
-                    int i_205_ = 0;
-                    int i_206_ = 0;
-                    bool_201_ = true;
-                    for (int i_207_ = 0; i_207_ < 4; i_207_++) {
-                        int i_208_ = i_207_ + i_202_;
-                        if (i_207_ == 2)
-                            i_208_ = i_202_ + nmv[i_185_] + 1;
-                        if (i_207_ == 3)
-                            i_208_ = i_202_ + nmv[i_185_];
-                        is_196_[i_207_] = Utility.xs(is[i_208_], is_193_[i_208_]);
-                        is_197_[i_207_] = Utility.ys(is_192_[i_208_], is_193_[i_208_], 1);
+                Utility.rot(pointX, pointZ, cx, cz, xz, nmv[mountain] * 2);
+                Utility.rot(pointY, pointZ, cy, cz, zy, nmv[mountain] * 2);
+                int[] screenX = new int[4];
+                int[] screenY = new int[4];
+                boolean onScreen;
+                for (int face = 0; face < nmv[mountain] - 1; face++) {
+                    int above = 0;
+                    int below = 0;
+                    int leftOf = 0;
+                    int rightOf = 0;
+                    onScreen = true;
+                    for (int corner = 0; corner < 4; corner++) {
+                        int point = corner + face;
+                        if (corner == 2)
+                            point = face + nmv[mountain] + 1;
+                        if (corner == 3)
+                            point = face + nmv[mountain];
+                        screenX[corner] = Utility.xs(pointX[point], pointZ[point]);
+                        screenY[corner] = Utility.ys(pointY[point], pointZ[point], 1);
                         if (mountainX != null) {
-                            EXACT_X[i_207_] = mountainX[i_208_];
-                            EXACT_Y[i_207_] = mountainY[i_208_];
+                            EXACT_X[corner] = mountainX[point];
+                            EXACT_Y[corner] = mountainY[point];
                         }
-                        if (is_197_[i_207_] < -cullY || is_193_[i_208_] < 10)
-                            i_203_++;
-                        if (is_197_[i_207_] > h + cullY || is_193_[i_208_] < 10)
-                            i_204_++;
-                        if (is_196_[i_207_] < -cullX || is_193_[i_208_] < 10)
-                            i_205_++;
-                        if (is_196_[i_207_] > w + cullX || is_193_[i_208_] < 10)
-                            i_206_++;
+                        if (screenY[corner] < -cullY || pointZ[point] < 10)
+                            above++;
+                        if (screenY[corner] > h + cullY || pointZ[point] < 10)
+                            below++;
+                        if (screenX[corner] < -cullX || pointZ[point] < 10)
+                            leftOf++;
+                        if (screenX[corner] > w + cullX || pointZ[point] < 10)
+                            rightOf++;
                     }
-                    if (i_205_ == 4 || i_203_ == 4 || i_204_ == 4 || i_206_ == 4)
-                        bool_201_ = false;
-                    if (bool_201_) {
-                        float f = i_195_ / 2500.0F + (8000.0F - fade[0]) / 1000.0F - 2.0F
+                    if (leftOf == 4 || above == 4 || below == 4 || rightOf == 4)
+                        onScreen = false;
+                    if (onScreen) {
+                        float haze = distance / 2500.0F + (8000.0F - fade[0]) / 1000.0F - 2.0F
                                 - (Math.abs(y) - 250.0F) / 5000.0F;
-                        if (f > 0.0F && f < 10.0F) {
-                            if (f < 3.5)
-                                f = 3.5F;
-                            int i_209_ = (int) ((mtc[i_185_][i_202_][0] + cgrnd[0] + csky[0] * f
-                                    + cfade[0] * f) / (2.0F + f * 2.0F));
-                            int i_210_ = (int) ((mtc[i_185_][i_202_][1] + cgrnd[1] + csky[1] * f
-                                    + cfade[1] * f) / (2.0F + f * 2.0F));
-                            int i_211_ = (int) ((mtc[i_185_][i_202_][2] + cgrnd[2] + csky[2] * f
-                                    + cfade[2] * f) / (2.0F + f * 2.0F));
-                            rd.setColor(new Color(i_209_, i_210_, i_211_)); // Mountain Color, should make this editable in the stage code
+                        if (haze > 0.0F && haze < 10.0F) {
+                            if (haze < 3.5)
+                                haze = 3.5F;
+                            int red = (int) ((mtc[mountain][face][0] + cgrnd[0] + csky[0] * haze
+                                    + cfade[0] * haze) / (2.0F + haze * 2.0F));
+                            int green = (int) ((mtc[mountain][face][1] + cgrnd[1] + csky[1] * haze
+                                    + cfade[1] * haze) / (2.0F + haze * 2.0F));
+                            int blue = (int) ((mtc[mountain][face][2] + cgrnd[2] + csky[2] * haze
+                                    + cfade[2] * haze) / (2.0F + haze * 2.0F));
+                            rd.setColor(new Color(red, green, blue)); // Mountain Color, should make this editable in the stage code
                             if (mountainX != null) {
-                                Precise.bind(is_196_, is_197_, EXACT_X, EXACT_Y, 4, 60_000_000 + i_185_ * 1000 + i_202_);
+                                Precise.bind(screenX, screenY, EXACT_X, EXACT_Y, 4, 60_000_000 + mountain * 1000 + face);
                             }
-                            rd.fillPolygon(is_196_, is_197_, 4);
+                            rd.fillPolygon(screenX, screenY, 4);
                         }
                     }
                 }
@@ -1251,108 +1251,108 @@ public class Medium {
         twn = null;
         nst = 0;
         if (lightson) {
-            Random random1 = new Random((long) (fxRandom.nextDouble() * 100000D));
+            Random starRandom = new Random((long) (fxRandom.nextDouble() * 100000D));
             nst = 40;
             stx = new int[nst];
             stz = new int[nst];
             stc = new int[nst][2][3];
             bst = new boolean[nst];
             twn = new int[nst];
-            for (int i = 0; i < nst; i++) {
-                stx[i] = (int) (2000D * random1.nextDouble() - 1000D);
-                stz[i] = (int) (2000D * random1.nextDouble() - 1000D);
-                int j = (int) (3D * random1.nextDouble());
-                if (j >= 3) {
-                    j = 0;
+            for (int star = 0; star < nst; star++) {
+                stx[star] = (int) (2000D * starRandom.nextDouble() - 1000D);
+                stz[star] = (int) (2000D * starRandom.nextDouble() - 1000D);
+                int strong = (int) (3D * starRandom.nextDouble());
+                if (strong >= 3) {
+                    strong = 0;
                 }
-                if (j <= -1) {
-                    j = 2;
+                if (strong <= -1) {
+                    strong = 2;
                 }
-                int k = j + 1;
-                if (random1.nextDouble() > random1.nextDouble()) {
-                    k = j - 1;
+                int tint = strong + 1;
+                if (starRandom.nextDouble() > starRandom.nextDouble()) {
+                    tint = strong - 1;
                 }
-                if (k == 3) {
-                    k = 0;
+                if (tint == 3) {
+                    tint = 0;
                 }
-                if (k == -1) {
-                    k = 2;
+                if (tint == -1) {
+                    tint = 2;
                 }
-                for (int l = 0; l < 3; l++) {
-                    stc[i][0][l] = 200;
-                    if (j == l) {
-                        stc[i][0][l] += (int) (55D * random1.nextDouble());
+                for (int channel = 0; channel < 3; channel++) {
+                    stc[star][0][channel] = 200;
+                    if (strong == channel) {
+                        stc[star][0][channel] += (int) (55D * starRandom.nextDouble());
                     }
-                    if (k == l) {
-                        stc[i][0][l] += 55;
+                    if (tint == channel) {
+                        stc[star][0][channel] += 55;
                     }
-                    stc[i][0][l] = (stc[i][0][l] * 2 + csky[l]) / 3;
-                    stc[i][1][l] = (stc[i][0][l] + csky[l]) / 2;
+                    stc[star][0][channel] = (stc[star][0][channel] * 2 + csky[channel]) / 3;
+                    stc[star][1][channel] = (stc[star][0][channel] + csky[channel]) / 2;
                 }
 
-                twn[i] = (int) (4D * random1.nextDouble());
-                bst[i] = random1.nextDouble() > 0.80000000000000004D;
+                twn[star] = (int) (4D * starRandom.nextDouble());
+                bst[star] = starRandom.nextDouble() > 0.80000000000000004D;
             }
 
         }
     }
 
-    private static void drawstars(Graphics2D graphics2d) {
+    private static void drawstars(Graphics2D rd) {
         if (detailtype == 0 || detailtype == 1)
             return;
-        for (int i = 0; i < nst; i++) {
-            int j = cx + (int) (stx[i] * RadicalMath.cos(xz) - stz[i] * RadicalMath.sin(xz));
-            int k = cz + (int) (stx[i] * RadicalMath.sin(xz) + stz[i] * RadicalMath.cos(xz));
-            int l = cy + (int) (-200F * RadicalMath.cos(zy) - k * RadicalMath.sin(zy));
-            int i1 = cz + (int) (-200F * RadicalMath.sin(zy) + k * RadicalMath.cos(zy));
-            j = Utility.xs(j, i1);
-            l = Utility.ys(l, i1, 1);
-            if (j - 1 <= iw || j + 3 >= w || l - 1 <= ih || l + 3 >= h) {
+        for (int star = 0; star < nst; star++) {
+            int starX = cx + (int) (stx[star] * RadicalMath.cos(xz) - stz[star] * RadicalMath.sin(xz));
+            int viewZ = cz + (int) (stx[star] * RadicalMath.sin(xz) + stz[star] * RadicalMath.cos(xz));
+            int starY = cy + (int) (-200F * RadicalMath.cos(zy) - viewZ * RadicalMath.sin(zy));
+            int depth = cz + (int) (-200F * RadicalMath.sin(zy) + viewZ * RadicalMath.cos(zy));
+            starX = Utility.xs(starX, depth);
+            starY = Utility.ys(starY, depth, 1);
+            if (starX - 1 <= iw || starX + 3 >= w || starY - 1 <= ih || starY + 3 >= h) {
                 continue;
             }
-            if (twn[i] == 0) {
-                int j1 = (int) (3D * fxRandom.nextDouble());
-                if (j1 >= 3) {
-                    j1 = 0;
+            if (twn[star] == 0) {
+                int strong = (int) (3D * fxRandom.nextDouble());
+                if (strong >= 3) {
+                    strong = 0;
                 }
-                if (j1 <= -1) {
-                    j1 = 2;
+                if (strong <= -1) {
+                    strong = 2;
                 }
-                int l1 = j1 + 1;
+                int tint = strong + 1;
                 if (fxRandom.nextDouble() > fxRandom.nextDouble()) {
-                    l1 = j1 - 1;
+                    tint = strong - 1;
                 }
-                if (l1 == 3) {
-                    l1 = 0;
+                if (tint == 3) {
+                    tint = 0;
                 }
-                if (l1 == -1) {
-                    l1 = 2;
+                if (tint == -1) {
+                    tint = 2;
                 }
-                for (int i2 = 0; i2 < 3; i2++) {
-                    stc[i][0][i2] = 200;
-                    if (j1 == i2) {
-                        stc[i][0][i2] += (int) (55D * fxRandom.nextDouble());
+                for (int channel = 0; channel < 3; channel++) {
+                    stc[star][0][channel] = 200;
+                    if (strong == channel) {
+                        stc[star][0][channel] += (int) (55D * fxRandom.nextDouble());
                     }
-                    if (l1 == i2) {
-                        stc[i][0][i2] += 55;
+                    if (tint == channel) {
+                        stc[star][0][channel] += 55;
                     }
-                    stc[i][0][i2] = (stc[i][0][i2] * 2 + csky[i2]) / 3;
-                    stc[i][1][i2] = (stc[i][0][i2] + csky[i2]) / 2;
+                    stc[star][0][channel] = (stc[star][0][channel] * 2 + csky[channel]) / 3;
+                    stc[star][1][channel] = (stc[star][0][channel] + csky[channel]) / 2;
                 }
 
-                twn[i] = 3;
+                twn[star] = 3;
             } else {
-                twn[i]--;
+                twn[star]--;
             }
-            int k1 = 0;
-            if (bst[i]) {
-                k1 = 1;
+            int big = 0;
+            if (bst[star]) {
+                big = 1;
             }
-            graphics2d.setColor(new Color(stc[i][1][0], stc[i][1][1], stc[i][1][2]));
-            graphics2d.fillRect(j - 1, l, 3 + k1, 1 + k1);
-            graphics2d.fillRect(j, l - 1, 1 + k1, 3 + k1);
-            graphics2d.setColor(new Color(stc[i][0][0], stc[i][0][1], stc[i][0][2]));
-            graphics2d.fillRect(j, l, 1 + k1, 1 + k1);
+            rd.setColor(new Color(stc[star][1][0], stc[star][1][1], stc[star][1][2]));
+            rd.fillRect(starX - 1, starY, 3 + big, 1 + big);
+            rd.fillRect(starX, starY - 1, 1 + big, 3 + big);
+            rd.setColor(new Color(stc[star][0][0], stc[star][0][1], stc[star][0][2]));
+            rd.fillRect(starX, starY, 1 + big, 1 + big);
         }
 
     }
@@ -1380,7 +1380,7 @@ public class Medium {
      * at the edge just worked out, 1 and 2 at the edge before, 3 back at the
      * first) its exact edges {@code edge} and {@code before}.
      */
-    private static void band(int[] ai, int[] ai1, float edge, float before, int id) {
+    private static void band(int[] bandX, int[] bandY, float edge, float before, int id) {
         EXACT_X[0] = iw;
         EXACT_Y[0] = edge;
         EXACT_X[1] = iw;
@@ -1389,10 +1389,10 @@ public class Medium {
         EXACT_Y[2] = before;
         EXACT_X[3] = w;
         EXACT_Y[3] = edge;
-        Precise.bind(ai, ai1, EXACT_X, EXACT_Y, 4, id);
+        Precise.bind(bandX, bandY, EXACT_X, EXACT_Y, 4, id);
     }
 
-    public static void d(Graphics2D graphics2d) {
+    public static void d(Graphics2D rd) {
         nsp = 0;
         clampView();
         if (Precise.on) {
@@ -1403,59 +1403,59 @@ public class Medium {
         float t_sin = RadicalMath.sin(zy);
 
         ground = 250 - y;
-        int ai[] = new int[4];
-        int ai1[] = new int[4];
-        int i = cgrnd[0];
-        int j = cgrnd[1];
-        int k = cgrnd[2];
-        int l = crgrnd[0];
-        int i1 = crgrnd[1];
-        int j1 = crgrnd[2];
-        int k1 = h;
+        int bandX[] = new int[4];
+        int bandY[] = new int[4];
+        int red = cgrnd[0];
+        int green = cgrnd[1];
+        int blue = cgrnd[2];
+        int farRed = crgrnd[0];
+        int farGreen = crgrnd[1];
+        int farBlue = crgrnd[2];
+        int edgeBelow = h;
         float exactBelow = h; // the exact edge of the band drawn last, for the graphics card
-        for (int l1 = 0; l1 < 16; l1++) {
-            int j2 = fade[l1];
-            int l2 = ground;
+        for (int fadeBand = 0; fadeBand < 16; fadeBand++) {
+            int depth = fade[fadeBand];
+            int viewY = ground;
             if (zy != 0) {
-                l2 = cy + (int) ((ground - cy) * t_cos - (fade[l1] - cz) * t_sin);
-                j2 = cz + (int) ((ground - cy) * t_sin + (fade[l1] - cz) * t_cos);
+                viewY = cy + (int) ((ground - cy) * t_cos - (fade[fadeBand] - cz) * t_sin);
+                depth = cz + (int) ((ground - cy) * t_sin + (fade[fadeBand] - cz) * t_cos);
             }
-            ai[0] = iw;
-            ai1[0] = Utility.ys(l2, j2, 1);
-            if (ai1[0] < ih) {
-                ai1[0] = ih;
+            bandX[0] = iw;
+            bandY[0] = Utility.ys(viewY, depth, 1);
+            if (bandY[0] < ih) {
+                bandY[0] = ih;
             }
-            if (ai1[0] > h) {
-                ai1[0] = h;
+            if (bandY[0] > h) {
+                bandY[0] = h;
             }
-            ai[1] = iw;
-            ai1[1] = k1;
-            ai[2] = w;
-            ai1[2] = k1;
-            ai[3] = w;
-            ai1[3] = ai1[0];
-            k1 = ai1[0];
-            float exactEdge = Precise.on ? Precise.horizon(ground, fade[l1], true) : 0F;
-            if (l1 > 0) {
-                l = (l * 7 + cfade[0]) / 8;
-                i1 = (i1 * 7 + cfade[1]) / 8;
-                j1 = (j1 * 7 + cfade[2]) / 8;
-                if (l1 < 3) {
-                    i = (i * 7 + cfade[0]) / 8;
-                    j = (j * 7 + cfade[1]) / 8;
-                    k = (k * 7 + cfade[2]) / 8;
+            bandX[1] = iw;
+            bandY[1] = edgeBelow;
+            bandX[2] = w;
+            bandY[2] = edgeBelow;
+            bandX[3] = w;
+            bandY[3] = bandY[0];
+            edgeBelow = bandY[0];
+            float exactEdge = Precise.on ? Precise.horizon(ground, fade[fadeBand], true) : 0F;
+            if (fadeBand > 0) {
+                farRed = (farRed * 7 + cfade[0]) / 8;
+                farGreen = (farGreen * 7 + cfade[1]) / 8;
+                farBlue = (farBlue * 7 + cfade[2]) / 8;
+                if (fadeBand < 3) {
+                    red = (red * 7 + cfade[0]) / 8;
+                    green = (green * 7 + cfade[1]) / 8;
+                    blue = (blue * 7 + cfade[2]) / 8;
                 } else {
-                    i = l;
-                    j = i1;
-                    k = j1;
+                    red = farRed;
+                    green = farGreen;
+                    blue = farBlue;
                 }
             }
-            if (allBands || ai1[0] < h && ai1[1] > ih) {
-                graphics2d.setColor(new Color(i, j, k));
+            if (allBands || bandY[0] < h && bandY[1] > ih) {
+                rd.setColor(new Color(red, green, blue));
                 if (Precise.on) {
-                    band(ai, ai1, exactEdge, exactBelow, 1000 + l1);
+                    band(bandX, bandY, exactEdge, exactBelow, 1000 + fadeBand);
                 }
-                graphics2d.fillPolygon(ai, ai1, 4);
+                rd.fillPolygon(bandX, bandY, 4);
             }
             exactBelow = exactEdge;
         }
@@ -1497,126 +1497,126 @@ public class Medium {
         if (lightn != -1 && lton) {
             Glow.set((lilo - 217) * Glow.LIGHTNING_STEP); // the sky lit by the storm
         }
-        i = csky[0];
-        j = csky[1];
-        k = csky[2];
-        int i2 = i;
-        int k2 = j;
-        int i3 = k;
-        int j3 = cy + (int) ((skyline - 700 - cy) * t_cos - (7000 - cz) * t_sin);
-        int k3 = cz + (int) ((skyline - 700 - cy) * t_sin + (7000 - cz) * t_cos);
-        j3 = Utility.ys(j3, k3, 1);
+        red = csky[0];
+        green = csky[1];
+        blue = csky[2];
+        int gradientRed = red;
+        int gradientGreen = green;
+        int gradientBlue = blue;
+        int gradientEdge = cy + (int) ((skyline - 700 - cy) * t_cos - (7000 - cz) * t_sin);
+        int gradientDepth = cz + (int) ((skyline - 700 - cy) * t_sin + (7000 - cz) * t_cos);
+        gradientEdge = Utility.ys(gradientEdge, gradientDepth, 1);
         float exactGradient = Precise.on ? Precise.horizon(skyline - 700, 7000, false) : 0F;
-        int l3 = ih;
+        int edgeAbove = ih;
         float exactAbove = ih;
-        for (int i4 = 0; i4 < 16; i4++) {
-            int k4 = fade[i4];
-            int i5 = skyline;
+        for (int fadeBand = 0; fadeBand < 16; fadeBand++) {
+            int depth = fade[fadeBand];
+            int viewY = skyline;
             if (zy != 0) {
-                i5 = cy + (int) ((skyline - cy) * t_cos - (fade[i4] - cz) * t_sin);
-                k4 = cz + (int) ((skyline - cy) * t_sin + (fade[i4] - cz) * t_cos);
+                viewY = cy + (int) ((skyline - cy) * t_cos - (fade[fadeBand] - cz) * t_sin);
+                depth = cz + (int) ((skyline - cy) * t_sin + (fade[fadeBand] - cz) * t_cos);
             }
-            ai[0] = iw;
-            ai1[0] = Utility.ys(i5, k4, 1);
-            if (ai1[0] > h) {
-                ai1[0] = h;
+            bandX[0] = iw;
+            bandY[0] = Utility.ys(viewY, depth, 1);
+            if (bandY[0] > h) {
+                bandY[0] = h;
             }
-            if (ai1[0] < ih) {
-                ai1[0] = ih;
+            if (bandY[0] < ih) {
+                bandY[0] = ih;
             }
-            ai[1] = iw;
-            ai1[1] = l3;
-            ai[2] = w;
-            ai1[2] = l3;
-            ai[3] = w;
-            ai1[3] = ai1[0];
-            l3 = ai1[0];
-            float exactSky = Precise.on ? Precise.horizon(skyline, fade[i4], false) : 0F;
-            if (i4 > 0) {
-                i = (i * 7 + cfade[0]) / 8;
-                j = (j * 7 + cfade[1]) / 8;
-                k = (k * 7 + cfade[2]) / 8;
+            bandX[1] = iw;
+            bandY[1] = edgeAbove;
+            bandX[2] = w;
+            bandY[2] = edgeAbove;
+            bandX[3] = w;
+            bandY[3] = bandY[0];
+            edgeAbove = bandY[0];
+            float exactSky = Precise.on ? Precise.horizon(skyline, fade[fadeBand], false) : 0F;
+            if (fadeBand > 0) {
+                red = (red * 7 + cfade[0]) / 8;
+                green = (green * 7 + cfade[1]) / 8;
+                blue = (blue * 7 + cfade[2]) / 8;
             }
-            if (ai1[1] < j3) {
-                i2 = i;
-                k2 = j;
-                i3 = k;
+            if (bandY[1] < gradientEdge) {
+                gradientRed = red;
+                gradientGreen = green;
+                gradientBlue = blue;
             }
-            if (allBands || ai1[0] > ih && ai1[1] < h) {
-                graphics2d.setColor(new Color(i, j, k));
+            if (allBands || bandY[0] > ih && bandY[1] < h) {
+                rd.setColor(new Color(red, green, blue));
                 if (Precise.on) {
-                    band(ai, ai1, exactSky, exactAbove, 2000 + i4);
+                    band(bandX, bandY, exactSky, exactAbove, 2000 + fadeBand);
                 }
-                graphics2d.fillPolygon(ai, ai1, 4);
+                rd.fillPolygon(bandX, bandY, 4);
             }
             exactAbove = exactSky;
         }
 
-        ai[0] = iw;
-        ai1[0] = l3;
-        ai[1] = iw;
-        ai1[1] = k1;
-        ai[2] = w;
-        ai1[2] = k1;
-        ai[3] = w;
-        ai1[3] = l3;
-        if (allBands || ai1[0] < h && ai1[1] > ih) {
-            float f = (Math.abs(y) - 250F) / (fade[0] * 2);
-            if (f < 0.0F) {
-                f = 0.0F;
+        bandX[0] = iw;
+        bandY[0] = edgeAbove;
+        bandX[1] = iw;
+        bandY[1] = edgeBelow;
+        bandX[2] = w;
+        bandY[2] = edgeBelow;
+        bandX[3] = w;
+        bandY[3] = edgeAbove;
+        if (allBands || bandY[0] < h && bandY[1] > ih) {
+            float blend = (Math.abs(y) - 250F) / (fade[0] * 2);
+            if (blend < 0.0F) {
+                blend = 0.0F;
             }
-            if (f > 1.0F) {
-                f = 1.0F;
+            if (blend > 1.0F) {
+                blend = 1.0F;
             }
-            i = (int) ((i * (1.0F - f) + l * (1.0F + f)) / 2.0F);
-            j = (int) ((j * (1.0F - f) + i1 * (1.0F + f)) / 2.0F);
-            k = (int) ((k * (1.0F - f) + j1 * (1.0F + f)) / 2.0F);
-            graphics2d.setColor(new Color(i, j, k));
+            red = (int) ((red * (1.0F - blend) + farRed * (1.0F + blend)) / 2.0F);
+            green = (int) ((green * (1.0F - blend) + farGreen * (1.0F + blend)) / 2.0F);
+            blue = (int) ((blue * (1.0F - blend) + farBlue * (1.0F + blend)) / 2.0F);
+            rd.setColor(new Color(red, green, blue));
             if (Precise.on) {
-                band(ai, ai1, exactAbove, exactBelow, 3000);
+                band(bandX, bandY, exactAbove, exactBelow, 3000);
             }
-            graphics2d.fillPolygon(ai, ai1, 4);
+            rd.fillPolygon(bandX, bandY, 4);
         }
         if (resdown != 2) {
-            for (int j4 = 1; j4 < 20; j4++) {
-                int l4 = 7000;
-                int j5 = skyline - 700 - j4 * 70;
-                if (zy != 0 && j4 != 19) {
-                    j5 = cy + (int) ((skyline - 700 - j4 * 70 - cy) * t_cos - (7000 - cz) * t_sin);
-                    l4 = cz + (int) ((skyline - 700 - j4 * 70 - cy) * t_sin + (7000 - cz) * t_cos);
+            for (int step = 1; step < 20; step++) {
+                int depth = 7000;
+                int viewY = skyline - 700 - step * 70;
+                if (zy != 0 && step != 19) {
+                    viewY = cy + (int) ((skyline - 700 - step * 70 - cy) * t_cos - (7000 - cz) * t_sin);
+                    depth = cz + (int) ((skyline - 700 - step * 70 - cy) * t_sin + (7000 - cz) * t_cos);
                 }
-                ai[0] = iw;
-                if (j4 != 19) {
-                    ai1[0] = Utility.ys(j5, l4, 1);
-                    if (ai1[0] > h) {
-                        ai1[0] = h;
+                bandX[0] = iw;
+                if (step != 19) {
+                    bandY[0] = Utility.ys(viewY, depth, 1);
+                    if (bandY[0] > h) {
+                        bandY[0] = h;
                     }
-                    if (ai1[0] < ih) {
-                        ai1[0] = ih;
+                    if (bandY[0] < ih) {
+                        bandY[0] = ih;
                     }
                 } else {
-                    ai1[0] = ih;
+                    bandY[0] = ih;
                 }
                 float exactStep = 0F;
                 if (Precise.on) {
-                    exactStep = j4 != 19 ? Precise.horizon(skyline - 700 - j4 * 70, 7000, false) : ih;
+                    exactStep = step != 19 ? Precise.horizon(skyline - 700 - step * 70, 7000, false) : ih;
                 }
-                ai[1] = iw;
-                ai1[1] = j3;
-                ai[2] = w;
-                ai1[2] = j3;
-                ai[3] = w;
-                ai1[3] = ai1[0];
-                j3 = ai1[0];
-                i2 = (int) (i2 * 0.99099999999999999D);
-                k2 = (int) (k2 * 0.99099999999999999D);
-                i3 = (int) (i3 * 0.998D);
-                if (allBands || ai1[1] > ih && ai1[0] < h) {
-                    graphics2d.setColor(new Color(i2, k2, i3));
+                bandX[1] = iw;
+                bandY[1] = gradientEdge;
+                bandX[2] = w;
+                bandY[2] = gradientEdge;
+                bandX[3] = w;
+                bandY[3] = bandY[0];
+                gradientEdge = bandY[0];
+                gradientRed = (int) (gradientRed * 0.99099999999999999D);
+                gradientGreen = (int) (gradientGreen * 0.99099999999999999D);
+                gradientBlue = (int) (gradientBlue * 0.998D);
+                if (allBands || bandY[1] > ih && bandY[0] < h) {
+                    rd.setColor(new Color(gradientRed, gradientGreen, gradientBlue));
                     if (Precise.on) {
-                        band(ai, ai1, exactStep, exactGradient, 4000 + j4);
+                        band(bandX, bandY, exactStep, exactGradient, 4000 + step);
                     }
-                    graphics2d.fillPolygon(ai, ai1, 4);
+                    rd.fillPolygon(bandX, bandY, 4);
                 }
                 exactGradient = exactStep;
             }
@@ -1624,14 +1624,14 @@ public class Medium {
             Glow.off();
             if (lightson) {
                 Glow.set(Glow.STAR);
-                drawstars(graphics2d);
+                drawstars(rd);
                 Glow.off();
             }
-            drawmountains(graphics2d);
-            drawclouds(graphics2d);
+            drawmountains(rd);
+            drawclouds(rd);
         }
         Glow.off();
-        groundpolys(graphics2d);
+        groundpolys(rd);
         if (noelec != 0) {
             noelec--;
         }
@@ -1643,24 +1643,24 @@ public class Medium {
         }
     }
 
-    public static void addSp(int i, int j, int k) {
+    public static void addSp(int x, int z, int radius) {
         if (nsp != 7) {
-            spx[nsp] = i;
-            spz[nsp] = j;
-            sprad[nsp] = k;
+            spx[nsp] = x;
+            spz[nsp] = z;
+            sprad[nsp] = radius;
             nsp++;
         }
     }
 
-    public static void setSnap(int i, int j, int k) {
-        snap[0] = i;
-        snap[1] = j;
-        snap[2] = k;
+    public static void setSnap(int red, int green, int blue) {
+        snap[0] = red;
+        snap[1] = green;
+        snap[2] = blue;
     }
 
-    public static void adjustFade(float f) {
-        if (f < 15F) {
-            fade[0] = (int) (origfade - 1000F * (15F - f));
+    public static void adjustFade(float tickMillis) {
+        if (tickMillis < 15F) {
+            fade[0] = (int) (origfade - 1000F * (15F - tickMillis));
             if (fade[0] < 3000) {
                 fade[0] = 3000;
             }
@@ -1674,22 +1674,22 @@ public class Medium {
         }
     }
 
-    public static void setFade(int i, int j, int k) {
-        cfade[0] = (int) (i + i * (snap[0] / 100F));
+    public static void setFade(int red, int green, int blue) {
+        cfade[0] = (int) (red + red * (snap[0] / 100F));
         if (cfade[0] > 255) {
             cfade[0] = 255;
         }
         if (cfade[0] < 0) {
             cfade[0] = 0;
         }
-        cfade[1] = (int) (j + j * (snap[1] / 100F));
+        cfade[1] = (int) (green + green * (snap[1] / 100F));
         if (cfade[1] > 255) {
             cfade[1] = 255;
         }
         if (cfade[1] < 0) {
             cfade[1] = 0;
         }
-        cfade[2] = (int) (k + k * (snap[2] / 100F));
+        cfade[2] = (int) (blue + blue * (snap[2] / 100F));
         if (cfade[2] > 255) {
             cfade[2] = 255;
         }
@@ -1698,238 +1698,238 @@ public class Medium {
         }
     }
 
-    public static void setSky(int i, int j, int k) {
-        osky[0] = i;
-        osky[1] = j;
-        osky[2] = k;
-        for (int l = 0; l < 3; l++) {
-            clds[l] = (osky[l] * cldd[3] + cldd[l]) / (cldd[3] + 1);
-            clds[l] = (int) (clds[l] + clds[l] * (snap[l] / 100F));
-            if (clds[l] > 255) {
-                clds[l] = 255;
+    public static void setSky(int red, int green, int blue) {
+        osky[0] = red;
+        osky[1] = green;
+        osky[2] = blue;
+        for (int channel = 0; channel < 3; channel++) {
+            clds[channel] = (osky[channel] * cldd[3] + cldd[channel]) / (cldd[3] + 1);
+            clds[channel] = (int) (clds[channel] + clds[channel] * (snap[channel] / 100F));
+            if (clds[channel] > 255) {
+                clds[channel] = 255;
             }
-            if (clds[l] < 0) {
-                clds[l] = 0;
+            if (clds[channel] < 0) {
+                clds[channel] = 0;
             }
         }
 
-        csky[0] = (int) (i + i * (snap[0] / 100F));
+        csky[0] = (int) (red + red * (snap[0] / 100F));
         if (csky[0] > 255) {
             csky[0] = 255;
         }
         if (csky[0] < 0) {
             csky[0] = 0;
         }
-        csky[1] = (int) (j + j * (snap[1] / 100F));
+        csky[1] = (int) (green + green * (snap[1] / 100F));
         if (csky[1] > 255) {
             csky[1] = 255;
         }
         if (csky[1] < 0) {
             csky[1] = 0;
         }
-        csky[2] = (int) (k + k * (snap[2] / 100F));
+        csky[2] = (int) (blue + blue * (snap[2] / 100F));
         if (csky[2] > 255) {
             csky[2] = 255;
         }
         if (csky[2] < 0) {
             csky[2] = 0;
         }
-        float af[] = new float[3];
-        Color.RGBtoHSB(csky[0], csky[1], csky[2], af);
+        float hsb[] = new float[3];
+        Color.RGBtoHSB(csky[0], csky[1], csky[2], hsb);
     }
 
-    public static void setClouds(int i, int j, int k, int l, int i1) {
+    public static void setClouds(int red, int green, int blue, int skyMix, int height) {
         if (noclouds)
             return;
-        if (l < 0) {
-            l = 0;
+        if (skyMix < 0) {
+            skyMix = 0;
         }
-        if (l > 10) {
-            l = 10;
+        if (skyMix > 10) {
+            skyMix = 10;
         }
-        if (i1 < -1500) {
-            i1 = -1500;
+        if (height < -1500) {
+            height = -1500;
         }
-        if (i1 > -500) {
-            i1 = -500;
+        if (height > -500) {
+            height = -500;
         }
-        cldd[0] = i;
-        cldd[1] = j;
-        cldd[2] = k;
-        cldd[3] = l;
-        cldd[4] = i1;
-        for (int j1 = 0; j1 < 3; j1++) {
-            clds[j1] = (osky[j1] * cldd[3] + cldd[j1]) / (cldd[3] + 1);
-            clds[j1] = (int) (clds[j1] + clds[j1] * (snap[j1] / 100F));
-            if (clds[j1] > 255) {
-                clds[j1] = 255;
+        cldd[0] = red;
+        cldd[1] = green;
+        cldd[2] = blue;
+        cldd[3] = skyMix;
+        cldd[4] = height;
+        for (int channel = 0; channel < 3; channel++) {
+            clds[channel] = (osky[channel] * cldd[3] + cldd[channel]) / (cldd[3] + 1);
+            clds[channel] = (int) (clds[channel] + clds[channel] * (snap[channel] / 100F));
+            if (clds[channel] > 255) {
+                clds[channel] = 255;
             }
-            if (clds[j1] < 0) {
-                clds[j1] = 0;
+            if (clds[channel] < 0) {
+                clds[channel] = 0;
             }
         }
     }
 
-    public static void setGround(int i, int j, int k) {
-        ogrnd[0] = i;
-        ogrnd[1] = j;
-        ogrnd[2] = k;
-        for (int l = 0; l < 3; l++) {
-            cpol[l] = (ogrnd[l] * texture[3] + texture[l]) / (1 + texture[3]);
-            cpol[l] = (int) (cpol[l] + cpol[l] * (snap[l] / 100F));
-            if (cpol[l] > 255) {
-                cpol[l] = 255;
+    public static void setGround(int red, int green, int blue) {
+        ogrnd[0] = red;
+        ogrnd[1] = green;
+        ogrnd[2] = blue;
+        for (int channel = 0; channel < 3; channel++) {
+            cpol[channel] = (ogrnd[channel] * texture[3] + texture[channel]) / (1 + texture[3]);
+            cpol[channel] = (int) (cpol[channel] + cpol[channel] * (snap[channel] / 100F));
+            if (cpol[channel] > 255) {
+                cpol[channel] = 255;
             }
-            if (cpol[l] < 0) {
-                cpol[l] = 0;
+            if (cpol[channel] < 0) {
+                cpol[channel] = 0;
             }
         }
 
-        cgrnd[0] = (int) (i + i * (snap[0] / 100F));
+        cgrnd[0] = (int) (red + red * (snap[0] / 100F));
         if (cgrnd[0] > 255) {
             cgrnd[0] = 255;
         }
         if (cgrnd[0] < 0) {
             cgrnd[0] = 0;
         }
-        cgrnd[1] = (int) (j + j * (snap[1] / 100F));
+        cgrnd[1] = (int) (green + green * (snap[1] / 100F));
         if (cgrnd[1] > 255) {
             cgrnd[1] = 255;
         }
         if (cgrnd[1] < 0) {
             cgrnd[1] = 0;
         }
-        cgrnd[2] = (int) (k + k * (snap[2] / 100F));
+        cgrnd[2] = (int) (blue + blue * (snap[2] / 100F));
         if (cgrnd[2] > 255) {
             cgrnd[2] = 255;
         }
         if (cgrnd[2] < 0) {
             cgrnd[2] = 0;
         }
-        for (int i1 = 0; i1 < 3; i1++) {
-            crgrnd[i1] = (int) ((cpol[i1] * 0.98999999999999999D + cgrnd[i1]) / 2D);
+        for (int channel = 0; channel < 3; channel++) {
+            crgrnd[channel] = (int) ((cpol[channel] * 0.98999999999999999D + cgrnd[channel]) / 2D);
         }
 
     }
 
-    public static void setTexture(int i, int j, int k, int l) {
-        if (l < 20) {
-            l = 20;
+    public static void setTexture(int red, int green, int blue, int mix) {
+        if (mix < 20) {
+            mix = 20;
         }
-        if (l > 60) {
-            l = 60;
+        if (mix > 60) {
+            mix = 60;
         }
-        texture[0] = i;
-        texture[1] = j;
-        texture[2] = k;
-        texture[3] = l;
-        i = (ogrnd[0] * l + i) / (1 + l);
-        j = (ogrnd[1] * l + j) / (1 + l);
-        k = (ogrnd[2] * l + k) / (1 + l);
-        cpol[0] = (int) (i + i * (snap[0] / 100F));
+        texture[0] = red;
+        texture[1] = green;
+        texture[2] = blue;
+        texture[3] = mix;
+        red = (ogrnd[0] * mix + red) / (1 + mix);
+        green = (ogrnd[1] * mix + green) / (1 + mix);
+        blue = (ogrnd[2] * mix + blue) / (1 + mix);
+        cpol[0] = (int) (red + red * (snap[0] / 100F));
         if (cpol[0] > 255) {
             cpol[0] = 255;
         }
         if (cpol[0] < 0) {
             cpol[0] = 0;
         }
-        cpol[1] = (int) (j + j * (snap[1] / 100F));
+        cpol[1] = (int) (green + green * (snap[1] / 100F));
         if (cpol[1] > 255) {
             cpol[1] = 255;
         }
         if (cpol[1] < 0) {
             cpol[1] = 0;
         }
-        cpol[2] = (int) (k + k * (snap[2] / 100F));
+        cpol[2] = (int) (blue + blue * (snap[2] / 100F));
         if (cpol[2] > 255) {
             cpol[2] = 255;
         }
         if (cpol[2] < 0) {
             cpol[2] = 0;
         }
-        for (int i1 = 0; i1 < 3; i1++) {
-            crgrnd[i1] = (int) ((cpol[i1] * 0.98999999999999999D + cgrnd[i1]) / 2D);
+        for (int channel = 0; channel < 3; channel++) {
+            crgrnd[channel] = (int) ((cpol[channel] * 0.98999999999999999D + cgrnd[channel]) / 2D);
         }
 
     }
 
-    public static void setPolys(int i, int j, int k) {
-        cpol[0] = (int) (i + i * (snap[0] / 100F));
+    public static void setPolys(int red, int green, int blue) {
+        cpol[0] = (int) (red + red * (snap[0] / 100F));
         if (cpol[0] > 255) {
             cpol[0] = 255;
         }
         if (cpol[0] < 0) {
             cpol[0] = 0;
         }
-        cpol[1] = (int) (j + j * (snap[1] / 100F));
+        cpol[1] = (int) (green + green * (snap[1] / 100F));
         if (cpol[1] > 255) {
             cpol[1] = 255;
         }
         if (cpol[1] < 0) {
             cpol[1] = 0;
         }
-        cpol[2] = (int) (k + k * (snap[2] / 100F));
+        cpol[2] = (int) (blue + blue * (snap[2] / 100F));
         if (cpol[2] > 255) {
             cpol[2] = 255;
         }
         if (cpol[2] < 0) {
             cpol[2] = 0;
         }
-        for (int l = 0; l < 3; l++) {
-            crgrnd[l] = (int) ((cpol[l] * 0.98999999999999999D + cgrnd[l]) / 2D);
+        for (int channel = 0; channel < 3; channel++) {
+            crgrnd[channel] = (int) ((cpol[channel] * 0.98999999999999999D + cgrnd[channel]) / 2D);
         }
 
     }
 
-    public static void fadeFrom(int i) {
-        if (i > 8000) {
-            i = 8000;
+    public static void fadeFrom(int distance) {
+        if (distance > 8000) {
+            distance = 8000;
         }
-        for (int j = 1; j < 17; j++) {
-            fade[j - 1] = (i / 2) * (j + 1);
+        for (int band = 1; band < 17; band++) {
+            fade[band - 1] = (distance / 2) * (band + 1);
         }
     }
 
-    public static void watch(ContO conto, int i) {
+    public static void watch(ContO car, int angle) {
         if (flex != 0) {
             flex = 0;
         }
         if (td) {
-            y = (int) (conto.y - 300 - 1100F * cameraRandom.next());
-            x = conto.x + (int) (((conto.x + 400) - conto.x) * RadicalMath.cos(i)
-                    - ((conto.z + 5000) - conto.z) * RadicalMath.sin(i));
-            z = conto.z + (int) (((conto.x + 400) - conto.x) * RadicalMath.sin(i)
-                    + ((conto.z + 5000) - conto.z) * RadicalMath.cos(i));
+            y = (int) (car.y - 300 - 1100F * cameraRandom.next());
+            x = car.x + (int) (((car.x + 400) - car.x) * RadicalMath.cos(angle)
+                    - ((car.z + 5000) - car.z) * RadicalMath.sin(angle));
+            z = car.z + (int) (((car.x + 400) - car.x) * RadicalMath.sin(angle)
+                    + ((car.z + 5000) - car.z) * RadicalMath.cos(angle));
             td = false;
         }
-        int c = 0;
-        if (conto.x - x - cx > 0) {
-            c = 180;
+        int offset = 0;
+        if (car.x - x - cx > 0) {
+            offset = 180;
         }
-        int j = -(int) (90 + c
-                + StrictMath.atan((double) (conto.z - z) / (double) (conto.x - x - cx)) / 0.017453292519943295D);
-        c = 0;
-        if (conto.y - y - cy < 0) {
-            c = -180;
+        int targetYaw = -(int) (90 + offset
+                + StrictMath.atan((double) (car.z - z) / (double) (car.x - x - cx)) / 0.017453292519943295D);
+        offset = 0;
+        if (car.y - y - cy < 0) {
+            offset = -180;
         }
-        int k = (int) Math.sqrt((conto.z - z) * (conto.z - z) + (conto.x - x - cx) * (conto.x - x - cx));
-        int l = (int) (90 + c - StrictMath.atan((double) k / (double) (conto.y - y - cy)) / 0.017453292519943295D);
-        xz += (j - xz) / trns;
+        int flatDistance = (int) Math.sqrt((car.z - z) * (car.z - z) + (car.x - x - cx) * (car.x - x - cx));
+        int targetPitch = (int) (90 + offset - StrictMath.atan((double) flatDistance / (double) (car.y - y - cy)) / 0.017453292519943295D);
+        xz += (targetYaw - xz) / trns;
         if (trns != 1) {
             trns--;
         }
-        zy += (l - zy) / 5;
-        if ((int) Math.sqrt((conto.z - z) * (conto.z - z) + (conto.x - x - cx) * (conto.x - x - cx)
-                + (conto.y - y - cy) * (conto.y - y - cy)) > 6000) {
+        zy += (targetPitch - zy) / 5;
+        if ((int) Math.sqrt((car.z - z) * (car.z - z) + (car.x - x - cx) * (car.x - x - cx)
+                + (car.y - y - cy) * (car.y - y - cy)) > 6000) {
             td = true;
         }
     }
 
-    public static void around(ContO conto, boolean flag) {
+    public static void around(ContO car, boolean closingIn) {
         if (flex != 0) {
             flex = 0;
         }
-        if (!flag) {
+        if (!closingIn) {
             if (!vert) {
                 adv += 2;
             } else {
@@ -1944,20 +1944,20 @@ public class Medium {
         } else {
             adv -= 14;
         }
-        int i = 500 + adv;
-        if (flag && i < 1300) {
-            i = 1300;
+        int reach = 500 + adv;
+        if (closingIn && reach < 1300) {
+            reach = 1300;
         }
-        if (i < 1000) {
-            i = 1000;
+        if (reach < 1000) {
+            reach = 1000;
         }
-        y = conto.y - adv;
+        y = car.y - adv;
         if (y > 10) {
             vert = false;
         }
-        x = conto.x + (int) ((conto.x - i - conto.x) * RadicalMath.cos(vxz));
-        z = conto.z + (int) ((conto.x - i - conto.x) * RadicalMath.sin(vxz));
-        if (!flag) {
+        x = car.x + (int) ((car.x - reach - car.x) * RadicalMath.cos(vxz));
+        z = car.z + (int) ((car.x - reach - car.x) * RadicalMath.sin(vxz));
+        if (!closingIn) {
             vxz += 2;
         } else {
             vxz += 4;
@@ -1968,21 +1968,21 @@ public class Medium {
          * turned -180 into 65356 and tipped the camera straight down instead;
          * watch(), getaround() and transaround() had the same bug.
          */
-        int c = 0;
-        int j = y;
-        if (j > 0) {
-            j = 0;
+        int offset = 0;
+        int eyeY = y;
+        if (eyeY > 0) {
+            eyeY = 0;
         }
-        if (conto.y - j - cy < 0) {
-            c = -180;
+        if (car.y - eyeY - cy < 0) {
+            offset = -180;
         }
-        int k = (int) Math.sqrt(((conto.z - z) + cz) * ((conto.z - z) + cz) + (conto.x - x - cx) * (conto.x - x - cx));
-        int l = (int) (90 + c - StrictMath.atan((double) k / (double) (conto.y - j - cy)) / 0.017453292519943295D);
+        int flatDistance = (int) Math.sqrt(((car.z - z) + cz) * ((car.z - z) + cz) + (car.x - x - cx) * (car.x - x - cx));
+        int targetPitch = (int) (90 + offset - StrictMath.atan((double) flatDistance / (double) (car.y - eyeY - cy)) / 0.017453292519943295D);
         xz = -vxz + 90;
-        if (flag) {
-            l -= 15;
+        if (closingIn) {
+            targetPitch -= 15;
         }
-        zy += (l - zy) / 10;
+        zy += (targetPitch - zy) / 10;
         if (trns != 5) {
             trns = 5;
         }
@@ -2052,49 +2052,49 @@ public class Medium {
         cpflik = !cpflik;
     }
 
-    public static void follow(ContO conto, int i, int j) {
+    public static void follow(ContO car, int heading, int look) {
         zy = 10;
-        int k = 2 + Math.abs(bcxz) / 4;
-        if (k > 20) {
-            k = 20;
+        int turnStep = 2 + Math.abs(bcxz) / 4;
+        if (turnStep > 20) {
+            turnStep = 20;
         }
-        if (j != 0) {
-            if (j == 1) {
+        if (look != 0) {
+            if (look == 1) {
                 if (bcxz < 180) {
-                    bcxz += k;
+                    bcxz += turnStep;
                 }
                 if (bcxz > 180) {
                     bcxz = 180;
                 }
             }
-            if (j == -1) {
+            if (look == -1) {
                 if (bcxz > -180) {
-                    bcxz -= k;
+                    bcxz -= turnStep;
                 }
                 if (bcxz < -180) {
                     bcxz = -180;
                 }
             }
-        } else if (Math.abs(bcxz) > k) {
+        } else if (Math.abs(bcxz) > turnStep) {
             if (bcxz > 0) {
-                bcxz -= k;
+                bcxz -= turnStep;
             } else {
-                bcxz += k;
+                bcxz += turnStep;
             }
         } else if (bcxz != 0) {
             bcxz = 0;
         }
-        i += bcxz;
-        xz = -i;
-        x = (conto.x - cx) + (int) ((-(conto.z - 800 - conto.z)) * RadicalMath.sin(i));
-        z = (conto.z - cz) + (int) ((conto.z - 800 - conto.z) * RadicalMath.cos(i));
-        y = conto.y - 250 - cy;
+        heading += bcxz;
+        xz = -heading;
+        x = (car.x - cx) + (int) ((-(car.z - 800 - car.z)) * RadicalMath.sin(heading));
+        z = (car.z - cz) + (int) ((car.z - 800 - car.z) * RadicalMath.cos(heading));
+        y = car.y - 250 - cy;
         if (trns != 1) {
             trns = 1;
         }
     }
 
-    public static void getaround(ContO conto) {
+    public static void getaround(ContO car) {
         if (!vert) {
             adv += 2;
         } else {
@@ -2106,124 +2106,124 @@ public class Medium {
         if (adv < -500) {
             vert = false;
         }
-        if (conto.y - adv > 10) {
+        if (car.y - adv > 10) {
             vert = false;
         }
-        int i = 500 + adv;
-        if (i < 1000) {
-            i = 1000;
+        int reach = 500 + adv;
+        if (reach < 1000) {
+            reach = 1000;
         }
-        int j = conto.y - adv;
-        int k = conto.x + (int) ((conto.x - i - conto.x) * RadicalMath.cos(vxz));
-        int l = conto.z + (int) ((conto.x - i - conto.x) * RadicalMath.sin(vxz));
-        int i1 = 0;
-        if (Math.abs(j - y) > fvect) {
-            if (y < j) {
+        int goalY = car.y - adv;
+        int goalX = car.x + (int) ((car.x - reach - car.x) * RadicalMath.cos(vxz));
+        int goalZ = car.z + (int) ((car.x - reach - car.x) * RadicalMath.sin(vxz));
+        int arrived = 0;
+        if (Math.abs(goalY - y) > fvect) {
+            if (y < goalY) {
                 y += fvect;
             } else {
                 y -= fvect;
             }
         } else {
-            y = j;
-            i1++;
+            y = goalY;
+            arrived++;
         }
-        if (Math.abs(k - x) > fvect) {
-            if (x < k) {
+        if (Math.abs(goalX - x) > fvect) {
+            if (x < goalX) {
                 x += fvect;
             } else {
                 x -= fvect;
             }
         } else {
-            x = k;
-            i1++;
+            x = goalX;
+            arrived++;
         }
-        if (Math.abs(l - z) > fvect) {
-            if (z < l) {
+        if (Math.abs(goalZ - z) > fvect) {
+            if (z < goalZ) {
                 z += fvect;
             } else {
                 z -= fvect;
             }
         } else {
-            z = l;
-            i1++;
+            z = goalZ;
+            arrived++;
         }
-        if (i1 == 3) {
+        if (arrived == 3) {
             fvect = 200;
         } else {
             fvect += 2;
         }
         for (vxz += 2; vxz > 360; vxz -= 360) {
         }
-        int j1 = -vxz + 90;
-        int c = 0;
-        if (conto.x - x - cx > 0) {
-            c = 180;
+        int orbitYaw = -vxz + 90;
+        int offset = 0;
+        if (car.x - x - cx > 0) {
+            offset = 180;
         }
-        int k1 = -(int) (90 + c
-                + StrictMath.atan((double) (conto.z - z) / (double) (conto.x - x - cx)) / 0.017453292519943295D);
-        int l1 = y;
-        c = 0;
-        if (l1 > 0) {
-            l1 = 0;
+        int lookYaw = -(int) (90 + offset
+                + StrictMath.atan((double) (car.z - z) / (double) (car.x - x - cx)) / 0.017453292519943295D);
+        int eyeY = y;
+        offset = 0;
+        if (eyeY > 0) {
+            eyeY = 0;
         }
-        if (conto.y - l1 - cy < 0) {
-            c = -180;
+        if (car.y - eyeY - cy < 0) {
+            offset = -180;
         }
-        int i2 = (int) Math.sqrt(((conto.z - z) + cz) * ((conto.z - z) + cz) + (conto.x - x - cx) * (conto.x - x - cx));
-        int j2 = 25;
-        if (i2 != 0) {
-            j2 = (int) (90 + c
-                    - StrictMath.atan((double) i2 / (double) (conto.y - l1 - cy)) / 0.017453292519943295D);
+        int flatDistance = (int) Math.sqrt(((car.z - z) + cz) * ((car.z - z) + cz) + (car.x - x - cx) * (car.x - x - cx));
+        int targetPitch = 25;
+        if (flatDistance != 0) {
+            targetPitch = (int) (90 + offset
+                    - StrictMath.atan((double) flatDistance / (double) (car.y - eyeY - cy)) / 0.017453292519943295D);
         }
-        for (; j1 < 0; j1 += 360) {
+        for (; orbitYaw < 0; orbitYaw += 360) {
         }
-        for (; j1 > 360; j1 -= 360) {
+        for (; orbitYaw > 360; orbitYaw -= 360) {
         }
-        for (; k1 < 0; k1 += 360) {
+        for (; lookYaw < 0; lookYaw += 360) {
         }
-        for (; k1 > 360; k1 -= 360) {
+        for (; lookYaw > 360; lookYaw -= 360) {
         }
-        if ((Math.abs(j1 - k1) < 30 || Math.abs(j1 - k1) > 330) && i1 == 3) {
-            if (Math.abs(j1 - xz) > 7 && Math.abs(j1 - xz) < 353) {
-                if (Math.abs(j1 - xz) > 180) {
-                    if (xz > j1) {
+        if ((Math.abs(orbitYaw - lookYaw) < 30 || Math.abs(orbitYaw - lookYaw) > 330) && arrived == 3) {
+            if (Math.abs(orbitYaw - xz) > 7 && Math.abs(orbitYaw - xz) < 353) {
+                if (Math.abs(orbitYaw - xz) > 180) {
+                    if (xz > orbitYaw) {
                         xz += 7;
                     } else {
                         xz -= 7;
                     }
-                } else if (xz < j1) {
+                } else if (xz < orbitYaw) {
                     xz += 7;
                 } else {
                     xz -= 7;
                 }
             } else {
-                xz = j1;
+                xz = orbitYaw;
             }
-        } else if (Math.abs(k1 - xz) > 6 && Math.abs(k1 - xz) < 354) {
-            if (Math.abs(k1 - xz) > 180) {
-                if (xz > k1) {
+        } else if (Math.abs(lookYaw - xz) > 6 && Math.abs(lookYaw - xz) < 354) {
+            if (Math.abs(lookYaw - xz) > 180) {
+                if (xz > lookYaw) {
                     xz += 3;
                 } else {
                     xz -= 3;
                 }
-            } else if (xz < k1) {
+            } else if (xz < lookYaw) {
                 xz += 3;
             } else {
                 xz -= 3;
             }
         } else {
-            xz = k1;
+            xz = lookYaw;
         }
-        zy += (j2 - zy) / 10;
+        zy += (targetPitch - zy) / 10;
     }
 
-    public static void transaround(ContO conto, ContO conto1, int i) {
+    public static void transaround(ContO from, ContO to, int step) {
         if (flex != 0) {
             flex = 0;
         }
-        int j = (conto.x * (20 - i) + conto1.x * i) / 20;
-        int k = (conto.y * (20 - i) + conto1.y * i) / 20;
-        int l = (conto.z * (20 - i) + conto1.z * i) / 20;
+        int midX = (from.x * (20 - step) + to.x * step) / 20;
+        int midY = (from.y * (20 - step) + to.y * step) / 20;
+        int midZ = (from.z * (20 - step) + to.z * step) / 20;
         if (!vert) {
             adv += 2;
         } else {
@@ -2235,29 +2235,29 @@ public class Medium {
         if (adv < 500) {
             vert = false;
         }
-        int i1 = 500 + adv;
-        if (i1 < 1000) {
-            i1 = 1000;
+        int reach = 500 + adv;
+        if (reach < 1000) {
+            reach = 1000;
         }
-        y = k - adv;
+        y = midY - adv;
         if (y > 10) {
             vert = false;
         }
-        x = j + (int) ((j - i1 - j) * RadicalMath.cos(vxz));
-        z = l + (int) ((j - i1 - j) * RadicalMath.sin(vxz));
+        x = midX + (int) ((midX - reach - midX) * RadicalMath.cos(vxz));
+        z = midZ + (int) ((midX - reach - midX) * RadicalMath.sin(vxz));
         vxz += 2;
-        int c = 0;
-        int j1 = y;
-        if (j1 > 0) {
-            j1 = 0;
+        int offset = 0;
+        int eyeY = y;
+        if (eyeY > 0) {
+            eyeY = 0;
         }
-        if (k - j1 - cy < 0) {
-            c = -180;
+        if (midY - eyeY - cy < 0) {
+            offset = -180;
         }
-        int k1 = (int) Math.sqrt(((l - z) + cz) * ((l - z) + cz) + (j - x - cx) * (j - x - cx));
-        int l1 = (int) (90 + c - StrictMath.atan((double) k1 / (double) (k - j1 - cy)) / 0.017453292519943295D);
+        int flatDistance = (int) Math.sqrt(((midZ - z) + cz) * ((midZ - z) + cz) + (midX - x - cx) * (midX - x - cx));
+        int targetPitch = (int) (90 + offset - StrictMath.atan((double) flatDistance / (double) (midY - eyeY - cy)) / 0.017453292519943295D);
         xz = -vxz + 90;
-        zy += (l1 - zy) / 10;
+        zy += (targetPitch - zy) / 10;
         if (trns != 5) {
             trns = 5;
         }
