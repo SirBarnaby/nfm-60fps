@@ -139,15 +139,34 @@ public final class GpuDisplay {
     }
 
     /**
+     * Loads bgfx's library and reads the shaders, so that {@link #open} has
+     * only the card itself left to start. Any thread, any time before; a
+     * failure here is left for {@link #open} to report.
+     */
+    public static void prepare() {
+        try {
+            GpuLibraries.prepare();
+            org.lwjgl.bgfx.BGFX.getLibrary();
+            HlslCompiler hlsl = new HlslCompiler();
+            for (Shaders.Source source : Shaders.ALL) {
+                hlsl.bytecode(source);
+            }
+        } catch (Throwable ex) {
+            // open() tries again and says what is wrong
+        }
+    }
+
+    /**
      * Starts bgfx on the window (an HWND), or returns null and logs why when
      * it cannot: the caller then keeps drawing in software.
      */
     public static GpuDisplay open(long window, Dimension size, int pictureWidth, int pictureHeight) {
+        long started = System.nanoTime();
         GpuDisplay display = new GpuDisplay(window, pictureWidth, pictureHeight);
         try {
             display.start(Math.max(1, size.width), Math.max(1, size.height));
             HLogger.info("Drawing through the graphics card (" + backendName(display.backend) + display.adapterName()
-                    + ")");
+                    + String.format(", started in %d ms)", (System.nanoTime() - started) / 1_000_000L));
             return display;
         } catch (Throwable ex) {
             HLogger.warn("Cannot draw through the graphics card, drawing in software: " + ex);

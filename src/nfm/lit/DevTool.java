@@ -36,6 +36,24 @@ public class DevTool {
 
     private Map<String, String> commandDescriptions; // for help command
 
+    private static boolean windowsLook;
+
+    /**
+     * The console is the only Swing window, so Swing's Windows look is set up
+     * when it first opens rather than at every start (about 75 ms).
+     */
+    private static synchronized void useWindowsLook() {
+        if (windowsLook) {
+            return;
+        }
+        windowsLook = true;
+        try {
+            javax.swing.UIManager.setLookAndFeel(javax.swing.UIManager.getSystemLookAndFeelClassName());
+        } catch (Exception ex) {
+            fallk.logmaster.HLogger.warn("Could not set up the Windows look: " + ex);
+        }
+    }
+
     public DevTool(CheckPoints checkpoints, Madness madness[], ContO conto[], ContO conto1[], xtGraphics xt) {
         commandHistory = new ArrayList<>();
         historyIndex = -1;
@@ -43,6 +61,7 @@ public class DevTool {
         commandDescriptions = new HashMap<>();
         populateCommandDescriptions();
 
+        useWindowsLook();
         frame = new JFrame("DevTool");
         textArea = new JTextArea();
         inputField = new JTextField();

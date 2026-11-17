@@ -231,7 +231,8 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
     private final Image sign;
     private final Image loadbar;
     private int kbload;
-    public int dnload;
+    /** How much is loaded, for the loading bar; images, sounds and models load on threads of their own. */
+    public volatile int dnload;
     private float shload;
     private int radpx;
     private int pin;
@@ -2029,7 +2030,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
     private void loadimages() {
         Toolkit toolkit = Toolkit.getDefaultToolkit();
         MediaTracker mediatracker = new MediaTracker(app);
-        dnload += 12;
+        addLoaded(12);
         int howManyImages = 0;
 
         try {
@@ -2247,7 +2248,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                     nfmcom = loadimage(abyte0, mediatracker, toolkit);
                 }
                 howManyImages++;
-                dnload += 3;
+                addLoaded(3);
             }
             HLogger.info("Images loaded: " + howManyImages);
         } catch (IOException e) {
@@ -2264,13 +2265,13 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
      */
     public void loadnetworkimages() {
         Utility.startTimer();
-        dnload += 12;
+        addLoaded(12);
         try {
             aimLogo = Utility.webGet("http://i59.servimg.com/u/f59/14/03/33/42/logo10.png"); /// aim games logo
 
             /// URL goes here
             //
-            dnload += 3;
+            addLoaded(3);
         } catch (Exception exception) {
             HLogger.error("Error Loading Network Images: " + exception);
         }
@@ -4436,6 +4437,17 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
         runner = new Thread(this);
         runner.start();
 
+        // the sounds decode on a thread of their own while the images load here
+        Throwable[] soundsFailed = new Throwable[1];
+        Thread sounds = new Thread(() -> {
+            try {
+                loadsounds();
+            } catch (Throwable ex) {
+                soundsFailed[0] = ex;
+            }
+        }, "nfm-load-sounds");
+        sounds.start();
+
         loadimages();
         // loadnetworkimages();
 
@@ -4482,11 +4494,23 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
          * } else {
          * dnload += 3;
          */
-        loadsounds();
+        try {
+            sounds.join();
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        }
+        if (soundsFailed[0] != null) {
+            HLogger.error("Loading the sounds failed: " + soundsFailed[0]);
+        }
+    }
+
+    /** Counts {@code n} more of the game loaded, from any loader thread. */
+    synchronized void addLoaded(int n) {
+        dnload += n;
     }
 
     public void loadsounds() {
-        this.dnload += 3;
+        addLoaded(3);
 
         try {
             for (GameFiles.Entry soundEntry : GameFiles.archive("sounds")) {
@@ -4588,7 +4612,7 @@ public class xtGraphics extends Panel implements Runnable, RaceEvents {
                     sm.add("cosmic", new SoundClipThreaded(sound));
                 }
 
-                this.dnload += 5;
+                addLoaded(5);
             }
 
             /*

@@ -939,7 +939,7 @@ public class GameSparker extends Panel implements Runnable {
      * @author Kaffeinated, Omar Waly
      */
     private void loadbase(final ContO conto[], Trackers trackers, xtGraphics xtgraphics) {
-        xtgraphics.dnload += 6;
+        xtgraphics.addLoaded(6);
         try {
             for (GameFiles.Entry zipentry : GameFiles.archive("models")) {
                 int modelId = -1;
@@ -961,7 +961,7 @@ public class GameSparker extends Panel implements Runnable {
                         modelId = extra + trackCount + carCount;
 
                 conto[modelId] = new ContO(zipentry.data(), trackers);
-                xtgraphics.dnload++;
+                xtgraphics.addLoaded(1);
             }
             /*
              * be sure to add your added arrays here
@@ -4458,14 +4458,43 @@ public class GameSparker extends Panel implements Runnable {
          * start an example timer
          */
         Utility.startTimer();
+        loadRenderer();
+        if (gpuRenderer && IS_WINDOWS) {
+            // the graphics card's libraries and shaders get ready while the game loads
+            Thread prepare = new Thread(nfm.lit.gpu.GpuDisplay::prepare, "nfm-gpu-prepare");
+            prepare.setDaemon(true);
+            prepare.start();
+        }
         Trackers trackers = new Trackers();
         CheckPoints checkpoints = new CheckPoints();
         xtGraphics xtgraphics = new xtGraphics(rd, this);
-        xtgraphics.loaddata();
-        Record record = new Record();
         ContO aconto[] = new ContO[carModels.length + trackModels.length + extraModels.length]; // be sure all your
                                                                                                 // arrays get in here
-        loadbase(aconto, trackers, xtgraphics);
+        /*
+         * The models load on a thread of their own while the images and sounds
+         * load here. They stay in the archive's order on that one thread: sand
+         * planes draw from the shape stream as they are made, so the order
+         * decides their shapes.
+         */
+        Throwable[] modelsFailed = new Throwable[1];
+        Thread models = new Thread(() -> {
+            try {
+                loadbase(aconto, trackers, xtgraphics);
+            } catch (Throwable ex) {
+                modelsFailed[0] = ex;
+            }
+        }, "nfm-load-models");
+        models.start();
+        xtgraphics.loaddata();
+        Record record = new Record();
+        try {
+            models.join();
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        }
+        if (modelsFailed[0] != null) {
+            throw new IllegalStateException("Loading the models failed", modelsFailed[0]);
+        }
         modelsLoaded = true;
         ContO aconto1[] = new ContO[5000];
         Madness amadness[] = new Madness[51];

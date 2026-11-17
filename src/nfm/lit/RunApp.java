@@ -54,11 +54,6 @@ class RunApp extends Panel {
             HLogger.severe("Uncaught exception in thread \"" + thread.getName() + "\": " + trace);
             ex.printStackTrace();
         });
-        try {
-            javax.swing.UIManager.setLookAndFeel(javax.swing.UIManager.getSystemLookAndFeelClassName());
-        } catch (Exception ex) {
-            HLogger.warn("Could not setup System Look&Feel: " + ex.toString());
-        }
         startup();
     }
 
