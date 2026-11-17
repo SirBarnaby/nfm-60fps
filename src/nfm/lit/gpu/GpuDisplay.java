@@ -691,8 +691,9 @@ public final class GpuDisplay {
             source = picture;
         }
         fitSwapChain(windowSize);
-        if (source == sceneColor && place.width == sceneWidth && place.height == sceneHeight) {
-            smooth = false; // drawn at the size it is shown
+        if (source == sceneColor) {
+            // drawn at the size it is shown, or larger or smaller and filtered
+            smooth = place.width != sceneWidth || place.height != sceneHeight;
         }
         float glowBoost = source == sceneColor ? GLOW_BOOST : 0F; // only the scene says what glows
         if (!drawFrame(SCREEN_VIEW, place, smooth, glowBoost)) {
@@ -758,6 +759,11 @@ public final class GpuDisplay {
     }
 
     private final float[] part = new float[4];
+
+    /** The widest or tallest texture the card can draw into. */
+    public int maxTextureSize() {
+        return bgfx_get_caps().limits().maxTextureSize();
+    }
 
     /** The share of the scene target's width the last scene was drawn in, below 1 with dynamic resolution. */
     public float sceneScale() {

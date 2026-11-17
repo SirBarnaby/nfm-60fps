@@ -336,6 +336,16 @@ public class GameSparker extends Panel implements Runnable {
     /** The graphics card could not draw this session; cleared by asking for it again. */
     private static volatile boolean gpuUnavailable;
     private static final String MSAA_COOKIE = "msaa";
+    private static final String SUPERSAMPLE_COOKIE = "ssaa";
+    /**
+     * Supersampling for races drawn on the graphics card: 2 draws the scene at
+     * twice the width and height it is shown at and scales it down, which
+     * smooths every edge and line and stops thin outlines shimmering; 1 is off.
+     */
+    private static volatile int supersample = 1;
+    private static volatile boolean supersampleChanged;
+    /** How many times the shown size the card last drew a race at across, below 2 when its textures are smaller. */
+    private static volatile float supersampleInUse = 1F;
     /**
      * Samples per pixel for races drawn on the graphics card: 1 (off, the
      * game's own hard edges) or 2, 4 or 8, which smooth polygon edges.
@@ -2908,9 +2918,12 @@ public class GameSparker extends Panel implements Runnable {
                     picture = null; // show the scene drawn on the card
                     gpu.setMultisample(multisample);
                     float scale = dynamicResolution == 0 ? 1F : resolution.scale();
-                    boolean drawn = gpu.drawScene(scene, hud, version, flash, capture, sceneTargetSize(place), scale);
+                    Dimension target = sceneTargetSize(place, gpu.maxTextureSize());
+                    boolean drawn = gpu.drawScene(scene, hud, version, flash, capture, target, scale);
                     multisampleInUse = gpu.multisample();
-                    sceneScaleInUse = gpu.sceneScale();
+                    float across = supersample > 1 ? target.width / (float) Math.max(GameFacts.screenWidth, place.width) : 1F;
+                    supersampleInUse = across;
+                    sceneScaleInUse = gpu.sceneScale() * across;
                     if (!drawn) {
                         if (presenterFrame) {
                             return false;
@@ -2931,7 +2944,8 @@ public class GameSparker extends Panel implements Runnable {
                     long gpuNanos = gpu.gpuFrameNanos();
                     gpuFrameNanos = gpuNanos;
                     if (picture == null) {
-                        resolution.update(gpuNanos, frameBudgetNanos, lowestSceneScale(place), System.nanoTime());
+                        resolution.update(gpuNanos, frameBudgetNanos, lowestSceneScale(place, supersampleInUse),
+                                System.nanoTime());
                     }
                 }
             } catch (RuntimeException | LinkageError ex) {
@@ -2954,28 +2968,42 @@ public class GameSparker extends Panel implements Runnable {
      * pixel would break up) or {@code -Dnfm.gpuscene=picture} asks for it.
      * Dynamic resolution draws in part of it when the card cannot keep up,
      * but never below the picture's own size, the size the game always drew
-     * at.
+     * at. Supersampling doubles it, as far as the card's largest texture
+     * ({@code maxSide}) allows, keeping its shape.
      */
-    private static Dimension sceneTargetSize(Rectangle place) {
-        if (!GPU_SCENE_NATIVE || place.width < GameFacts.screenWidth || place.height < GameFacts.screenHeight) {
-            return new Dimension(GameFacts.screenWidth, GameFacts.screenHeight);
+    private static Dimension sceneTargetSize(Rectangle place, int maxSide) {
+        int w = place.width;
+        int h = place.height;
+        if (!GPU_SCENE_NATIVE || w < GameFacts.screenWidth || h < GameFacts.screenHeight) {
+            w = GameFacts.screenWidth;
+            h = GameFacts.screenHeight;
         }
-        return new Dimension(place.width, place.height);
+        if (supersample > 1) {
+            float factor = Math.min(supersample, Math.min(maxSide / (float) w, maxSide / (float) h));
+            if (factor > 1F) {
+                w = Math.round(w * factor);
+                h = Math.round(h * factor);
+            }
+        }
+        return new Dimension(w, h);
     }
 
     /**
      * The lowest scale dynamic resolution may draw a race at in a window
      * showing it at {@code place}: the setting, but not below the picture's
      * own size; 1 when it is off or the window is no larger than the picture.
+     * With supersampling ({@code across} times the shown size) it is a share
+     * of the larger target, so the setting still counts from the shown size:
+     * when the card cannot keep up, supersampling gives way first.
      */
-    private static float lowestSceneScale(Rectangle place) {
+    private static float lowestSceneScale(Rectangle place, float across) {
         int lowest = dynamicResolution;
         if (lowest == 0 || !GPU_SCENE_NATIVE) {
             return 1F;
         }
         float picture = Math.max(GameFacts.screenWidth / (float) place.width,
                 GameFacts.screenHeight / (float) place.height);
-        return Math.max(lowest / 100F, picture);
+        return Math.min(1F, Math.max(lowest / 100F, picture) / across);
     }
 
     /** Starts the GPU display on the window, or marks it unavailable for this session. */
@@ -3100,6 +3128,36 @@ public class GameSparker extends Panel implements Runnable {
             return words + " (the graphics card does " + (used <= 1 ? "none" : used + "x at most") + ")";
         }
         return words;
+    }
+
+    /** Turns supersampling on (2, twice the width and height) or off (1), saved on the next tick. */
+    public static void setSupersample(int factor) {
+        supersample = factor;
+        supersampleChanged = true;
+    }
+
+    /** The supersampling setting in words, with what the card made of it when that differs. */
+    public static String describeSupersample() {
+        if (supersample <= 1) {
+            return "off";
+        }
+        if (!gpuRenderer) {
+            return "on (only with the gpu renderer)";
+        }
+        float used = supersampleInUse;
+        if (used > 1F && used < supersample - 0.01F) {
+            return String.format("on (%.2fx across at this window size: the graphics card's largest texture)", used);
+        }
+        return "on (twice the width and height)";
+    }
+
+    /** 2 for "on" or "2" (also "2x", or "4x" for four times the pixels), 1 for "off" or "1", else 0. */
+    public static int parseSupersample(String text) {
+        return switch (text.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "on", "2", "2x", "4x" -> 2;
+            case "off", "1", "1x" -> 1;
+            default -> 0;
+        };
     }
 
     /** 1, 2, 4 or 8 for "off", "1", "2", "4" or "8" (also with an "x"), or 0 if it is none of those. */
@@ -3742,6 +3800,30 @@ public class GameSparker extends Panel implements Runnable {
         multisampleChanged = false;
     }
 
+    /** -Dnfm.ssaa, else off in hidden test runs (their pictures are compared pixel for pixel), else the saved choice. */
+    private void loadSupersample() {
+        String property = System.getProperty("nfm.ssaa");
+        int factor = 1;
+        if (property != null) {
+            factor = parseSupersample(property);
+            if (factor == 0) {
+                HLogger.warn("Ignoring invalid nfm.ssaa value: " + property);
+                factor = 1;
+            }
+        } else if (!runsHidden()) {
+            factor = readcookie(SUPERSAMPLE_COOKIE) == 2 ? 2 : 1;
+        }
+        supersample = factor;
+        supersampleChanged = false;
+    }
+
+    private void saveSupersampleIfChanged() {
+        if (supersampleChanged) {
+            supersampleChanged = false;
+            savecookie(SUPERSAMPLE_COOKIE, String.valueOf(supersample));
+        }
+    }
+
     private void saveMultisampleIfChanged() {
         if (multisampleChanged) {
             multisampleChanged = false;
@@ -4363,6 +4445,7 @@ public class GameSparker extends Panel implements Runnable {
         loadScaleToWindow();
         loadRenderer();
         loadMultisample();
+        loadSupersample();
         loadDynamicResolution();
         loadHdr();
         loadSound();
@@ -4447,6 +4530,7 @@ public class GameSparker extends Panel implements Runnable {
                 saveScaleToWindowIfChanged();
                 saveRendererIfChanged();
                 saveMultisampleIfChanged();
+                saveSupersampleIfChanged();
                 saveDynamicResolutionIfChanged();
                 saveHdrIfChanged();
                 applySound();
