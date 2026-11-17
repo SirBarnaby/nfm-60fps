@@ -99,6 +99,7 @@ final class PoseSpan {
     /** The cars and the camera at {@code alpha} (0 = start, 1 = end, more carries the motion on). */
     void at(float alpha, FramePose out) {
         boolean between = moving && alpha != 1F;
+        out.alpha = between ? alpha : 1F;
         out.slots = slots;
         for (int i = 0; i < slots; i++) {
             int m = between ? mode[i] : mode[i] == AT_START ? AT_START : AT_END;

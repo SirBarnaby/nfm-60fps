@@ -39,6 +39,8 @@ final class RetainedScene {
     static final int SHADOW = 2;
     static final int HORIZON = 3;
     static final int SCREEN = 4;
+    /** A SCREEN corner that also knows where it was shown a tick ago (smooth effects). */
+    static final int SCREEN_TRAIL = 5;
 
     private static final int STRIDE = 8;
     /* handles are floats near -1.3e30, the point's number in the low 23 bits */
@@ -55,6 +57,8 @@ final class RetainedScene {
     private int cy;
     private int cz;
     private float focus;
+    /** How far from where effects were a tick ago to where they are now the frame being placed is. */
+    private float trailShare = 1F;
     private float top;
     private float bottom;
 
@@ -189,6 +193,18 @@ final class RetainedScene {
     }
 
     /**
+     * A corner as {@link #screen(int, float, float)} that was at
+     * {@code (trailX, trailY)} a tick ago: each frame puts it the frame's
+     * share of the way from there to {@code (x, y)}.
+     */
+    int screen(int anchor, float x, float y, float trailX, float trailY) {
+        place(anchor);
+        int id = add(SCREEN_TRAIL, anchor, x, y, placedX[anchor], placedY[anchor], placedZ[anchor], trailX);
+        points[id * STRIDE + 7] = trailY;
+        return id;
+    }
+
+    /**
      * The polygon whose exact corners start at {@code at} in the scene's
      * data, recorded as {@code ex/ey}: handles, or values kept as they are.
      */
@@ -241,6 +257,7 @@ final class RetainedScene {
 
     /** Works out what all points share at moment {@code pose}; the points are then placed in order. */
     private void prepare(FramePose pose) {
+        trailShare = Math.max(0F, Math.min(1.25F, pose.alpha));
         float yaw = pose.camXZ * DEGREES;
         float pitch = pose.camZY * DEGREES;
         sinYaw = (float) Math.sin(yaw);
@@ -351,10 +368,14 @@ final class RetainedScene {
                 placedY[id] = Math.max(top, Math.min(bottom, screen));
                 placedZ[id] = z;
             }
-            case SCREEN -> {
+            case SCREEN, SCREEN_TRAIL -> {
                 int anchor = (int) p[at];
                 float x = p[at + 1];
                 float y = p[at + 2];
+                if (kinds[id] == SCREEN_TRAIL) {
+                    x = p[at + 6] + (x - p[at + 6]) * trailShare;
+                    y = p[at + 7] + (y - p[at + 7]) * trailShare;
+                }
                 float recordedZ = p[at + 5];
                 float z = placedZ[anchor];
                 if (recordedZ < 10F || z < 10F) {

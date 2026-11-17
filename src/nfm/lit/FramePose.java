@@ -12,6 +12,13 @@ final class FramePose {
     /** As many cars as the presentation pass keeps poses for. */
     static final int SLOTS = 51;
 
+    /**
+     * How far from the tick before to this one the moment is, 0 to 1 (a
+     * little more when the next tick is late): how far effects have come
+     * from where they were shown a tick ago.
+     */
+    float alpha = 1F;
+
     double camX;
     double camY;
     double camZ;
@@ -83,6 +90,7 @@ final class FramePose {
     }
 
     void copyFrom(FramePose other) {
+        alpha = other.alpha;
         camX = other.camX;
         camY = other.camY;
         camZ = other.camZ;

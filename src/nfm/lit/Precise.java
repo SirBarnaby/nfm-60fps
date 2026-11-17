@@ -79,6 +79,7 @@ final class Precise {
      * for a whole tick, its corners as points in {@code scene}.
      */
     static void begin(SceneRecorder target, RetainedScene scene) {
+        trailCount = 0;
         recorder = target;
         on = target != null;
         retained = on ? scene : null;
@@ -357,14 +358,34 @@ final class Precise {
      */
     static void screen(int[] sx, int[] sy, int n, float[] ex, float[] ey) {
         int anchor = anchor();
+        boolean trail = trailCount == n;
+        trailCount = 0;
         for (int v = 0; v < n; v++) {
             if (anchor < 0) {
                 ex[v] = sx[v];
                 ey[v] = sy[v];
+            } else if (trail) {
+                ex[v] = ey[v] = RetainedScene.handle(retained.screen(anchor, sx[v], sy[v], trailX[v], trailY[v]));
             } else {
                 ex[v] = ey[v] = RetainedScene.handle(retained.screen(anchor, sx[v], sy[v]));
             }
         }
+    }
+
+    /* where the next polygon worked out on screen was shown a tick ago (smooth effects) */
+    private static int[] trailX;
+    private static int[] trailY;
+    private static int trailCount;
+
+    /**
+     * Smooth effects: the next polygon worked out on screen, drawn right
+     * after this, was at {@code tx/ty} a tick ago; the kept scene moves its
+     * corners from there to where they are now as the frames go by.
+     */
+    static void trail(int[] tx, int[] ty, int n) {
+        trailX = tx;
+        trailY = ty;
+        trailCount = retained != null ? n : 0;
     }
 
     /**

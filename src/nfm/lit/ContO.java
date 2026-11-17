@@ -71,6 +71,43 @@ public class ContO {
 
     private boolean bool16 = false;
 
+    /** A puff's corners' distances from its centre, for smooth effects (game thread). */
+    private static final double[] PUFF_CORNERS = new double[16];
+    /** The puffs as last drawn, for smooth effects; made when first needed. */
+    private EffectTrails.Puff[] puffTrails;
+
+    private EffectTrails.Puff puffTrail(int puff) {
+        if (puffTrails == null) {
+            puffTrails = new EffectTrails.Puff[4];
+        }
+        EffectTrails.Puff t = puffTrails[puff];
+        if (t == null) {
+            t = new EffectTrails.Puff();
+            puffTrails[puff] = t;
+        }
+        return t;
+    }
+
+    /**
+     * The corners of a puff centred at {@code (x, y, z)} with corners
+     * {@code corners} away, as this frame's camera puts them on screen, into
+     * EffectTrails.trailX/Y: the same sums as {@link #pdust} makes.
+     */
+    private static void trailCorners(int x, int y, int z, double[] corners) {
+        int viewX = Medium.cx + (int) ((x - Medium.x - Medium.cx) * RadicalMath.cos(Medium.xz)
+                - (z - Medium.z - Medium.cz) * RadicalMath.sin(Medium.xz));
+        int depth = Medium.cz + (int) ((x - Medium.x - Medium.cx) * RadicalMath.sin(Medium.xz)
+                + (z - Medium.z - Medium.cz) * RadicalMath.cos(Medium.xz));
+        int viewY = Medium.cy + (int) ((y - Medium.y - Medium.cy) * RadicalMath.cos(Medium.zy)
+                - (depth - Medium.cz) * RadicalMath.sin(Medium.zy));
+        depth = Medium.cz + (int) ((y - Medium.y - Medium.cy) * RadicalMath.sin(Medium.zy)
+                + (depth - Medium.cz) * RadicalMath.cos(Medium.zy));
+        for (int k = 0; k < 8; k++) {
+            EffectTrails.trailX[k] = Utility.cXs((int) (viewX + corners[2 * k]), depth);
+            EffectTrails.trailY[k] = Utility.cYs((int) (viewY + corners[2 * k + 1]), depth);
+        }
+    }
+
     private void pdust(int puff, Graphics2D rd, int side) {
         if (side * dov[puff] > 0) {
             int thickness;
@@ -100,6 +137,10 @@ public class ContO {
             if (sy[puff] > 250) {
                 sy[puff] = 250;
             }
+            int drawnStage = stg[puff];
+            int centreX = sx[puff];
+            int centreY = sy[puff];
+            int centreZ = sz[puff];
             if (Precise.on) {
                 Precise.anchor(sx[puff] - Medium.x, sy[puff] - Medium.y, sz[puff] - Medium.z); // the puff stays where it is
             }
@@ -128,41 +169,67 @@ public class ContO {
             int puffX[] = new int[8];
             int puffY[] = new int[8];
             int growth = stg[puff] - 3;
-            puffX[0] = Utility.cXs((int) (viewX - (18F + Medium.fxRandom() * 18F + growth * 6) * smag[puff]), depth);
-            puffY[0] = Utility.cYs(
-                    (int) (viewY - (7.5D + Medium.fxRandom() * 7.5D + growth * 2.5D) * smag[puff]),
-                    depth);
+            /*
+             * Each corner is the centre plus a random distance, in the order the
+             * game always drew them: across then up for each corner, 18 or 7.5
+             * at the base. The distances are kept for smooth effects.
+             */
+            float a0 = (18F + Medium.fxRandom() * 18F + growth * 6) * smag[puff];
+            puffX[0] = Utility.cXs((int) (viewX - a0), depth);
+            double b0 = (7.5D + Medium.fxRandom() * 7.5D + growth * 2.5D) * smag[puff];
+            puffY[0] = Utility.cYs((int) (viewY - b0), depth);
             if (puffY[0] < 45 && Medium.flex != 0) {
                 Medium.flex = 0;
             }
-            puffX[1] = Utility.cXs((int) (viewX - (18F + Medium.fxRandom() * 18F + growth * 6) * smag[puff]), depth);
-            puffY[1] = Utility.cYs(
-                    (int) (viewY + (7.5D + Medium.fxRandom() * 7.5D + growth * 2.5D) * smag[puff]),
-                    depth);
-            puffX[2] = Utility.cXs(
-                    (int) (viewX - (7.5D + Medium.fxRandom() * 7.5D + growth * 2.5D) * smag[puff]),
-                    depth);
-            puffY[2] = Utility.cYs((int) (viewY + (18F + Medium.fxRandom() * 18F + growth * 6) * smag[puff]), depth);
-            puffX[3] = Utility.cXs(
-                    (int) (viewX + (7.5D + Medium.fxRandom() * 7.5D + growth * 2.5D) * smag[puff]),
-                    depth);
-            puffY[3] = Utility.cYs((int) (viewY + (18F + Medium.fxRandom() * 18F + growth * 6) * smag[puff]), depth);
-            puffX[4] = Utility.cXs((int) (viewX + (18F + Medium.fxRandom() * 18F + growth * 6) * smag[puff]), depth);
-            puffY[4] = Utility.cYs(
-                    (int) (viewY + (7.5D + Medium.fxRandom() * 7.5D + growth * 2.5D) * smag[puff]),
-                    depth);
-            puffX[5] = Utility.cXs((int) (viewX + (18F + Medium.fxRandom() * 18F + growth * 6) * smag[puff]), depth);
-            puffY[5] = Utility.cYs(
-                    (int) (viewY - (7.5D + Medium.fxRandom() * 7.5D + growth * 2.5D) * smag[puff]),
-                    depth);
-            puffX[6] = Utility.cXs(
-                    (int) (viewX + (7.5D + Medium.fxRandom() * 7.5D + growth * 2.5D) * smag[puff]),
-                    depth);
-            puffY[6] = Utility.cYs((int) (viewY - (18F + Medium.fxRandom() * 18F + growth * 6) * smag[puff]), depth);
-            puffX[7] = Utility.cXs(
-                    (int) (viewX - (7.5D + Medium.fxRandom() * 7.5D + growth * 2.5D) * smag[puff]),
-                    depth);
-            puffY[7] = Utility.cYs((int) (viewY - (18F + Medium.fxRandom() * 18F + growth * 6) * smag[puff]), depth);
+            float a1 = (18F + Medium.fxRandom() * 18F + growth * 6) * smag[puff];
+            puffX[1] = Utility.cXs((int) (viewX - a1), depth);
+            double b1 = (7.5D + Medium.fxRandom() * 7.5D + growth * 2.5D) * smag[puff];
+            puffY[1] = Utility.cYs((int) (viewY + b1), depth);
+            double b2 = (7.5D + Medium.fxRandom() * 7.5D + growth * 2.5D) * smag[puff];
+            puffX[2] = Utility.cXs((int) (viewX - b2), depth);
+            float a2 = (18F + Medium.fxRandom() * 18F + growth * 6) * smag[puff];
+            puffY[2] = Utility.cYs((int) (viewY + a2), depth);
+            double b3 = (7.5D + Medium.fxRandom() * 7.5D + growth * 2.5D) * smag[puff];
+            puffX[3] = Utility.cXs((int) (viewX + b3), depth);
+            float a3 = (18F + Medium.fxRandom() * 18F + growth * 6) * smag[puff];
+            puffY[3] = Utility.cYs((int) (viewY + a3), depth);
+            float a4 = (18F + Medium.fxRandom() * 18F + growth * 6) * smag[puff];
+            puffX[4] = Utility.cXs((int) (viewX + a4), depth);
+            double b4 = (7.5D + Medium.fxRandom() * 7.5D + growth * 2.5D) * smag[puff];
+            puffY[4] = Utility.cYs((int) (viewY + b4), depth);
+            float a5 = (18F + Medium.fxRandom() * 18F + growth * 6) * smag[puff];
+            puffX[5] = Utility.cXs((int) (viewX + a5), depth);
+            double b5 = (7.5D + Medium.fxRandom() * 7.5D + growth * 2.5D) * smag[puff];
+            puffY[5] = Utility.cYs((int) (viewY - b5), depth);
+            double b6 = (7.5D + Medium.fxRandom() * 7.5D + growth * 2.5D) * smag[puff];
+            puffX[6] = Utility.cXs((int) (viewX + b6), depth);
+            float a6 = (18F + Medium.fxRandom() * 18F + growth * 6) * smag[puff];
+            puffY[6] = Utility.cYs((int) (viewY - a6), depth);
+            double b7 = (7.5D + Medium.fxRandom() * 7.5D + growth * 2.5D) * smag[puff];
+            puffX[7] = Utility.cXs((int) (viewX - b7), depth);
+            float a7 = (18F + Medium.fxRandom() * 18F + growth * 6) * smag[puff];
+            puffY[7] = Utility.cYs((int) (viewY - a7), depth);
+            boolean trail = false;
+            if (EffectTrails.on) {
+                double[] corners = PUFF_CORNERS;
+                corners[0] = -a0;
+                corners[1] = -b0;
+                corners[2] = -a1;
+                corners[3] = b1;
+                corners[4] = -b2;
+                corners[5] = a2;
+                corners[6] = b3;
+                corners[7] = a3;
+                corners[8] = a4;
+                corners[9] = b4;
+                corners[10] = a5;
+                corners[11] = -b5;
+                corners[12] = b6;
+                corners[13] = -a6;
+                corners[14] = -b7;
+                corners[15] = -a7;
+                trail = puffTrail(puff).note(drawnStage, centreX, centreY, centreZ, corners);
+            }
             boolean visible = true;
             int above = 0;
             int below = 0;
@@ -191,7 +258,19 @@ public class ContO {
             }
             if (visible) {
                 rd.setColor(new Color(red, green, blue));
-                rd.fillPolygon(puffX, puffY, 8);
+                if (trail) {
+                    EffectTrails.Puff before = puffTrail(puff);
+                    trailCorners(before.xBefore, before.yBefore, before.zBefore, before.cornersBefore);
+                    if (EffectTrails.direct()) {
+                        EffectTrails.between(puffX, puffY, 8);
+                        rd.fillPolygon(EffectTrails.drawX, EffectTrails.drawY, 8);
+                    } else {
+                        Precise.trail(EffectTrails.trailX, EffectTrails.trailY, 8);
+                        rd.fillPolygon(puffX, puffY, 8);
+                    }
+                } else {
+                    rd.fillPolygon(puffX, puffY, 8);
+                }
             }
             if (dov[puff] == 1) {
                 dov[puff] = -1;

@@ -125,9 +125,9 @@ public enum Phase {
      */
     SELECTEDCARSAVE(205), 
     /**
-     * 9000 - hidden settings menu (may be removed)
+     * 9000 - the settings screen, from the main menu or the pause menu
      */
-    CUSTOMSETTINGS(9000),
+    SETTINGS(9000),
     /**
      * 9001 - for loading a sage (custom)
      */

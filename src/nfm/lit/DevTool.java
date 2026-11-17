@@ -411,6 +411,16 @@ public class DevTool {
                     print("Run-ahead is " + (GameSparker.isRunAhead() ? "on" : "off") + ".\nUsage: runahead <on|off>");
                 }
                 break;
+            case "effects":
+                if (args.length == 2 && args[0].equalsIgnoreCase("smooth")
+                        && (args[1].equalsIgnoreCase("on") || args[1].equalsIgnoreCase("off"))) {
+                    GameSparker.setSmoothEffects(args[1].equalsIgnoreCase("on"));
+                    print("Smooth effects " + (GameSparker.isSmoothEffects() ? "on" : "off") + " (saved).");
+                } else {
+                    print("Smooth effects are " + (GameSparker.isSmoothEffects() ? "on" : "off")
+                            + ".\nUsage: effects smooth <on|off>");
+                }
+                break;
             case "renderer":
                 if (args.length == 1 && (args[0].equalsIgnoreCase("gpu") || args[0].equalsIgnoreCase("software"))) {
                     GameSparker.setGpuRenderer(args[0].equalsIgnoreCase("gpu"));
@@ -592,6 +602,7 @@ public class DevTool {
         commandDescriptions.put("ssaa", "Ultra quality for races drawn on the graphics card: draws the scene at twice the width and height it is shown at (four times the pixels) and scales it down, which smooths every edge and outline and stops thin lines shimmering. Works with msaa. With dynres on, it gives way first when the card cannot keep up. Off by default. Usage: ssaa <on|off>");
         commandDescriptions.put("dynres", "When the graphics card cannot draw a race at the window's full size in time for the next frame, draws it smaller (down to the given percent of the window, never below the game's own 1280x720) and scales it up smoothly; the HUD stays sharp. Steps down at once and back up slowly, so the picture does not pump. On by default, down to 50%. Usage: dynres <on|off|25-100>");
         commandDescriptions.put("renderer", "gpu puts frames on screen through the graphics card (Direct3D 11), which scales them for free; software draws them with Java2D. Usage: renderer <gpu|software>");
+        commandDescriptions.put("effects", "Dust and flying debris move on every frame (smooth) or once a game tick, as the original drew them. Usage: effects smooth <on|off>");
         commandDescriptions.put("runahead", "Shows race frames one tick ahead with the keys held now, for 53 ms less input lag. Usage: runahead <on|off>");
         commandDescriptions.put("fps", "Sets the frame rate limit. auto matches the monitor; vrr, for G-Sync and FreeSync monitors, holds frames just under its refresh rate so they stay in the variable-refresh range; unlimited removes the cap. On battery frames are held to 60 a second unless fps battery says otherwise. Usage: fps <auto|vrr|unlimited|30-1000>, fps battery <off|30-1000>");
         commandDescriptions.put("clear", "Clears the console.");

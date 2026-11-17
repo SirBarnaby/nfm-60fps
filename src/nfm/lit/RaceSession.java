@@ -90,7 +90,7 @@ final class RaceSession {
     /** Pause menu entries. */
     private static final int MENU_CONTINUE = 0;
     private static final int MENU_REPLAY = 1;
-    private static final int MENU_QUIT = 3;
+    private static final int MENU_QUIT = 4; // after Settings
     /** A verify run that makes no progress for this many ticks is stuck. */
     private static final int STUCK_TICKS = 30_000;
     private static final int REPORT_FIELDS = 25;
@@ -124,7 +124,7 @@ final class RaceSession {
 
     /** Phases that are part of a race in progress. */
     private static final Set<Phase> RACE_PHASES = EnumSet.of(Phase.INGAME, Phase.PAUSETRIGGER, Phase.PAUSEMENU,
-            Phase.INSTANTREPLAY, Phase.NOTENOUGHREPLAYDATA, Phase.INSTRUCTIONS);
+            Phase.INSTANTREPLAY, Phase.NOTENOUGHREPLAYDATA, Phase.INSTRUCTIONS, Phase.SETTINGS);
     /** Phases a race reaches by being won or lost rather than quit. */
     private static final Set<Phase> FINISH_PHASES = EnumSet.of(Phase.CAUGHTHIGHLIGHT, Phase.GAMEHIGHLIGHT,
             Phase.POSTGAMEFADEOUT, Phase.POSTGAME);

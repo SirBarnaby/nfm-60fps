@@ -668,6 +668,7 @@ public class Plane {
             }
         }
         if (chip != 0) {
+            boolean chipStarts = chip == 1; // just broken off: nowhere to glide from
             if (chip == 1) {
                 cxz = yaw;
                 cxy = roll;
@@ -720,6 +721,24 @@ public class Plane {
                 chipY[point] += dy;
                 chipZ[point] += dz;
             } while (++point < 3);
+            boolean trail = EffectTrails.on && !chipStarts;
+            if (trail) {
+                // where it was shown a tick ago: one step back, the step before gravity added 7
+                int[] tx = EffectTrails.worldX;
+                int[] ty = EffectTrails.worldY;
+                int[] tz = EffectTrails.worldZ;
+                for (int k = 0; k < 3; k++) {
+                    tx[k] = chipX[k] - vx;
+                    ty[k] = chipY[k] - (vy - 7);
+                    tz[k] = chipZ[k] - vz;
+                }
+                Utility.rot(tx, tz, Medium.cx, Medium.cz, Medium.xz, 3);
+                Utility.rot(ty, tz, Medium.cy, Medium.cz, Medium.zy, 3);
+                for (int k = 0; k < 3; k++) {
+                    EffectTrails.trailX[k] = Utility.xs(tx[k], tz[k]);
+                    EffectTrails.trailY[k] = Utility.ys(ty[k], tz[k], 0);
+                }
+            }
             dx += vx;
             dz += vz;
             dy += vy;
@@ -753,7 +772,15 @@ public class Plane {
             } else {
                 rd.setColor(Color.getHSBColor(hsb[0], hsb[1], hsb[2]));
             }
-            rd.fillPolygon(chipScreenX, chipScreenY, 3);
+            if (!trail) {
+                rd.fillPolygon(chipScreenX, chipScreenY, 3);
+            } else if (EffectTrails.direct()) {
+                EffectTrails.between(chipScreenX, chipScreenY, 3);
+                rd.fillPolygon(EffectTrails.drawX, EffectTrails.drawY, 3);
+            } else {
+                Precise.trail(EffectTrails.trailX, EffectTrails.trailY, 3);
+                rd.fillPolygon(chipScreenX, chipScreenY, 3);
+            }
             chip++;
             if (chip == 20) {
                 chip = 0;

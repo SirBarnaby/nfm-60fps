@@ -133,11 +133,37 @@ class RunApp extends Panel {
      * either way. Not in hidden test runs, whose window stays off screen.
      */
     static void toggleFullscreen() {
-        if (frame == null || !frame.isVisible()) {
+        setFullscreen(!fullscreen);
+    }
+
+    /** Fullscreen as last asked for: the window follows a moment later, on the event thread. */
+    private static volatile boolean fullscreen;
+    /** Fullscreen was switched since the game last saved it. */
+    private static volatile boolean fullscreenChanged;
+
+    static boolean isFullscreen() {
+        return fullscreen;
+    }
+
+    /** True once after each switch, for the game to save the choice. */
+    static boolean takeFullscreenChanged() {
+        boolean changed = fullscreenChanged;
+        fullscreenChanged = false;
+        return changed;
+    }
+
+    /** Borderless fullscreen on the window's monitor, or back to the window as it was. */
+    static void setFullscreen(boolean on) {
+        if (frame == null || !frame.isVisible() || on == fullscreen) {
             return;
         }
+        fullscreen = on;
+        fullscreenChanged = true;
         EventQueue.invokeLater(() -> {
-            boolean toFullscreen = windowedBounds == null;
+            boolean toFullscreen = fullscreen;
+            if (toFullscreen == (windowedBounds != null)) {
+                return; // already so
+            }
             GraphicsConfiguration screen = frame.getGraphicsConfiguration();
             frame.dispose(); // decorations can only change while the window is not displayable
             if (toFullscreen) {

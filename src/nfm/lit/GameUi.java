@@ -263,6 +263,12 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
     private int main_menu_op_1_width = 196;
     private int main_menu_op_2_y = 306 + main_menu_height_origin;
     private int main_menu_op_2_width = 85;
+    /* Settings, lettered under the menu's picture */
+    private int main_menu_op_3_y = 337 + main_menu_height_origin;
+    private int main_menu_op_3_width = 100;
+
+    /** The settings screen, made when first opened (the menu font is registered by then). */
+    private SettingsScreen settingsScreen;
 
     private int insano_mainmenu_x;
     private int insano_mainmenu_y;
@@ -294,10 +300,11 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
     private int pausebox_y = 0;
     private int pausebox_option_gap = 26;
     private int pausebox_option_start_off = 37;
-    private int pausebox_op_0_width = 137;
-    private int pausebox_op_1_width = 155;
-    private int pausebox_op_2_width = 190;
-    private int pausebox_op_3_width = 109;
+    /* Resume Game, Instant Replay, Game Instructions, Settings, Quit Game */
+    private final int[] pausebox_op_widths = {137, 155, 190, 104, 109};
+    /* Settings is lettered into a gap opened in paused.gif above Quit Game */
+    private static final int PAUSE_SETTINGS = 3;
+    private static final int pausebox_gap_at = 115;
     private int pausebox_op_height = 22;
     /* the options arent quite centered so correct for it */
     private int pausebox_op_x_correction = -3;
@@ -797,93 +804,34 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         fase = Phase.AWAITLOADDISMISSAL;
     }
 
-    public void menusettings(Control control) {
-
-        app.repaint();
-
-        if (flipo == 0) {
-            bgmy[0] = 0;
-            bgmy[1] = GameFacts.screenHeight;
-            app.setCursor(new Cursor(0));
+    /** Opens the settings screen; Back returns to {@code from}, the main menu or the pause menu. */
+    private void openSettings(Phase from) {
+        if (settingsScreen == null) {
+            settingsScreen = new SettingsScreen(back);
         }
+        settingsScreen.backTo = from;
+        settingsScreen.open();
+        fase = Phase.SETTINGS;
+    }
 
-        rd.setColor(new Color(100, 100, 100));
-        rd.fillRect(0, 0, GameFacts.screenWidth, GameFacts.screenHeight);
-
-        rd.setFont(new Font("SansSerif", 1, 13));
-        FontHandler.fMetrics = rd.getFontMetrics();
-
-        drawcs(20, "Number of Players: " + GameFacts.numberOfPlayers, 255, 255, 255, 3);
-        drawcs(40, "Back", 255, 255, 255, 3);
-
-        if (control.up) {
-            opselect--;
-            if (opselect == -1) {
-                opselect = 1;
-            }
-            control.up = false;
-        }
-        if (control.down) {
-            opselect++;
-            if (opselect == 2) {
-                opselect = 0;
-            }
-            control.down = false;
-        }
-        if (opselect == 0) {
-            rd.setFont(new Font("SansSerif", 1, 13));
-            FontHandler.fMetrics = rd.getFontMetrics();
-            if (aflk) {     // this is aids
-                drawcs(20, "Number of Players: " + GameFacts.numberOfPlayers, 255, 0, 0, 3);
-                rd.setColor(new Color(200, 255, 0));
-                aflk = false;
-            } else {
-                drawcs(20, "Number of Players: " + GameFacts.numberOfPlayers, 0, 0, 0, 3);
-                rd.setColor(new Color(255, 128, 0));
-                aflk = true;
-            }
-        }
-        if (opselect == 1) {
-            if (shaded) {
-                rd.setColor(new Color(140, 70, 0));
-                rd.fillRect(234, 275, 196, 22);
-                aflk = false;
-            }
-            rd.setFont(new Font("SansSerif", 1, 13));
-            FontHandler.fMetrics = rd.getFontMetrics();
-            if (aflk) {
-                drawcs(40, "Back", 255, 0, 0, 3);
-                aflk = false;
-            } else {
-                drawcs(40, "Back", 0, 0, 0, 3);
-                aflk = true;
-            }
-        }
-
-        if (control.enter || control.handb) {
-            if (opselect == 1) {
-                fase = oldfase;
-            }
-            control.enter = false;
-            control.handb = false;
-        }
-        if (control.left) {
-            if (opselect == 0) {
-                GameFacts.numberOfPlayers--;
-                if (GameFacts.numberOfPlayers == 0) {
-                    GameFacts.numberOfPlayers = 51;
+    /** The settings screen, over the main menu's moving background or the paused race. */
+    public void settings(Control control) {
+        SettingsScreen screen = settingsScreen;
+        if (screen.backTo == Phase.PAUSEMENU) {
+            rd.drawImage(fleximg, 0, 0, null);
+        } else {
+            int i = 0;
+            do {
+                rd.drawImage(bgmain, 0, bgmy[i], null);
+                bgmy[i] -= 20;
+                if (bgmy[i] <= -GameFacts.screenHeight) {
+                    bgmy[i] = GameFacts.screenHeight;
                 }
-            }
-            control.left = false;
+            } while (++i < 2);
         }
-        if (control.right) {
-            if (opselect == 0) {
-                GameFacts.numberOfPlayers++;
-                if (GameFacts.numberOfPlayers == 52) {
-                    GameFacts.numberOfPlayers = 1;
-                }
-            }
-            control.right = false;
+        if (screen.frame(rd, control)) {
+            fase = screen.backTo;
+            opselect = screen.backTo == Phase.PAUSEMENU ? PAUSE_SETTINGS : 3;
         }
     }
 
@@ -2283,85 +2231,59 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
 
     public void pausedgame(int stage, Control control, Record record) {
         rd.drawImage(fleximg, 0, 0, null);
+        int boxX = Utility.centeredImageX(paused);
+        int boxW = paused.getWidth(null);
+        int boxH = paused.getHeight(null) + pausebox_option_gap; // opened up for Settings
         /* add the blue lines behind the pause box */
         int current_line_y = pausebox_y + 5;
         rd.setColor(new Color(60, 135, 220, 128));
-        for (; current_line_y < pausebox_y + paused.getHeight(null) - 5; current_line_y += 4) {
-            rd.drawLine(Utility.centeredImageX(paused), current_line_y,
-                    Utility.centeredImageX(paused) + paused.getWidth(null), current_line_y);
+        for (; current_line_y < pausebox_y + boxH - 5; current_line_y += 4) {
+            rd.drawLine(boxX, current_line_y, boxX + boxW, current_line_y);
         }
 
+        int items = pausebox_op_widths.length;
         if (control.up) {
             opselect--;
-            if (opselect == -1) {
-                opselect = 3;
+            if (opselect < 0) {
+                opselect = items - 1;
             }
             control.up = false;
         }
         if (control.down) {
             opselect++;
-            if (opselect == 4) {
+            if (opselect >= items) {
                 opselect = 0;
             }
             control.down = false;
         }
-        if (opselect == 0) {
+        if (opselect >= 0 && opselect < items) {
+            int width = pausebox_op_widths[opselect];
+            int y = pausebox_y + pausebox_option_start_off + pausebox_option_gap * opselect;
             rd.setColor(new Color(64, 143, 223));
-            rd.fillRoundRect(Utility.centeredWidthX(pausebox_op_0_width) + pausebox_op_x_correction,
-                    pausebox_y + pausebox_option_start_off,
-                    pausebox_op_0_width, pausebox_op_height, 7, 20);
+            rd.fillRoundRect(Utility.centeredWidthX(width) + pausebox_op_x_correction, y, width, pausebox_op_height, 7,
+                    20);
             if (shaded) {
                 rd.setColor(new Color(225, 200, 255));
             } else {
                 rd.setColor(new Color(0, 89, 223));
             }
-            rd.drawRoundRect(Utility.centeredWidthX(pausebox_op_0_width) + pausebox_op_x_correction,
-                    pausebox_y + pausebox_option_start_off,
-                    pausebox_op_0_width, pausebox_op_height, 7, 20);
+            rd.drawRoundRect(Utility.centeredWidthX(width) + pausebox_op_x_correction, y, width, pausebox_op_height, 7,
+                    20);
         }
-        if (opselect == 1) {
-            rd.setColor(new Color(64, 143, 223));
-            rd.fillRoundRect(Utility.centeredWidthX(pausebox_op_1_width) + pausebox_op_x_correction,
-                    pausebox_y + pausebox_option_start_off + pausebox_option_gap,
-                    pausebox_op_1_width, pausebox_op_height, 7, 20);
-            if (shaded) {
-                rd.setColor(new Color(225, 200, 255));
-            } else {
-                rd.setColor(new Color(0, 89, 223));
-            }
-            rd.drawRoundRect(Utility.centeredWidthX(pausebox_op_1_width) + pausebox_op_x_correction,
-                    pausebox_y + pausebox_option_start_off + pausebox_option_gap,
-                    pausebox_op_1_width, pausebox_op_height, 7, 20);
-        }
-        if (opselect == 2) {
-            rd.setColor(new Color(64, 143, 223));
-            rd.fillRoundRect(Utility.centeredWidthX(pausebox_op_2_width) + pausebox_op_x_correction,
-                    pausebox_y + pausebox_option_start_off + pausebox_option_gap * 2,
-                    pausebox_op_2_width, pausebox_op_height, 7, 20);
-            if (shaded) {
-                rd.setColor(new Color(225, 200, 255));
-            } else {
-                rd.setColor(new Color(0, 89, 223));
-            }
-            rd.drawRoundRect(Utility.centeredWidthX(pausebox_op_2_width) + pausebox_op_x_correction,
-                    pausebox_y + pausebox_option_start_off + pausebox_option_gap * 2,
-                    pausebox_op_2_width, pausebox_op_height, 7, 20);
-        }
-        if (opselect == 3) {
-            rd.setColor(new Color(64, 143, 223));
-            rd.fillRoundRect(Utility.centeredWidthX(pausebox_op_3_width) + pausebox_op_x_correction,
-                    pausebox_y + pausebox_option_start_off + pausebox_option_gap * 3,
-                    pausebox_op_3_width, pausebox_op_height, 7, 20);
-            if (shaded) {
-                rd.setColor(new Color(225, 200, 255));
-            } else {
-                rd.setColor(new Color(0, 89, 223));
-            }
-            rd.drawRoundRect(Utility.centeredWidthX(pausebox_op_3_width) + pausebox_op_x_correction,
-                    pausebox_y + pausebox_option_start_off + pausebox_option_gap * 3,
-                    pausebox_op_3_width, pausebox_op_height, 7, 20);
-        }
-        rd.drawImage(paused, Utility.centeredImageX(paused), pausebox_y, null);
+        /*
+         * The box's picture, opened up above Quit Game: the rows above the gap,
+         * the empty row at the gap stretched over the new item's height, then
+         * the rest. Settings is lettered into it in the box's own style.
+         */
+        int gap = pausebox_gap_at;
+        int extra = pausebox_option_gap;
+        rd.drawImage(paused, boxX, pausebox_y, boxX + boxW, pausebox_y + gap, 0, 0, boxW, gap, null);
+        rd.drawImage(paused, boxX, pausebox_y + gap, boxX + boxW, pausebox_y + gap + extra, 0, gap, boxW, gap + 1,
+                null);
+        rd.drawImage(paused, boxX, pausebox_y + gap + extra, boxX + boxW, pausebox_y + boxH, 0, gap, boxW,
+                paused.getHeight(null), null);
+        SettingsScreen.drawPauseItem(rd, "Settings", GameFacts.screenWidth / 2F + pausebox_op_x_correction,
+                pausebox_y + pausebox_option_start_off + pausebox_option_gap * PAUSE_SETTINGS + 23);
         if (control.enter || control.handb) {
             if (opselect == 0) {
                 if (!mutem) {
@@ -2388,7 +2310,10 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                 oldfase = Phase.PAUSEMENU;
                 fase = Phase.INSTRUCTIONS;
             }
-            if (opselect == 3) {
+            if (opselect == PAUSE_SETTINGS) {
+                openSettings(Phase.PAUSEMENU);
+            }
+            if (opselect == 4) {
                 if (loadedt) {
                     strack.setPaused(true);
                     strack.unload();
@@ -4184,7 +4109,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         }
         if (control.down) {
             opselect++;
-            if (opselect == menuItems + 1) {
+            if (opselect >= menuItems) {
                 opselect = 0;
             }
             control.down = false;
@@ -4252,7 +4177,29 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             rd.drawRoundRect(Utility.centeredWidthX(main_menu_op_2_width), main_menu_op_2_y, main_menu_op_2_width,
                     main_menu_button_height, 7, 20);
         }
+        if (opselect == 3) {
+            if (shaded) {
+                rd.setColor(new Color(140, 70, 0));
+                rd.fillRect(Utility.centeredWidthX(main_menu_op_3_width), main_menu_op_3_y, main_menu_op_3_width,
+                        main_menu_button_height);
+                aflk = false;
+            }
+            if (aflk) {
+                rd.setColor(new Color(200, 0, 128));
+                aflk = false;
+            } else {
+                rd.setColor(new Color(255, 128, 0));
+                aflk = true;
+            }
+            rd.drawRoundRect(Utility.centeredWidthX(main_menu_op_3_width), main_menu_op_3_y, main_menu_op_3_width,
+                    main_menu_button_height, 7, 20);
+        } else {
+            rd.setColor(new Color(0, 0, 0));
+            rd.drawRoundRect(Utility.centeredWidthX(main_menu_op_3_width), main_menu_op_3_y, main_menu_op_3_width,
+                    main_menu_button_height, 7, 20);
+        }
         rd.drawImage(opti, Utility.centeredImageX(opti), 250 + main_menu_height_origin, null);
+        SettingsScreen.drawMenuItem(rd, "Settings", GameFacts.screenWidth / 2F, main_menu_op_3_y + 18);
         if (control.enter || control.handb) {
             if (opselect == 0) {
                 if (unlocked == 1 && oldfase == Phase.INGAME) {
@@ -4270,9 +4217,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                 fase = Phase.CREDITS;
             }
             if (opselect == 3) {
-                oldfase = Phase.MAINMENU;
-                opselect = 0;
-                fase = Phase.CUSTOMSETTINGS;
+                openSettings(Phase.MAINMENU);
             }
             flipo = 0;
             control.enter = false;
@@ -5240,60 +5185,32 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             }
         }
         if (fase == Phase.PAUSEMENU) {
-            if (mouseState == 1) {
-                if (overon(Utility.centeredWidthX(pausebox_op_0_width) + pausebox_op_x_correction,
-                        pausebox_y + pausebox_option_start_off,
-                        pausebox_op_0_width, pausebox_op_height, mouseX, mouseY)) {
-                    opselect = 0;
-                    shaded = true;
+            int over = -1;
+            for (int i = 0; i < pausebox_op_widths.length; i++) {
+                if (overon(Utility.centeredWidthX(pausebox_op_widths[i]) + pausebox_op_x_correction,
+                        pausebox_y + pausebox_option_start_off + pausebox_option_gap * i,
+                        pausebox_op_widths[i], pausebox_op_height, mouseX, mouseY)) {
+                    over = i;
                 }
-                if (overon(Utility.centeredWidthX(pausebox_op_1_width) + pausebox_op_x_correction,
-                        pausebox_y + pausebox_option_start_off + pausebox_option_gap,
-                        pausebox_op_1_width, pausebox_op_height, mouseX, mouseY)) {
-                    opselect = 1;
-                    shaded = true;
-                }
-                if (overon(Utility.centeredWidthX(pausebox_op_2_width) + pausebox_op_x_correction,
-                        pausebox_y + pausebox_option_start_off + pausebox_option_gap * 2,
-                        pausebox_op_2_width, pausebox_op_height, mouseX, mouseY)) {
-                    opselect = 2;
-                    shaded = true;
-                }
-                if (overon(Utility.centeredWidthX(pausebox_op_3_width) + pausebox_op_x_correction,
-                        pausebox_y + pausebox_option_start_off + pausebox_option_gap * 3,
-                        pausebox_op_3_width, pausebox_op_height, mouseX, mouseY)) {
-                    opselect = 3;
-                    shaded = true;
-                }
+            }
+            if (mouseState == 1 && over >= 0) {
+                opselect = over;
+                shaded = true;
             }
             if (mouseState == 2 && shaded) {
                 control.enter = true;
                 shaded = false;
             }
             if (mouseState == 0 && (mouseX != lxm || mouseY != lym)) {
-                if (overon(Utility.centeredWidthX(pausebox_op_0_width) + pausebox_op_x_correction,
-                        pausebox_y + pausebox_option_start_off,
-                        pausebox_op_0_width, pausebox_op_height, mouseX, mouseY)) {
-                    opselect = 0;
-                }
-                if (overon(Utility.centeredWidthX(pausebox_op_1_width) + pausebox_op_x_correction,
-                        pausebox_y + pausebox_option_start_off + pausebox_option_gap,
-                        pausebox_op_1_width, pausebox_op_height, mouseX, mouseY)) {
-                    opselect = 1;
-                }
-                if (overon(Utility.centeredWidthX(pausebox_op_2_width) + pausebox_op_x_correction,
-                        pausebox_y + pausebox_option_start_off + pausebox_option_gap * 2,
-                        pausebox_op_2_width, pausebox_op_height, mouseX, mouseY)) {
-                    opselect = 2;
-                }
-                if (overon(Utility.centeredWidthX(pausebox_op_3_width) + pausebox_op_x_correction,
-                        pausebox_y + pausebox_option_start_off + pausebox_option_gap * 3,
-                        pausebox_op_3_width, pausebox_op_height, mouseX, mouseY)) {
-                    opselect = 3;
+                if (over >= 0) {
+                    opselect = over;
                 }
                 lxm = mouseX;
                 lym = mouseY;
             }
+        }
+        if (fase == Phase.SETTINGS && settingsScreen != null) {
+            settingsScreen.mouse(mouseX, mouseY, mouseState, control);
         }
         if (fase == Phase.MAINMENU) {
             if (mouseState == 1) {
@@ -5312,6 +5229,11 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                     opselect = 2;
                     shaded = true;
                 }
+                if (overon(Utility.centeredWidthX(main_menu_op_3_width), main_menu_op_3_y, main_menu_op_3_width,
+                        main_menu_button_height, mouseX, mouseY)) {
+                    opselect = 3;
+                    shaded = true;
+                }
             }
             if (mouseState == 2 && shaded) {
                 control.enter = true;
@@ -5329,6 +5251,10 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                 if (overon(Utility.centeredWidthX(main_menu_op_2_width), main_menu_op_2_y, main_menu_op_2_width,
                         main_menu_button_height, mouseX, mouseY)) {
                     opselect = 2;
+                }
+                if (overon(Utility.centeredWidthX(main_menu_op_3_width), main_menu_op_3_y, main_menu_op_3_width,
+                        main_menu_button_height, mouseX, mouseY)) {
+                    opselect = 3;
                 }
                 lxm = mouseX;
                 lym = mouseY;

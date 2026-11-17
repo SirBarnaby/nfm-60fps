@@ -514,6 +514,8 @@ public class GameSparker extends Panel implements Runnable {
                     RunApp.toggleFullscreen();
                 } else if (key == 10 || key == 80 || key == 112 || key == 27)
                     liveEnter = true;
+                if (key == 27)
+                    SettingsScreen.noteEscape(); // the settings screen goes back on it
                 if (key == 118 || key == 86) {
                     liveView++;
                     if (liveView == 3)
@@ -1778,6 +1780,8 @@ public class GameSparker extends Panel implements Runnable {
         }
 
         saveSceneDrawState();
+        // smooth effects: where dust and debris are drawn between the ticks (the kept scene moves them itself)
+        EffectTrails.begin(smoothEffects, retainedRecording ? Float.NaN : prevFrameValid ? alpha : 1F);
         try {
             Graphics2D target = retainedRecording ? recordingRecorder.begin(rd)
                     : gpuSceneFrame ? sceneRecorder.begin(rd) : rd;
@@ -1786,6 +1790,7 @@ public class GameSparker extends Panel implements Runnable {
             Precise.cameraAngles();
             drawWorldObjects(target);
         } finally {
+            EffectTrails.end();
             restoreSceneDrawState();
             Precise.end();
         }
@@ -3112,6 +3117,16 @@ public class GameSparker extends Panel implements Runnable {
         return multisample;
     }
 
+    /** 2 for supersampling on, 1 for off. */
+    public static int getSupersample() {
+        return supersample;
+    }
+
+    /** The lowest share of the window races may be drawn at, in percent; 0 for off. */
+    public static int getDynamicResolution() {
+        return dynamicResolution;
+    }
+
     /** The multisampling setting in words, with what the card made of it when that differs. */
     public static String describeMultisample() {
         int asked = multisample;
@@ -3341,6 +3356,21 @@ public class GameSparker extends Panel implements Runnable {
     public static void setHdr(int mode) {
         hdrMode = mode;
         hdrChanged = true;
+    }
+
+    /** GpuDisplay.HDR_OFF, HDR_AUTO or HDR_FORCE. */
+    public static int getHdr() {
+        return hdrMode;
+    }
+
+    /** Paper white in nits, 0 for Windows' SDR white. */
+    public static int getPaperWhite() {
+        return paperWhite;
+    }
+
+    /** The display's peak in nits, 0 for what the monitor says. */
+    public static int getPeak() {
+        return peakNits;
     }
 
     /** The HDR setting in words, with what it does on this monitor. */
@@ -3581,6 +3611,11 @@ public class GameSparker extends Panel implements Runnable {
             case "classic", "off" -> Boolean.FALSE;
             default -> null;
         };
+    }
+
+    /** True for the new (3D) sound, false for Classic. */
+    public static boolean isNewSound() {
+        return newSound;
     }
 
     /** Switches between the new sound and Classic, saved; takes effect on the next tick. */
@@ -4142,6 +4177,71 @@ public class GameSparker extends Panel implements Runnable {
         return runAhead;
     }
 
+    private static final String SMOOTH_EFFECTS_COOKIE = "smoothfx";
+    /**
+     * Smooth effects (on unless turned off): dust and flying debris move on
+     * every frame drawn, as the cars do, instead of once a game tick. Only
+     * where they are drawn changes; the race itself never sees it.
+     */
+    private static volatile boolean smoothEffects = true;
+    private static volatile boolean smoothEffectsChanged;
+
+    /** Turns smooth effects on or off, and saves the choice. */
+    public static void setSmoothEffects(boolean on) {
+        smoothEffects = on;
+        smoothEffectsChanged = true;
+    }
+
+    public static boolean isSmoothEffects() {
+        return smoothEffects;
+    }
+
+    /** -Dnfm.smootheffects=true|false, else off in hidden test runs (as the original drew), else the saved choice, else on. */
+    private void loadSmoothEffects() {
+        String property = System.getProperty("nfm.smootheffects");
+        if (property != null) {
+            smoothEffects = !property.trim().equalsIgnoreCase("false") && !property.trim().equalsIgnoreCase("off");
+        } else if (runsHidden()) {
+            smoothEffects = false;
+        } else {
+            smoothEffects = readcookie(SMOOTH_EFFECTS_COOKIE) != 0;
+        }
+        smoothEffectsChanged = false;
+    }
+
+    private void saveSmoothEffectsIfChanged() {
+        if (smoothEffectsChanged) {
+            smoothEffectsChanged = false;
+            savecookie(SMOOTH_EFFECTS_COOKIE, smoothEffects ? "1" : "0");
+        }
+    }
+
+    private static final String FULLSCREEN_COOKIE = "fullscreen";
+
+    /** Fullscreen as last chosen (not in hidden runs, whose window stays off screen). */
+    private void loadFullscreen() {
+        if (!runsHidden() && readcookie(FULLSCREEN_COOKIE) == 1) {
+            RunApp.setFullscreen(true);
+        }
+        RunApp.takeFullscreenChanged();
+    }
+
+    private void saveFullscreenIfChanged() {
+        if (RunApp.takeFullscreenChanged()) {
+            savecookie(FULLSCREEN_COOKIE, RunApp.isFullscreen() ? "1" : "0");
+        }
+    }
+
+    /** The frame rate limit: FPS_MATCH_DISPLAY, FPS_VRR, FPS_UNLIMITED or a cap. */
+    public static int getFpsLimit() {
+        return fpsLimit;
+    }
+
+    /** The frame cap on battery, 0 for none. */
+    public static int getBatteryFps() {
+        return batteryFps;
+    }
+
     /** -Dnfm.runahead=true|false, else the saved choice, else on. */
     private void loadRunAhead() {
         String property = System.getProperty("nfm.runahead");
@@ -4291,6 +4391,9 @@ public class GameSparker extends Panel implements Runnable {
         boolean highlightRequested = false;
         boolean highlightSeen = false;
         int highlightShots = 0;
+        /* the settings screen, from the main menu (0 to 3) and the pause menu (4 to 6) */
+        int settingsStep = 0;
+        int settingsDowns = 0;
 
         while (System.currentTimeMillis() - startMillis < budgetMillis) {
             try {
@@ -4316,7 +4419,43 @@ public class GameSparker extends Panel implements Runnable {
                 lastShot = now;
             }
 
-            boolean menu = phase == Phase.MAINMENU || phase == Phase.CARSELECT
+            /*
+             * Look at the settings screen from the main menu, then from the
+             * pause menu: open it, walk down to the sound settings, go back
+             * with Escape. Nothing is changed, so nothing is saved.
+             */
+            if (phase == Phase.MAINMENU && settingsStep == 0 && now - phaseSettledAt >= 600L) {
+                ui.opselect = 3;
+                u[0].enter = true;
+                settingsStep = 1;
+                System.out.println("[autotest] opening the settings from the main menu");
+            }
+            if (phase == Phase.PAUSEMENU && settingsStep == 3 && now - phaseSettledAt >= 600L) {
+                ui.opselect = 3;
+                u[0].enter = true;
+                settingsStep = 4;
+                System.out.println("[autotest] opening the settings from the pause menu");
+            }
+            if (phase == Phase.SETTINGS && (settingsStep == 1 || settingsStep == 4) && now - phaseSettledAt >= 700L) {
+                if (settingsDowns < 12) {
+                    u[0].down = true;
+                    settingsDowns++;
+                } else {
+                    settingsStep++;
+                    settingsDowns = 0;
+                    saveFrame(directory, String.format("%02d-settings-sound.png", shots++));
+                }
+            } else if (phase == Phase.SETTINGS && (settingsStep == 2 || settingsStep == 5)) {
+                SettingsScreen.noteEscape();
+                u[0].enter = true;
+                settingsStep++;
+                System.out.println("[autotest] back from the settings");
+            }
+            if (phase == Phase.MAINMENU && settingsStep == 3 && ui.opselect == 3) {
+                ui.opselect = 0; // Play Game
+            }
+
+            boolean menu = phase == Phase.MAINMENU && settingsStep == 3 || phase == Phase.CARSELECT
                     || phase == Phase.STAGESELECT || phase == Phase.PREGAME;
             if (menu && now - lastMenuPress > 700L) {
                 u[0].enter = true;
@@ -4409,7 +4548,7 @@ public class GameSparker extends Panel implements Runnable {
                 break;
             }
 
-            if (phase == Phase.PAUSEMENU) {
+            if (phase == Phase.PAUSEMENU && settingsStep == 6) {
                 if (!replayAttempted) {
                     // Select INSTANT REPLAY (second entry) without a real keyboard.
                     ui.opselect = 1;
@@ -4457,6 +4596,7 @@ public class GameSparker extends Panel implements Runnable {
          * start an example timer
          */
         Utility.startTimer();
+        loadFullscreen();
         loadRenderer();
         if (gpuRenderer && IS_WINDOWS) {
             // the graphics card's libraries and shaders get ready while the game loads
@@ -4556,6 +4696,7 @@ public class GameSparker extends Panel implements Runnable {
         loadSound();
         loadMusicSeparation();
         loadVolumes();
+        loadSmoothEffects();
         startAutoTest();
         session = RaceSession.fromCommandLine(new SessionHost());
         startGamepads();
@@ -4642,6 +4783,8 @@ public class GameSparker extends Panel implements Runnable {
                 saveMusicSeparationIfChanged();
                 saveVolumesIfChanged();
                 saveGamepadIfChanged();
+                saveSmoothEffectsIfChanged();
+                saveFullscreenIfChanged();
                 if (modelReloadWanted && gameUi.fase == Phase.MAINMENU) {
                     modelReloadWanted = false;
                     loadbase(models, trackers, gameUi); // the next race and car select use them
@@ -4785,8 +4928,8 @@ public class GameSparker extends Panel implements Runnable {
                 if (mouses == 1)
                     mouses = 2;
             }
-            if (gameUi.fase == Phase.CUSTOMSETTINGS) { // settings menu
-                gameUi.menusettings(u[0]);
+            if (gameUi.fase == Phase.SETTINGS) {
+                gameUi.settings(u[0]);
                 gameUi.ctachm(xm, ym, mouses, u[0]);
                 if (mouses == 2)
                     mouses = 0;
