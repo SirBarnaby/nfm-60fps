@@ -251,6 +251,13 @@ final class SettingsScreen {
         add(new Choice("Frame rate",
                 "Frames a second. Variable refresh stays just under the monitor's rate, for G-Sync and FreeSync.",
                 null, fpsLimits, SettingsScreen::fpsName, GameSparker::getFpsLimit, GameSparker::setFpsLimit));
+        add(new Choice("VSync",
+                "On: frames wait for the display, so the picture never tears. Off: each frame goes out at once,"
+                        + " the least lag. Auto: on with Match display and Variable refresh.",
+                () -> "Now: " + GameSparker.describeVsync() + ".",
+                new int[] {GameSparker.VSYNC_AUTO, GameSparker.VSYNC_ON, GameSparker.VSYNC_OFF},
+                v -> v == GameSparker.VSYNC_ON ? "On" : v == GameSparker.VSYNC_OFF ? "Off" : "Auto",
+                GameSparker::getVsync, GameSparker::setVsync).when(gpu, gpuOnly));
         add(new Choice("Laptop battery FPS",
                 "Holds the frame rate down while the laptop runs on its battery, to make it last.",
                 () -> "Now: " + GameSparker.describeBatteryFps() + ".",

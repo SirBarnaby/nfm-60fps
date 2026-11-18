@@ -411,6 +411,16 @@ public class DevTool {
                     print("Run-ahead is " + (GameSparker.isRunAhead() ? "on" : "off") + ".\nUsage: runahead <on|off>");
                 }
                 break;
+            case "vsync": {
+                Integer mode = args.length == 1 ? GameSparker.parseVsync(args[0]) : null;
+                if (mode != null) {
+                    GameSparker.setVsync(mode);
+                    print("VSync " + GameSparker.describeVsync() + " (saved).");
+                } else {
+                    print("VSync is " + GameSparker.describeVsync() + ".\nUsage: vsync <auto|on|off>");
+                }
+                break;
+            }
             case "overlay": {
                 String a = args.length == 1 ? args[0].toLowerCase(java.util.Locale.ROOT) : "";
                 String[] corners = {"off", "topleft", "topright", "bottomleft", "bottomright"};
@@ -622,6 +632,7 @@ public class DevTool {
         commandDescriptions.put("ssaa", "Ultra quality for races drawn on the graphics card: draws the scene with 2, 4 or 8 times the pixels it is shown with (4x: twice the width and height, so 4K on a 1080p screen) and averages them down, which smooths every edge and outline and stops thin lines shimmering. Works with msaa. With dynres on, it gives way first when the card cannot keep up. Off by default. Usage: ssaa <off|2x|4x|8x>");
         commandDescriptions.put("dynres", "When the graphics card cannot draw a race at the window's full size in time for the next frame, draws it smaller (down to the given percent of the window, never below the game's own 1280x720) and scales it up smoothly; the HUD stays sharp. Steps down at once and back up slowly, so the picture does not pump. On by default, down to 50%. Usage: dynres <on|off|25-100>");
         commandDescriptions.put("renderer", "gpu puts frames on screen through the graphics card (Direct3D 11), which scales them for free; software draws them with Java2D. Usage: renderer <gpu|software>");
+        commandDescriptions.put("vsync", "Whether frames wait for the display's refresh. auto (the default): with the match and vrr frame rates, which are paced to it; not with a cap or unlimited, where each frame goes out the moment it is ready, for the least lag, and the picture may tear. on always waits (no tearing, at most the display's rate); off never does. Only for the gpu renderer. Usage: vsync <auto|on|off>");
         commandDescriptions.put("overlay", "The performance overlay: frames a second, frame time and the graphics card's share of it, the 90% and 99% frame times, memory, video memory, the caches on disk and a frame time graph, in a corner of the picture. Settings, Advanced chooses the readouts; all turns every one on. F3 shows and hides it. Usage: overlay <on|all|off|topleft|topright|bottomleft|bottomright>");
         commandDescriptions.put("effects", "Dust and flying debris move on every frame (smooth) or once a game tick, as the original drew them. Usage: effects smooth <on|off>");
         commandDescriptions.put("runahead", "Shows race frames one tick ahead with the keys held now, for 53 ms less input lag. Usage: runahead <on|off>");

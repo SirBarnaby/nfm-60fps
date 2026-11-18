@@ -2925,7 +2925,7 @@ public class GameSparker extends Panel implements Runnable {
                 return true;
             }
             boolean smooth = place.width != GameFacts.screenWidth || place.height != GameFacts.screenHeight;
-            gpu.setVsync(fpsLimit == FPS_MATCH_DISPLAY || fpsLimit == FPS_VRR);
+            gpu.setVsync(vsyncInUse());
             gpu.setHdr(hdrMode);
             gpu.setPaperWhite(paperWhite);
             gpu.setPeak(peakNits);
@@ -4097,6 +4097,76 @@ public class GameSparker extends Panel implements Runnable {
     }
 
     /** -Dnfm.batteryfps, else the saved choice, else 60. */
+    /* VSync: as the frame rate asks (Match display and Variable refresh wait for it), always, or never */
+    public static final int VSYNC_AUTO = 0;
+    public static final int VSYNC_ON = 1;
+    public static final int VSYNC_OFF = 2;
+    private static final String VSYNC_COOKIE = "vsyncmode";
+    private static volatile int vsyncMode = VSYNC_AUTO;
+    private static volatile boolean vsyncModeChanged;
+
+    public static int getVsync() {
+        return vsyncMode;
+    }
+
+    /** Sets VSync (VSYNC_AUTO, VSYNC_ON or VSYNC_OFF) and saves it. */
+    public static void setVsync(int mode) {
+        vsyncMode = mode == VSYNC_ON || mode == VSYNC_OFF ? mode : VSYNC_AUTO;
+        vsyncModeChanged = true;
+    }
+
+    /**
+     * Whether frames wait for the display's refresh: on Auto, with Match
+     * display and Variable refresh, whose frames are paced to it; never with
+     * a cap or unlimited, where a frame goes out the moment it is ready (and
+     * the picture may tear) for the least lag.
+     */
+    static boolean vsyncInUse() {
+        int mode = vsyncMode;
+        return mode == VSYNC_ON || mode == VSYNC_AUTO && (fpsLimit == FPS_MATCH_DISPLAY || fpsLimit == FPS_VRR);
+    }
+
+    public static String describeVsync() {
+        if (!isGpuRenderer()) {
+            return "the software renderer cannot wait for the display";
+        }
+        boolean on = vsyncInUse();
+        return switch (vsyncMode) {
+            case VSYNC_ON -> "on: frames wait for the display, no tearing";
+            case VSYNC_OFF -> "off: frames go out at once, the picture may tear";
+            default -> (on ? "on" : "off") + ", as the frame rate (" + describeFpsLimit() + ") asks";
+        };
+    }
+
+    /** "auto", "on" or "off", else null. */
+    static Integer parseVsync(String text) {
+        return switch (text.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "auto" -> VSYNC_AUTO;
+            case "on", "true" -> VSYNC_ON;
+            case "off", "false" -> VSYNC_OFF;
+            default -> null;
+        };
+    }
+
+    /** -Dnfm.vsync=auto|on|off, else Auto in hidden test runs, else the saved choice, else Auto. */
+    private void loadVsync() {
+        Integer property = System.getProperty("nfm.vsync") == null ? null : parseVsync(System.getProperty("nfm.vsync"));
+        if (property != null) {
+            vsyncMode = property;
+        } else if (!runsHidden()) {
+            int saved = readcookie(VSYNC_COOKIE);
+            vsyncMode = saved == VSYNC_ON || saved == VSYNC_OFF ? saved : VSYNC_AUTO;
+        }
+        vsyncModeChanged = false;
+    }
+
+    private void saveVsyncIfChanged() {
+        if (vsyncModeChanged) {
+            vsyncModeChanged = false;
+            savecookie(VSYNC_COOKIE, String.valueOf(vsyncMode));
+        }
+    }
+
     private void loadBatteryFps() {
         String property = System.getProperty("nfm.batteryfps");
         int cap = 60;
@@ -4785,6 +4855,7 @@ public class GameSparker extends Panel implements Runnable {
 
         loadFpsLimit();
         loadBatteryFps();
+        loadVsync();
         loadRunAhead();
         loadScaleToWindow();
         loadRenderer();
@@ -4873,6 +4944,7 @@ public class GameSparker extends Panel implements Runnable {
                 }
                 saveFpsLimitIfChanged();
                 saveBatteryFpsIfChanged();
+                saveVsyncIfChanged();
                 saveRunAheadIfChanged();
                 saveScaleToWindowIfChanged();
                 saveRendererIfChanged();
