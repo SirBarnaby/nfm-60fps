@@ -500,6 +500,9 @@ public class GameSparker extends Panel implements Runnable {
         if (SettingsScreen.typeKey(key)) {
             return; // a size being typed on the settings screen takes every key
         }
+        if (key == 1002 || key == 1003 || key == 9) {
+            SettingsScreen.noteTabKey(key == 1002 ? -1 : 1); // Page Up, Page Down, Tab: the settings' tabs
+        }
         if (!exwist) {
             synchronized (inputLock) {
                 if (key == 1004)
@@ -4498,7 +4501,7 @@ public class GameSparker extends Panel implements Runnable {
             }
             if (phase == Phase.SETTINGS && (settingsStep == 1 || settingsStep == 4) && now - phaseSettledAt >= 700L) {
                 // a few settings chosen in turn, each shown for a moment (the main menu's, then the pause menu's)
-                String[] shown = settingsStep == 1 ? new String[] {"Supersampling", "Resolution"}
+                String[] shown = settingsStep == 1 ? new String[] {"Supersampling", "Resolution", "Run-ahead", "Dynamic resolution"}
                         : new String[] {"Sound system"};
                 int at = settingsDowns / 4;
                 if (at >= shown.length) {

@@ -6,6 +6,7 @@ import java.awt.Color;
 import java.awt.Font;
 import java.awt.Graphics2D;
 import java.awt.Image;
+import java.awt.Polygon;
 import java.awt.LinearGradientPaint;
 import java.awt.RenderingHints;
 import java.awt.Shape;
@@ -13,11 +14,14 @@ import java.awt.Stroke;
 import java.awt.font.TextAttribute;
 import java.awt.geom.AffineTransform;
 import java.awt.geom.Rectangle2D;
+import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import java.util.function.IntConsumer;
 import java.util.function.IntFunction;
@@ -28,27 +32,47 @@ import nfm.lit.audio.Sound3D;
 import nfm.lit.audio.StreamMusic;
 import nfm.lit.gpu.GpuDisplay;
 
+import javax.imageio.ImageIO;
+
 /**
  * The settings screen, reached from the main menu and the pause menu: every
  * setting the developer console has, in the game's own menu look. The box is
  * the pause box's frame around the main menu's brown, the lettering is the
- * menus' own (Adventure), and the keys are the menus' keys: up and down
- * choose, left and right change, Enter changes or goes back, Escape goes
- * back. Each change is saved at once, by the same setters the console uses.
+ * menus' own (Adventure). Tabs along the top (Display, Audio, Controls,
+ * Advanced) each hold a list of settings; beside the list, the chosen
+ * setting's picture and what it does. The keys are the menus' keys: up and
+ * down choose, left and right change, Enter changes or goes back, Escape
+ * goes back; Page Up, Page Down and Tab change the tab, and the mouse wheel
+ * scrolls a long list. Each change is saved at once, by the same setters the
+ * console uses. A setting's picture is data/settings/(its name).png, where
+ * there is one; otherwise a placeholder stands in.
  */
 final class SettingsScreen {
 
     /* the box, in the 1280x720 picture */
-    private static final int BOX_W = 900;
-    private static final int BOX_H = 620;
+    private static final int BOX_W = 940;
+    private static final int BOX_H = 660;
     private static final int BOX_X = (GameFacts.screenWidth - BOX_W) / 2;
     private static final int BOX_Y = (GameFacts.screenHeight - BOX_H) / 2;
-    private static final int COLUMN_W = 400;
-    private static final int[] COLUMN_X = {BOX_X + 35, BOX_X + BOX_W - 35 - COLUMN_W};
+    /** The tabs' lettering stands on this line. */
+    private static final int TABS_Y = BOX_Y + 78;
+    private static final int TAB_SPACING = 200;
+    /** The list of the tab's settings. */
+    private static final int LIST_X = BOX_X + 30;
+    private static final int LIST_W = 500;
+    private static final int LIST_TOP = BOX_Y + 104;
+    private static final int LIST_BOTTOM = BOX_Y + BOX_H - 96;
+    /** Beside the list: the chosen setting's picture and what it does. */
+    private static final int PANE_X = LIST_X + LIST_W + 34;
+    private static final int PANE_W = BOX_X + BOX_W - 30 - PANE_X;
+    private static final int PICTURE_H = PANE_W * 9 / 16;
     private static final int ROW_H = 25;
-    private static final int SECTION_GAP = 44;
-    private static final int VALUE_W = 170;
-    private static final int BACK_Y = BOX_Y + BOX_H - 62;
+    private static final int HEADING_H = 32;
+    private static final int GROUP_GAP = 10;
+    private static final int VALUE_W = 190;
+    private static final int BACK_Y = BOX_Y + BOX_H - 72;
+    /** {@link #selected} while the tabs along the top are chosen. */
+    private static final int TABS = -1;
 
     /* the menus' colours */
     private static final Color BROWN = new Color(0x3a, 0x1e, 0x08, 238);
@@ -72,20 +96,36 @@ final class SettingsScreen {
     /** A size is being typed: every key goes to it (see {@link #typeKey}). */
     private static volatile boolean typing;
     private static final ConcurrentLinkedQueue<Integer> TYPED = new ConcurrentLinkedQueue<>();
+    /** Page Up, Page Down and Tab: tabs to move by, since the last frame. */
+    private static final AtomicInteger TAB_KEYS = new AtomicInteger();
+    /** The mouse wheel's notches since the last frame (down is more). */
+    private static final AtomicInteger WHEEL = new AtomicInteger();
+    /** The settings' pictures by name; null where there is none. Game thread only. */
+    private static final Map<String, Image> PICTURES = new HashMap<>();
+    /** Help lines already wrapped to the pane. Game thread only. */
+    private static final Map<String, List<String>> WRAPPED = new HashMap<>();
 
     private final Image[] back;
     private final List<Row> rows = new ArrayList<>();
-    /** Where each row is drawn: column, and y. */
-    private final int[] rowColumn;
-    private final int[] rowY;
-    private final List<Section> sections = new ArrayList<>();
+    private final List<String> tabNames = new ArrayList<>();
+    private final List<String> tabHelp = new ArrayList<>();
+    /** The rows of each tab, top to bottom. */
+    private int[][] tabRows;
+    /** How tall each tab's list is, headings and all. */
+    private int[] tabHeight;
+    /** Where each row stands in its tab's list, before scrolling. */
+    private int[] rowY;
+    /** How far each tab's list is scrolled. */
+    private int[] scroll;
+    /** The tab shown. */
+    private int tab;
     /** Lettering already turned into shapes; game thread only. */
     private static final Map<String, Shape> SHAPES = new HashMap<>();
     private final Font font;
     private final Font smallFont;
     private final Font titleFont;
 
-    /** The selected row, or rows.size() for Back. */
+    /** The selected row, TABS for the tabs, or rows.size() for Back. */
     private int selected;
     private boolean flash;
     private boolean pressed;
@@ -100,19 +140,47 @@ final class SettingsScreen {
         smallFont = new Font("Adventure", Font.PLAIN, 15).deriveFont(letters);
         titleFont = new Font("Adventure", Font.PLAIN, 21).deriveFont(Map.of(TextAttribute.TRACKING, 0.04F));
         build();
-        rowColumn = new int[rows.size()];
+        layout();
+    }
+
+    /** Stacks each tab's rows, with room for the headings, and notes how tall each list is. */
+    private void layout() {
+        tabRows = new int[tabNames.size()][];
+        tabHeight = new int[tabNames.size()];
+        scroll = new int[tabNames.size()];
         rowY = new int[rows.size()];
-        for (Section section : sections) {
-            for (int i = 0; i < section.count; i++) {
-                rowColumn[section.first + i] = section.column;
-                rowY[section.first + i] = section.y + 14 + i * ROW_H;
+        for (int t = 0; t < tabNames.size(); t++) {
+            List<Integer> in = new ArrayList<>();
+            int y = 0;
+            for (int i = 0; i < rows.size(); i++) {
+                Row row = rows.get(i);
+                if (row.tab == t) {
+                    if (row.heading != null) {
+                        y += (in.isEmpty() ? 0 : GROUP_GAP) + HEADING_H;
+                    }
+                    rowY[i] = y;
+                    y += ROW_H;
+                    in.add(i);
+                }
             }
+            tabRows[t] = in.stream().mapToInt(Integer::intValue).toArray();
+            tabHeight[t] = y;
         }
     }
 
     /** Escape went down: on this screen it goes back, where elsewhere it is Enter. */
     static void noteEscape() {
         escapePressed = true;
+    }
+
+    /** Page Up (-1), Page Down or Tab (1) went down: the next or the previous tab. */
+    static void noteTabKey(int direction) {
+        TAB_KEYS.addAndGet(direction);
+    }
+
+    /** The mouse wheel turned by {@code notches} (down is more): scrolls the list. */
+    static void noteWheel(int notches) {
+        WHEEL.addAndGet(notches);
     }
 
     /**
@@ -131,18 +199,23 @@ final class SettingsScreen {
 
     /** Called as the screen opens. */
     void open() {
-        selected = 0;
+        selected = tabRows[tab].length > 0 ? tabRows[tab][0] : TABS;
+        scroll[tab] = 0;
         pressed = false;
         backPressed = 0;
         escapePressed = false;
+        TAB_KEYS.set(0);
+        WHEEL.set(0);
         windowSize.stopTyping();
     }
 
-    /** For the smoke test: chooses the row with this label. */
+    /** For the smoke test: chooses the row with this label, on its tab. */
     void select(String label) {
         for (int i = 0; i < rows.size(); i++) {
             if (rows.get(i).label.equals(label)) {
+                tab = rows.get(i).tab;
                 selected = i;
+                showSelected();
             }
         }
     }
@@ -156,111 +229,140 @@ final class SettingsScreen {
         BooleanSupplier hdr = () -> GameSparker.isGpuRenderer() && GameSparker.getHdr() != GpuDisplay.HDR_OFF;
         BooleanSupplier sound3d = GameSparker::isNewSound;
         String gpuOnly = "Only when the graphics card draws (Renderer).";
-        String sound3dOnly = "Only with the 3D sound.";
+        String sound3dOnly = "Only with Steam Audio (Sound system).";
 
         BooleanSupplier windowed = () -> !RunApp.isFullscreen();
         String windowOnly = "Only in a window: in fullscreen the game fills the monitor.";
 
-        section("Picture", 0);
-        rows.add(new Choice("Renderer",
+        tab("Display", "The window, the frame rate, and how the races are drawn.");
+        group("Screen");
+        add(new Choice("Fullscreen", "Borderless fullscreen on this monitor. F11 or Alt+Enter switch it too.",
+                null, new int[] {0, 1}, SettingsScreen::onOff, () -> RunApp.isFullscreen() ? 1 : 0,
+                v -> RunApp.setFullscreen(v == 1)));
+        add(new Choice("Aspect ratio",
+                "The window's shape. The race and the menus are drawn 16:9, so other shapes show them with bars.",
+                () -> "Now: " + describeWindow() + ".", aspectChoices(), SettingsScreen::aspectName,
+                SettingsScreen::currentAspect, SettingsScreen::setAspect).when(windowed, windowOnly));
+        add(windowSize.when(windowed, windowOnly));
+        add(new Choice("Fill the window",
+                "Scales the picture to the window, keeping its shape. Off shows it pixel for pixel.",
+                null, new int[] {0, 1}, SettingsScreen::onOff, () -> GameSparker.isScaleToWindow() ? 1 : 0,
+                v -> GameSparker.setScaleToWindow(v == 1)));
+        add(new Choice("Frame rate",
+                "Frames a second. Variable refresh stays just under the monitor's rate, for G-Sync and FreeSync.",
+                null, fpsLimits, SettingsScreen::fpsName, GameSparker::getFpsLimit, GameSparker::setFpsLimit));
+        add(new Choice("Laptop battery FPS",
+                "Holds the frame rate down while the laptop runs on its battery, to make it last.",
+                () -> "Now: " + GameSparker.describeBatteryFps() + ".",
+                new int[] {0, 30, 40, 60, 90, 120}, v -> v == 0 ? "No cap" : v + " fps",
+                GameSparker::getBatteryFps, GameSparker::setBatteryFps));
+        group("Picture");
+        add(new Choice("Renderer",
                 "Graphics card: the GPU draws, with the smoothing below. Software: the game's own drawing.",
                 () -> GameSparker.describeRenderer().contains("not available")
                         ? "The graphics card cannot draw here, so the game draws in software." : null,
                 new int[] {1, 0}, v -> v == 1 ? "Graphics card" : "Software",
                 () -> GameSparker.isGpuRenderer() ? 1 : 0, v -> GameSparker.setGpuRenderer(v == 1)));
-        rows.add(new Choice("Fullscreen", "Borderless fullscreen on this monitor. F11 or Alt+Enter switch it too.",
-                null, new int[] {0, 1}, SettingsScreen::onOff, () -> RunApp.isFullscreen() ? 1 : 0,
-                v -> RunApp.setFullscreen(v == 1)));
-        rows.add(new Choice("Aspect ratio",
-                "The window's shape. The race and the menus are drawn 16:9, so other shapes show them with bars.",
-                () -> "Now: " + describeWindow() + ".", aspectChoices(), SettingsScreen::aspectName,
-                SettingsScreen::currentAspect, SettingsScreen::setAspect).when(windowed, windowOnly));
-        rows.add(windowSize.when(windowed, windowOnly));
-        rows.add(new Choice("Frame rate",
-                "Frames a second. Variable refresh stays just under the monitor's rate, for G-Sync and FreeSync.",
-                null, fpsLimits, SettingsScreen::fpsName, GameSparker::getFpsLimit, GameSparker::setFpsLimit));
-        rows.add(new Choice("Laptop battery FPS",
-                "Holds the frame rate down while the laptop runs on its battery, to make it last.",
-                () -> "Now: " + GameSparker.describeBatteryFps() + ".",
-                new int[] {0, 30, 40, 60, 90, 120}, v -> v == 0 ? "No cap" : v + " fps",
-                GameSparker::getBatteryFps, GameSparker::setBatteryFps));
-        rows.add(new Choice("Fill the window",
-                "Scales the picture to the window, keeping its shape. Off shows it pixel for pixel.",
-                null, new int[] {0, 1}, SettingsScreen::onOff, () -> GameSparker.isScaleToWindow() ? 1 : 0,
-                v -> GameSparker.setScaleToWindow(v == 1)));
-        rows.add(new Choice("MSAA",
+        add(new Choice("MSAA",
                 "Multisampling: smooths the edges of the cars and the track. Off keeps the game's hard edges.",
                 () -> "Now: " + GameSparker.describeMultisample() + ".",
                 new int[] {1, 2, 4, 8, 16}, v -> v <= 1 ? "Off" : v + "x",
                 GameSparker::getMultisample, GameSparker::setMultisample).when(gpu, gpuOnly));
-        rows.add(new Choice("Supersampling",
+        add(new Choice("Supersampling",
                 "Draws races with 2, 4 or 8 times the pixels and averages them down. 4x on a 1080p screen is 4K.",
                 () -> "Now: " + GameSparker.describeSupersample() + ".",
                 new int[] {1, 2, 4, 8}, v -> v <= 1 ? "Off" : v + "x",
                 GameSparker::getSupersample, GameSparker::setSupersample).when(gpu, gpuOnly));
-        rows.add(new Choice("Dynamic resolution",
-                "Draws races smaller while the graphics card cannot keep up, to hold the frame rate.",
-                () -> "Now: " + GameSparker.describeDynamicResolution() + ".",
-                new int[] {0, 90, 75, 50, 25}, v -> v == 0 ? "Off" : "Down to " + v + "%",
-                GameSparker::getDynamicResolution, GameSparker::setDynamicResolution).when(gpu, gpuOnly));
-        rows.add(new Choice("Smooth particles",
+        add(new Choice("Smooth particles",
                 "Dust and flying debris move every frame. Off: once a game tick, as the original drew them.",
                 null, new int[] {0, 1}, SettingsScreen::onOff, () -> GameSparker.isSmoothEffects() ? 1 : 0,
                 v -> GameSparker.setSmoothEffects(v == 1)));
-
-        section("HDR", 0);
-        rows.add(new Choice("HDR", "Brighter highlights on an HDR monitor, when Windows has HDR on.",
+        group("HDR");
+        add(new Choice("HDR", "Brighter highlights on an HDR monitor, when Windows has HDR on.",
                 () -> "Now: " + GameSparker.describeHdr() + ".",
                 new int[] {GpuDisplay.HDR_OFF, GpuDisplay.HDR_AUTO},
                 v -> v == GpuDisplay.HDR_OFF ? "Off" : v == GpuDisplay.HDR_FORCE ? "Forced" : "Auto",
                 GameSparker::getHdr, GameSparker::setHdr).when(gpu, gpuOnly));
-        rows.add(new Choice("Paper white",
+        add(new Choice("Paper white",
                 "How bright the game's white is in HDR. Windows: as its SDR content brightness slider.", null,
                 new int[] {0, 80, 100, 120, 160, 200, 240, 280, 320, 400, 500},
                 v -> v == 0 ? "Windows" : v + " nits", GameSparker::getPaperWhite, GameSparker::setPaperWhite)
                 .when(hdr, "Only with HDR on."));
-        rows.add(new Choice("Peak brightness", "The brightest the monitor can show. Monitor: what it tells Windows.", null,
+        add(new Choice("Peak brightness", "The brightest the monitor can show. Monitor: what it tells Windows.", null,
                 new int[] {0, 400, 600, 800, 1000, 1400, 2000, 4000, 10000},
                 v -> v == 0 ? "Monitor" : v + " nits", GameSparker::getPeak, GameSparker::setPeak)
                 .when(hdr, "Only with HDR on."));
 
-        section("Sound", 1);
-        rows.add(new Choice("Sound system",
+        tab("Audio", "The sound system, its effects, and the volumes.");
+        group("Sound");
+        add(new Choice("Sound system",
                 "Steam Audio: sounds come from where they are, mixed and spread. Classic: as the game always sounded.",
                 () -> "Now: " + GameSparker.describeSound() + ".",
                 new int[] {1, 0}, v -> v == 1 ? "Steam Audio" : "Classic",
                 () -> GameSparker.isNewSound() ? 1 : 0, v -> GameSparker.setNewSound(v == 1)));
-        rows.add(new Choice("Output", "Mono plays everything on both speakers, for one ear or one speaker.", null,
+        add(new Choice("Output", "Mono plays everything on both speakers, for one ear or one speaker.", null,
                 new int[] {0, 1}, v -> v == 1 ? "Mono" : "Stereo", () -> Sound3D.isMono() ? 1 : 0,
                 v -> GameSparker.setMono(v == 1)).when(sound3d, sound3dOnly));
+        group("Volume");
         String[] busLabels = {"Master volume", "Engines", "Effects", "Music", "Interface"};
         String[] busHelp = {"Everything the game plays.", "The cars' engines and skids.",
                 "Crashes, scrapes, power-ups and the rest of the race.", "The stage's music.",
                 "The menus' and the countdown's sounds."};
         for (int b = 0; b < busLabels.length; b++) {
             final int bus = b;
-            rows.add(new Slider(busLabels[b], busHelp[b], 0, 100, 5, v -> v + "%",
+            add(new Slider(busLabels[b], busHelp[b], 0, 100, 5, v -> v + "%",
                     () -> Math.round(Sound3D.busLevel(bus) * 100F), v -> GameSparker.setVolume(bus, v))
                     .when(sound3d, sound3dOnly));
         }
-        rows.add(new Slider("Music width",
+        add(new Slider("Music width",
                 "How far apart the music's left and right are: 0 is mono, " + StreamMusic.DEFAULT_SEPARATION
                         + " the game's own, 200 the widest.",
                 0, 200, 10, v -> v + "%", StreamMusic::separation, GameSparker::setMusicSeparation)
                 .when(() -> GameSparker.isNewSound() && StreamMusic.available(), sound3dOnly));
 
-        section("Controls", 1);
-        rows.add(new Choice("Game controllers", "Plays with an Xbox or other game controller.",
+        tab("Controls", "Game controllers, how quickly the car answers, and the keys.");
+        group("Game controllers");
+        add(new Choice("Game controllers", "Plays with an Xbox or other game controller.",
                 GameSparker::describeGamepads, new int[] {0, 1}, SettingsScreen::onOff,
                 () -> Gamepads.isOn() ? 1 : 0, v -> GameSparker.setGamepad(v == 1)));
-        rows.add(new Choice("Shaking on hits", "The controller shakes when the car hits hard.", null,
+        add(new Choice("Shaking on hits", "The controller shakes when the car hits hard.", null,
                 new int[] {0, 1}, SettingsScreen::onOff, () -> Gamepads.isRumble() ? 1 : 0,
                 v -> GameSparker.setRumble(v == 1)).when(Gamepads::isOn, "Only with game controllers on."));
-        rows.add(new Choice("Run-ahead",
+        group("Response");
+        add(new Choice("Run-ahead",
                 "Shows the race a tick ahead with the keys held now: 53 ms less lag between key and screen.",
                 null, new int[] {0, 1}, SettingsScreen::onOff, () -> GameSparker.isRunAhead() ? 1 : 0,
                 v -> GameSparker.setRunAhead(v == 1)));
-        sectionEnd();
+
+        tab("Advanced", "For tinkering: how the game draws, and readouts of how fast it runs.");
+        group("Drawing");
+        add(new Choice("Dynamic resolution",
+                "Draws races smaller while the graphics card cannot keep up, to hold the frame rate.",
+                () -> "Now: " + GameSparker.describeDynamicResolution() + ".",
+                new int[] {0, 90, 75, 50, 25}, v -> v == 0 ? "Off" : "Down to " + v + "%",
+                GameSparker::getDynamicResolution, GameSparker::setDynamicResolution).when(gpu, gpuOnly));
+    }
+
+    /* the tab and the heading the next rows go under, while building */
+    private int buildingTab = -1;
+    private String nextHeading;
+
+    private void tab(String name, String help) {
+        tabNames.add(name);
+        tabHelp.add(help);
+        buildingTab = tabNames.size() - 1;
+    }
+
+    /** The next row starts a group, under this heading. */
+    private void group(String heading) {
+        nextHeading = heading;
+    }
+
+    private void add(Row row) {
+        row.tab = buildingTab;
+        row.heading = nextHeading;
+        nextHeading = null;
+        rows.add(row);
     }
 
     private static String onOff(int v) {
@@ -365,27 +467,6 @@ final class SettingsScreen {
         return now.width + "x" + now.height + " window, on a " + screen.width + "x" + screen.height + " monitor";
     }
 
-    private Section open;
-
-    private void section(String title, int column) {
-        sectionEnd();
-        int y = BOX_Y + 70;
-        for (Section s : sections) {
-            if (s.column == column) {
-                y = s.y + 14 + s.count * ROW_H + SECTION_GAP - 14;
-            }
-        }
-        open = new Section(title, column, y, rows.size());
-        sections.add(open);
-    }
-
-    private void sectionEnd() {
-        if (open != null) {
-            open.count = rows.size() - open.first;
-            open = null;
-        }
-    }
-
     /* ---------------------------------------------------------- each frame */
 
     /**
@@ -407,41 +488,58 @@ final class SettingsScreen {
             control.up = control.down = control.left = control.right = false;
             control.enter = control.handb = false;
             escapePressed = false;
+            TAB_KEYS.set(0);
+            WHEEL.set(0);
             return false;
         }
-        int count = rows.size() + 1;
-        if (control.up) {
-            selected = (selected + count - 1) % count;
-            control.up = false;
+        int tabMove = TAB_KEYS.getAndSet(0);
+        if (tabMove != 0) {
+            switchTab(tab + tabMove);
         }
-        if (control.down) {
-            selected = (selected + 1) % count;
+        int notches = WHEEL.getAndSet(0);
+        if (notches != 0) {
+            scroll[tab] += notches * ROW_H * 3;
+            clampScroll();
+        }
+        int[] list = tabRows[tab];
+        int at = position();
+        if (control.up || control.down) {
+            at = control.up ? (at <= -1 ? list.length : at - 1) : (at >= list.length ? -1 : at + 1);
+            selected = at < 0 ? TABS : at >= list.length ? rows.size() : list[at];
+            showSelected();
+            control.up = false;
             control.down = false;
         }
-        if (selected >= rows.size() || rows.get(selected) != windowSize) {
+        if (!isRow(selected) || rows.get(selected) != windowSize) {
             windowSize.leave();
         }
-        if (selected < rows.size()) {
+        if (selected == TABS) {
+            if (control.left || control.right) {
+                switchTab(tab + (control.left ? -1 : 1));
+            }
+        } else if (isRow(selected)) {
             if (control.left) {
                 rows.get(selected).change(-1, false);
-                control.left = false;
             }
             if (control.right) {
                 rows.get(selected).change(1, false);
-                control.right = false;
             }
-        } else {
-            control.left = false;
-            control.right = false;
         }
+        control.left = false;
+        control.right = false;
         boolean leave = false;
         if (escapePressed) {
             escapePressed = false;
             leave = true;
         } else if (control.enter || control.handb) {
-            if (selected < rows.size() && rows.get(selected) == windowSize) {
+            if (selected == TABS) {
+                if (list.length > 0) {
+                    selected = list[0];
+                    showSelected();
+                }
+            } else if (isRow(selected) && rows.get(selected) == windowSize) {
                 windowSize.enter();
-            } else if (selected < rows.size()) {
+            } else if (isRow(selected)) {
                 rows.get(selected).change(1, true);
             } else {
                 leave = true;
@@ -452,20 +550,75 @@ final class SettingsScreen {
         return leave;
     }
 
+    private boolean isRow(int i) {
+        return i >= 0 && i < rows.size();
+    }
+
+    /** Where the selection is in the tab: -1 on the tabs, the list's length on Back. */
+    private int position() {
+        int[] list = tabRows[tab];
+        if (selected == TABS) {
+            return -1;
+        }
+        for (int p = 0; p < list.length; p++) {
+            if (list[p] == selected) {
+                return p;
+            }
+        }
+        return list.length;
+    }
+
+    /** Shows another tab. The tabs or Back stay chosen; a row gives way to the new tab's first. */
+    private void switchTab(int to) {
+        tab = Math.floorMod(to, tabNames.size());
+        if (isRow(selected)) {
+            selected = tabRows[tab].length > 0 ? tabRows[tab][0] : TABS;
+            scroll[tab] = 0;
+        }
+        windowSize.leave();
+        pressed = false;
+    }
+
+    /** Scrolls the list so the chosen row, and its heading, are in sight. */
+    private void showSelected() {
+        if (!isRow(selected)) {
+            return;
+        }
+        Row row = rows.get(selected);
+        int top = rowY[selected] - (row.heading != null ? HEADING_H : 0);
+        int bottom = rowY[selected] + ROW_H;
+        int shown = LIST_BOTTOM - LIST_TOP;
+        if (top < scroll[tab]) {
+            scroll[tab] = top;
+        } else if (bottom > scroll[tab] + shown) {
+            scroll[tab] = bottom - shown;
+        }
+        clampScroll();
+    }
+
+    private void clampScroll() {
+        int most = Math.max(0, tabHeight[tab] - (LIST_BOTTOM - LIST_TOP));
+        scroll[tab] = Math.max(0, Math.min(most, scroll[tab]));
+    }
+
     /**
      * The mouse, in picture coordinates: hovering chooses a row, a click on
-     * its arrows (or on a volume's bar) changes it, a click on Back goes back.
-     * {@code state} is 1 on the tick a button went down.
+     * its arrows (or on a volume's bar) changes it, a click on a tab shows
+     * it, a click on Back goes back. {@code state} is 1 on the tick a button
+     * went down.
      */
     void mouse(int x, int y, int state, Control control) {
         boolean moved = x != lastMouseX || y != lastMouseY;
         lastMouseX = x;
         lastMouseY = y;
         int row = rowAt(x, y);
+        int tabHit = tabAt(x, y);
         boolean overBack = overBack(x, y);
         if (moved && state == 0 && !windowSize.typing()) {
             if (row >= 0) {
                 selected = row;
+            } else if (tabHit >= 0) {
+                selected = TABS;
             } else if (overBack) {
                 selected = rows.size();
             }
@@ -483,7 +636,7 @@ final class SettingsScreen {
             if (row >= 0) {
                 selected = row;
                 Row r = rows.get(row);
-                int left = valueLeft(rowColumn[row]);
+                int left = valueLeft();
                 if (r == windowSize && windowSize.custom() && x >= left + 16 && x <= left + VALUE_W - 16) {
                     windowSize.enter();
                 } else if (r instanceof Slider slider && x >= left + 16 && x <= left + VALUE_W - 16) {
@@ -494,6 +647,9 @@ final class SettingsScreen {
                     r.change(1, !(x >= left + VALUE_W - 16));
                 }
                 pressed = true;
+            } else if (tabHit >= 0) {
+                switchTab(tabHit);
+                selected = TABS;
             } else if (overBack) {
                 selected = rows.size();
                 backPressed = 1;
@@ -509,10 +665,29 @@ final class SettingsScreen {
     }
 
     private int rowAt(int x, int y) {
-        for (int i = 0; i < rows.size(); i++) {
-            int cx = COLUMN_X[rowColumn[i]];
-            if (x >= cx && x < cx + COLUMN_W && y >= rowY[i] && y < rowY[i] + ROW_H - 2) {
+        if (x < LIST_X || x >= LIST_X + LIST_W || y < LIST_TOP || y >= LIST_BOTTOM) {
+            return -1;
+        }
+        for (int i : tabRows[tab]) {
+            int top = LIST_TOP + rowY[i] - scroll[tab];
+            if (y >= top && y < top + ROW_H - 2) {
                 return i;
+            }
+        }
+        return -1;
+    }
+
+    private float tabCentre(int t) {
+        return GameFacts.screenWidth / 2F + (t - (tabNames.size() - 1) / 2F) * TAB_SPACING;
+    }
+
+    private int tabAt(int x, int y) {
+        if (y < TABS_Y - 24 || y > TABS_Y + 10) {
+            return -1;
+        }
+        for (int t = 0; t < tabNames.size(); t++) {
+            if (Math.abs(x - tabCentre(t)) < TAB_SPACING / 2F - 8) {
+                return t;
             }
         }
         return -1;
@@ -527,8 +702,9 @@ final class SettingsScreen {
         return x > bx - 5 && x < bx + b.getWidth(null) + 5 && y > BACK_Y - 5 && y < BACK_Y + b.getHeight(null) + 5;
     }
 
-    private static int valueLeft(int column) {
-        return COLUMN_X[column] + COLUMN_W - VALUE_W - 6;
+    /** Where a row's value starts, its "<". */
+    private static int valueLeft() {
+        return LIST_X + LIST_W - VALUE_W - 14;
     }
 
     /* ------------------------------------------------------------- drawing */
@@ -538,16 +714,19 @@ final class SettingsScreen {
         Object textAntialias = rd.getRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING);
         Stroke stroke = rd.getStroke();
         java.awt.Paint paint = rd.getPaint();
+        Shape clip = rd.getClip();
         drawBox(rd);
         rd.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         drawTitle(rd, "Settings", GameFacts.screenWidth / 2F, BOX_Y + 38);
-        for (Section section : sections) {
-            pauseLetters(rd, titleFont, section.title, COLUMN_X[section.column] + 8, section.y, false);
-        }
         flash = !flash;
-        for (int i = 0; i < rows.size(); i++) {
+        drawTabs(rd);
+        rd.clipRect(LIST_X - 2, LIST_TOP - 2, LIST_W + 4, LIST_BOTTOM - LIST_TOP + 4);
+        for (int i : tabRows[tab]) {
             drawRow(rd, i);
         }
+        rd.setClip(clip);
+        drawScrollbar(rd);
+        drawPane(rd);
         drawFooter(rd);
         rd.setPaint(paint);
         rd.setStroke(stroke);
@@ -555,7 +734,7 @@ final class SettingsScreen {
         rd.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, textAntialias);
     }
 
-    /** The pause box's frame, around the main menu's brown. */
+    /** The pause box's frame, around the main menu's brown, with lines under the tabs and beside the list. */
     private static void drawBox(Graphics2D rd) {
         rd.setColor(new Color(0, 0, 0, 90));
         rd.fillRect(BOX_X + 6, BOX_Y + 8, BOX_W, BOX_H);
@@ -565,23 +744,48 @@ final class SettingsScreen {
             rd.setColor(FRAME[i]);
             rd.drawRect(BOX_X + i, BOX_Y + i, BOX_W - 1 - 2 * i, BOX_H - 1 - 2 * i);
         }
-        // the line between the two columns
         rd.setColor(new Color(0xde, 0x84, 0x39, 90));
-        int middle = GameFacts.screenWidth / 2;
-        rd.drawLine(middle, BOX_Y + 66, middle, BOX_Y + 482);
+        rd.drawLine(BOX_X + 24, TABS_Y + 12, BOX_X + BOX_W - 25, TABS_Y + 12);
+        int middle = LIST_X + LIST_W + 17;
+        rd.drawLine(middle, LIST_TOP, middle, LIST_BOTTOM);
+    }
+
+    /** The tabs: the shown one in the pause menu's lettering and underlined, the rest in the menu's tan. */
+    private void drawTabs(Graphics2D rd) {
+        for (int t = 0; t < tabNames.size(); t++) {
+            String name = tabNames.get(t);
+            float cx = tabCentre(t);
+            Rectangle2D b = place(shape(titleFont, name), cx, TABS_Y, null).getBounds2D();
+            if (t == tab) {
+                pauseLetters(rd, titleFont, name, cx, TABS_Y, true);
+                rd.setColor(ARROWS);
+                rd.fillRect((int) b.getMinX() - 4, TABS_Y + 6, (int) b.getWidth() + 8, 3);
+                if (selected == TABS) {
+                    highlight(rd, (int) b.getMinX() - 14, TABS_Y - 24, (int) b.getWidth() + 28, 36);
+                }
+            } else {
+                menuLetters(rd, titleFont, name, cx, TABS_Y, HELP, null);
+            }
+        }
     }
 
     private void drawRow(Graphics2D rd, int i) {
         Row row = rows.get(i);
-        int cx = COLUMN_X[rowColumn[i]];
-        int y = rowY[i];
+        int y = LIST_TOP + rowY[i] - scroll[tab];
+        if (y + ROW_H < LIST_TOP - HEADING_H || y > LIST_BOTTOM + HEADING_H) {
+            return;
+        }
+        if (row.heading != null) {
+            pauseLetters(rd, titleFont, row.heading, LIST_X + 8, y - 9, false);
+        }
         boolean enabled = row.enabled();
+        int width = LIST_W - (tabHeight[tab] > LIST_BOTTOM - LIST_TOP ? 12 : 0);
         if (i == selected) {
-            highlight(rd, cx, y, COLUMN_W, ROW_H - 3);
+            highlight(rd, LIST_X, y, width, ROW_H - 3);
         }
         Color letters = enabled ? LETTERS : DIMMED;
-        menuLetters(rd, font, row.label, cx + 12, y + 17, letters, false);
-        int left = valueLeft(rowColumn[i]);
+        menuLetters(rd, font, row.label, LIST_X + 12, y + 17, letters, false);
+        int left = valueLeft();
         if (enabled) {
             menuLetters(rd, font, "<", left + 4, y + 17, ARROWS, false);
             menuLetters(rd, font, ">", left + VALUE_W - 4, y + 17, ARROWS, true);
@@ -612,6 +816,139 @@ final class SettingsScreen {
         }
     }
 
+    /** A thin bar beside a list too long for the box, showing where the list is scrolled to. */
+    private void drawScrollbar(Graphics2D rd) {
+        int shown = LIST_BOTTOM - LIST_TOP;
+        int whole = tabHeight[tab];
+        if (whole <= shown) {
+            return;
+        }
+        int x = LIST_X + LIST_W - 5;
+        rd.setColor(new Color(0, 0, 0, 100));
+        rd.fillRoundRect(x, LIST_TOP, 5, shown, 5, 5);
+        int thumb = Math.max(24, shown * shown / whole);
+        int top = LIST_TOP + Math.round(scroll[tab] * (shown - thumb) / (float) (whole - shown));
+        rd.setColor(ARROWS);
+        rd.fillRoundRect(x, top, 5, thumb, 5, 5);
+    }
+
+    /** Beside the list: the chosen setting's picture, its name, what it does, and how it is now. */
+    private void drawPane(Graphics2D rd) {
+        String title;
+        String help;
+        String status = null;
+        String picture = null;
+        if (selected == TABS) {
+            title = tabNames.get(tab);
+            help = tabHelp.get(tab) + " Left and right, or Page Up and Page Down, change the tab.";
+        } else if (isRow(selected)) {
+            Row row = rows.get(selected);
+            title = row.label;
+            help = row.help();
+            status = row.enabled() ? row.status() : row.disabledWhy;
+            picture = pictureName(row.label);
+        } else {
+            title = "Back";
+            help = "Back to the " + (backTo == Phase.PAUSEMENU ? "pause menu." : "main menu.");
+        }
+        int top = LIST_TOP + 2;
+        drawPicture(rd, picture, title, PANE_X, top, PANE_W, PICTURE_H);
+        float y = top + PICTURE_H + 34;
+        pauseLetters(rd, titleFont, title, PANE_X, y, false);
+        y += 28;
+        for (String line : wrap(smallFont, help, PANE_W)) {
+            menuLetters(rd, smallFont, line, PANE_X, y, HELP, false);
+            y += 21;
+        }
+        if (status != null) {
+            y += 6;
+            for (String line : wrap(smallFont, status, PANE_W)) {
+                menuLetters(rd, smallFont, line, PANE_X, y, LETTERS, false);
+                y += 21;
+            }
+        }
+    }
+
+    /** The file name a setting's picture has: its label in lower case, with dashes, as "laptop-battery-fps". */
+    static String pictureName(String label) {
+        return label.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]+", "-").replaceAll("^-|-$", "");
+    }
+
+    /** The picture of a setting, from data/settings/(name).png; null where there is none. */
+    private static Image picture(String name) {
+        if (!PICTURES.containsKey(name)) {
+            Image image = null;
+            File file = new File("data/settings/" + name + ".png");
+            if (file.isFile()) {
+                try {
+                    image = ImageIO.read(file);
+                } catch (IOException e) {
+                    System.err.println("Cannot read " + file + ": " + e.getMessage());
+                }
+            }
+            PICTURES.put(name, image);
+        }
+        return PICTURES.get(name);
+    }
+
+    /** The setting's picture, or until it has one, a frame with a little landscape and its name. */
+    private void drawPicture(Graphics2D rd, String name, String title, int x, int y, int w, int h) {
+        Image image = name == null ? null : picture(name);
+        if (image != null) {
+            rd.drawImage(image, x, y, w, h, null);
+            rd.setColor(new Color(0xde8439));
+            rd.drawRect(x, y, w - 1, h - 1);
+            return;
+        }
+        rd.setColor(new Color(0, 0, 0, 110));
+        rd.fillRect(x, y, w, h);
+        rd.setColor(new Color(0xde, 0x84, 0x39, 140));
+        rd.setStroke(new BasicStroke(1.5F, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 10F, new float[] {6F, 5F}, 0F));
+        rd.drawRect(x + 1, y + 1, w - 3, h - 3);
+        int iw = 66;
+        int ih = 48;
+        int ix = x + (w - iw) / 2;
+        int iy = y + h / 2 - ih + 2;
+        rd.setColor(DIMMED);
+        rd.setStroke(new BasicStroke(2.5F, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        rd.drawRoundRect(ix, iy, iw, ih, 8, 8);
+        Polygon hills = new Polygon(
+                new int[] {ix + 6, ix + 25, ix + 36, ix + 45, ix + iw - 6},
+                new int[] {iy + ih - 6, iy + 19, iy + 31, iy + 23, iy + ih - 6}, 5);
+        rd.fill(hills);
+        rd.fillOval(ix + iw - 22, iy + 8, 11, 11);
+        menuLetters(rd, smallFont, title, x + w / 2F, iy + ih + 30, DIMMED, null);
+    }
+
+    /** The text broken into lines no wider than {@code width}, at the spaces. */
+    private static List<String> wrap(Font f, String text, int width) {
+        String key = f.getSize2D() + "|" + width + "|" + text;
+        List<String> lines = WRAPPED.get(key);
+        if (lines == null) {
+            lines = new ArrayList<>();
+            StringBuilder line = new StringBuilder();
+            for (String word : text.split(" ")) {
+                String longer = line.length() == 0 ? word : line + " " + word;
+                if (line.length() > 0 && outline(f, longer).getBounds2D().getWidth() > width) {
+                    lines.add(line.toString());
+                    line.setLength(0);
+                    line.append(word);
+                } else {
+                    line.setLength(0);
+                    line.append(longer);
+                }
+            }
+            if (line.length() > 0) {
+                lines.add(line.toString());
+            }
+            if (WRAPPED.size() > 128) {
+                WRAPPED.clear();
+            }
+            WRAPPED.put(key, lines);
+        }
+        return lines;
+    }
+
     /** The main menu's selection: a blinking rounded frame, filled while the mouse holds it. */
     private void highlight(Graphics2D rd, int x, int y, int w, int h) {
         rd.setStroke(new BasicStroke(1F));
@@ -624,18 +961,6 @@ final class SettingsScreen {
     }
 
     private void drawFooter(Graphics2D rd) {
-        int helpY = BOX_Y + BOX_H - 110;
-        if (selected < rows.size()) {
-            Row row = rows.get(selected);
-            menuLetters(rd, smallFont, row.help(), GameFacts.screenWidth / 2F, helpY, HELP, null);
-            String status = row.enabled() ? row.status() : row.disabledWhy;
-            if (status != null) {
-                menuLetters(rd, smallFont, status, GameFacts.screenWidth / 2F, helpY + 22, LETTERS, null);
-            }
-        } else {
-            menuLetters(rd, smallFont, "Back to the " + (backTo == Phase.PAUSEMENU ? "pause menu." : "main menu."),
-                    GameFacts.screenWidth / 2F, helpY, HELP, null);
-        }
         Image b = back[selected == rows.size() && backPressed == 1 ? 1 : 0];
         if (b != null) {
             int bx = (GameFacts.screenWidth - b.getWidth(null)) / 2;
@@ -646,8 +971,8 @@ final class SettingsScreen {
         }
         menuLetters(rd, smallFont, windowSize.typing()
                 ? "Type the width, then x and the height. Enter sets it, Escape keeps the size as it is."
-                : "Arrows choose and change a setting, Enter or Escape goes back.",
-                GameFacts.screenWidth / 2F, BOX_Y + BOX_H - 14, DIMMED, null);
+                : "Arrows choose and change a setting. Page Up and Page Down change the tab. Escape goes back.",
+                GameFacts.screenWidth / 2F, BOX_Y + BOX_H - 16, DIMMED, null);
     }
 
     /** Where the screen goes back to; set by the menu that opens it. */
@@ -745,6 +1070,11 @@ final class SettingsScreen {
         return s;
     }
 
+    /** The text's outline, not kept: for measuring. */
+    private static Shape outline(Font f, String text) {
+        return f.createGlyphVector(new java.awt.font.FontRenderContext(null, true, true), text).getOutline();
+    }
+
     private static Shape place(Shape s, float x, float y, Boolean alignRight) {
         Rectangle2D b = s.getBounds2D();
         double dx = alignRight == null ? x - b.getCenterX() : alignRight ? x - b.getMaxX() : x - b.getMinX();
@@ -753,21 +1083,6 @@ final class SettingsScreen {
 
     /* ---------------------------------------------------------------- model */
 
-    private static final class Section {
-        final String title;
-        final int column;
-        final int y;
-        final int first;
-        int count;
-
-        Section(String title, int column, int y, int first) {
-            this.title = title;
-            this.column = column;
-            this.y = y;
-            this.first = first;
-        }
-    }
-
     /** One setting: its name, a line on what it does, and how it changes. */
     private abstract static class Row {
         final String label;
@@ -775,6 +1090,9 @@ final class SettingsScreen {
         private final Supplier<String> status;
         private BooleanSupplier enabled = () -> true;
         String disabledWhy;
+        /** The tab it is on, and the heading it starts a group under (or null); set as it is added. */
+        int tab;
+        String heading;
 
         Row(String label, String help, Supplier<String> status) {
             this.label = label;

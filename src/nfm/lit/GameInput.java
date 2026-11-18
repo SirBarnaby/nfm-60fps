@@ -8,6 +8,8 @@ import java.awt.event.KeyListener;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
 import java.awt.event.MouseMotionListener;
+import java.awt.event.MouseWheelEvent;
+import java.awt.event.MouseWheelListener;
 
 /**
  * The game's keyboard, mouse and focus, through AWT's listeners. The game
@@ -18,7 +20,7 @@ import java.awt.event.MouseMotionListener;
  * comes with how long ago Windows saw it, for the profile's key-to-screen
  * time.
  */
-final class GameInput implements KeyListener, MouseListener, MouseMotionListener, FocusListener {
+final class GameInput implements KeyListener, MouseListener, MouseMotionListener, MouseWheelListener, FocusListener {
 
     /* AWT 1.0's numbers for the keys without a character (java.awt.Event.HOME and on) */
     private static final int[][] KEYS_WITHOUT_CHARACTER = {
@@ -47,7 +49,9 @@ final class GameInput implements KeyListener, MouseListener, MouseMotionListener
         game.addKeyListener(input);
         game.addMouseListener(input);
         game.addMouseMotionListener(input);
+        game.addMouseWheelListener(input);
         game.addFocusListener(input);
+        game.setFocusTraversalKeysEnabled(false); // Tab is the game's (the settings' tabs), not focus moving on
     }
 
     /**
@@ -109,6 +113,11 @@ final class GameInput implements KeyListener, MouseListener, MouseMotionListener
     @Override
     public void mouseDragged(MouseEvent e) {
         // AWT 1.0's drag was never used: a held button does not move the pointer in the menus
+    }
+
+    @Override
+    public void mouseWheelMoved(MouseWheelEvent e) {
+        SettingsScreen.noteWheel(e.getWheelRotation()); // the wheel only scrolls the settings' list
     }
 
     @Override
