@@ -179,7 +179,7 @@ final class SettingsScreen {
         rows.add(new Choice("Frame rate",
                 "Frames a second. Variable refresh stays just under the monitor's rate, for G-Sync and FreeSync.",
                 null, fpsLimits, SettingsScreen::fpsName, GameSparker::getFpsLimit, GameSparker::setFpsLimit));
-        rows.add(new Choice("On battery",
+        rows.add(new Choice("Laptop battery FPS",
                 "Holds the frame rate down while the laptop runs on its battery, to make it last.",
                 () -> "Now: " + GameSparker.describeBatteryFps() + ".",
                 new int[] {0, 30, 40, 60, 90, 120}, v -> v == 0 ? "No cap" : v + " fps",
@@ -203,7 +203,7 @@ final class SettingsScreen {
                 () -> "Now: " + GameSparker.describeDynamicResolution() + ".",
                 new int[] {0, 90, 75, 50, 25}, v -> v == 0 ? "Off" : "Down to " + v + "%",
                 GameSparker::getDynamicResolution, GameSparker::setDynamicResolution).when(gpu, gpuOnly));
-        rows.add(new Choice("Smooth effects",
+        rows.add(new Choice("Smooth particles",
                 "Dust and flying debris move every frame. Off: once a game tick, as the original drew them.",
                 null, new int[] {0, 1}, SettingsScreen::onOff, () -> GameSparker.isSmoothEffects() ? 1 : 0,
                 v -> GameSparker.setSmoothEffects(v == 1)));
@@ -225,10 +225,10 @@ final class SettingsScreen {
                 .when(hdr, "Only with HDR on."));
 
         section("Sound", 1);
-        rows.add(new Choice("Sound",
-                "3D: sounds come from where they are, mixed and spread. Classic: as the game always sounded.",
+        rows.add(new Choice("Sound system",
+                "Steam Audio: sounds come from where they are, mixed and spread. Classic: as the game always sounded.",
                 () -> "Now: " + GameSparker.describeSound() + ".",
-                new int[] {1, 0}, v -> v == 1 ? "3D" : "Classic",
+                new int[] {1, 0}, v -> v == 1 ? "Steam Audio" : "Classic",
                 () -> GameSparker.isNewSound() ? 1 : 0, v -> GameSparker.setNewSound(v == 1)));
         rows.add(new Choice("Output", "Mono plays everything on both speakers, for one ear or one speaker.", null,
                 new int[] {0, 1}, v -> v == 1 ? "Mono" : "Stereo", () -> Sound3D.isMono() ? 1 : 0,
@@ -873,7 +873,7 @@ final class SettingsScreen {
         private String problem;
 
         WindowSize() {
-            super("Window size", "The size of the window's inside, in the monitor's pixels.",
+            super("Resolution", "The size of the window's inside, in the monitor's pixels.",
                     null);
         }
 
