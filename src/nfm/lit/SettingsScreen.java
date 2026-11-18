@@ -248,6 +248,11 @@ final class SettingsScreen {
                 "Scales the picture to the window, keeping its shape. Off shows it pixel for pixel.",
                 null, new int[] {0, 1}, SettingsScreen::onOff, () -> GameSparker.isScaleToWindow() ? 1 : 0,
                 v -> GameSparker.setScaleToWindow(v == 1)));
+        add(new Choice("UI resolution",
+                "How sharp the menus, lettering and HUD are. Auto: the size they are shown at, every pixel sharp."
+                        + " The art is not redrawn, only scaled.",
+                () -> "Now: " + GameSparker.describeUiScale() + ".", new int[] {0, 1, 2, 3, 4},
+                v -> v == 0 ? "Auto" : (720 * v) + "p", GameSparker::getUiScale, GameSparker::setUiScale));
         add(new Choice("Frame rate",
                 "Frames a second. Variable refresh stays just under the monitor's rate, for G-Sync and FreeSync.",
                 null, fpsLimits, SettingsScreen::fpsName, GameSparker::getFpsLimit, GameSparker::setFpsLimit));

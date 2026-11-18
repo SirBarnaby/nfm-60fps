@@ -91,6 +91,11 @@ public final class GpuDisplay {
     private short downUniform = BGFX_INVALID_HANDLE;
     private final float[] downValues = new float[8];
     private short picture = BGFX_INVALID_HANDLE;
+    /* the picture's and the HUD's textures' sizes: the UI resolution's, a multiple of the picture's own or not */
+    private int pictureTextureWidth;
+    private int pictureTextureHeight;
+    private int hudTextureWidth;
+    private int hudTextureHeight;
     private IntBuffer upload;
     private BGFXTransientVertexBuffer transientBuffer;
     private int width;
@@ -357,6 +362,8 @@ public final class GpuDisplay {
             throw new IllegalStateException("creating GPU resources failed");
         }
         source = picture;
+        pictureTextureWidth = pictureWidth;
+        pictureTextureHeight = pictureHeight;
         upload = MemoryUtil.memAllocInt(pictureWidth * pictureHeight);
         transientBuffer = BGFXTransientVertexBuffer.calloc();
         bgfx_set_view_clear(SCREEN_VIEW, BGFX_CLEAR_COLOR, BLACK, 1F, 0);
@@ -411,16 +418,18 @@ public final class GpuDisplay {
      *                costs nothing: only part of it is drawn in, and that part is shown filtered
      * @return false if it could not be drawn (the caller should fall back)
      */
-    public boolean drawScene(SceneList scene, BufferedImage hudImage, long version, boolean flash,
+    public boolean drawScene(SceneList scene, BufferedImage hudImage, long version, long hudVersion, boolean flash,
             boolean capture, Dimension size, float scale) {
         fitSceneTarget(Math.max(1, size.width), Math.max(1, size.height));
         sceneWidth = Math.min(targetWidth, Math.max(pictureWidth, Math.round(targetWidth * scale)));
         sceneHeight = Math.min(targetHeight, Math.max(pictureHeight, Math.round(targetHeight * scale)));
-        if (hudImage != null && (version < 0L || version != uploadedHud)) {
-            if (!uploadPicture(hudImage, hud, hudUpload)) {
+        if (hudImage != null && (hudVersion < 0L || hudVersion != uploadedHud)) {
+            fitHudTexture(hudImage.getWidth(), hudImage.getHeight());
+            if (!uploadPicture(hudImage, hud, hudUpload, hudTextureWidth, hudTextureHeight)) {
                 return false;
             }
-            uploadedHud = version;
+            uploadedHud = hudVersion;
+            hudUploads++;
         }
         long buildStart = System.nanoTime();
         geometry.build(scene, pictureWidth, pictureHeight, sceneWidth / (float) pictureWidth, version);
@@ -438,7 +447,7 @@ public final class GpuDisplay {
             submitScene();
         }
         if (hudImage != null) {
-            boolean scaled = sceneWidth != pictureWidth || sceneHeight != pictureHeight;
+            boolean scaled = sceneWidth != hudTextureWidth || sceneHeight != hudTextureHeight;
             drawRectangle(SCENE_VIEW, overlayProgram, hud, sceneWidth, sceneHeight,
                     new Rectangle(0, 0, sceneWidth, sceneHeight), scaled, OPAQUE | HUD_BLEND, WHOLE);
         }
@@ -477,9 +486,11 @@ public final class GpuDisplay {
         }
         String text = geometry.draws() + " draws, " + geometry.vertexCount() + " vertices, "
                 + geometry.evenOddPolygons() + " even-odd, " + geometry.antialiased() + " antialiased"
-                + String.format(", triangles made in %.2f ms", builds == 0 ? 0D : buildNanos / 1e6D / builds);
+                + String.format(", triangles made in %.2f ms", builds == 0 ? 0D : buildNanos / 1e6D / builds)
+                + ", " + hudUploads + " HUD uploads of " + hudTextureWidth + "x" + hudTextureHeight;
         buildNanos = 0L;
         builds = 0;
+        hudUploads = 0;
         return text;
     }
 
@@ -516,6 +527,9 @@ public final class GpuDisplay {
 
     /** Which HUD the HUD texture holds, see {@link #drawScene}. */
     private long uploadedHud = -1L;
+
+    /** HUDs sent to the card since the last statistics. */
+    private int hudUploads;
 
     /* time spent turning scenes into triangles since the last statistics */
     private long buildNanos;
@@ -591,6 +605,8 @@ public final class GpuDisplay {
             hud = bgfx_create_texture_2d(pictureWidth, pictureHeight, false, 1, BGFX_TEXTURE_FORMAT_BGRA8,
                     CLAMP, null, 0);
             hudUpload = MemoryUtil.memAllocInt(pictureWidth * pictureHeight);
+            hudTextureWidth = pictureWidth;
+            hudTextureHeight = pictureHeight;
             geometry = new SceneGeometry();
         }
         if (!isValid(sceneBuffer) || !isValid(hud)) {
@@ -717,7 +733,8 @@ public final class GpuDisplay {
     private boolean show(BufferedImage frame, Dimension windowSize, Rectangle place, boolean smooth,
             ReadBack windowRead) {
         if (frame != null) {
-            if (!uploadPicture(frame, picture, upload)) {
+            fitPictureTexture(frame.getWidth(), frame.getHeight());
+            if (!uploadPicture(frame, picture, upload, pictureTextureWidth, pictureTextureHeight)) {
                 return false;
             }
             source = picture;
@@ -846,19 +863,63 @@ public final class GpuDisplay {
         return paperWhite() / DisplayColor.SDR_WHITE_NITS;
     }
 
-    /** Copies an image into a texture; false if it is not a packed-int image of the picture's size. */
-    private boolean uploadPicture(BufferedImage frame, short texture, IntBuffer buffer) {
+    /** Copies an image into a texture; false if it is not a packed-int image of the texture's size. */
+    private static boolean uploadPicture(BufferedImage frame, short texture, IntBuffer buffer, int width, int height) {
         if (!(frame.getRaster().getDataBuffer() instanceof DataBufferInt pixels)
-                || frame.getWidth() != pictureWidth || frame.getHeight() != pictureHeight
-                || frame.getRaster().getSampleModel().getWidth() != pictureWidth) {
+                || frame.getWidth() != width || frame.getHeight() != height
+                || frame.getRaster().getSampleModel().getWidth() != width) {
             return false;
         }
         buffer.clear();
-        buffer.put(pixels.getData(), pixels.getOffset(), pictureWidth * pictureHeight).flip();
+        buffer.put(pixels.getData(), pixels.getOffset(), width * height).flip();
         // a reference, not a copy: the buffer is only reused after bgfx_frame() has consumed it
-        bgfx_update_texture_2d(texture, 0, 0, 0, 0, pictureWidth, pictureHeight,
-                bgfx_make_ref(MemoryUtil.memByteBuffer(buffer)), pictureWidth * 4);
+        bgfx_update_texture_2d(texture, 0, 0, 0, 0, width, height,
+                bgfx_make_ref(MemoryUtil.memByteBuffer(buffer)), width * 4);
         return true;
+    }
+
+    /**
+     * Makes the picture's texture the size of the picture drawn now: the UI
+     * resolution can draw the menus larger than the game's 1280x720, and
+     * changes with the window. The old one has been drawn from by now, as
+     * bgfx works on this thread.
+     */
+    private void fitPictureTexture(int width, int height) {
+        if (width == pictureTextureWidth && height == pictureTextureHeight) {
+            return;
+        }
+        short made = bgfx_create_texture_2d(width, height, false, 1, BGFX_TEXTURE_FORMAT_BGRA8, CLAMP, null, 0);
+        if (!isValid(made)) {
+            return; // the upload then fails, and the frame is drawn in software
+        }
+        boolean shown = source == picture;
+        destroyTexture(picture);
+        picture = made;
+        if (shown) {
+            source = picture;
+        }
+        pictureTextureWidth = width;
+        pictureTextureHeight = height;
+        upload = free(upload);
+        upload = MemoryUtil.memAllocInt(width * height);
+    }
+
+    /** As {@link #fitPictureTexture}, for the HUD drawn over races. */
+    private void fitHudTexture(int width, int height) {
+        if (width == hudTextureWidth && height == hudTextureHeight) {
+            return;
+        }
+        short made = bgfx_create_texture_2d(width, height, false, 1, BGFX_TEXTURE_FORMAT_BGRA8, CLAMP, null, 0);
+        if (!isValid(made)) {
+            return;
+        }
+        destroyTexture(hud);
+        hud = made;
+        hudTextureWidth = width;
+        hudTextureHeight = height;
+        hudUpload = free(hudUpload);
+        hudUpload = MemoryUtil.memAllocInt(width * height);
+        uploadedHud = -1L;
     }
 
     /**
