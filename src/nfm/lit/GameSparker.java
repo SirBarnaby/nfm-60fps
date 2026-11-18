@@ -2731,8 +2731,12 @@ public class GameSparker extends Panel implements Runnable {
      * the HUD layer composited on top.
      */
     private static boolean isScenePhase(Phase phase) {
-        return phase == Phase.INGAME || phase == Phase.INSTANTREPLAY || phase == Phase.GAMEHIGHLIGHT;
+        return phase == Phase.INGAME || phase == Phase.INSTANTREPLAY || phase == Phase.GAMEHIGHLIGHT
+                || phase == Phase.SETTINGS && raceUnderSettings;
     }
+
+    /** The settings screen is open over a paused race, which the frames draw behind it (game thread). */
+    private static boolean raceUnderSettings;
 
     private static long tickNanosFor(Phase phase) {
         return isScenePhase(phase) || phase == Phase.DRAWENVIRONMENT ? SCENE_TICK_NANOS : MENU_TICK_NANOS;
@@ -4494,8 +4498,8 @@ public class GameSparker extends Panel implements Runnable {
             }
             if (phase == Phase.SETTINGS && (settingsStep == 1 || settingsStep == 4) && now - phaseSettledAt >= 700L) {
                 // a few settings chosen in turn, each shown for a moment (the main menu's, then the pause menu's)
-                String[] shown = settingsStep == 1 ? new String[] {"Supersampling", "Window size"}
-                        : new String[] {"Sound"};
+                String[] shown = settingsStep == 1 ? new String[] {"Supersampling", "Resolution"}
+                        : new String[] {"Sound system"};
                 int at = settingsDowns / 4;
                 if (at >= shown.length) {
                     settingsStep++;
@@ -4993,8 +4997,17 @@ public class GameSparker extends Panel implements Runnable {
                 if (mouses == 1)
                     mouses = 2;
             }
+            raceUnderSettings = gameUi.settingsOverRace();
             if (gameUi.fase == Phase.SETTINGS) {
-                gameUi.settings(u[0]);
+                if (raceUnderSettings) {
+                    // the paused race stands still behind the screen, drawn with the settings as they are
+                    snapshotFrameState();
+                    beginOverlayTick();
+                }
+                gameUi.settings(u[0], raceUnderSettings);
+                if (raceUnderSettings) {
+                    endOverlayTick();
+                }
                 gameUi.ctachm(xm, ym, mouses, u[0]);
                 if (mouses == 2)
                     mouses = 0;

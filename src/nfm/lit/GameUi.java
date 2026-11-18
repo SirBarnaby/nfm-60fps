@@ -821,10 +821,21 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         }
     }
 
-    /** The settings screen, over the main menu's moving background or the paused race. */
-    public void settings(Control control) {
+    /** The settings screen is open over a paused race, which is then drawn live behind it. */
+    boolean settingsOverRace() {
+        return fase == Phase.SETTINGS && settingsScreen != null && settingsScreen.backTo == Phase.PAUSEMENU;
+    }
+
+    /**
+     * The settings screen, over the main menu's moving background or the
+     * paused race: drawn live behind it ({@code raceBehind}), so a change to
+     * the picture shows at once, or else its frozen picture.
+     */
+    public void settings(Control control, boolean raceBehind) {
         SettingsScreen screen = settingsScreen;
-        if (screen.backTo == Phase.PAUSEMENU) {
+        if (raceBehind) {
+            // the race is drawn underneath, as it is now
+        } else if (screen.backTo == Phase.PAUSEMENU) {
             rd.drawImage(fleximg, 0, 0, null);
         } else {
             int i = 0;
