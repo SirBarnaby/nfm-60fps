@@ -501,6 +501,19 @@ public final class GpuDisplay {
         return (long) (ticks * (1e9D / frequency));
     }
 
+    /**
+     * The card's memory after its last frame, in bytes: used, the most it
+     * has, textures and render targets; negative where the card does not say.
+     */
+    public long[] videoMemory() {
+        BGFXStats stats = bgfx_get_stats();
+        if (stats == null) {
+            return new long[] {-1L, -1L, -1L, -1L};
+        }
+        return new long[] {stats.gpuMemoryUsed(), stats.gpuMemoryMax(), stats.textureMemoryUsed(),
+                stats.rtMemoryUsed()};
+    }
+
     /** Which HUD the HUD texture holds, see {@link #drawScene}. */
     private long uploadedHud = -1L;
 

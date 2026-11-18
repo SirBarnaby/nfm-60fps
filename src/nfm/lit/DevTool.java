@@ -411,6 +411,26 @@ public class DevTool {
                     print("Run-ahead is " + (GameSparker.isRunAhead() ? "on" : "off") + ".\nUsage: runahead <on|off>");
                 }
                 break;
+            case "overlay": {
+                String a = args.length == 1 ? args[0].toLowerCase(java.util.Locale.ROOT) : "";
+                String[] corners = {"off", "topleft", "topright", "bottomleft", "bottomright"};
+                int corner = java.util.Arrays.asList(corners).indexOf(a);
+                if (a.equals("on") || a.equals("all")) {
+                    PerfOverlay.setCorner(PerfOverlay.corner() == PerfOverlay.OFF ? PerfOverlay.TOP_LEFT
+                            : PerfOverlay.corner());
+                    if (a.equals("all")) {
+                        PerfOverlay.setReadouts(PerfOverlay.ALL);
+                    }
+                    print("Performance overlay " + PerfOverlay.describe() + " (saved).");
+                } else if (corner >= 0) {
+                    PerfOverlay.setCorner(corner);
+                    print("Performance overlay " + PerfOverlay.describe() + " (saved).");
+                } else {
+                    print("Performance overlay: " + PerfOverlay.describe()
+                            + ".\nUsage: overlay <on|all|off|topleft|topright|bottomleft|bottomright>");
+                }
+                break;
+            }
             case "effects":
                 if (args.length == 2 && args[0].equalsIgnoreCase("smooth")
                         && (args[1].equalsIgnoreCase("on") || args[1].equalsIgnoreCase("off"))) {
@@ -602,6 +622,7 @@ public class DevTool {
         commandDescriptions.put("ssaa", "Ultra quality for races drawn on the graphics card: draws the scene with 2, 4 or 8 times the pixels it is shown with (4x: twice the width and height, so 4K on a 1080p screen) and averages them down, which smooths every edge and outline and stops thin lines shimmering. Works with msaa. With dynres on, it gives way first when the card cannot keep up. Off by default. Usage: ssaa <off|2x|4x|8x>");
         commandDescriptions.put("dynres", "When the graphics card cannot draw a race at the window's full size in time for the next frame, draws it smaller (down to the given percent of the window, never below the game's own 1280x720) and scales it up smoothly; the HUD stays sharp. Steps down at once and back up slowly, so the picture does not pump. On by default, down to 50%. Usage: dynres <on|off|25-100>");
         commandDescriptions.put("renderer", "gpu puts frames on screen through the graphics card (Direct3D 11), which scales them for free; software draws them with Java2D. Usage: renderer <gpu|software>");
+        commandDescriptions.put("overlay", "The performance overlay: frames a second, frame time and the graphics card's share of it, the 90% and 99% frame times, memory, video memory, the caches on disk and a frame time graph, in a corner of the picture. Settings, Advanced chooses the readouts; all turns every one on. F3 shows and hides it. Usage: overlay <on|all|off|topleft|topright|bottomleft|bottomright>");
         commandDescriptions.put("effects", "Dust and flying debris move on every frame (smooth) or once a game tick, as the original drew them. Usage: effects smooth <on|off>");
         commandDescriptions.put("runahead", "Shows race frames one tick ahead with the keys held now, for 53 ms less input lag. Usage: runahead <on|off>");
         commandDescriptions.put("fps", "Sets the frame rate limit. auto matches the monitor; vrr, for G-Sync and FreeSync monitors, holds frames just under its refresh rate so they stay in the variable-refresh range; unlimited removes the cap. On battery frames are held to 60 a second unless fps battery says otherwise. Usage: fps <auto|vrr|unlimited|30-1000>, fps battery <off|30-1000>");

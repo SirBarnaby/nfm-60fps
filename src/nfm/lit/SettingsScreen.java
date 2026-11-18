@@ -341,6 +341,34 @@ final class SettingsScreen {
                 () -> "Now: " + GameSparker.describeDynamicResolution() + ".",
                 new int[] {0, 90, 75, 50, 25}, v -> v == 0 ? "Off" : "Down to " + v + "%",
                 GameSparker::getDynamicResolution, GameSparker::setDynamicResolution).when(gpu, gpuOnly));
+        group("Performance overlay");
+        add(new Choice("Performance overlay",
+                "A panel in a corner with how fast the game runs: the readouts below. F3 shows and hides it.",
+                null, new int[] {PerfOverlay.OFF, PerfOverlay.TOP_LEFT, PerfOverlay.TOP_RIGHT,
+                        PerfOverlay.BOTTOM_LEFT, PerfOverlay.BOTTOM_RIGHT},
+                v -> new String[] {"Off", "Top left", "Top right", "Bottom left", "Bottom right"}[v],
+                PerfOverlay::corner, PerfOverlay::setCorner));
+        BooleanSupplier overlay = () -> PerfOverlay.corner() != PerfOverlay.OFF;
+        String overlayOnly = "Only with the performance overlay on.";
+        String[][] readouts = {
+            {"Frames a second", "Frames put on the screen in the last second."},
+            {"Frame time", "The average time between frames over the last second, and the graphics card's own"
+                    + " share of it."},
+            {"90% frame time", "The time 90% of frames beat, over the last two seconds: the slowest tenth are"
+                    + " above it."},
+            {"99% frame time", "The time 99% of frames beat: the slowest frames, the ones felt as stutter."},
+            {"Memory", "The memory Windows has given the game alone, and the part of it Java's heap uses."},
+            {"Video memory", "The graphics card's memory in use, of all it has, and how much of it is textures."},
+            {"Cache", "The game's caches on disk: the compiled code it starts with, and the baked sound paths."},
+            {"Frame time graph", "The last frames' times as bars: green within 60 fps, yellow within 30, red"
+                    + " slower."},
+        };
+        for (int r = 0; r < readouts.length; r++) {
+            final int bit = 1 << r;
+            add(new Choice(readouts[r][0], readouts[r][1], null, new int[] {0, 1}, SettingsScreen::onOff,
+                    () -> PerfOverlay.shows(bit) ? 1 : 0, v -> PerfOverlay.setShows(bit, v == 1))
+                    .when(overlay, overlayOnly));
+        }
     }
 
     /* the tab and the heading the next rows go under, while building */

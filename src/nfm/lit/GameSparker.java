@@ -500,6 +500,9 @@ public class GameSparker extends Panel implements Runnable {
         if (SettingsScreen.typeKey(key)) {
             return; // a size being typed on the settings screen takes every key
         }
+        if (key == 1010) {
+            PerfOverlay.toggle(); // F3 shows and hides the performance overlay
+        }
         if (key == 1002 || key == 1003 || key == 9) {
             SettingsScreen.noteTabKey(key == 1002 ? -1 : 1); // Page Up, Page Down, Tab: the settings' tabs
         }
@@ -2821,6 +2824,8 @@ public class GameSparker extends Panel implements Runnable {
             }
         }
         Toolkit.getDefaultToolkit().sync();
+        PerfOverlay.frameShown(System.nanoTime(), 0L);
+        PerfOverlay.drawingOnCard(false);
     }
 
     /**
@@ -2960,6 +2965,12 @@ public class GameSparker extends Panel implements Runnable {
                 if (shown) {
                     long gpuNanos = gpu.gpuFrameNanos();
                     gpuFrameNanos = gpuNanos;
+                    PerfOverlay.frameShown(System.nanoTime(), gpuNanos);
+                    PerfOverlay.drawingOnCard(true);
+                    if (PerfOverlay.wantsVideoMemory()) {
+                        long[] memory = gpu.videoMemory();
+                        PerfOverlay.videoMemory(memory[0], memory[1], memory[2], memory[3]);
+                    }
                     if (picture == null) {
                         resolution.update(gpuNanos, frameBudgetNanos, lowestSceneScale(place, supersampleInUse),
                                 System.nanoTime());
@@ -4257,6 +4268,24 @@ public class GameSparker extends Panel implements Runnable {
         }
     }
 
+    private static final String PERF_OVERLAY_COOKIE = "perfhud";
+
+    /**
+     * -Dnfm.overlay=off|on|all (on: the default readouts, top left; all:
+     * every readout), else the saved choice, else off.
+     */
+    private void loadPerfOverlay() {
+        String property = System.getProperty("nfm.overlay");
+        if (property != null) {
+            String p = property.trim().toLowerCase(java.util.Locale.ROOT);
+            PerfOverlay.setCorner(p.equals("off") || p.equals("false") ? PerfOverlay.OFF : PerfOverlay.TOP_LEFT);
+            PerfOverlay.setReadouts(p.equals("all") ? PerfOverlay.ALL : PerfOverlay.DEFAULT_READOUTS);
+            PerfOverlay.takeChanged(); // a test's choice is not saved
+        } else if (!runsHidden()) {
+            PerfOverlay.restore(readcookie(PERF_OVERLAY_COOKIE));
+        }
+    }
+
     private static final String FULLSCREEN_COOKIE = "fullscreen";
 
     /** Fullscreen as last chosen (not in hidden runs, whose window stays off screen). */
@@ -4501,7 +4530,7 @@ public class GameSparker extends Panel implements Runnable {
             }
             if (phase == Phase.SETTINGS && (settingsStep == 1 || settingsStep == 4) && now - phaseSettledAt >= 700L) {
                 // a few settings chosen in turn, each shown for a moment (the main menu's, then the pause menu's)
-                String[] shown = settingsStep == 1 ? new String[] {"Supersampling", "Resolution", "Run-ahead", "Dynamic resolution"}
+                String[] shown = settingsStep == 1 ? new String[] {"Supersampling", "Resolution", "Run-ahead", "Video memory"}
                         : new String[] {"Sound system"};
                 int at = settingsDowns / 4;
                 if (at >= shown.length) {
@@ -4768,6 +4797,7 @@ public class GameSparker extends Panel implements Runnable {
         loadMusicSeparation();
         loadVolumes();
         loadSmoothEffects();
+        loadPerfOverlay();
         startAutoTest();
         session = RaceSession.fromCommandLine(new SessionHost());
         startGamepads();
@@ -4855,6 +4885,9 @@ public class GameSparker extends Panel implements Runnable {
                 saveVolumesIfChanged();
                 saveGamepadIfChanged();
                 saveSmoothEffectsIfChanged();
+                if (PerfOverlay.takeChanged()) {
+                    savecookie(PERF_OVERLAY_COOKIE, String.valueOf(PerfOverlay.saved()));
+                }
                 saveFullscreenIfChanged();
                 saveWindowSizeIfChanged();
                 if (modelReloadWanted && gameUi.fase == Phase.MAINMENU) {
@@ -5554,6 +5587,10 @@ public class GameSparker extends Panel implements Runnable {
                     break;
             }
 
+                if (gameUi.fase != Phase.LOADING) {
+                    // the performance overlay: on the HUD layer over a race, on the picture elsewhere
+                    PerfOverlay.draw(isScenePhase(gameUi.fase) ? hudG : rd, isScenePhase(gameUi.fase));
+                }
                 profileTickNanos += System.nanoTime() - now;
             } // end of simulation tick
 
