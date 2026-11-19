@@ -73,10 +73,16 @@ if ($LASTEXITCODE -ne 0) { throw 'Packaging madness.jar failed.' }
 # minute of racing, which at 300 frames a second is a frame missed; ZGC's pauses
 # are under 0.1 ms. Compact object headers (8 bytes instead of 12) leave a few
 # percent less live heap after each collection; the game's data is mostly
-# large arrays, so not more.
+# large arrays, so not more. ZGC on its own lets the heap grow to a quarter of
+# the machine's memory before it bothers to collect, so the game's memory
+# climbed while it ran, as if it leaked (a race keeps under 200 MB alive):
+# madness64.ini gives it a soft limit of 512 MB, which it collects to keep
+# under, concurrently, still with no pauses. (Here the JVM's own sizing would
+# override it.) Memory it no longer needs goes back to Windows after 30 s
+# instead of 5 minutes.
 $jlinkArgs = @('--add-modules', 'java.base,java.desktop,java.logging', '--strip-debug', '--no-header-files',
     '--no-man-pages',
-    '--add-options=-XX:+UseZGC -XX:+UseCompactObjectHeaders -XX:-DontCompileHugeMethods -XX:PerMethodTrapLimit=0 -XX:PerBytecodeTrapLimit=0')
+    '--add-options=-XX:+UseZGC -XX:+UseCompactObjectHeaders -XX:-DontCompileHugeMethods -XX:PerMethodTrapLimit=0 -XX:PerBytecodeTrapLimit=0 -XX:ZUncommitDelay=30')
 # Rebuilt only when the JDK or these arguments change: a runtime just written
 # is often held by the antivirus for a while, so it cannot be deleted at once.
 $stampFile = 'runtime\nfm-runtime.txt'

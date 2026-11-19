@@ -106,6 +106,17 @@ final class SettingsScreen {
     private static final AtomicInteger CLEAR_KEYS = new AtomicInteger();
     /** The mouse wheel's notches since the last frame (down is more). */
     private static final AtomicInteger WHEEL = new AtomicInteger();
+    /**
+     * The settings that show a picture beside them: the ones that change what
+     * is seen or heard, which a picture can show. The rest (keys, controllers,
+     * readouts, volumes) and any setting added later show only their words.
+     */
+    private static final java.util.Set<String> PICTURED = java.util.Set.of(
+            "Fullscreen", "Aspect ratio", "Resolution", "Fill the window", "UI scale", "VSync", "Renderer",
+            "MSAA", "Supersampling", "Smooth particles", "HDR", "Paper white", "Peak brightness",
+            "Sound system", "Output", "Occlusion", "Sound paths", "Reverb", "HDR audio",
+            "Dynamic resolution", "Performance overlay");
+
     /** The settings' pictures by name; null where there is none. Game thread only. */
     private static final Map<String, Image> PICTURES = new HashMap<>();
     /** Help lines already wrapped to the pane. Game thread only. */
@@ -271,8 +282,6 @@ final class SettingsScreen {
         String gpuOnly = "Only when the graphics card draws (Renderer).";
         String sound3dOnly = "Only with Steam Audio (Sound system).";
 
-        BooleanSupplier windowed = () -> !RunApp.isFullscreen();
-        String windowOnly = "Only in a window: in fullscreen the game fills the monitor.";
 
         tab("Display", "The window, the frame rate, and how the races are drawn.");
         group("Screen");
@@ -280,26 +289,27 @@ final class SettingsScreen {
                 null, new int[] {0, 1}, SettingsScreen::onOff, () -> RunApp.isFullscreen() ? 1 : 0,
                 v -> RunApp.setFullscreen(v == 1)));
         add(new Choice("Aspect ratio",
-                "The window's shape. The race and the menus take it too, see Picture shape.",
+                "The window's shape, or in fullscreen the resolution's (a shape not the monitor's has bars)."
+                        + " The race and the menus take it, with no bars.",
                 () -> "Now: " + describeWindow() + ".", aspectChoices(), SettingsScreen::aspectName,
-                SettingsScreen::currentAspect, SettingsScreen::setAspect).when(windowed, windowOnly));
-        add(windowSize.when(windowed, windowOnly));
-        add(new Choice("Picture shape",
-                "Window: the race and the menus are drawn the window's shape, with no bars. A wider window sees more"
-                        + " to the sides, a taller one more above and below; races play out the same."
-                        + " 16:9: drawn as the original was, with bars on other shapes.",
-                () -> "Now: " + GameSparker.describePictureShape() + ".", new int[] {1, 0},
-                v -> v == 1 ? "Window" : "16:9", () -> GameSparker.isWindowShape() ? 1 : 0,
-                v -> GameSparker.setWindowShape(v == 1)));
+                SettingsScreen::currentAspect, SettingsScreen::setAspect));
+        add(windowSize);
         add(new Choice("Fill the window",
-                "Scales the picture to the window, keeping its shape. Off shows it pixel for pixel.",
-                null, new int[] {0, 1}, SettingsScreen::onOff, () -> GameSparker.isScaleToWindow() ? 1 : 0,
-                v -> GameSparker.setScaleToWindow(v == 1)));
-        add(new Choice("UI resolution",
-                "How sharp the menus, lettering and HUD are. Auto: the size they are shown at, every pixel sharp."
-                        + " The art is not redrawn, only scaled.",
-                () -> "Now: " + GameSparker.describeUiScale() + ".", new int[] {0, 1, 2, 3, 4},
-                v -> v == 0 ? "Auto" : (720 * v) + "p", GameSparker::getUiScale, GameSparker::setUiScale));
+                "On: the game fills the window at any shape, with no bars. The race is drawn at the window's"
+                        + " resolution and seen wider or taller to fill it; the menus and HUD keep their own size in"
+                        + " pixels (see UI scale), with more of the backdrop around them on a larger screen."
+                        + " Off: the original 1280x720 picture, scaled to fit, with bars.",
+                () -> "Now: " + GameSparker.describePicture() + ".", new int[] {0, 1}, SettingsScreen::onOff,
+                () -> GameSparker.isScaleToWindow() ? 1 : 0, v -> GameSparker.setScaleToWindow(v == 1)));
+        add(new Choice("UI scale",
+                "How big the menus, lettering and HUD are: 1, 2 or 4 times their own size in pixels, so they stay"
+                        + " sharp. Auto: the largest that fits, 1x on a 1080p screen, 2x on 1440p and 4K. A scale"
+                        + " needs room for 1280x720 at it, so a smaller window takes the next one down.",
+                () -> "Now: " + GameSparker.describePicture() + ".", new int[] {0, 1, 2, 4},
+                v -> v == 0 ? "Auto" : v + "x", GameSparker::getUiZoom, GameSparker::setUiZoom)
+                .when(() -> GameSparker.isScaleToWindow() && GameSparker.isGpuRenderer(),
+                        "Only with Fill the window on and the Graphics card renderer: otherwise the menus are"
+                                + " scaled with the race."));
         add(new Choice("Frame rate",
                 "Frames a second. Variable refresh stays just under the monitor's rate, for G-Sync and FreeSync.",
                 null, fpsLimits, SettingsScreen::fpsName, GameSparker::getFpsLimit, GameSparker::setFpsLimit));
@@ -541,7 +551,7 @@ final class SettingsScreen {
     }
 
     private static int currentAspect() {
-        Dimension now = RunApp.windowPixels();
+        Dimension now = RunApp.drawingPixels();
         return aspectOf(now.width, now.height);
     }
 
@@ -568,21 +578,27 @@ final class SettingsScreen {
         return sizes;
     }
 
-    /** Changes the window's shape, keeping its height as near as the shape's sizes allow. */
+    /** Changes the window's (or fullscreen resolution's) shape, keeping its height as near as the sizes allow. */
     private static void setAspect(int aspect) {
-        Dimension now = RunApp.windowPixels();
+        Dimension now = RunApp.drawingPixels();
         int[] best = null;
         for (int[] size : sizesFor(aspect)) {
             if (best == null || Math.abs(size[1] - now.height) < Math.abs(best[1] - now.height)) {
                 best = size;
             }
         }
-        RunApp.setWindowPixels(best[0], best[1]);
+        RunApp.setDrawingPixels(best[0], best[1]);
     }
 
     private static String describeWindow() {
-        Dimension now = RunApp.windowPixels();
+        Dimension now = RunApp.drawingPixels();
         Dimension screen = RunApp.screenPixels();
+        if (RunApp.isFullscreen()) {
+            return now.width == screen.width && now.height == screen.height
+                    ? "fullscreen at the monitor's " + screen.width + "x" + screen.height
+                    : "fullscreen at " + now.width + "x" + now.height + ", scaled to the " + screen.width + "x"
+                            + screen.height + " monitor";
+        }
         return now.width + "x" + now.height + " window, on a " + screen.width + "x" + screen.height + " monitor";
     }
 
@@ -1023,6 +1039,7 @@ final class SettingsScreen {
         String help;
         String status = null;
         String picture = null;
+        boolean pictured = false;
         if (selected == TABS) {
             title = tabNames.get(tab);
             help = tabHelp.get(tab) + " Left and right, or Page Up and Page Down, change the tab.";
@@ -1031,14 +1048,18 @@ final class SettingsScreen {
             title = row.label;
             help = row.help();
             status = row.enabled() ? row.status() : row.disabledWhy;
+            pictured = PICTURED.contains(row.label);
             picture = pictureName(row.label);
         } else {
             title = "Back";
             help = "Back to the " + (backTo == Phase.PAUSEMENU ? "pause menu." : "main menu.");
         }
         int top = LIST_TOP + 2;
-        drawPicture(rd, picture, title, PANE_X, top, PANE_W, PICTURE_H);
-        float y = top + PICTURE_H + 34;
+        float y = top + 22;
+        if (pictured) {
+            drawPicture(rd, picture, title, PANE_X, top, PANE_W, PICTURE_H);
+            y += PICTURE_H + 12;
+        }
         pauseLetters(rd, titleFont, title, PANE_X, y, false);
         y += 28;
         for (String line : wrap(smallFont, help, PANE_W)) {
@@ -1376,7 +1397,8 @@ final class SettingsScreen {
         private String problem;
 
         WindowSize() {
-            super("Resolution", "The size of the window's inside, in the monitor's pixels.",
+            super("Resolution", "The size of the window's inside, in the monitor's pixels. In fullscreen, the"
+                    + " resolution the game draws at, scaled to fill the monitor: lower is faster.",
                     null);
         }
 
@@ -1390,7 +1412,7 @@ final class SettingsScreen {
 
         /** The common sizes of the window's shape that fit, and its own size among them if it is not one. */
         private List<int[]> choices() {
-            Dimension now = RunApp.windowPixels();
+            Dimension now = RunApp.drawingPixels();
             int aspect = aspectOf(now.width, now.height);
             List<int[]> sizes = new ArrayList<>(sizesFor(aspect == OTHER_ASPECT ? 0 : aspect));
             int at = 0;
@@ -1412,7 +1434,7 @@ final class SettingsScreen {
         @Override
         void step(int direction, boolean wrap) {
             List<int[]> sizes = choices();
-            Dimension now = RunApp.windowPixels();
+            Dimension now = RunApp.drawingPixels();
             int at = sizes.size(); // Custom, after the sizes
             if (!custom) {
                 for (int i = 0; i < sizes.size(); i++) {
@@ -1430,7 +1452,7 @@ final class SettingsScreen {
             }
             custom = next == sizes.size();
             if (!custom) {
-                RunApp.setWindowPixels(sizes.get(next)[0], sizes.get(next)[1]);
+                RunApp.setDrawingPixels(sizes.get(next)[0], sizes.get(next)[1]);
             }
         }
 
@@ -1440,7 +1462,7 @@ final class SettingsScreen {
                 return;
             }
             if (custom) {
-                Dimension now = RunApp.windowPixels();
+                Dimension now = RunApp.drawingPixels();
                 width.setLength(0);
                 width.append(now.width);
                 height.setLength(0);
@@ -1507,7 +1529,7 @@ final class SettingsScreen {
                 problem = "At most the monitor's " + screen.width + "x" + screen.height + ".";
             } else {
                 stopTyping();
-                RunApp.setWindowPixels(w, h);
+                RunApp.setDrawingPixels(w, h);
             }
         }
 
@@ -1522,7 +1544,7 @@ final class SettingsScreen {
             if (custom) {
                 return "Custom...";
             }
-            Dimension now = RunApp.windowPixels();
+            Dimension now = RunApp.drawingPixels();
             return now.width + "x" + now.height;
         }
 

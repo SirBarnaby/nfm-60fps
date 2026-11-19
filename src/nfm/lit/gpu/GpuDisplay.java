@@ -502,7 +502,7 @@ public final class GpuDisplay {
      */
     public boolean drawScene(SceneList scene, BufferedImage hudImage, long version, long hudVersion, boolean flash,
             boolean capture, Dimension size, float scale) {
-        return drawScene(scene, null, hudImage, version, hudVersion, flash, capture, size, scale);
+        return drawScene(scene, null, hudImage, version, hudVersion, flash, capture, size, scale, null);
     }
 
     /**
@@ -510,9 +510,12 @@ public final class GpuDisplay {
      * does; a kept scene {@code projected} for the card (not null, and
      * built) is placed for the frame on the card instead, with the camera
      * and cars in its points, and {@code scene}'s corners are not read.
+     * {@code hudArea} is where the HUD goes, as shares of the scene's width
+     * and height (left, top, width, height); null for all of it. Shown a
+     * whole number of times its size it is not filtered, so it stays sharp.
      */
     public boolean drawScene(SceneList scene, ProjectedScene projected, BufferedImage hudImage, long version,
-            long hudVersion, boolean flash, boolean capture, Dimension size, float scale) {
+            long hudVersion, boolean flash, boolean capture, Dimension size, float scale, float[] hudArea) {
         fitSceneTarget(Math.max(1, size.width), Math.max(1, size.height));
         sceneWidth = Math.min(targetWidth, Math.max(pictureWidth, Math.round(targetWidth * scale)));
         sceneHeight = Math.min(targetHeight, Math.max(pictureHeight, Math.round(targetHeight * scale)));
@@ -550,9 +553,13 @@ public final class GpuDisplay {
             }
         }
         if (hudImage != null) {
-            boolean scaled = sceneWidth != hudTextureWidth || sceneHeight != hudTextureHeight;
-            drawRectangle(SCENE_VIEW, overlayProgram, hud, sceneWidth, sceneHeight,
-                    new Rectangle(0, 0, sceneWidth, sceneHeight), scaled, OPAQUE | HUD_BLEND, WHOLE);
+            Rectangle area = hudArea == null ? new Rectangle(0, 0, sceneWidth, sceneHeight)
+                    : new Rectangle(Math.round(sceneWidth * hudArea[0]), Math.round(sceneHeight * hudArea[1]),
+                            Math.round(sceneWidth * hudArea[2]), Math.round(sceneHeight * hudArea[3]));
+            boolean scaled = area.width % hudTextureWidth != 0 || area.height % hudTextureHeight != 0
+                    || area.width / hudTextureWidth != area.height / hudTextureHeight;
+            drawRectangle(SCENE_VIEW, overlayProgram, hud, sceneWidth, sceneHeight, area, scaled,
+                    OPAQUE | HUD_BLEND, WHOLE);
         }
         if (flash) {
             fillWhite();

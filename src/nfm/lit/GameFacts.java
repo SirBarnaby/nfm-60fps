@@ -23,29 +23,51 @@ public class GameFacts
      public static final int GAME_HEIGHT = 720;
 
      /**
-      * The picture the game draws, in its own pixels: GAME_WIDTH x GAME_HEIGHT
-      * at 16:9, wider or taller in a window of another shape (see
-      * {@link #pictureShape}), so the picture fills it with no bars. Changed
-      * only by the game thread at the start of a tick, with the presenter
-      * locked out.
+      * The picture the menus and the HUD are drawn in, in its own pixels.
+      * With the UI at native size it is the window's pixels divided by the UI
+      * scale, so lettering and art keep their own size whatever the monitor;
+      * otherwise it is the race's picture, {@link #sceneWidth} x
+      * {@link #sceneHeight}. GAME_WIDTH x GAME_HEIGHT in a 1280x720 window.
+      * Changed only by the game thread at the start of a tick, with the
+      * presenter locked out.
       */
      public static volatile int screenWidth = GAME_WIDTH;
 
      public static volatile int screenHeight = GAME_HEIGHT;
+
+     /**
+      * The race as it is shown, in the game's units: GAME_WIDTH x GAME_HEIGHT
+      * at 16:9, wider or taller in a window of another shape (see
+      * {@link #pictureShape}), so it fills the window with no bars; the
+      * graphics card draws it at the window's own resolution.
+      */
+     public static volatile int sceneWidth = GAME_WIDTH;
+
+     public static volatile int sceneHeight = GAME_HEIGHT;
 
      /** The narrowest and the widest shapes the picture takes; beyond them it is shown with bars. */
      private static final float NARROWEST = 5F / 4F;
 
      private static final float WIDEST = 32F / 9F;
 
-     /** How far right of the picture's corner the game's own 1280x720 view stands: it is in the middle. */
+     /** How far right of the menus' corner a 1280x720 screen stands in them: it is in the middle. */
      public static int marginX() {
           return (screenWidth - GAME_WIDTH) / 2;
      }
 
-     /** How far down from the picture's corner the game's own 1280x720 view stands. */
+     /** How far down from the menus' corner a 1280x720 screen stands in them. */
      public static int marginY() {
           return (screenHeight - GAME_HEIGHT) / 2;
+     }
+
+     /** How far right of the race picture's corner the game's own 1280x720 view stands. */
+     public static int sceneMarginX() {
+          return (sceneWidth - GAME_WIDTH) / 2;
+     }
+
+     /** How far down from the race picture's corner the game's own 1280x720 view stands. */
+     public static int sceneMarginY() {
+          return (sceneHeight - GAME_HEIGHT) / 2;
      }
 
      /**

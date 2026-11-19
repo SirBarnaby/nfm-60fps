@@ -207,6 +207,57 @@ class RunApp extends Panel {
         });
     }
 
+    /** The resolution fullscreen draws at, scaled to the monitor; null for the monitor's own. */
+    private static volatile Dimension fullscreenResolution;
+    private static volatile boolean fullscreenResolutionChanged;
+
+    /** The resolution chosen for fullscreen, in the monitor's pixels; null when it is the monitor's own. */
+    static Dimension fullscreenResolution() {
+        Dimension chosen = fullscreenResolution;
+        if (chosen == null) {
+            return null;
+        }
+        Dimension screen = screenPixels();
+        return chosen.width >= screen.width && chosen.height >= screen.height ? null : chosen;
+    }
+
+    /**
+     * Fullscreen draws at {@code width} x {@code height} from now on, scaled to
+     * fill the monitor (with bars if its shape is not the monitor's); the
+     * monitor's own size, or larger, goes back to drawing at that.
+     */
+    static void setFullscreenResolution(int width, int height) {
+        Dimension screen = screenPixels();
+        fullscreenResolution = width >= screen.width && height >= screen.height || width <= 0 || height <= 0 ? null
+                : new Dimension(Math.min(width, screen.width), Math.min(height, screen.height));
+        fullscreenResolutionChanged = true;
+    }
+
+    /** True once after each change, for the game to save it. */
+    static boolean takeFullscreenResolutionChanged() {
+        boolean changed = fullscreenResolutionChanged;
+        fullscreenResolutionChanged = false;
+        return changed;
+    }
+
+    /** The size the game draws at, in the monitor's pixels: the fullscreen resolution, else the window's inside. */
+    static Dimension drawingPixels() {
+        if (fullscreen) {
+            Dimension chosen = fullscreenResolution();
+            return chosen != null ? chosen : screenPixels();
+        }
+        return windowPixels();
+    }
+
+    /** Sets what {@link #drawingPixels} is: the fullscreen resolution in fullscreen, else the window's size. */
+    static void setDrawingPixels(int width, int height) {
+        if (fullscreen) {
+            setFullscreenResolution(width, height);
+        } else {
+            setWindowPixels(width, height);
+        }
+    }
+
     /** When the window's size last changed (0 once saved), for saving it once the player lets go. */
     private static volatile long windowChangedAt;
 

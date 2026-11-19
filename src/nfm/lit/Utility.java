@@ -194,10 +194,11 @@ public class Utility {
 
     /**
      * Art made for the game's 1280x720, centred in a picture {@code width} x
-     * {@code height} of another shape. Beyond its edges it goes on mirrored,
-     * so it meets itself without a seam, and darkens into the colour of its
-     * darkest corner, so the art seems to go on into the dark rather than
-     * stop at a bar.
+     * {@code height} of another shape. Beyond its edges the edge's own colours
+     * go on outward, softer the further they go, and darken into the colour
+     * of its darkest corner by the picture's edge: however wide the picture,
+     * the art seems to go on into the dark, with no bar and no copies of what
+     * is in it.
      */
     public static BufferedImage extendArt(Image art, int width, int height) {
         int w = art.getWidth(null);
@@ -206,18 +207,29 @@ public class Utility {
         int left = (width - w) / 2;
         int top = (height - h) / 2;
         int base = darkestCorner(px, w, h);
+        float reachX = Math.max(96F, left);
+        float reachY = Math.max(96F, top);
+        EdgeSums leftEdge = new EdgeSums(px, 0, w, h);
+        EdgeSums rightEdge = new EdgeSums(px, w - 1, w, h);
+        EdgeSums topEdge = new EdgeSums(px, 0, 1, w);
+        EdgeSums bottomEdge = new EdgeSums(px, (h - 1) * w, 1, w);
         int[] out = new int[width * height];
         for (int y = 0; y < height; y++) {
             int ay = y - top;
             int below = ay < 0 ? -ay : Math.max(0, ay - h + 1);
-            int my = mirror(ay, h);
+            int cy = Math.clamp(ay, 0, h - 1);
             for (int x = 0; x < width; x++) {
                 int ax = x - left;
                 int beside = ax < 0 ? -ax : Math.max(0, ax - w + 1);
-                int colour = px[my * w + mirror(ax, w)];
-                int beyond = Math.max(beside, below);
-                if (beyond > 0) {
-                    float t = Math.min(1F, beyond / 96F);
+                int colour;
+                if (beside == 0 && below == 0) {
+                    colour = px[ay * w + ax];
+                } else {
+                    int cx = Math.clamp(ax, 0, w - 1);
+                    colour = beside >= below
+                            ? (ax < 0 ? leftEdge : rightEdge).around(cy, 2 + beside / 3)
+                            : (ay < 0 ? topEdge : bottomEdge).around(cx, 2 + below / 3);
+                    float t = Math.min(1F, Math.max(beside / reachX, below / reachY));
                     // eased, so neither end shows an edge
                     colour = FrameScaler.mix(colour, base, Math.round(256F * t * t * (3F - 2F * t)));
                 }
@@ -229,11 +241,32 @@ public class Utility {
         return image;
     }
 
-    /** Position {@code a} along {@code length} pixels of art, mirrored back in where it falls outside. */
-    private static int mirror(int a, int length) {
-        int period = 2 * length;
-        int m = Math.floorMod(a, period);
-        return m < length ? m : period - 1 - m;
+    /** Running sums of the colours along one edge of some art, to average any stretch of it at once. */
+    private static final class EdgeSums {
+        private final int[] red;
+        private final int[] green;
+        private final int[] blue;
+
+        /** The edge of {@code length} pixels from {@code px[first]}, each {@code step} on from the last. */
+        EdgeSums(int[] px, int first, int step, int length) {
+            red = new int[length + 1];
+            green = new int[length + 1];
+            blue = new int[length + 1];
+            for (int i = 0; i < length; i++) {
+                int c = px[first + i * step];
+                red[i + 1] = red[i] + ((c >> 16) & 0xff);
+                green[i + 1] = green[i] + ((c >> 8) & 0xff);
+                blue[i + 1] = blue[i] + (c & 0xff);
+            }
+        }
+
+        /** The average colour of the edge within {@code radius} of pixel {@code at}. */
+        int around(int at, int radius) {
+            int from = Math.max(0, at - radius);
+            int to = Math.min(red.length - 1, at + radius + 1);
+            int n = to - from;
+            return ((red[to] - red[from]) / n << 16) | ((green[to] - green[from]) / n << 8) | (blue[to] - blue[from]) / n;
+        }
     }
 
     /** The darkest of the four corners of art {@code w} x {@code h}, each 16 pixels square, averaged. */

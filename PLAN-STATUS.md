@@ -90,7 +90,7 @@ thread pinning, large pages, GraalVM) are left out.
 | Window scaling | ✅ | 3e4833e, `FrameScaler.java` |
 | Dynamic resolution | ✅ | 1f036c2, `gpu\DynamicResolution.java` |
 | Resolution-aware outlines | ✅ | f588bbb (lines widen with scale) |
-| Fullscreen (F11, Alt+Enter) | ✅ | 3e4833e; never tested on your screen |
+| Fullscreen (F11, Alt+Enter) | ✅ | 3e4833e; resolution choice in the settings (v1.0 feedback); never tested on your screen |
 
 ## HDR
 
@@ -149,7 +149,7 @@ thread pinning, large pages, GraalVM) are left out.
 | Ghost cars, time trial | ❌ | you said not yet |
 | Online play | ❌ | |
 | Split-screen | ❌ | |
-| Widescreen, 4K, MSAA, HDR | ✅ | true widescreen: the picture takes the window's shape from 5:4 to 32:9 with no bars, races unchanged (77b1adb, AGENTS.md invariant 9); setting Picture shape, console `shape` |
+| Widescreen, 4K, MSAA, HDR | ✅ | true widescreen: the race takes the window's shape from 5:4 to 32:9 with no bars, races unchanged (77b1adb, AGENTS.md invariant 9); menus and HUD at native size with UI scale Auto/1x/2x/4x (v1.0 feedback) |
 | Shadows, bloom, motion blur | ❌ | |
 | Weather and time of day | ❌ | |
 | GPU particles | ❌ | |
@@ -184,3 +184,13 @@ and without `-Rollback 50` and in 21:9 and 5:4 windows; the 80 golden frames
 are the same. It is the last version whose races are the original's: what
 comes after (tick rate, handling, deformable stages) is planned in
 `AFTER-1.0.md`.
+
+The tag was moved the same day to take in the first feedback on it: the menus
+and HUD at their own size in pixels with a UI scale (Auto, 1x, 2x, 4x) in
+place of the UI resolution setting, which drew 1080p at 4 frames a second;
+the race drawn at the window's resolution behind them; no black areas at any
+shape; a fullscreen resolution; pictures only beside the settings that change
+what is seen or heard; a soft heap limit and reused colours, so memory no
+longer climbs; and a fix for a crash when Windows asked for a paint before
+the first picture. The first race's stutter was the old UI resolution's Auto
+drawing every menu and HUD frame scaled in Java2D. Races still match as above.

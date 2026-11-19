@@ -8,7 +8,7 @@ import nfm.lit.gpu.GpuDisplay;
 import nfm.lit.gpu.NativeWindow;
 
 import java.awt.*;
-import java.awt.geom.Rectangle2D;
+import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
 import javax.imageio.ImageIO;
@@ -852,12 +852,24 @@ public class GameSparker extends Panel implements Runnable {
         paintPicture((Graphics2D) g);
     }
 
+    /** Where the menus' picture and the race's picture go in the window, shaken alike. */
+    private record Places(Rectangle canvas, Rectangle scene) {
+    }
+
     /**
-     * Where the picture goes in a window of the given size, with the screen
-     * shake applied, or null when the window has no room. Also remembers the
-     * placement for turning mouse positions into picture coordinates.
+     * Where the pictures go in a window of the given size, with the screen
+     * shake applied, or null when the window has no room. Also remembers
+     * where the menus' picture is, for turning mouse positions into its
+     * coordinates.
+     * <p>
+     * The race's picture is scaled to fill the window, keeping its shape,
+     * which is the window's (see GameFacts.pictureShape). The menus' picture
+     * is shown a whole number of times its size, the UI scale, so every pixel
+     * of it is a square of the window's; cut by a pixel or two where the
+     * window is not a whole multiple. When the menus are not at native size
+     * it is the race's picture, scaled the same.
      */
-    private Rectangle placePicture(int width, int height) {
+    private Places placePictures(int width, int height) {
         int shakeX = 0;
         int shakeY = 0;
         if (this.shaka > 10) {
@@ -865,33 +877,52 @@ public class GameSparker extends Panel implements Runnable {
             shakeY = (int) ((double) (this.shaka * 2) * Math.random() - (double) this.shaka);
             this.shaka -= 5;
         }
-
-        double scale = scaleToWindow
-                ? Math.min(width / (double) GameFacts.screenWidth, height / (double) GameFacts.screenHeight)
-                : 1D;
-        if (scale <= 0D) {
+        int canvasW = GameFacts.screenWidth;
+        int canvasH = GameFacts.screenHeight;
+        int sceneW = GameFacts.sceneWidth;
+        int sceneH = GameFacts.sceneHeight;
+        if (width <= 0 || height <= 0) {
             return null;
         }
-        int w = (int) Math.round(GameFacts.screenWidth * scale);
-        int h = (int) Math.round(GameFacts.screenHeight * scale);
-        int x = (width - w) / 2;
-        int y = (height - h) / 2;
-        apx = x;
-        apy = y;
-        presentScale = scale;
-        x += (int) Math.round(shakeX * scale);
-        y += (int) Math.round(shakeY * scale);
-        return new Rectangle(x, y, w, h);
+        // the size the game draws at, fitted in the window: the same unless a fullscreen resolution is chosen
+        double fit = Math.min(width / (double) Math.max(1, drawWidthNow), height / (double) Math.max(1, drawHeightNow));
+        int zoom = uiZoomNow;
+        double canvasScale = zoom > 0 ? zoom * fit : Math.min(width / (double) canvasW, height / (double) canvasH);
+        double sceneScale = Math.min(width / (double) sceneW, height / (double) sceneH);
+        Rectangle canvas = centred(width, height, canvasW, canvasH, canvasScale);
+        Rectangle scene = centred(width, height, sceneW, sceneH, sceneScale);
+        apx = canvas.x;
+        apy = canvas.y;
+        presentScale = canvasScale;
+        canvas.translate((int) Math.round(shakeX * canvasScale), (int) Math.round(shakeY * canvasScale));
+        scene.translate((int) Math.round(shakeX * canvasScale), (int) Math.round(shakeY * canvasScale));
+        return new Places(canvas, scene);
+    }
+
+    /** A picture {@code w} x {@code h} scaled by {@code scale}, in the middle of a window. */
+    private static Rectangle centred(int width, int height, int w, int h, double scale) {
+        int sw = (int) Math.round(w * scale);
+        int sh = (int) Math.round(h * scale);
+        return new Rectangle((width - sw) / 2, (height - sh) / 2, sw, sh);
+    }
+
+    /** True when {@code place} shows an image {@code w} x {@code h} a whole number of times its size. */
+    private static boolean wholeTimes(Rectangle place, int w, int h) {
+        return place.width % w == 0 && place.height % h == 0 && place.width / w == place.height / h;
     }
 
     /** Draws the picture into the window in software, as {@link #paint} does without the GPU. */
     private void paintPicture(Graphics2D g) {
+        if (offImage == null) {
+            return; // Windows can ask for a paint before the game has made its picture
+        }
         int width = getWidth();
         int height = getHeight();
-        Rectangle place = placePicture(width, height);
-        if (place == null) {
+        Places places = placePictures(width, height);
+        if (places == null) {
             return;
         }
+        Rectangle place = places.canvas();
         int x = place.x;
         int y = place.y;
         int w = place.width;
@@ -928,12 +959,12 @@ public class GameSparker extends Panel implements Runnable {
         g.drawImage(this.offImage, x, y, w, h, this);
     }
 
-    /** A window x coordinate in the picture's 1280x720 coordinates. */
+    /** A window x coordinate in the menus' picture's coordinates. */
     private int toPictureX(int windowX) {
         return (int) Math.floor((windowX - apx) / presentScale);
     }
 
-    /** A window y coordinate in the picture's 1280x720 coordinates. */
+    /** A window y coordinate in the menus' picture's coordinates. */
     private int toPictureY(int windowY) {
         return (int) Math.floor((windowY - apy) / presentScale);
     }
@@ -948,11 +979,13 @@ public class GameSparker extends Panel implements Runnable {
         return scaleToWindow;
     }
 
-    /** -Dnfm.scale=fit|off, else the saved choice, else fit. */
+    /** -Dnfm.scale=fit|off, else the saved choice, else fit (off: the original 1280x720, with bars). */
     private void loadScaleToWindow() {
         String property = System.getProperty("nfm.scale");
         if (property != null) {
             scaleToWindow = !property.trim().equalsIgnoreCase("off");
+        } else if (runsHidden()) {
+            scaleToWindow = true; // a test run ignores saved settings
         } else {
             scaleToWindow = readcookie(SCALING_COOKIE) != 0;
         }
@@ -966,86 +999,209 @@ public class GameSparker extends Panel implements Runnable {
         }
     }
 
-    /* ---------------------------------------------------------- picture shape */
+    /* ---------------------------------------------------------- the picture's size */
 
-    /** Draw the picture at the window's own shape (on unless turned off), else at 16:9 with bars. */
-    private static volatile boolean windowShape = true;
-    private static volatile boolean windowShapeChanged;
-    private static final String SHAPE_COOKIE = "pictureshape";
-    /* the shape the picture should take, and since when (a window being dragged changes it often) */
-    private int shapeWantedWidth = GameFacts.GAME_WIDTH;
-    private int shapeWantedHeight = GameFacts.GAME_HEIGHT;
-    private long shapeWantedSince;
-    private boolean shapeFitted;
+    /** UI scale Auto: the menus and HUD as many times their own size as fits (1, 2 or 4). */
+    public static final int UI_ZOOM_AUTO = 0;
+    /** The UI scales on offer besides Auto, largest first. */
+    private static final int[] UI_ZOOMS = {4, 2, 1};
+    private static final String UI_ZOOM_COOKIE = "uizoom";
+    private static volatile int uiZoomSetting = UI_ZOOM_AUTO;
+    private static volatile boolean uiZoomChanged;
+    /** The UI scale in use, or 0 when the menus are scaled to fit instead (written under presentLock). */
+    private static volatile int uiZoomNow;
+    /** The size the game draws at: the window's, or a fullscreen resolution (written under presentLock). */
+    private static volatile int drawWidthNow = GameFacts.GAME_WIDTH;
+    private static volatile int drawHeightNow = GameFacts.GAME_HEIGHT;
+    /* the sizes the pictures should take, and since when (a window being dragged changes them often) */
+    private PictureSize pictureWanted;
+    private long pictureWantedSince;
+    private boolean pictureFitted;
 
-    /** Draws the picture at the window's shape, or at 16:9; saves the choice. */
-    public static void setWindowShape(boolean on) {
-        windowShape = on;
-        windowShapeChanged = true;
-    }
-
-    /** The picture shape setting as the console and the log write it: window or 16:9. */
-    public static String pictureShapeName() {
-        return windowShape ? "window" : "16:9";
-    }
-
-    public static boolean isWindowShape() {
-        return windowShape;
-    }
-
-    public static String describePictureShape() {
-        return "drawn " + GameFacts.screenWidth + "x" + GameFacts.screenHeight;
-    }
-
-    /** -Dnfm.shape=window|16:9, else the saved choice, else the window's. */
-    private void loadWindowShape() {
-        String property = System.getProperty("nfm.shape");
-        if (property != null) {
-            windowShape = !"16:9".equals(property.trim());
-        } else {
-            windowShape = readcookie(SHAPE_COOKIE) != 0;
-        }
-        windowShapeChanged = false;
+    /**
+     * The menus' picture (canvas) and the race's (scene), and the UI scale:
+     * 0 when the menus are the race's picture scaled to fit.
+     */
+    record PictureSize(int canvasWidth, int canvasHeight, int sceneWidth, int sceneHeight, int zoom) {
     }
 
     /**
-     * At the start of a tick: saves a changed choice, and when the picture
-     * should take another shape, and has wanted it for a moment, gives it
-     * that shape (see GameFacts.pictureShape). The first time, at once.
+     * The pictures for drawing at {@code drawWidth} x {@code drawHeight}.
+     * Filling the window, the race takes the window's shape; the menus and
+     * HUD are the window's pixels divided by the UI scale when
+     * {@code nativeUi} (the graphics card shows them) and a 1280x720 screen
+     * fits at some scale, else they are the race's picture. Not filling it,
+     * both are the original 1280x720.
      */
-    private void fitPictureShape(long now) {
-        if (windowShapeChanged) {
-            windowShapeChanged = false;
-            savecookie(SHAPE_COOKIE, windowShape ? "1" : "0");
+    static PictureSize pictureSizeFor(int drawWidth, int drawHeight, boolean fill, boolean nativeUi,
+            int zoomSetting) {
+        int gw = GameFacts.GAME_WIDTH;
+        int gh = GameFacts.GAME_HEIGHT;
+        if (!fill) {
+            return new PictureSize(gw, gh, gw, gh, 0);
         }
-        Dimension want = windowShape ? GameFacts.pictureShape(getWidth(), getHeight())
-                : new Dimension(GameFacts.GAME_WIDTH, GameFacts.GAME_HEIGHT);
-        if (want.width != shapeWantedWidth || want.height != shapeWantedHeight) {
-            shapeWantedWidth = want.width;
-            shapeWantedHeight = want.height;
-            shapeWantedSince = now;
+        Dimension scene = GameFacts.pictureShape(drawWidth, drawHeight);
+        int zoom = nativeUi ? uiZoomFor(drawWidth, drawHeight, zoomSetting) : 0;
+        if (zoom == 0) {
+            return new PictureSize(scene.width, scene.height, scene.width, scene.height, 0);
         }
-        boolean settled = !shapeFitted || now - shapeWantedSince > 250_000_000L;
-        if (!settled || want.width == GameFacts.screenWidth && want.height == GameFacts.screenHeight) {
-            return;
-        }
-        shapeFitted = getWidth() > 0 && getHeight() > 0;
-        synchronized (presentLock) {
-            GameFacts.screenWidth = want.width;
-            GameFacts.screenHeight = want.height;
-            if (gpu != null) {
-                gpu.setPictureSize(want.width, want.height);
+        int w = (drawWidth + zoom - 1) / zoom;
+        int h = (drawHeight + zoom - 1) / zoom;
+        // beyond the widest and narrowest shapes the menus keep those, as the race does
+        w = Math.min(w, h * 32 / 9);
+        h = Math.min(h, w * 4 / 5);
+        return new PictureSize(w, h, scene.width, scene.height, zoom);
+    }
+
+    /**
+     * The UI scale for drawing at {@code width} x {@code height}: the largest
+     * of 1, 2 and 4, up to the setting (any, for Auto), at which a 1280x720
+     * screen still fits; 0 if none does (a window under 1280x720).
+     */
+    static int uiZoomFor(int width, int height, int setting) {
+        for (int zoom : UI_ZOOMS) {
+            if ((setting == UI_ZOOM_AUTO || zoom <= setting)
+                    && width / zoom >= GameFacts.GAME_WIDTH && height / zoom >= GameFacts.GAME_HEIGHT) {
+                return zoom;
             }
         }
+        return 0;
+    }
+
+    public static int getUiZoom() {
+        return uiZoomSetting;
+    }
+
+    /** Sets the UI scale (UI_ZOOM_AUTO, 1, 2 or 4) and saves it. */
+    public static void setUiZoom(int zoom) {
+        uiZoomSetting = zoom == 1 || zoom == 2 || zoom == 4 ? zoom : UI_ZOOM_AUTO;
+        uiZoomChanged = true;
+    }
+
+    /** What the pictures are now, in words, for the settings. */
+    public static String describePicture() {
+        int zoom = uiZoomNow;
+        String race = "race " + GameFacts.sceneWidth + "x" + GameFacts.sceneHeight;
+        if (zoom > 0) {
+            return "menus " + GameFacts.screenWidth + "x" + GameFacts.screenHeight + " shown " + zoom + "x, " + race
+                    + " drawn at " + drawWidthNow + "x" + drawHeightNow;
+        }
+        return "menus and " + race + ", scaled to fit";
+    }
+
+    /** -Dnfm.uizoom=auto|1|2|4, else the saved choice, else Auto. */
+    private void loadUiZoom() {
+        String property = System.getProperty("nfm.uizoom");
+        if (property != null) {
+            String t = property.trim().toLowerCase(java.util.Locale.ROOT).replace("x", "");
+            setUiZoom("1".equals(t) || "2".equals(t) || "4".equals(t) ? Integer.parseInt(t) : UI_ZOOM_AUTO);
+        } else if (!runsHidden()) {
+            int saved = readcookie(UI_ZOOM_COOKIE);
+            setUiZoom(saved == 1 || saved == 2 || saved == 4 ? saved : UI_ZOOM_AUTO);
+        }
+        uiZoomChanged = false;
+    }
+
+    /** The size the game draws at: a fullscreen resolution when one is chosen, else the window's. */
+    private Dimension drawingSize() {
+        Dimension chosen = RunApp.isFullscreen() ? RunApp.fullscreenResolution() : null;
+        return chosen != null ? chosen : new Dimension(getWidth(), getHeight());
+    }
+
+    /**
+     * At the start of a tick: saves changed choices, and when the pictures
+     * should take other sizes, and have wanted them for a moment, gives them
+     * those (the first time at once). The menus and HUD are drawn at their
+     * own size, and the race at the window's resolution, when the graphics
+     * card shows them; in software both are one picture, scaled.
+     */
+    private void fitPicture(long now) {
+        if (uiZoomChanged) {
+            uiZoomChanged = false;
+            savecookie(UI_ZOOM_COOKIE, String.valueOf(uiZoomSetting == UI_ZOOM_AUTO ? 9 : uiZoomSetting));
+        }
+        saveFullscreenResolutionIfChanged();
+        Dimension draw = drawingSize();
+        boolean nativeUi = gpuRenderer && !gpuUnavailable && GPU_SCENE;
+        PictureSize want = pictureSizeFor(draw.width, draw.height, scaleToWindow, nativeUi, uiZoomSetting);
+        if (!want.equals(pictureWanted)) {
+            pictureWanted = want;
+            pictureWantedSince = now;
+        }
+        boolean settled = !pictureFitted || now - pictureWantedSince > 250_000_000L;
+        if (!settled) {
+            return;
+        }
+        boolean same = want.canvasWidth() == GameFacts.screenWidth && want.canvasHeight() == GameFacts.screenHeight
+                && want.sceneWidth() == GameFacts.sceneWidth && want.sceneHeight() == GameFacts.sceneHeight
+                && want.zoom() == uiZoomNow;
+        synchronized (presentLock) {
+            drawWidthNow = Math.max(1, draw.width);
+            drawHeightNow = Math.max(1, draw.height);
+            if (!same) {
+                GameFacts.screenWidth = want.canvasWidth();
+                GameFacts.screenHeight = want.canvasHeight();
+                GameFacts.sceneWidth = want.sceneWidth();
+                GameFacts.sceneHeight = want.sceneHeight();
+                uiZoomNow = want.zoom();
+                if (gpu != null) {
+                    gpu.setPictureSize(want.sceneWidth(), want.sceneHeight());
+                }
+            }
+        }
+        if (same) {
+            return;
+        }
+        pictureFitted = draw.width > 0 && draw.height > 0;
         if (offImage != null) {
-            // the menus and HUD keep how sharp they are drawn; fitUiResolution goes on from here
-            resizeBuffers(Math.round(want.width * uiScale), Math.round(want.height * uiScale));
+            makeBuffers(want.canvasWidth(), want.canvasHeight());
         }
         if (ui != null) {
+            ui.setTarget(rd);
             ui.fitScreen();
         }
         keptStale = true;
-        HLogger.info("The picture is now " + want.width + "x" + want.height + ", shape " + pictureShapeName());
+        HLogger.info("Pictures now: " + describePicture());
+    }
+
+    /**
+     * How a point of the race's picture lands in the menus' picture, as the
+     * window shows both: for drawing the race in software into the menus'
+     * picture (behind the pause menu, or when the card cannot). Null when
+     * they are one picture.
+     */
+    private AffineTransform sceneToCanvas() {
+        int canvasW = GameFacts.screenWidth;
+        int canvasH = GameFacts.screenHeight;
+        int sceneW = GameFacts.sceneWidth;
+        int sceneH = GameFacts.sceneHeight;
+        if (canvasW == sceneW && canvasH == sceneH) {
+            return null;
+        }
+        double drawW = drawWidthNow;
+        double drawH = drawHeightNow;
+        double sceneScale = Math.min(drawW / sceneW, drawH / sceneH);
+        int zoom = uiZoomNow;
+        double canvasScale = zoom > 0 ? zoom : Math.min(drawW / canvasW, drawH / canvasH);
+        double dx = ((drawW - sceneW * sceneScale) - (drawW - canvasW * canvasScale)) / 2 / canvasScale;
+        double dy = ((drawH - sceneH * sceneScale) - (drawH - canvasH * canvasScale)) / 2 / canvasScale;
+        AffineTransform t = AffineTransform.getTranslateInstance(dx, dy);
+        t.scale(sceneScale / canvasScale, sceneScale / canvasScale);
+        return t;
+    }
+
+    /** Draws the last race frame the card was given into the menus' picture, in software. */
+    private void replayScene(SceneRecorder recorder) {
+        AffineTransform toCanvas = sceneToCanvas();
+        AffineTransform before = rd.getTransform();
+        if (toCanvas != null) {
+            rd.transform(toCanvas);
+        }
+        try {
+            recorder.replay(rd);
+        } finally {
+            rd.setTransform(before);
+        }
     }
 
     public GameSparker() {
@@ -1938,6 +2094,12 @@ public class GameSparker extends Panel implements Runnable {
         saveSceneDrawState();
         // smooth effects: where dust and debris are drawn between the ticks (the kept scene moves them itself)
         EffectTrails.begin(smoothEffects, retainedRecording ? Float.NaN : prevFrameValid ? alpha : 1F);
+        // drawn in software straight into the menus' picture: placed as the window shows the race
+        AffineTransform toCanvas = retainedRecording || gpuSceneFrame ? null : sceneToCanvas();
+        AffineTransform canvasBefore = toCanvas == null ? null : rd.getTransform();
+        if (toCanvas != null) {
+            rd.transform(toCanvas);
+        }
         try (var _ = Medium.shownView()) { // drawn the picture's shape, from the same place
             Graphics2D target = retainedRecording ? recordingRecorder.begin(rd)
                     : gpuSceneFrame ? sceneRecorder.begin(rd) : rd;
@@ -1946,6 +2108,9 @@ public class GameSparker extends Panel implements Runnable {
             Precise.cameraAngles();
             drawWorldObjects(target);
         } finally {
+            if (canvasBefore != null) {
+                rd.setTransform(canvasBefore);
+            }
             EffectTrails.end();
             restoreSceneDrawState();
             Precise.end();
@@ -2295,8 +2460,8 @@ public class GameSparker extends Panel implements Runnable {
         out.cameraMode = teleported(to[0] - from[0], to[1] - from[1], to[2] - from[2]) ? PoseSpan.AT_END
                 : PoseSpan.MOVING;
         // placed as frames are drawn: in the picture as it is shown (see Medium.showView)
-        int shiftX = -GameFacts.marginX();
-        int shiftY = -GameFacts.marginY();
+        int shiftX = -GameFacts.sceneMarginX();
+        int shiftY = -GameFacts.sceneMarginY();
         from[0] += shiftX;
         to[0] += shiftX;
         from[1] += shiftY;
@@ -3106,7 +3271,7 @@ public class GameSparker extends Panel implements Runnable {
         }
         backBufferStale = false;
         Color color = rd.getColor();
-        shownRecorder.replay(rd);
+        replayScene(shownRecorder);
         if (gpuSceneHud != null) {
             rd.drawImage(gpuSceneHud, 0, 0, GameFacts.screenWidth, GameFacts.screenHeight, null);
         }
@@ -3166,11 +3331,12 @@ public class GameSparker extends Panel implements Runnable {
             }
             int width = getWidth();
             int height = getHeight();
-            Rectangle place = placePicture(width, height);
-            if (place == null) {
+            Places places = placePictures(width, height);
+            if (places == null) {
                 return true;
             }
-            boolean smooth = place.width != offImage.getWidth(null) || place.height != offImage.getHeight(null);
+            Rectangle place = scene != null ? places.scene() : places.canvas();
+            boolean smooth = !wholeTimes(place, offImage.getWidth(null), offImage.getHeight(null));
             gpu.setVsync(vsyncInUse());
             gpu.setHdr(hdrMode);
             gpu.setPaperWhite(paperWhite);
@@ -3184,11 +3350,18 @@ public class GameSparker extends Panel implements Runnable {
                     picture = null; // show the scene drawn on the card
                     gpu.setMultisample(multisample);
                     float scale = dynamicResolution == 0 ? 1F : resolution.scale();
-                    Dimension target = sceneTargetSize(place, gpu.maxTextureSize());
+                    // a fullscreen resolution under the monitor's draws fewer pixels, scaled up when shown
+                    double drawn0 = Math.min(1D, drawWidthNow / (double) width);
+                    Rectangle drawnPlace = new Rectangle(0, 0, (int) Math.round(place.width * drawn0),
+                            (int) Math.round(place.height * drawn0));
+                    Dimension target = sceneTargetSize(drawnPlace, gpu.maxTextureSize());
+                    Rectangle c = places.canvas();
+                    float[] hudArea = {(c.x - place.x) / (float) place.width, (c.y - place.y) / (float) place.height,
+                        c.width / (float) place.width, c.height / (float) place.height};
                     boolean drawn = gpu.drawScene(scene, projected, hud, version, hudVersion, flash, capture, target,
-                            scale);
+                            scale, hudArea);
                     multisampleInUse = gpu.multisample();
-                    float across = supersample > 1 ? target.width / (float) Math.max(GameFacts.screenWidth, place.width) : 1F;
+                    float across = supersample > 1 ? target.width / (float) Math.max(GameFacts.sceneWidth, drawnPlace.width) : 1F;
                     supersampleInUse = across;
                     supersampleWidth = target.width;
                     supersampleHeight = target.height;
@@ -3249,9 +3422,9 @@ public class GameSparker extends Panel implements Runnable {
     private static Dimension sceneTargetSize(Rectangle place, int maxSide) {
         int w = place.width;
         int h = place.height;
-        if (!GPU_SCENE_NATIVE || w < GameFacts.screenWidth || h < GameFacts.screenHeight) {
-            w = GameFacts.screenWidth;
-            h = GameFacts.screenHeight;
+        if (!GPU_SCENE_NATIVE || w < GameFacts.sceneWidth || h < GameFacts.sceneHeight) {
+            w = GameFacts.sceneWidth;
+            h = GameFacts.sceneHeight;
         }
         if (supersample > 1) {
             float factor = Math.min(supersampleAcross(), Math.min(maxSide / (float) w, maxSide / (float) h));
@@ -3276,8 +3449,8 @@ public class GameSparker extends Panel implements Runnable {
         if (lowest == 0 || !GPU_SCENE_NATIVE) {
             return 1F;
         }
-        float picture = Math.max(GameFacts.screenWidth / (float) place.width,
-                GameFacts.screenHeight / (float) place.height);
+        float picture = Math.max(GameFacts.sceneWidth / (float) place.width,
+                GameFacts.sceneHeight / (float) place.height);
         return Math.min(1F, Math.max(lowest / 100F, picture) / across);
     }
 
@@ -3301,7 +3474,7 @@ public class GameSparker extends Panel implements Runnable {
             }
             gpu = window == 0L ? null
                     : GpuDisplay.open(window, new Dimension(getWidth(), getHeight()),
-                            GameFacts.screenWidth, GameFacts.screenHeight);
+                            GameFacts.sceneWidth, GameFacts.sceneHeight);
             if (gpu == null) {
                 gpuUnavailable = true;
                 if (window != 0L) {
@@ -4254,6 +4427,9 @@ public class GameSparker extends Panel implements Runnable {
         return HIDDEN_RUN;
     }
 
+    /** How long a hidden test run stays in the main menu before going on, for watching it: -Dnfm.autotest.menuhold=<ms>. */
+    private static final long MENU_HOLD_MILLIS = Long.getLong("nfm.autotest.menuhold", 0L);
+
     private static final boolean HIDDEN_RUN = System.getProperty("nfm.autotest") != null || RaceSession.runsHidden();
 
     private void saveGamepadIfChanged() {
@@ -4698,6 +4874,30 @@ public class GameSparker extends Panel implements Runnable {
         }
     }
 
+    /* the resolution chosen for fullscreen, in the monitor's pixels; 0 for the monitor's own */
+    private static final String FULLSCREEN_WIDTH_COOKIE = "fullresw";
+    private static final String FULLSCREEN_HEIGHT_COOKIE = "fullresh";
+
+    /** The fullscreen resolution as last chosen (not in hidden runs). */
+    private void loadFullscreenResolution() {
+        if (!runsHidden()) {
+            int w = readcookie(FULLSCREEN_WIDTH_COOKIE);
+            int h = readcookie(FULLSCREEN_HEIGHT_COOKIE);
+            if (w > 0 && h > 0) {
+                RunApp.setFullscreenResolution(w, h);
+            }
+        }
+        RunApp.takeFullscreenResolutionChanged();
+    }
+
+    private void saveFullscreenResolutionIfChanged() {
+        if (RunApp.takeFullscreenResolutionChanged() && !runsHidden()) {
+            Dimension size = RunApp.fullscreenResolution();
+            savecookie(FULLSCREEN_WIDTH_COOKIE, String.valueOf(size == null ? 0 : size.width));
+            savecookie(FULLSCREEN_HEIGHT_COOKIE, String.valueOf(size == null ? 0 : size.height));
+        }
+    }
+
     /* the window's inside as the player left it, in the monitor's pixels */
     private static final String WINDOW_WIDTH_COOKIE = "winwidth";
     private static final String WINDOW_HEIGHT_COOKIE = "winheight";
@@ -4764,10 +4964,7 @@ public class GameSparker extends Panel implements Runnable {
         BufferedImage image = new BufferedImage(GameFacts.screenWidth, GameFacts.screenHeight,
                 BufferedImage.TYPE_INT_RGB);
         Graphics2D g = image.createGraphics();
-        if (uiScale != 1F) {
-            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-        }
-        g.drawImage(offImage, 0, 0, GameFacts.screenWidth, GameFacts.screenHeight, null);
+        g.drawImage(offImage, 0, 0, null);
         g.dispose();
         return image;
     }
@@ -4875,7 +5072,7 @@ public class GameSparker extends Panel implements Runnable {
 
     private void runAutoTest(File directory) {
         System.out.println("[autotest] screenshots -> " + directory.getAbsolutePath());
-        final long budgetMillis = 150_000L;
+        final long budgetMillis = 150_000L + MENU_HOLD_MILLIS;
         final long startMillis = System.currentTimeMillis();
 
         long lastMenuPress = 0L;
@@ -4929,7 +5126,7 @@ public class GameSparker extends Panel implements Runnable {
              * pause menu: open it, walk down to the sound settings, go back
              * with Escape. Nothing is changed, so nothing is saved.
              */
-            if (phase == Phase.MAINMENU && settingsStep == 0 && now - phaseSettledAt >= 600L) {
+            if (phase == Phase.MAINMENU && settingsStep == 0 && now - phaseSettledAt >= 600L + MENU_HOLD_MILLIS) {
                 ui.opselect = 3;
                 pressEnter();
                 settingsStep = 1;
@@ -5203,7 +5400,7 @@ public class GameSparker extends Panel implements Runnable {
         loadKeys();
         loadRunAhead();
         loadScaleToWindow();
-        loadWindowShape();
+        loadFullscreenResolution();
         loadRenderer();
         loadMultisample();
         loadSupersample();
@@ -5293,8 +5490,7 @@ public class GameSparker extends Panel implements Runnable {
                 saveVsyncIfChanged();
                 saveKeysIfChanged();
                 saveAudioEffectsIfChanged();
-                fitPictureShape(now);
-                fitUiResolution(now);
+                fitPicture(now);
                 ticksRun++;
                 saveRunAheadIfChanged();
                 saveScaleToWindowIfChanged();
@@ -5560,13 +5756,13 @@ public class GameSparker extends Panel implements Runnable {
             if (gameUi.fase == Phase.STAGESELECT) {
                 rd.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
                 gameUi.trackbg(true);
-                try (var _ = Medium.shownView()) {
+                try (var _ = Medium.menuView()) {
                     Medium.d(rd);
                 }
                 Medium.aroundTrack(checkpoints);
                 int farCount = 0;
                 int far[] = new int[200];
-                try (var _ = Medium.shownView()) {
+                try (var _ = Medium.menuView()) {
                 for (int piece = GameFacts.numberOfPlayers; piece < notb; piece++)
                     if (scene[piece].dist != 0) {
                         far[farCount] = piece;
@@ -5610,7 +5806,7 @@ public class GameSparker extends Panel implements Runnable {
                 gameUi.stageselect(checkpoints, u[0]);
             }
             if (gameUi.fase == Phase.DRAWENVIRONMENT) {
-                try (var _ = Medium.shownView()) {
+                try (var _ = Medium.menuView()) {
                     Medium.d(rd);
                     drawWorldObjects(rd); // scene is sceneObjects
                 }
@@ -6091,7 +6287,7 @@ public class GameSparker extends Panel implements Runnable {
                     }
 
                     if (gpuSceneFrame && shownRecorder.unsupported()) {
-                        shownRecorder.replay(rd); // drawing the card does not do: this frame in software
+                        replayScene(shownRecorder); // drawing the card does not do: this frame in software
                         gpuSceneFrame = false;
                     }
                     if (gpuSceneFrame) {
@@ -6230,17 +6426,14 @@ public class GameSparker extends Panel implements Runnable {
          */
         new FontHandler();
 
-        loadUiScale();
+        loadUiZoom();
         makeBuffers(GameFacts.screenWidth, GameFacts.screenHeight);
     }
 
     /**
      * Makes the picture the menus are drawn in and the HUD layer over races,
-     * {@code width} x {@code height} pixels: the game's 1280x720, or larger
-     * for the UI resolution. Their graphics are scaled to it, so everything
-     * is still drawn in the game's 1280x720 coordinates; lettering and lines
-     * come out sharp at the larger size, and the art is drawn scaled up.
-     * What the old ones held is carried over, scaled.
+     * {@code width} x {@code height} pixels, the menus' picture's size.
+     * What the old ones held is carried over, stretched.
      */
     private void makeBuffers(int width, int height) {
         Image oldPicture = offImage;
@@ -6251,7 +6444,6 @@ public class GameSparker extends Panel implements Runnable {
          * display-compatible image, which would hide the scene behind the HUD.
          */
         hudImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
-        uiScale = width / (float) GameFacts.screenWidth;
         if (offImage != null) {
             sg = offImage.getGraphics();
             rd = ((Graphics2D) sg);
@@ -6259,12 +6451,8 @@ public class GameSparker extends Panel implements Runnable {
             rd.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             rd.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
             rd.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-            if (width != GameFacts.screenWidth || height != GameFacts.screenHeight) {
-                rd.scale(width / (double) GameFacts.screenWidth, height / (double) GameFacts.screenHeight);
-                rd.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
-            }
             if (oldPicture != null) {
-                rd.drawImage(oldPicture, 0, 0, GameFacts.screenWidth, GameFacts.screenHeight, null);
+                rd.drawImage(oldPicture, 0, 0, width, height, null);
             }
         }
         if (hudImage != null) {
@@ -6273,138 +6461,20 @@ public class GameSparker extends Panel implements Runnable {
             hudG.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             hudG.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
             hudG.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-            if (width != GameFacts.screenWidth || height != GameFacts.screenHeight) {
-                hudG.scale(width / (double) GameFacts.screenWidth, height / (double) GameFacts.screenHeight);
-                hudG.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
-            }
             if (oldHud != null) {
                 hudG.setComposite(AlphaComposite.Src);
-                hudG.drawImage(oldHud, 0, 0, GameFacts.screenWidth, GameFacts.screenHeight, null);
+                hudG.drawImage(oldHud, 0, 0, width, height, null);
                 hudG.setComposite(AlphaComposite.SrcOver);
             }
         }
     }
 
-    /* ------------------------------------------------------------ UI resolution */
-
-    /** The UI resolution: Auto (the size the picture is shown at), else this many times 1280x720. */
-    public static final int UI_SCALE_AUTO = 0;
-    public static final int UI_SCALE_MOST = 4;
-    private static final String UI_SCALE_COOKIE = "uiscale";
-    private static volatile int uiScaleSetting = UI_SCALE_AUTO;
-    private static volatile boolean uiScaleSettingChanged;
-    /** How many times the game's 1280x720 the picture is drawn at now (game thread). */
-    private float uiScale = 1F;
-    private static volatile String uiResolutionNow = "1280x720";
-    /* the size the picture should be, and since when it has wanted it (a window being dragged changes it often) */
-    private int uiWantedWidth = GameFacts.screenWidth;
-    private int uiWantedHeight = GameFacts.screenHeight;
-    private long uiWantedSince;
-
-    public static int getUiScale() {
-        return uiScaleSetting;
-    }
-
-    /** Sets the UI resolution (UI_SCALE_AUTO, or 1 to 4 times 1280x720) and saves it. */
-    public static void setUiScale(int scale) {
-        uiScaleSetting = Math.max(UI_SCALE_AUTO, Math.min(UI_SCALE_MOST, scale));
-        uiScaleSettingChanged = true;
-    }
-
-    public static String describeUiScale() {
-        return "menus and HUD drawn at " + uiResolutionNow
-                + (uiScaleSetting == UI_SCALE_AUTO ? ", the size they are shown at" : "");
-    }
-
-    /** "auto", or 1 to 4 (also with an "x"), else null. */
-    static Integer parseUiScale(String text) {
-        String t = text.trim().toLowerCase(java.util.Locale.ROOT);
-        if (t.equals("auto")) {
-            return UI_SCALE_AUTO;
-        }
-        t = t.endsWith("x") ? t.substring(0, t.length() - 1) : t;
-        return switch (t) {
-            case "1", "2", "3", "4" -> Integer.parseInt(t);
-            default -> null;
-        };
-    }
-
-    /** -Dnfm.uiscale=auto|1-4, else 1 in hidden test runs (frames the tests compare), else the saved choice. */
-    private void loadUiScale() {
-        String property = System.getProperty("nfm.uiscale");
-        Integer parsed = property == null ? null : parseUiScale(property);
-        if (parsed != null) {
-            uiScaleSetting = parsed;
-        } else if (runsHidden()) {
-            uiScaleSetting = 1;
-        } else {
-            int saved = readcookie(UI_SCALE_COOKIE);
-            uiScaleSetting = saved >= 1 && saved <= UI_SCALE_MOST + 1 ? saved - 1 : UI_SCALE_AUTO;
-        }
-        uiScaleSettingChanged = false;
-    }
-
     /**
-     * At the start of a tick: saves a changed UI resolution, and when the
-     * picture should be another size, and has wanted it for a moment, makes
-     * it that size. Auto draws it at the size it is shown at in the window,
-     * so every pixel of the window is the game's own; with the software
-     * renderer, Auto stays at 1280x720, which it draws fastest.
-     */
-    private void fitUiResolution(long now) {
-        if (uiScaleSettingChanged) {
-            uiScaleSettingChanged = false;
-            savecookie(UI_SCALE_COOKIE, String.valueOf(uiScaleSetting + 1)); // the store reads 0 badly
-        }
-        int setting = uiScaleSetting;
-        int width;
-        int height;
-        if (setting != UI_SCALE_AUTO) {
-            width = GameFacts.screenWidth * setting;
-            height = GameFacts.screenHeight * setting;
-        } else {
-            Rectangle place = gpuRenderer && !gpuUnavailable ? placePicture(getWidth(), getHeight()) : null;
-            width = place == null ? GameFacts.screenWidth : place.width;
-            height = place == null ? GameFacts.screenHeight : place.height;
-            // never below the game's own size, nor above four times it
-            float scale = Math.max(1F, Math.min(UI_SCALE_MOST, width / (float) GameFacts.screenWidth));
-            width = Math.round(GameFacts.screenWidth * scale);
-            height = Math.round(GameFacts.screenHeight * scale);
-        }
-        if (width != uiWantedWidth || height != uiWantedHeight) {
-            uiWantedWidth = width;
-            uiWantedHeight = height;
-            uiWantedSince = now;
-        }
-        boolean settled = now - uiWantedSince > 250_000_000L || setting != UI_SCALE_AUTO;
-        if (settled && offImage != null
-                && (offImage.getWidth(null) != width || offImage.getHeight(null) != height)) {
-            resizeBuffers(width, height);
-            HLogger.info("Menus and HUD now drawn at " + uiResolutionNow);
-        }
-    }
-
-    /** The menus and HUD drawn at {@code width} x {@code height} from now on. */
-    private void resizeBuffers(int width, int height) {
-        makeBuffers(width, height);
-        uiWantedWidth = width;
-        uiWantedHeight = height;
-        uiResolutionNow = width + "x" + height;
-        if (ui != null) {
-            ui.setTarget(rd);
-        }
-    }
-
-    /**
-     * The picture at the game's own 1280x720, for the effects that read its
-     * pixels (the pause menu's background, the portraits): the picture
-     * itself, or a copy of it made that size.
+     * The menus' picture, for the effects that read its pixels (the pause
+     * menu's background, the portraits).
      */
     private Image pictureAtGameSize() {
-        if (offImage.getWidth(null) == GameFacts.screenWidth && offImage.getHeight(null) == GameFacts.screenHeight) {
-            return offImage;
-        }
-        return captureFrame();
+        return offImage;
     }
 
     private void addFile(File source, File[] files, String path) {

@@ -257,7 +257,7 @@ public class ContO {
                 visible = false;
             }
             if (visible) {
-                rd.setColor(new Color(red, green, blue));
+                rd.setColor(Colors.of(red, green, blue));
                 if (trail) {
                     EffectTrails.Puff before = puffTrail(puff);
                     trailCorners(before.xBefore, before.yBefore, before.zBefore, before.cornersBefore);
@@ -968,7 +968,7 @@ public class ContO {
                     blue = (blue * Medium.fogd + Medium.cfade[2]) / (Medium.fogd + 1);
                 }
             } while (++band < 8);
-            rd.setColor(new Color(red, green, blue));
+            rd.setColor(Colors.of(red, green, blue));
             rd.fillPolygon(cornerX, cornerY, 4);
         }
     }
@@ -980,7 +980,7 @@ public class ContO {
                 p[poly].hsb[0] = 0.57F;
                 p[poly].hsb[2] = 0.8F;
                 p[poly].hsb[1] = 0.8F;
-                Color color = Color.getHSBColor(p[poly].hsb[0], p[poly].hsb[1], p[poly].hsb[2]);
+                Color color = Colors.ofHsb(p[poly].hsb[0], p[poly].hsb[1], p[poly].hsb[2]);
                 int red = (int) (color.getRed() + color.getRed() * (Medium.snap[0] / 100F));
                 if (red > 255) {
                     red = 255;
@@ -1131,7 +1131,7 @@ public class ContO {
             if (blue < 0) {
                 blue = 0;
             }
-            rd.setColor(new Color(red, green, blue));
+            rd.setColor(Colors.of(red, green, blue));
             rd.fillPolygon(flashX, flashY, 8);
             flashX[0] = Utility.cXs((int) (corner - width - Medium.fxRandom() * (width / 4)), depth);
             flashY[0] = Utility.cYs((int) (centerY - height / 2.3999999999999999D
@@ -1178,7 +1178,7 @@ public class ContO {
             if (blue < 0) {
                 blue = 0;
             }
-            rd.setColor(new Color(red, green, blue));
+            rd.setColor(Colors.of(red, green, blue));
             rd.fillPolygon(flashX, flashY, 8);
         }
         if (fcnt > 7) {
@@ -1285,7 +1285,7 @@ public class ContO {
                     green = 128;
                     blue = 0;
                 }
-                rd.setColor(new Color(red, green, blue));
+                rd.setColor(Colors.of(red, green, blue));
                 rd.fillPolygon(screenX, screenY, 8);
                 if (arcZ[0] < 4000) {
                     int edgeRed = (int) (150F + 150F * (Medium.snap[0] / 500F));
@@ -1309,7 +1309,7 @@ public class ContO {
                     if (edgeBlue < 0) {
                         edgeBlue = 0;
                     }
-                    rd.setColor(new Color(edgeRed, edgeGreen, edgeBlue));
+                    rd.setColor(Colors.of(edgeRed, edgeGreen, edgeBlue));
                     rd.drawPolygon(screenX, screenY, 8);
                 }
             }

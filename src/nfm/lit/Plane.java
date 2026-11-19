@@ -431,7 +431,7 @@ public class Plane {
                     flashY[corner] = Utility.ys(py[corner], pz[corner], 0);
                 }
 
-                rd.setColor(new Color(230, 230, 230));
+                rd.setColor(Colors.of(230, 230, 230));
                 Glow.set(Glow.FLAME);
                 rd.fillPolygon(flashX, flashY, n);
                 Glow.off();
@@ -564,7 +564,7 @@ public class Plane {
                 if (blue < 0) {
                     blue = 0;
                 }
-                rd.setColor(new Color(red, green, blue));
+                rd.setColor(Colors.of(red, green, blue));
                 Glow.set(Glow.FLAME);
                 rd.fillPolygon(flameX, flameY, 3);
                 Glow.off();
@@ -626,7 +626,7 @@ public class Plane {
                 if (blue < 0) {
                     blue = 0;
                 }
-                rd.setColor(new Color(red, green, blue));
+                rd.setColor(Colors.of(red, green, blue));
                 Glow.set(Glow.FLAME);
                 rd.fillPolygon(flameX, flameY, 3);
                 Glow.off();
@@ -761,16 +761,16 @@ public class Plane {
             shade = (int) (Medium.fxRandom() * 3F);
             if (bfase != -7) {
                 if (shade == 0) {
-                    rd.setColor((new Color(c[0], c[1], c[2])).darker());
+                    rd.setColor((Colors.of(c[0], c[1], c[2])).darker());
                 }
                 if (shade == 1) {
-                    rd.setColor(new Color(c[0], c[1], c[2]));
+                    rd.setColor(Colors.of(c[0], c[1], c[2]));
                 }
                 if (shade == 2) {
-                    rd.setColor((new Color(c[0], c[1], c[2])).brighter());
+                    rd.setColor((Colors.of(c[0], c[1], c[2])).brighter());
                 }
             } else {
-                rd.setColor(Color.getHSBColor(hsb[0], hsb[1], hsb[2]));
+                rd.setColor(Colors.ofHsb(hsb[0], hsb[1], hsb[2]));
             }
             if (!trail) {
                 rd.fillPolygon(chipScreenX, chipScreenY, 3);
@@ -1104,11 +1104,11 @@ public class Plane {
             }
             Color color;
             if (!Medium.trk) {
-                color = Color.getHSBColor(hsb[0], hsb[1], hsb[2] * shade);
+                color = Colors.ofHsb(hsb[0], hsb[1], hsb[2] * shade);
             } else {
                 float trackHsb[] = new float[3];
                 Color.RGBtoHSB(oc[0], oc[1], oc[2], trackHsb);
-                color = Color.getHSBColor(hsb[0], hsb[1], hsb[2] * shade);
+                color = Colors.ofHsb(hsb[0], hsb[1], hsb[2] * shade);
             }
             int red = color.getRed();
             int green = color.getGreen();
@@ -1147,9 +1147,9 @@ public class Plane {
                 } while (++band < 8);
             }
             if (blackout){
-                rd.setColor(new Color(0,0,0));
+                rd.setColor(Colors.of(0, 0, 0));
             } else {
-                rd.setColor(new Color(red, green, blue));
+                rd.setColor(Colors.of(red, green, blue));
             }
             if (exact) {
                 Precise.plane(ox, oy, oz, mirrored, n, x, y, z, yaw, roll, pitch, wheelTurn, wheelSpin, wx, wy, wz, screenX, screenY);
@@ -1192,13 +1192,13 @@ public class Plane {
                             }
                         }
                         rd.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                        rd.setColor(new Color(red, green, blue));
+                        rd.setColor(Colors.of(red, green, blue));
                         rd.drawPolygon(screenX, screenY, n);
                         rd.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
                     }
                 } else {
                     if (flx == 2) {
-                        rd.setColor(new Color(0, 0, 0));
+                        rd.setColor(Colors.of(0, 0, 0));
                         rd.drawPolygon(screenX, screenY, n);
                     }
                     if (flx == 1) {
@@ -1217,7 +1217,7 @@ public class Plane {
                         if (blue < 0) {
                             blue = 0;
                         }
-                        rd.setColor(new Color(red, green, blue));
+                        rd.setColor(Colors.of(red, green, blue));
                         Glow.set(Glow.REPAIR);
                         rd.drawPolygon(screenX, screenY, n);
                         flx = 2;
@@ -1238,7 +1238,7 @@ public class Plane {
                         if (blue < 0) {
                             blue = 0;
                         }
-                        rd.setColor(new Color(red, green, blue));
+                        rd.setColor(Colors.of(red, green, blue));
                         Glow.set(Glow.REPAIR);
                         rd.drawPolygon(screenX, screenY, n);
                         flx = 2;
@@ -1254,7 +1254,7 @@ public class Plane {
                 if ((blue -= 10) < 0) {
                     blue = 0;
                 }
-                rd.setColor(new Color(red, green, blue));
+                rd.setColor(Colors.of(red, green, blue));
                 rd.drawPolygon(screenX, screenY, n);
             }
             Glow.off(); // a lamp's glow, or the repair flash's, ends with its polygon
@@ -1300,7 +1300,7 @@ public class Plane {
                             lineBlue = (lineBlue * Medium.fogd + Medium.cfade[2]) / (Medium.fogd + 1);
                         }
                     } while (++band < 8);
-                    rd.setColor(new Color(lineRed, lineGreen, lineBlue));
+                    rd.setColor(Colors.of(lineRed, lineGreen, lineBlue));
                     rd.drawPolygon(screenX, screenY, n);
                 } else if (Medium.cpflik && Medium.hit == 5000) {
                     int flicker = (int) (Medium.fxRandom.nextDouble() * 115D);
@@ -1324,7 +1324,7 @@ public class Plane {
                     if (flicker > 255) {
                         flicker = 255;
                     }
-                    rd.setColor(new Color(sparkRed, flicker, sparkBlue));
+                    rd.setColor(Colors.of(sparkRed, flicker, sparkBlue));
                     rd.drawPolygon(screenX, screenY, n);
                 }
             }
@@ -1351,7 +1351,7 @@ public class Plane {
                         arcBlue = (arcBlue * Medium.fogd + Medium.cfade[2]) / (Medium.fogd + 1);
                     }
                 } while (++band < 8);
-                rd.setColor(new Color(arcRed, arcGreen, arcBlue));
+                rd.setColor(Colors.of(arcRed, arcGreen, arcBlue));
                 rd.drawPolygon(screenX, screenY, n);
             }
         }
@@ -1510,7 +1510,7 @@ public class Plane {
                     blue = (blue * Medium.fogd + Medium.cfade[2]) / (Medium.fogd + 1);
                 }
             } while (++band < 8);
-            rd.setColor(new Color(red, green, blue));
+            rd.setColor(Colors.of(red, green, blue));
             if (Precise.on) {
                 Precise.shadow(ox, oy, oz, n, x, y, z, yaw, roll, pitch, screenX, screenY);
             }

@@ -105,7 +105,7 @@ a ruleset other than `classic`.
   becomes "a ruleset's gameplay never changes once its races are recorded".
 - Widescreen is not a gameplay change: the race camera and what is on screen
   for the race are worked out in the 1280x720 view whatever the window's
-  shape (`Medium.shownView`). Keep it that way when the camera
+  shape (`Medium.shownView` for the race, `Medium.menuView` in menus). Keep it that way when the camera
   changes: place the camera in the game's own view, draw in the shown one.
 - Test runs stay hidden and silent; nobody's mouse, keyboard or screen is
   taken over to test.

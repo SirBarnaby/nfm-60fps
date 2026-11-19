@@ -59,15 +59,20 @@ Before a release or a large change, also run:
    its hidden-run default must be the one the golden frames were made with.
 8. **Never take over the user's mouse, keyboard or screen** to test. Use the
    hidden runs above; `nfm.autotest` saves screenshots of every phase.
-9. **The race is placed in the game's own 1280x720 view.** The picture takes
-   the window's shape (`GameFacts.pictureShape`), but the race camera and what
-   is on screen for the race (`ContO.dist`, which repair hoops and chip
-   clearing read) are worked out at 1280x720, so a race plays the same in any
-   window. Only drawing looks through the shown shape, from the same place:
-   wrap it in `try (var _ = Medium.shownView())`. Lay out screens from
-   `GameFacts.screenWidth/screenHeight` and `marginX/marginY`, never from a
-   fixed 1280x720. Check with `JAVA_TOOL_OPTIONS=-Dnfm.window=1720x720` and
-   `verify-races.ps1 -NoGolden`.
+9. **The race is placed in the game's own 1280x720 view.** The race's
+   picture takes the window's shape (`GameFacts.sceneWidth/sceneHeight`, from
+   `GameFacts.pictureShape`), but the race camera and what is on screen for
+   the race (`ContO.dist`, which repair hoops and chip clearing read) are
+   worked out at 1280x720, so a race plays the same in any window. Only
+   drawing looks through the shown shape, from the same place: wrap race
+   drawing in `try (var _ = Medium.shownView())`, and 3D drawn in a menu (the
+   car select's car, the stage select's stage) in `Medium.menuView()`. The
+   menus and HUD have their own picture, `GameFacts.screenWidth/screenHeight`,
+   which with the UI at native size is the window divided by the UI scale and
+   is not the race's: lay out screens from it and `marginX/marginY`, the race
+   from `sceneMarginX/sceneMarginY`, never from a fixed 1280x720. Check with
+   `JAVA_TOOL_OPTIONS=-Dnfm.window=1720x720` and `verify-races.ps1 -NoGolden`,
+   and look at hidden autotest screenshots at 1920x1080 and 2560x1080.
 
 v1.0 (tag `v1.0`) is the last version whose races are the original's. A
 higher tick rate, a new handling model or deformable stages go in as a new

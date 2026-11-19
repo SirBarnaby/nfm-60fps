@@ -208,15 +208,15 @@ public class Medium {
     private static int[][][] savedStc;
 
     /**
-     * Projects into the picture as it is shown, GameFacts.screenWidth x
-     * screenHeight, from the same place: the camera's x and y are counted
-     * from the picture's corner, so they move by as much as its centre does.
+     * Projects into the race's picture as it is shown, GameFacts.sceneWidth x
+     * sceneHeight, from the same place: the camera's x and y are counted from
+     * the picture's corner, so they move by as much as its centre does.
      * Drawing a frame does this and {@link #gameView()} after; the camera is
      * placed, and what is on screen is read back for the race, in the game's
      * own view, so a race plays out the same in a window of any shape.
      */
     public static void showView() {
-        setView(GameFacts.screenWidth, GameFacts.screenHeight);
+        setView(GameFacts.sceneWidth, GameFacts.sceneHeight);
     }
 
     /** Projects into the game's own view again, the view everything but drawing works in. */
@@ -250,6 +250,16 @@ public class Medium {
      */
     public static ShownView shownView() {
         showView();
+        return SHOWN;
+    }
+
+    /**
+     * As {@link #shownView()}, for the 3D drawn in a menu (the car select's
+     * car, the stage select's stage): the menus' picture, GameFacts.screenWidth
+     * x screenHeight, in which they keep their own size.
+     */
+    public static ShownView menuView() {
+        setView(GameFacts.screenWidth, GameFacts.screenHeight);
         return SHOWN;
     }
 
@@ -518,7 +528,7 @@ public class Medium {
                     green = (green * 7 + cfade[1]) / 8;
                     blue = (blue * 7 + cfade[2]) / 8;
                 }
-                rd.setColor(new Color(red, green, blue));
+                rd.setColor(Colors.of(red, green, blue));
                 if (Precise.on) {
                     Precise.bind(screenX, screenY, EXACT_X, EXACT_Y, 8, 10_000_000 + patch);
                 }
@@ -590,7 +600,7 @@ public class Medium {
                     green = (green * 7 + cfade[1]) / 8;
                     blue = (blue * 7 + cfade[2]) / 8;
                 }
-                rd.setColor(new Color(red, green, blue));
+                rd.setColor(Colors.of(red, green, blue));
                 if (Precise.on) {
                     Precise.bind(screenX, screenY, EXACT_X, EXACT_Y, 8, 20_000_000 + patch);
                 }
@@ -938,7 +948,7 @@ public class Medium {
                     }
                 }
 
-                rd.setColor(new Color(red, green, blue));
+                rd.setColor(Colors.of(red, green, blue));
                 if (Precise.on) {
                     Precise.bind(screenX, screenY, EXACT_X, EXACT_Y, 6, 30_000_000 + cloud * 100 + side);
                 }
@@ -1035,7 +1045,7 @@ public class Medium {
                     }
                 }
 
-                rd.setColor(new Color(red, green, blue));
+                rd.setColor(Colors.of(red, green, blue));
                 if (Precise.on) {
                     Precise.bind(screenX, screenY, EXACT_X, EXACT_Y, 6, 40_000_000 + cloud * 100 + side);
                 }
@@ -1094,7 +1104,7 @@ public class Medium {
                 }
             }
 
-            rd.setColor(new Color(red, green, blue));
+            rd.setColor(Colors.of(red, green, blue));
             if (Precise.on) {
                 Precise.bind(screenX, screenY, CLOUD_X[0], CLOUD_Y[0], 12, 50_000_000 + cloud);
             }
@@ -1280,7 +1290,7 @@ public class Medium {
                                     + cfade[1] * haze) / (2.0F + haze * 2.0F));
                             int blue = (int) ((mtc[mountain][face][2] + cgrnd[2] + csky[2] * haze
                                     + cfade[2] * haze) / (2.0F + haze * 2.0F));
-                            rd.setColor(new Color(red, green, blue)); // Mountain Color, should make this editable in the stage code
+                            rd.setColor(Colors.of(red, green, blue)); // Mountain Color, should make this editable in the stage code
                             if (mountainX != null) {
                                 Precise.bind(screenX, screenY, EXACT_X, EXACT_Y, 4, 60_000_000 + mountain * 1000 + face);
                             }
@@ -1399,10 +1409,10 @@ public class Medium {
             if (bst[star]) {
                 big = 1;
             }
-            rd.setColor(new Color(stc[star][1][0], stc[star][1][1], stc[star][1][2]));
+            rd.setColor(Colors.of(stc[star][1][0], stc[star][1][1], stc[star][1][2]));
             rd.fillRect(starX - 1, starY, 3 + big, 1 + big);
             rd.fillRect(starX, starY - 1, 1 + big, 3 + big);
-            rd.setColor(new Color(stc[star][0][0], stc[star][0][1], stc[star][0][2]));
+            rd.setColor(Colors.of(stc[star][0][0], stc[star][0][1], stc[star][0][2]));
             rd.fillRect(starX, starY, 1 + big, 1 + big);
         }
 
@@ -1502,7 +1512,7 @@ public class Medium {
                 }
             }
             if (allBands || bandY[0] < h && bandY[1] > ih) {
-                rd.setColor(new Color(red, green, blue));
+                rd.setColor(Colors.of(red, green, blue));
                 if (Precise.on) {
                     band(bandX, bandY, exactEdge, exactBelow, 1000 + fadeBand);
                 }
@@ -1594,7 +1604,7 @@ public class Medium {
                 gradientBlue = blue;
             }
             if (allBands || bandY[0] > ih && bandY[1] < h) {
-                rd.setColor(new Color(red, green, blue));
+                rd.setColor(Colors.of(red, green, blue));
                 if (Precise.on) {
                     band(bandX, bandY, exactSky, exactAbove, 2000 + fadeBand);
                 }
@@ -1622,7 +1632,7 @@ public class Medium {
             red = (int) ((red * (1.0F - blend) + farRed * (1.0F + blend)) / 2.0F);
             green = (int) ((green * (1.0F - blend) + farGreen * (1.0F + blend)) / 2.0F);
             blue = (int) ((blue * (1.0F - blend) + farBlue * (1.0F + blend)) / 2.0F);
-            rd.setColor(new Color(red, green, blue));
+            rd.setColor(Colors.of(red, green, blue));
             if (Precise.on) {
                 band(bandX, bandY, exactAbove, exactBelow, 3000);
             }
@@ -1663,7 +1673,7 @@ public class Medium {
                 gradientGreen = (int) (gradientGreen * 0.99099999999999999D);
                 gradientBlue = (int) (gradientBlue * 0.998D);
                 if (allBands || bandY[1] > ih && bandY[0] < h) {
-                    rd.setColor(new Color(gradientRed, gradientGreen, gradientBlue));
+                    rd.setColor(Colors.of(gradientRed, gradientGreen, gradientBlue));
                     if (Precise.on) {
                         band(bandX, bandY, exactStep, exactGradient, 4000 + step);
                     }
