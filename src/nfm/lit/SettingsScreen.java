@@ -11,6 +11,7 @@ import java.awt.LinearGradientPaint;
 import java.awt.RenderingHints;
 import java.awt.Shape;
 import java.awt.Stroke;
+import java.awt.event.KeyEvent;
 import java.awt.font.TextAttribute;
 import java.awt.geom.AffineTransform;
 import java.awt.geom.Rectangle2D;
@@ -98,6 +99,11 @@ final class SettingsScreen {
     private static final ConcurrentLinkedQueue<Integer> TYPED = new ConcurrentLinkedQueue<>();
     /** Page Up, Page Down and Tab: tabs to move by, since the last frame. */
     private static final AtomicInteger TAB_KEYS = new AtomicInteger();
+    /** A key is being chosen for an action: the next key is the screen's (see {@link #captureKey}). */
+    private static volatile boolean choosingKey;
+    private static final ConcurrentLinkedQueue<Integer> CHOSEN = new ConcurrentLinkedQueue<>();
+    /** Backspace and Delete since the last frame: they clear a key. */
+    private static final AtomicInteger CLEAR_KEYS = new AtomicInteger();
     /** The mouse wheel's notches since the last frame (down is more). */
     private static final AtomicInteger WHEEL = new AtomicInteger();
     /** The settings' pictures by name; null where there is none. Game thread only. */
@@ -197,6 +203,32 @@ final class SettingsScreen {
         return true;
     }
 
+    /**
+     * A key went down on the keyboard (on the window's thread), by its
+     * place: while a key is being chosen it is the screen's, and the game
+     * does not see it.
+     *
+     * @return true if the key was taken
+     */
+    static boolean captureKey(int keyCode) {
+        if (choosingKey && keyCode != KeyEvent.VK_F11) {
+            CHOSEN.add(keyCode);
+            return true;
+        }
+        if (keyCode == KeyEvent.VK_BACK_SPACE || keyCode == KeyEvent.VK_DELETE) {
+            CLEAR_KEYS.incrementAndGet();
+        }
+        return false;
+    }
+
+    /** The key row a key is being chosen for, or null. Game thread. */
+    private KeyRow choosing;
+
+    /** Typing a size or choosing a key: the mouse's hovering leaves the selection be. */
+    private boolean busy() {
+        return windowSize.typing() || choosing != null;
+    }
+
     /** Called as the screen opens. */
     void open() {
         selected = tabRows[tab].length > 0 ? tabRows[tab][0] : TABS;
@@ -206,7 +238,15 @@ final class SettingsScreen {
         escapePressed = false;
         TAB_KEYS.set(0);
         WHEEL.set(0);
+        CLEAR_KEYS.set(0);
         windowSize.stopTyping();
+        stopChoosing();
+    }
+
+    private void stopChoosing() {
+        if (choosing != null) {
+            choosing.stopListening();
+        }
     }
 
     /** For the smoke test: chooses the row with this label, on its tab. */
@@ -368,6 +408,15 @@ final class SettingsScreen {
                 "Shows the race a tick ahead with the keys held now: 53 ms less lag between key and screen.",
                 null, new int[] {0, 1}, SettingsScreen::onOff, () -> GameSparker.isRunAhead() ? 1 : 0,
                 v -> GameSparker.setRunAhead(v == 1)));
+
+        group("Keys");
+        for (int a = 0; a < KeyBindings.COUNT; a++) {
+            add(new KeyRow(a));
+        }
+        add(new Button("Restore the game's keys", "Restore",
+                "Puts every key back as the game had it. Out of a race the arrows, Enter and Escape always move"
+                        + " through the menus, whatever the keys.",
+                KeyBindings::reset).when(() -> !KeyBindings.isDefault(), "The keys are the game's own."));
 
         tab("Advanced", "For tinkering: how the game draws, and readouts of how fast it runs.");
         group("Drawing");
@@ -555,6 +604,20 @@ final class SettingsScreen {
             WHEEL.set(0);
             return false;
         }
+        if (choosing != null) {
+            for (Integer key; choosing != null && (key = CHOSEN.poll()) != null;) {
+                choosing.chosen(key);
+            }
+            control.up = control.down = control.left = control.right = false;
+            control.enter = control.handb = false;
+            escapePressed = false;
+            TAB_KEYS.set(0);
+            CLEAR_KEYS.set(0);
+            return false;
+        }
+        if (CLEAR_KEYS.getAndSet(0) > 0 && isRow(selected) && rows.get(selected) instanceof KeyRow key) {
+            key.clear();
+        }
         int tabMove = TAB_KEYS.getAndSet(0);
         if (tabMove != 0) {
             switchTab(tab + tabMove);
@@ -575,6 +638,9 @@ final class SettingsScreen {
         }
         if (!isRow(selected) || rows.get(selected) != windowSize) {
             windowSize.leave();
+        }
+        if (!isRow(selected) || !(rows.get(selected) instanceof KeyRow)) {
+            KeyRow.unchosen(rows);
         }
         if (selected == TABS) {
             if (control.left || control.right) {
@@ -639,6 +705,7 @@ final class SettingsScreen {
             scroll[tab] = 0;
         }
         windowSize.leave();
+        stopChoosing();
         pressed = false;
     }
 
@@ -677,7 +744,7 @@ final class SettingsScreen {
         int row = rowAt(x, y);
         int tabHit = tabAt(x, y);
         boolean overBack = overBack(x, y);
-        if (moved && state == 0 && !windowSize.typing()) {
+        if (moved && state == 0 && !busy()) {
             if (row >= 0) {
                 selected = row;
             } else if (tabHit >= 0) {
@@ -692,15 +759,27 @@ final class SettingsScreen {
             }
             windowSize.stopTyping();
         }
-        if (moved && state == 0 && windowSize.typing()) {
-            return; // the typing keeps its row
+        if (state == 1 && choosing != null) {
+            if (row >= 0 && rows.get(row) == choosing) {
+                choosing.slot = x < valueLeft() + VALUE_W / 2 ? 0 : 1; // the other key of the same action
+                return;
+            }
+            stopChoosing();
+        }
+        if (moved && state == 0 && busy()) {
+            return; // the typing, or the key being chosen, keeps its row
         }
         if (state == 1) {
             if (row >= 0) {
                 selected = row;
                 Row r = rows.get(row);
                 int left = valueLeft();
-                if (r == windowSize && windowSize.custom() && x >= left + 16 && x <= left + VALUE_W - 16) {
+                if (r instanceof KeyRow key && x >= left - 4 && x < left + VALUE_W + 4) {
+                    key.slot = x < left + VALUE_W / 2 ? 0 : 1;
+                    key.change(1, true);
+                } else if (r instanceof Button) {
+                    r.change(1, true);
+                } else if (r == windowSize && windowSize.custom() && x >= left + 16 && x <= left + VALUE_W - 16) {
                     windowSize.enter();
                 } else if (r instanceof Slider slider && x >= left + 16 && x <= left + VALUE_W - 16) {
                     slider.setAt((x - (left + 20)) / (float) (VALUE_W - 40));
@@ -849,7 +928,11 @@ final class SettingsScreen {
         Color letters = enabled ? LETTERS : DIMMED;
         menuLetters(rd, font, row.label, LIST_X + 12, y + 17, letters, false);
         int left = valueLeft();
-        if (enabled) {
+        if (row instanceof KeyRow key) {
+            drawKeys(rd, key, left, y, i == selected);
+            return;
+        }
+        if (enabled && !(row instanceof Button)) {
             menuLetters(rd, font, "<", left + 4, y + 17, ARROWS, false);
             menuLetters(rd, font, ">", left + VALUE_W - 4, y + 17, ARROWS, true);
         }
@@ -876,6 +959,29 @@ final class SettingsScreen {
                 letters = Color.WHITE;
             }
             menuLetters(rd, f, value, left + VALUE_W / 2F, y + 17, letters, null);
+        }
+    }
+
+    /** An action's two keys, side by side: the chosen one framed, the one being chosen asking for a key. */
+    private void drawKeys(Graphics2D rd, KeyRow key, int left, int y, boolean selectedRow) {
+        int w = (VALUE_W - 6) / 2;
+        for (int slot = 0; slot < KeyBindings.SLOTS; slot++) {
+            int x = left + slot * (w + 6);
+            boolean chosen = selectedRow && key.slot == slot;
+            boolean asking = key == choosing && key.slot == slot;
+            rd.setColor(new Color(0, 0, 0, asking ? 150 : 110));
+            rd.fillRect(x, y + 2, w, ROW_H - 7);
+            rd.setColor(chosen ? ARROWS : new Color(0xde, 0x84, 0x39, 80));
+            rd.drawRect(x, y + 2, w - 1, ROW_H - 8);
+            if (chosen) {
+                rd.drawRect(x + 1, y + 3, w - 3, ROW_H - 10);
+            }
+            int code = KeyBindings.key(key.action, slot);
+            String text = asking ? (System.currentTimeMillis() / 400L % 2L == 0L ? "Press a key" : "")
+                    : KeyBindings.name(code);
+            Font f = shape(smallFont, text).getBounds2D().getWidth() > w - 8 ? smallFont.deriveFont(12F) : smallFont;
+            Color color = asking ? Color.WHITE : code == 0 ? DIMMED : LETTERS;
+            menuLetters(rd, f, text, x + w / 2F, y + 16, color, null);
         }
     }
 
@@ -1415,6 +1521,125 @@ final class SettingsScreen {
         @Override
         String status() {
             return "Now: " + describeWindow() + ".";
+        }
+    }
+
+    /**
+     * One action's keys: left and right choose between its two, Enter (or a
+     * click) asks for a new one, Backspace or Delete clears it.
+     */
+    private final class KeyRow extends Row {
+        final int action;
+        /** The key chosen of the two. */
+        int slot;
+        /** What the last key chosen did, until the row is left. */
+        private String note;
+
+        KeyRow(int action) {
+            super(KeyBindings.label(action), KeyBindings.help(action), null);
+            this.action = action;
+        }
+
+        /** Notes are forgotten on every key row but the selected one. */
+        static void unchosen(List<Row> rows) {
+            for (Row row : rows) {
+                if (row instanceof KeyRow key) {
+                    key.note = null;
+                }
+            }
+        }
+
+        @Override
+        void step(int direction, boolean wrap) {
+            if (wrap) {
+                listen();
+            } else {
+                slot = Math.max(0, Math.min(KeyBindings.SLOTS - 1, slot + direction));
+            }
+        }
+
+        private void listen() {
+            stopChoosing();
+            note = null;
+            CHOSEN.clear();
+            choosing = this;
+            choosingKey = true;
+        }
+
+        void stopListening() {
+            choosingKey = false;
+            CHOSEN.clear();
+            if (choosing == this) {
+                choosing = null;
+            }
+        }
+
+        /** The key pressed while one was asked for. */
+        void chosen(int keyCode) {
+            if (keyCode == KeyEvent.VK_ESCAPE) {
+                stopListening();
+            } else if (keyCode == KeyEvent.VK_BACK_SPACE || keyCode == KeyEvent.VK_DELETE) {
+                stopListening();
+                clear();
+            } else if (KeyBindings.reserved(keyCode)) {
+                note = KeyBindings.name(keyCode) + " is the game's own: choose another key.";
+            } else {
+                stopListening();
+                int from = KeyBindings.bind(action, slot, keyCode);
+                note = from == KeyBindings.NONE ? null
+                        : KeyBindings.name(keyCode) + " was on " + KeyBindings.label(from) + ": now it is here.";
+            }
+        }
+
+        void clear() {
+            if (KeyBindings.key(action, slot) != 0) {
+                KeyBindings.bind(action, slot, 0);
+                note = (slot == 0 ? "The first" : "The second") + " key is cleared.";
+            }
+        }
+
+        @Override
+        String value() {
+            return KeyBindings.name(KeyBindings.key(action, 0)) + ", " + KeyBindings.name(KeyBindings.key(action, 1));
+        }
+
+        @Override
+        String help() {
+            return choosing == this
+                    ? "Press the key for " + label + ". Escape keeps the key it has; Backspace clears it."
+                    : super.help();
+        }
+
+        @Override
+        String status() {
+            if (note != null) {
+                return note;
+            }
+            return choosing == this ? null : "Left and right choose a key, Enter changes it, Backspace clears it.";
+        }
+    }
+
+    /** Something to do rather than a setting: Enter or a click does it. */
+    private static final class Button extends Row {
+        private final String text;
+        private final Runnable action;
+
+        Button(String label, String text, String help, Runnable action) {
+            super(label, help, null);
+            this.text = text;
+            this.action = action;
+        }
+
+        @Override
+        void step(int direction, boolean wrap) {
+            if (wrap) {
+                action.run();
+            }
+        }
+
+        @Override
+        String value() {
+            return text;
         }
     }
 

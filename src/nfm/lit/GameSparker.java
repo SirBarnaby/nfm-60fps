@@ -497,63 +497,137 @@ public class GameSparker extends Panel implements Runnable {
     public boolean reverseYRot = false;
 
     /**
-     * A key went down. {@code i} is the key as the game has always numbered
-     * it, AWT 1.0's ({@link GameInput#legacyCode}): the character it types,
-     * or 1000 and up for the arrows, F keys and the like; {@code age} is how
-     * long ago Windows saw it, in nanoseconds. The autopilot, recorded races
-     * and gamepads press keys here too, with no age.
+     * A key went down that the autopilot, a recorded race or a game
+     * controller pressed. {@code key} is the key as the game has always
+     * numbered it, AWT 1.0's ({@link GameInput#legacyCode}): the character it
+     * types, or 1000 and up for the arrows, F keys and the like. These keep
+     * the game's own keys, whatever the keyboard's are.
      */
     void pressKey(int key, boolean alt, long age) {
-        if (SettingsScreen.typeKey(key)) {
+        press(VIRTUAL_KEY | key, key, KeyBindings.legacyAction(key), alt, age);
+    }
+
+    /** A key pressed by the autopilot, a recording or a game controller came up; see {@link #pressKey}. */
+    void releaseKey(int key, long age) {
+        release(VIRTUAL_KEY | key, age);
+    }
+
+    /**
+     * A key went down on the keyboard. {@code keyCode} is the key's place
+     * ({@link java.awt.event.KeyEvent}'s code), which picks the action from
+     * {@link KeyBindings}; {@code legacy} is the key as {@link #pressKey}
+     * numbers it, or -1 for Shift, Ctrl and Alt; {@code age} is how long ago
+     * Windows saw it, in nanoseconds. Out of a race the arrows always move
+     * through the menus, whatever they do in one.
+     */
+    void pressKeyboard(int keyCode, int legacy, boolean alt, long age) {
+        int action;
+        synchronized (inputLock) {
+            int arrow = latching ? KeyBindings.NONE : KeyBindings.menuArrow(keyCode);
+            action = arrow != KeyBindings.NONE ? arrow : KeyBindings.action(keyCode);
+        }
+        press(keyCode, legacy, action, alt, age);
+    }
+
+    /** A key came up on the keyboard; see {@link #pressKeyboard}. */
+    void releaseKeyboard(int keyCode, long age) {
+        release(keyCode, age);
+    }
+
+    /* a key pressed by the autopilot, a recording or a controller, told apart from the keyboard's in keysDown */
+    private static final int VIRTUAL_KEY = 1 << 30;
+    /** The keys down, keyboard and virtual, and the action each does (inputLock). */
+    private final java.util.Map<Integer, Integer> keysDown = new java.util.HashMap<>();
+
+    private void press(int id, int legacy, int action, boolean alt, long age) {
+        if (legacy >= 0 && SettingsScreen.typeKey(legacy)) {
             return; // a size being typed on the settings screen takes every key
         }
-        if (key == 1010) {
+        if (legacy == 1010) {
             PerfOverlay.toggle(); // F3 shows and hides the performance overlay
         }
-        if (key == 1002 || key == 1003 || key == 9) {
-            SettingsScreen.noteTabKey(key == 1002 ? -1 : 1); // Page Up, Page Down, Tab: the settings' tabs
+        if (legacy == 1002 || legacy == 1003 || legacy == 9) {
+            SettingsScreen.noteTabKey(legacy == 1002 ? -1 : 1); // Page Up, Page Down, Tab: the settings' tabs
         }
-        if (!exwist) {
-            synchronized (inputLock) {
-                if (key == 1004)
-                    liveUp = true;
-                if (key == 1005)
-                    liveDown = true;
-                if (key == 1007)
-                    liveRight = true;
-                if (key == 1006)
-                    liveLeft = true;
-                if (key == 32)
-                    liveHandb = true;
-                if (key == 120 || key == 88)
-                    liveLookback = -1;
-                if (key == 122 || key == 90)
-                    liveLookback = 1;
-                boolean fullscreenKey = key == GameInput.F11 || key == 10 && alt;
-                if (fullscreenKey) {
-                    RunApp.toggleFullscreen();
-                } else if (key == 10 || key == 80 || key == 112 || key == 27)
-                    liveEnter = true;
-                if (key == 27)
-                    SettingsScreen.noteEscape(); // the settings screen goes back on it
-                if (key == 118 || key == 86) {
-                    liveView++;
-                    if (liveView == 3)
-                        liveView = 0;
-                }
-                if (!latching) {
-                    applyLiveKeys();
-                }
-                // under the lock too: a run-ahead tick puts the controls back as they were
-                if (key == 77 || key == 109)
-                    u[0].mutem = !u[0].mutem;
-                if (key == 78 || key == 110)
-                    u[0].mutes = !u[0].mutes;
-                if (key == 97 || key == 65)
-                    u[0].arrace = !u[0].arrace;
-                noteKeys(age);
+        if (exwist) {
+            return;
+        }
+        synchronized (inputLock) {
+            boolean fullscreenKey = legacy == GameInput.F11 || legacy == 10 && alt;
+            if (fullscreenKey) {
+                RunApp.toggleFullscreen();
+            } else if (legacy == 10 || legacy == 27) {
+                liveEnter = true;
             }
+            if (legacy == 27) {
+                SettingsScreen.noteEscape(); // the settings screen goes back on it
+            }
+            if (action != KeyBindings.NONE) {
+                keysDown.put(id, action);
+                switch (action) {
+                    case KeyBindings.LOOK_BACK -> liveLookback = 1;
+                    case KeyBindings.LOOK_BACK_OTHER -> liveLookback = -1;
+                    case KeyBindings.CHANGE_VIEW -> liveView = (liveView + 1) % 3;
+                    case KeyBindings.PAUSE -> liveEnter = true;
+                    default -> heldFromKeys();
+                }
+            }
+            if (!latching) {
+                applyLiveKeys();
+            }
+            // under the lock too: a run-ahead tick puts the controls back as they were
+            switch (action) {
+                case KeyBindings.MUSIC -> u[0].mutem = !u[0].mutem;
+                case KeyBindings.SOUNDS -> u[0].mutes = !u[0].mutes;
+                case KeyBindings.ARROW -> u[0].arrace = !u[0].arrace;
+                default -> {
+                    // driving, looking and pausing are done above
+                }
+            }
+            noteKeys(age);
         }
+    }
+
+    private void release(int id, long age) {
+        if (exwist) {
+            return;
+        }
+        synchronized (inputLock) {
+            Integer action = keysDown.remove(id);
+            if (action == null) {
+                return;
+            }
+            if (action == KeyBindings.LOOK_BACK || action == KeyBindings.LOOK_BACK_OTHER) {
+                liveLookback = keysDown.containsValue(KeyBindings.LOOK_BACK) ? 1
+                        : keysDown.containsValue(KeyBindings.LOOK_BACK_OTHER) ? -1 : 0;
+            }
+            heldFromKeys();
+            if (!latching) {
+                applyHeldKeys();
+            }
+            noteKeys(age);
+        }
+    }
+
+    /** Under {@link #inputLock}: the driving keys held, from every key down (two keys can share an action). */
+    private void heldFromKeys() {
+        boolean up = false;
+        boolean down = false;
+        boolean left = false;
+        boolean right = false;
+        boolean handbrake = false;
+        for (int action : keysDown.values()) {
+            up |= action == KeyBindings.ACCELERATE;
+            down |= action == KeyBindings.BRAKE;
+            left |= action == KeyBindings.STEER_LEFT;
+            right |= action == KeyBindings.STEER_RIGHT;
+            handbrake |= action == KeyBindings.HANDBRAKE;
+        }
+        liveUp = up;
+        liveDown = down;
+        liveLeft = left;
+        liveRight = right;
+        liveHandb = handbrake;
     }
 
     /* for the profile's key-to-screen readout: when the driving keys or the camera last changed (inputLock) */
@@ -659,6 +733,7 @@ public class GameSparker extends Panel implements Runnable {
                 liveHandb = false;
                 liveLookback = 0;
                 liveEnter = false;
+                keysDown.clear();
                 u[0].falseo();
             }
             setCursor(new Cursor(0));
@@ -999,30 +1074,6 @@ public class GameSparker extends Panel implements Runnable {
     @Override
     public void update(Graphics g) {
         paint(g);
-    }
-
-    /** A key came up; see {@link #pressKey}. */
-    void releaseKey(int key, long age) {
-        if (!exwist) {
-            synchronized (inputLock) {
-                if (key == 1004)
-                    liveUp = false;
-                if (key == 1005)
-                    liveDown = false;
-                if (key == 1007)
-                    liveRight = false;
-                if (key == 1006)
-                    liveLeft = false;
-                if (key == 32)
-                    liveHandb = false;
-                if (key == 120 || key == 88 || key == 122 || key == 90)
-                    liveLookback = 0;
-                if (!latching) {
-                    applyHeldKeys();
-                }
-                noteKeys(age);
-            }
-        }
     }
 
     public void start() {
@@ -3623,6 +3674,28 @@ public class GameSparker extends Panel implements Runnable {
                 + ", HDR audio " + (range == 0 ? "off" : range + " dB");
     }
 
+    /* each action's keys, one cookie each: "keybind01" on (never "keybind1": cookies are matched in part) */
+    private static String keyCookie(int action) {
+        return String.format("keybind%02d", action + 1);
+    }
+
+    /** The keys as saved; hidden runs keep the game's own. */
+    private void loadKeys() {
+        int[] saved = new int[KeyBindings.COUNT];
+        for (int a = 0; a < saved.length; a++) {
+            saved[a] = runsHidden() ? -1 : readcookie(keyCookie(a));
+        }
+        KeyBindings.load(saved);
+    }
+
+    private void saveKeysIfChanged() {
+        if (KeyBindings.takeChanged()) {
+            for (int a = 0; a < KeyBindings.COUNT; a++) {
+                savecookie(keyCookie(a), String.valueOf(KeyBindings.saved(a)));
+            }
+        }
+    }
+
     /** The saved switches (each saved as 1 on, 2 off), or all on in hidden runs; HDR audio off unless saved. */
     private void loadAudioEffects() {
         boolean hidden = runsHidden();
@@ -4676,7 +4749,7 @@ public class GameSparker extends Panel implements Runnable {
             }
             if (phase == Phase.SETTINGS && (settingsStep == 1 || settingsStep == 4) && now - phaseSettledAt >= 700L) {
                 // a few settings chosen in turn, each shown for a moment (the main menu's, then the pause menu's)
-                String[] shown = settingsStep == 1 ? new String[] {"Supersampling", "Resolution", "Run-ahead", "Video memory"}
+                String[] shown = settingsStep == 1 ? new String[] {"Supersampling", "Resolution", "Accelerate", "Video memory"}
                         : new String[] {"Sound system", "HDR audio"};
                 int at = settingsDowns / 4;
                 if (at >= shown.length) {
@@ -4933,6 +5006,7 @@ public class GameSparker extends Panel implements Runnable {
         loadBatteryFps();
         loadVsync();
         loadAudioEffects();
+        loadKeys();
         loadRunAhead();
         loadScaleToWindow();
         loadRenderer();
@@ -5022,6 +5096,7 @@ public class GameSparker extends Panel implements Runnable {
                 saveFpsLimitIfChanged();
                 saveBatteryFpsIfChanged();
                 saveVsyncIfChanged();
+                saveKeysIfChanged();
                 saveAudioEffectsIfChanged();
                 fitUiResolution(now);
                 ticksRun++;

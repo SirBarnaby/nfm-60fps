@@ -81,17 +81,25 @@ final class GameInput implements KeyListener, MouseListener, MouseMotionListener
 
     @Override
     public void keyPressed(KeyEvent e) {
+        int keyCode = e.getKeyCode();
+        if (SettingsScreen.captureKey(keyCode)) {
+            e.consume();
+            return; // a key being chosen on the settings screen
+        }
         int code = legacyCode(e);
-        if (code >= 0) {
-            game.pressKey(code, e.isAltDown(), age(e));
+        if (code >= 0 || KeyBindings.action(keyCode) != KeyBindings.NONE) {
+            game.pressKeyboard(keyCode, code, e.isAltDown(), age(e));
+            if (code < 0) {
+                e.consume(); // Alt on its own, given to an action, must not open the window's menu
+            }
         }
     }
 
     @Override
     public void keyReleased(KeyEvent e) {
-        int code = legacyCode(e);
-        if (code >= 0) {
-            game.releaseKey(code, age(e));
+        game.releaseKeyboard(e.getKeyCode(), age(e));
+        if (e.getKeyCode() == KeyEvent.VK_ALT && KeyBindings.action(KeyEvent.VK_ALT) != KeyBindings.NONE) {
+            e.consume();
         }
     }
 
