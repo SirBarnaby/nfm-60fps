@@ -149,7 +149,7 @@ thread pinning, large pages, GraalVM) are left out.
 | Ghost cars, time trial | ❌ | you said not yet |
 | Online play | ❌ | |
 | Split-screen | ❌ | |
-| Widescreen, 4K, MSAA, HDR | ✅ | see above |
+| Widescreen, 4K, MSAA, HDR | ✅ | true widescreen: the picture takes the window's shape from 5:4 to 32:9 with no bars, races unchanged (77b1adb, AGENTS.md invariant 9); setting Picture shape, console `shape` |
 | Shadows, bloom, motion blur | ❌ | |
 | Weather and time of day | ❌ | |
 | GPU particles | ❌ | |
@@ -174,3 +174,13 @@ thread pinning, large pages, GraalVM) are left out.
 | Mods folder with load order and reload | ✅ | eaf584d, `mods\README.txt`, console `mods reload` |
 | Event hooks | ✅ | `RaceEvents.java` (crash, skid, repair, checkpoints; no lap or race-end yet) |
 | AGENTS.md | ✅ | c3122a6 |
+
+## v1.0
+
+Tagged `v1.0` on `staging`, 19 Nov 2026: true widescreen, the HUD sent to the
+graphics card by changed rows only (about 147 MB down to 1–2 MB every 2 s),
+and the cleanup after them. The 20 recorded races match tick for tick, with
+and without `-Rollback 50` and in 21:9 and 5:4 windows; the 80 golden frames
+are the same. It is the last version whose races are the original's: what
+comes after (tick rate, handling, deformable stages) is planned in
+`AFTER-1.0.md`.

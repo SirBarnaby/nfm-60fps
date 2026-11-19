@@ -59,6 +59,19 @@ Before a release or a large change, also run:
    its hidden-run default must be the one the golden frames were made with.
 8. **Never take over the user's mouse, keyboard or screen** to test. Use the
    hidden runs above; `nfm.autotest` saves screenshots of every phase.
+9. **The race is placed in the game's own 1280x720 view.** The picture takes
+   the window's shape (`GameFacts.pictureShape`), but the race camera and what
+   is on screen for the race (`ContO.dist`, which repair hoops and chip
+   clearing read) are worked out at 1280x720, so a race plays the same in any
+   window. Only drawing looks through the shown shape, from the same place:
+   wrap it in `try (var _ = Medium.shownView())`. Lay out screens from
+   `GameFacts.screenWidth/screenHeight` and `marginX/marginY`, never from a
+   fixed 1280x720. Check with `JAVA_TOOL_OPTIONS=-Dnfm.window=1720x720` and
+   `verify-races.ps1 -NoGolden`.
+
+v1.0 (tag `v1.0`) is the last version whose races are the original's. A
+higher tick rate, a new handling model or deformable stages go in as a new
+ruleset beside the classic one, never in place of it: see `AFTER-1.0.md`.
 
 ## How things are done here
 
