@@ -4859,6 +4859,20 @@ public class GameSparker extends Panel implements Runnable {
         thread.start();
     }
 
+    /**
+     * Enter, pressed the way the keyboard presses it: in a race it is read at
+     * the start of the next tick, so a run-ahead tick in between cannot take
+     * it (the run-ahead puts the race back, but not a consumed press).
+     */
+    private void pressEnter() {
+        synchronized (inputLock) {
+            liveEnter = true;
+            if (!latching) {
+                applyLiveKeys();
+            }
+        }
+    }
+
     private void runAutoTest(File directory) {
         System.out.println("[autotest] screenshots -> " + directory.getAbsolutePath());
         final long budgetMillis = 150_000L;
@@ -4917,13 +4931,13 @@ public class GameSparker extends Panel implements Runnable {
              */
             if (phase == Phase.MAINMENU && settingsStep == 0 && now - phaseSettledAt >= 600L) {
                 ui.opselect = 3;
-                u[0].enter = true;
+                pressEnter();
                 settingsStep = 1;
                 System.out.println("[autotest] opening the settings from the main menu");
             }
             if (phase == Phase.PAUSEMENU && settingsStep == 3 && now - phaseSettledAt >= 600L) {
                 ui.opselect = 3;
-                u[0].enter = true;
+                pressEnter();
                 settingsStep = 4;
                 System.out.println("[autotest] opening the settings from the pause menu");
             }
@@ -4946,7 +4960,7 @@ public class GameSparker extends Panel implements Runnable {
                 }
             } else if (phase == Phase.SETTINGS && (settingsStep == 2 || settingsStep == 5)) {
                 SettingsScreen.noteEscape();
-                u[0].enter = true;
+                pressEnter();
                 settingsStep++;
                 System.out.println("[autotest] back from the settings");
             }
@@ -4957,7 +4971,7 @@ public class GameSparker extends Panel implements Runnable {
             boolean menu = phase == Phase.MAINMENU && settingsStep == 3 || phase == Phase.CARSELECT
                     || phase == Phase.STAGESELECT || phase == Phase.PREGAME;
             if (menu && now - lastMenuPress > 700L) {
-                u[0].enter = true;
+                pressEnter();
                 lastMenuPress = now;
             }
 
@@ -4985,7 +4999,7 @@ public class GameSparker extends Panel implements Runnable {
                         u[0].up = false;
                         u[0].right = false;
                         u[0].left = false;
-                        u[0].enter = true;
+                        pressEnter();
                         pauseRequested = true;
                         System.out.println("[autotest] requesting pause");
                     }
@@ -5051,13 +5065,13 @@ public class GameSparker extends Panel implements Runnable {
                 if (!replayAttempted) {
                     // Select INSTANT REPLAY (second entry) without a real keyboard.
                     ui.opselect = 1;
-                    u[0].enter = true;
+                    pressEnter();
                     replayAttempted = true;
                     System.out.println("[autotest] requesting instant replay");
                 } else if (!resumed) {
                     // Either the replay finished or there was not enough data.
                     ui.opselect = 0;
-                    u[0].enter = true;
+                    pressEnter();
                     resumed = true;
                     System.out.println("[autotest] resuming race (replay seen: " + replaySeen + ")");
                 }
