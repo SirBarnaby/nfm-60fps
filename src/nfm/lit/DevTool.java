@@ -115,6 +115,27 @@ public class DevTool {
         frame.setVisible(true);
     }
 
+    /**
+     * A device named on the console: its number in "sound devices", part of
+     * its name, or the word for none (default, off), which gives null.
+     */
+    private static String deviceArg(String arg, String none) {
+        if (arg.equalsIgnoreCase(none)) {
+            return null;
+        }
+        java.util.List<String> devices = GameSparker.soundDevices();
+        try {
+            int n = Integer.parseInt(arg);
+            if (n >= 1 && n <= devices.size()) {
+                return devices.get(n - 1);
+            }
+        } catch (NumberFormatException ex) {
+            // a name, or part of one
+        }
+        String found = nfm.lit.audio.Sound3D.match(arg, devices);
+        return found != null ? found : arg;
+    }
+
     public void print(String s) {
         textArea.append(s + "\n");
     }
@@ -533,13 +554,34 @@ public class DevTool {
                         && args[1].toLowerCase(java.util.Locale.ROOT).matches("off|0|6|12|18|24")) {
                     GameSparker.setHdrAudio(args[1].equalsIgnoreCase("off") ? 0 : Integer.parseInt(args[1]));
                     print("Sound: " + GameSparker.describeAudioEffects() + " (saved).");
+                } else if (args.length == 1 && args[0].equalsIgnoreCase("devices")) {
+                    java.util.List<String> devices = GameSparker.soundDevices();
+                    StringBuilder b = new StringBuilder(devices.isEmpty() ? "No output devices listed." : "Output devices:");
+                    for (int i = 0; i < devices.size(); i++) {
+                        b.append("\n ").append(i + 1).append(". ").append(devices.get(i));
+                    }
+                    print(b + "\n" + GameSparker.describeSpeakers() + ".");
+                } else if (args.length >= 2 && (args[0].equalsIgnoreCase("speaker") || args[0].equalsIgnoreCase("second"))
+                        && !(args[0].equalsIgnoreCase("second") && args[1].equalsIgnoreCase("plays"))) {
+                    String name = deviceArg(args[1], args[0].equalsIgnoreCase("speaker") ? "default" : "off");
+                    if (args[0].equalsIgnoreCase("speaker")) {
+                        GameSparker.setSpeaker(name);
+                    } else {
+                        GameSparker.setSecondSpeaker(name);
+                    }
+                    print("Sound: " + GameSparker.describeSpeakers() + " (saved).");
+                } else if (args.length == 3 && args[0].equalsIgnoreCase("second") && args[1].equalsIgnoreCase("plays")
+                        && args[2].toLowerCase(java.util.Locale.ROOT).matches("all|events")) {
+                    GameSparker.setSecondPlaysClicks(args[2].equalsIgnoreCase("all"));
+                    print("Sound: " + GameSparker.describeSpeakers() + " (saved).");
                 } else if (on != null) {
                     GameSparker.setNewSound(on);
                     print("Sound set to " + (on ? "3d" : "classic") + " (saved).");
                 } else {
                     print("Sound is " + GameSparker.describeSound() + "; " + GameSparker.describeAudioEffects()
                             + ".\nUsage: sound <3d|classic>, sound mono <on|off>, sound <occlusion|paths|reverb> <on|off>,"
-                            + " sound hdr <off|6|12|18|24>");
+                            + " sound hdr <off|6|12|18|24>, sound devices, sound speaker <default|n>,"
+                            + " sound second <off|n>, sound second plays <all|events>");
                 }
                 break;
             }
@@ -659,7 +701,7 @@ public class DevTool {
         commandDescriptions.put("msaa", "Smooths the edges of the polygons in races drawn on the graphics card by taking 2, 4, 8 or 16 samples per pixel (multisampling, MSAA); off keeps the game's own hard edges. A card that cannot do as many does the most it can. Usage: msaa <off|2|4|8|16>");
         commandDescriptions.put("volume", "The 3D sound's volumes, in percent: master, engines, effects (crashes, skids, the wreck, the repair, the wind), music and interface (countdown, checkpoints, menus). Classic plays at its own levels. Usage: volume <bus> <0-100>");
         commandDescriptions.put("music", "In 3d sound the stage and menu music plays through libopenmpt; separation sets how far apart its left and right are, 0 (mono) to 200, 100 being an Amiga's hard left and right (default 70). Usage: music separation <0-200>");
-        commandDescriptions.put("sound", "3d (the default) hears every car where it is, with smooth engines, HRTF on headphones, Doppler and distance; classic plays the game's own sound exactly as before; mono mixes the 3D sound to one channel, the same in both ears. Usage: sound <3d|classic>, sound mono <on|off>, sound <occlusion|paths|reverb> <on|off>, sound hdr <off|6|12|18|24>. occlusion muffles a car behind the track; paths brings it round a crest or the end of a wall; reverb lets half-pipes, walls and canyons ring on. hdr: HDR audio, the everyday sounds that many dB below full scale so crashes and a wreck stand out.");
+        commandDescriptions.put("sound", "3d (the default) hears every car where it is, with smooth engines, HRTF on headphones, Doppler and distance; classic plays the game's own sound exactly as before; mono mixes the 3D sound to one channel, the same in both ears. Usage: sound <3d|classic>, sound mono <on|off>, sound <occlusion|paths|reverb> <on|off>, sound hdr <off|6|12|18|24>. occlusion muffles a car behind the track; paths brings it round a crest or the end of a wall; reverb lets half-pipes, walls and canyons ring on. hdr: HDR audio, the everyday sounds that many dB below full scale so crashes and a wreck stand out. sound devices lists the output devices; sound speaker chooses where the game plays (default follows Windows); sound second chooses a second device for race events and clicks (off for none), by its number in the list or part of its name; sound second plays all|events.");
         commandDescriptions.put("mods", "Lists the mods in the mods folder in the order they apply; a mod is a folder that mirrors data (models, images and sounds for the .radq archives, stages and music as they are) and replaces the game's files of the same name. mods/load-order.txt sets the order (a later mod wins, -name turns one off). mods reload reads the folder again: models at the main menu, stages and music with the next race, images and sounds at the next start. Usage: mods, mods reload");
         commandDescriptions.put("ssaa", "Ultra quality for races drawn on the graphics card: draws the scene with 2, 4 or 8 times the pixels it is shown with (4x: twice the width and height, so 4K on a 1080p screen) and averages them down, which smooths every edge and outline and stops thin lines shimmering. Works with msaa. With dynres on, it gives way first when the card cannot keep up. Off by default. Usage: ssaa <off|2x|4x|8x>");
         commandDescriptions.put("dynres", "When the graphics card cannot draw a race at the window's full size in time for the next frame, draws it smaller (down to the given percent of the window, never below the game's own 1280x720) and scales it up smoothly; the HUD stays sharp. Steps down at once and back up slowly, so the picture does not pump. On by default, down to 50%. Usage: dynres <on|off|25-100>");

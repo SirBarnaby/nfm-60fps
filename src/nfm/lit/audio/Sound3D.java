@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.locks.LockSupport;
 import javax.sound.sampled.AudioFormat;
@@ -31,6 +32,8 @@ import org.lwjgl.openal.AL11;
 import org.lwjgl.openal.ALC;
 import org.lwjgl.openal.ALCCapabilities;
 import org.lwjgl.openal.ALCapabilities;
+import org.lwjgl.openal.ALUtil;
+import org.lwjgl.openal.EnumerateAllExt;
 import org.lwjgl.openal.EXTDisconnect;
 import org.lwjgl.openal.EXTEfx;
 import org.lwjgl.openal.EXTFloat32;
@@ -71,6 +74,12 @@ import org.lwjgl.system.MemoryUtil;
  * <p>
  * Nothing here touches the race: it only reads what the game publishes, and
  * its own random choices (a crash's pitch) come from its own generator.
+ * <p>
+ * A second speaker, when one is chosen, takes the race's announcements off
+ * the main mix, as a PS5 controller's speaker does: the countdown,
+ * checkpoints, repairs, power-ups, wrecking a car, and the menus' clicks.
+ * It is another device with a context of its own, driven by the same sound
+ * thread, which makes each device's context current in turn.
  */
 public final class Sound3D implements Runnable {
 
@@ -188,6 +197,8 @@ public final class Sound3D implements Runnable {
     static final int MUSIC_PAUSE = 7;
     static final int MUSIC_RESUME = 8;
     static final int MUSIC_UNLOAD = 9;
+    /** A sound that is not the original's, for the second speaker only (see {@link #event}). */
+    private static final int EVENT = 10;
 
     private final ConcurrentLinkedQueue<Command> commands = new ConcurrentLinkedQueue<>();
     private volatile Moment latest;
@@ -355,6 +366,142 @@ public final class Sound3D implements Runnable {
     /** What the new sound is doing, in words: the device, HRTF, or why it is off. */
     public static String status() {
         return status;
+    }
+
+    /* ------------------------------------------------------- the speakers */
+
+    /** The race's announcements, which a second speaker takes off the main mix. */
+    private static final Set<String> ANNOUNCEMENTS = Set.of("three", "two", "one", "go", "checkpoint", "carfixed",
+            "powerup");
+    /** The menus' click, which a second speaker takes too unless it plays race events only. */
+    private static final String CLICK = "tick";
+    /** How OpenAL Soft starts each device's name, which says nothing to the player. */
+    private static final String DEVICE_PREFIX = "OpenAL Soft on ";
+
+    /** The device the game plays on, by name; null follows Windows' default. */
+    private static volatile String speaker;
+    /** The second speaker, by name; null for none. "render" mixes it into -Dnfm.sound.render2 (tests). */
+    private static volatile String secondSpeaker;
+    /** The second speaker takes the menus' clicks as well as the race's events. */
+    private static volatile boolean secondClicks = true;
+    private static volatile int speakerVersion;
+    private static volatile String secondStatus = "off";
+    /** A fake list of devices for the hidden device test (-Dnfm.sound.devicetest). */
+    private static volatile List<String> fakeDevices;
+
+    /**
+     * The output devices Windows has, by the names the player knows them by;
+     * empty where OpenAL cannot list them. From any thread.
+     */
+    public static List<String> devices() {
+        List<String> fake = fakeDevices;
+        if (fake != null) {
+            return fake;
+        }
+        if (SoundManager.isSilenced()) {
+            return List.of(); // a hidden run never looks at the player's devices
+        }
+        try {
+            List<String> raw = ALC.createCapabilities(0L).ALC_ENUMERATE_ALL_EXT
+                    ? ALUtil.getStringList(0L, EnumerateAllExt.ALC_ALL_DEVICES_SPECIFIER)
+                    : ALUtil.getStringList(0L, ALC_DEVICE_SPECIFIER);
+            List<String> names = new ArrayList<>();
+            if (raw != null) {
+                for (String r : raw) {
+                    names.add(displayName(r));
+                }
+            }
+            return names;
+        } catch (RuntimeException | LinkageError ex) {
+            return List.of();
+        }
+    }
+
+    /** For the hidden device test: the devices the game is to believe it has. */
+    public static void fakeDevices(List<String> names) {
+        fakeDevices = names == null ? null : List.copyOf(names);
+        speakerVersion++;
+    }
+
+    private static String displayName(String specifier) {
+        return specifier != null && specifier.startsWith(DEVICE_PREFIX)
+                ? specifier.substring(DEVICE_PREFIX.length()) : specifier;
+    }
+
+    /**
+     * The device among {@code names} that a saved or typed name means: the
+     * same name, else the first that contains it (ignoring case), else null.
+     */
+    public static String match(String wanted, List<String> names) {
+        if (wanted == null || wanted.isEmpty()) {
+            return null;
+        }
+        for (String n : names) {
+            if (n.equals(wanted)) {
+                return n;
+            }
+        }
+        String w = wanted.toLowerCase(Locale.ROOT);
+        for (String n : names) {
+            if (n.toLowerCase(Locale.ROOT).contains(w)) {
+                return n;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Where the game plays (null for Windows' default), the second speaker
+     * (null for none) and whether it takes the clicks too; the sound moves
+     * within a hundredth of a second, without stopping anything.
+     */
+    public static void setSpeakers(String main, String second, boolean clicks) {
+        speaker = main == null || main.isEmpty() ? null : main;
+        secondSpeaker = second == null || second.isEmpty() ? null : second;
+        secondClicks = clicks;
+        speakerVersion++;
+        Sound3D sound = instance;
+        if (sound != null && sound.thread != null) {
+            LockSupport.unpark(sound.thread);
+        }
+    }
+
+    public static String speaker() {
+        return speaker;
+    }
+
+    public static String secondSpeaker() {
+        return secondSpeaker;
+    }
+
+    public static boolean secondClicks() {
+        return secondClicks;
+    }
+
+    /** What the second speaker is doing, in words: off, the device, or why events play on the main one. */
+    public static String secondStatus() {
+        return secondStatus;
+    }
+
+    /** True while a second speaker is open and taking the announcements. */
+    public static boolean secondPlaying() {
+        Sound3D sound = instance;
+        return sound != null && sound.second != null;
+    }
+
+    /**
+     * A sound that is not the original game's, heard only on the second
+     * speaker: wrecking a car, a click where the game never clicked. Never
+     * logged and never heard without a second speaker, so the main mix, and
+     * every recorded race's sound, stay as they were.
+     *
+     * @param click a menu click, which the second speaker may be set to leave out
+     */
+    public static void event(String clip, boolean click) {
+        Sound3D sound = instance;
+        if (sound != null && secondSpeaker != null && !SoundManager.isDiscarding() && (!click || secondClicks)) {
+            sound.post(new Command(EVENT, clip, -1, 0F, 0F));
+        }
     }
 
     /**
@@ -543,10 +690,8 @@ public final class Sound3D implements Runnable {
     private float enclosedApplied = -1F;
     private Moment previous;
     private Moment current;
-    private ShortBuffer rendered;
-    private RandomAccessFile renderFile;
-    private long renderedSamples;
-    private long renderStart;
+    /** The test file the main mix renders into, or null when it plays on a device. */
+    private WavOut wav;
 
     @Override
     public void run() {
@@ -572,6 +717,7 @@ public final class Sound3D implements Runnable {
                 if (reopenWanted) {
                     reopen();
                 }
+                applySpeakers();
                 if (deferred) {
                     SOFTDeferredUpdates.alDeferUpdatesSOFT();
                 }
@@ -582,7 +728,7 @@ public final class Sound3D implements Runnable {
                 if (deferred) {
                     SOFTDeferredUpdates.alProcessUpdatesSOFT();
                 }
-                if (renderFile != null) {
+                if (wav != null) {
                     render(now);
                 } else {
                     checkConnected(now);
@@ -651,6 +797,9 @@ public final class Sound3D implements Runnable {
                 }
                 clock = Math.min(end, clock + UPDATE_NANOS);
                 render(clock);
+                if (second != null) {
+                    second.render(clock);
+                }
             }
         }
     }
@@ -660,7 +809,13 @@ public final class Sound3D implements Runnable {
         if (renderTo != null) {
             device = SOFTLoopback.alcLoopbackOpenDeviceSOFT((ByteBuffer) null);
         } else {
-            device = alcOpenDevice((ByteBuffer) null);
+            String named = specifier(speaker);
+            device = named == null ? 0L : alcOpenDevice(named);
+            mainOn = named == null ? null : speaker;
+            if (device == 0L) {
+                device = alcOpenDevice((ByteBuffer) null);
+                mainOn = null;
+            }
         }
         if (device == 0L) {
             status = "no sound device";
@@ -677,6 +832,7 @@ public final class Sound3D implements Runnable {
             return false;
         }
         ALCapabilities caps = AL.createCapabilities(deviceCaps);
+        mainCaps = caps;
         efx = deviceCaps.ALC_EXT_EFX;
         deferred = caps.AL_SOFT_deferred_updates;
         musicFloat = caps.AL_EXT_FLOAT32;
@@ -692,8 +848,9 @@ public final class Sound3D implements Runnable {
             openRenderFile();
         } else if (deviceCaps.ALC_SOFT_system_events && deviceCaps.ALC_SOFT_reopen_device) {
             deviceEvents = SOFTSystemEventProc.create((type, deviceType, dev, length, message, user) -> {
+                // only while the game follows Windows' default: a chosen device stays chosen
                 if (type == SOFTSystemEvents.ALC_EVENT_TYPE_DEFAULT_DEVICE_CHANGED_SOFT
-                        && deviceType == SOFTSystemEvents.ALC_PLAYBACK_DEVICE_SOFT) {
+                        && deviceType == SOFTSystemEvents.ALC_PLAYBACK_DEVICE_SOFT && mainOn == null) {
                     reopenWanted = true;
                     LockSupport.unpark(thread);
                 }
@@ -704,6 +861,8 @@ public final class Sound3D implements Runnable {
         }
         describeDevice();
         HLogger.info("3D sound: " + status);
+        speakersApplied = speakerVersion;
+        openSecond();
         return true;
     }
 
@@ -738,8 +897,9 @@ public final class Sound3D implements Runnable {
     private void describeDevice() {
         String name = renderTo != null ? "a test file" : alcGetString(device, ALC_DEVICE_SPECIFIER);
         int hrtf = alcGetInteger(device, SOFTHRTF.ALC_HRTF_SOFT);
-        status = "on, " + (name == null ? "the default device" : name) + (hrtf == ALC_TRUE ? ", HRTF" : "")
-                + (monoOut ? ", mono" : "");
+        status = "on, " + (name == null ? "the default device" : displayName(name)) + (hrtf == ALC_TRUE ? ", HRTF" : "")
+                + (monoOut ? ", mono" : "")
+                + (renderTo == null && speaker != null && mainOn == null ? ", " + speaker + " not connected" : "");
         makeup = hrtf == ALC_TRUE ? HRTF_MAKEUP : PANNED_MAKEUP;
         alListenerf(AL_GAIN, makeup * bus[BUS_MASTER]);
         flatGain = 1F / makeup;
@@ -765,6 +925,9 @@ public final class Sound3D implements Runnable {
         }
         alListenerf(AL_GAIN, makeup * bus[BUS_MASTER]);
         applyNamedGains();
+        if (second != null) {
+            second.applyGains();
+        }
         for (Voice v : effects) {
             if (v != null) {
                 alSourcef(v.source, AL_GAIN, v.gain * bus[BUS_EFFECTS]);
@@ -787,30 +950,358 @@ public final class Sound3D implements Runnable {
     /** The gain of a clip heard as it is, undoing the listener's makeup. */
     private float flatGain = 1F;
 
-    /** Windows' default output changed: move to it without stopping anything. */
+    /**
+     * Moves to the chosen speaker, or to Windows' default when none is
+     * chosen or it is not connected, without stopping anything.
+     */
     private void reopen() {
         reopenWanted = false;
         ALCCapabilities deviceCaps = ALC.createCapabilities(device);
-        if (SOFTReopenDevice.alcReopenDeviceSOFT(device, (ByteBuffer) null, contextAttributes(deviceCaps))) {
+        String named = specifier(speaker);
+        boolean moved = named != null
+                && SOFTReopenDevice.alcReopenDeviceSOFT(device, named, contextAttributes(deviceCaps));
+        if (moved) {
+            mainOn = speaker;
+        } else {
+            moved = SOFTReopenDevice.alcReopenDeviceSOFT(device, (ByteBuffer) null, contextAttributes(deviceCaps));
+            if (moved) {
+                mainOn = null;
+            }
+        }
+        if (moved) {
             describeDevice();
-            HLogger.info("3D sound moved to the default device: " + status);
+            HLogger.info("3D sound moved: " + status);
+        }
+    }
+
+    /** The full OpenAL name of the device a player's name means, or null when it is not there. */
+    private static String specifier(String wanted) {
+        if (wanted == null || fakeDevices != null) {
+            return null; // the device test only pretends
+        }
+        try {
+            List<String> raw = ALC.createCapabilities(0L).ALC_ENUMERATE_ALL_EXT
+                    ? ALUtil.getStringList(0L, EnumerateAllExt.ALC_ALL_DEVICES_SPECIFIER)
+                    : ALUtil.getStringList(0L, ALC_DEVICE_SPECIFIER);
+            if (raw == null) {
+                return null;
+            }
+            List<String> names = new ArrayList<>();
+            for (String r : raw) {
+                names.add(displayName(r));
+            }
+            String m = match(wanted, names);
+            return m == null ? null : raw.get(names.indexOf(m));
+        } catch (RuntimeException | LinkageError ex) {
+            return null;
         }
     }
 
     private long connectedCheckedAt;
 
-    /** A device that was unplugged is reopened on the default one. */
+    /**
+     * Once a second: a device that was unplugged is reopened on the default
+     * one, a chosen speaker that is plugged back in is moved to again, and
+     * the second speaker is let go of when unplugged and opened when back.
+     */
     private void checkConnected(long now) {
         if (now - connectedCheckedAt < 1_000_000_000L) {
             return;
         }
         connectedCheckedAt = now;
-        if (alcGetInteger(device, EXTDisconnect.ALC_CONNECTED) == ALC_FALSE) {
+        if (alcGetInteger(device, EXTDisconnect.ALC_CONNECTED) == ALC_FALSE
+                || speaker != null && mainOn == null && specifier(speaker) != null) {
             reopen();
+        }
+        if (second != null && !second.connected()) {
+            HLogger.info("Second speaker " + second.name + " was unplugged; events play on the main speaker");
+            closeSecond();
+        }
+        if (second == null && secondSpeaker != null) {
+            openSecond();
+        }
+    }
+
+    /** Takes a changed choice of speakers, on the sound thread. */
+    private void applySpeakers() {
+        int version = speakerVersion;
+        if (version == speakersApplied) {
+            return;
+        }
+        speakersApplied = version;
+        if (renderTo == null && !java.util.Objects.equals(speaker, mainOn)) {
+            reopen();
+        }
+        String wanted = secondSpeaker;
+        if (second != null && (wanted == null || !second.wanted.equals(wanted))) {
+            closeSecond();
+        }
+        if (second == null) {
+            openSecond();
+        }
+        if (second != null) {
+            second.applyGains();
+        }
+    }
+
+    /* ----------------------------------------------------- second speaker */
+
+    private ALCapabilities mainCaps;
+    /** The chosen speaker the main device is on now; null when on Windows' default. */
+    private volatile String mainOn;
+    private int speakersApplied;
+    /** The second speaker while it is open; null otherwise, when everything plays on the main one. */
+    private volatile SecondSpeaker second;
+    private long secondTriedAt;
+
+    /** Opens the chosen second speaker, if there is one and it is not the main speaker. */
+    private void openSecond() {
+        String wanted = secondSpeaker;
+        if (wanted == null) {
+            secondStatus = "off";
+            return;
+        }
+        boolean test = wanted.equals("render");
+        if (test && System.getProperty("nfm.sound.render2") == null) {
+            secondStatus = "off";
+            return;
+        }
+        if (!test && renderTo != null) {
+            secondStatus = "off"; // a test render never opens a real device
+            return;
+        }
+        if (fakeDevices != null) {
+            String found = match(wanted, fakeDevices);
+            String main = speaker == null ? fakeDevices.isEmpty() ? null : fakeDevices.get(0) : match(speaker, fakeDevices);
+            secondStatus = found == null ? "not connected" : found.equals(main) ? "same" : "on, " + found;
+            HLogger.info("[speakers] second " + wanted + ": " + secondStatus);
+            return;
+        }
+        String named = test ? null : specifier(wanted);
+        if (!test && named == null) {
+            secondStatus = "not connected";
+            return;
+        }
+        if (!test) {
+            String mainName = alcGetString(device, EnumerateAllExt.ALC_ALL_DEVICES_SPECIFIER);
+            if (named.equals(mainName)) {
+                secondStatus = "same";
+                return;
+            }
+        }
+        SecondSpeaker s = new SecondSpeaker(wanted, displayName(named));
+        try {
+            if (s.open(named, test)) {
+                second = s;
+                secondStatus = "on, " + (test ? "a test file" : s.name);
+                HLogger.info("Second speaker: " + secondStatus);
+            } else {
+                secondStatus = "not connected";
+            }
+        } finally {
+            useMain();
+        }
+    }
+
+    private void closeSecond() {
+        if (second != null) {
+            second.close();
+            useMain();
+            second = null;
+        }
+        secondStatus = secondSpeaker == null ? "off" : "not connected";
+    }
+
+    /** Makes the main device's context the one OpenAL calls go to again. */
+    private void useMain() {
+        if (context != 0L) {
+            alcMakeContextCurrent(context);
+            if (mainCaps != null) {
+                AL.setCurrentProcess(mainCaps);
+            }
+        }
+    }
+
+    /**
+     * Whether a clip the game plays by name goes to the second speaker
+     * instead of the main mix: the announcements, and the clicks unless it
+     * plays race events only.
+     */
+    private boolean toSecond(String name) {
+        return second != null && (ANNOUNCEMENTS.contains(name) || secondClicks && name.equals(CLICK));
+    }
+
+    /**
+     * The second speaker: a device and context of its own, flat stereo with
+     * no HRTF (a controller's or a desk speaker), one source per clip.
+     */
+    private final class SecondSpeaker {
+        /** The name it was chosen by, and the device's name. */
+        final String wanted;
+        final String name;
+        private long dev;
+        private long ctx;
+        private ALCapabilities caps;
+        private final Map<String, Integer> clipBuffers = new HashMap<>();
+        private final Map<String, Integer> sources = new HashMap<>();
+        private WavOut out;
+
+        SecondSpeaker(String wanted, String name) {
+            this.wanted = wanted;
+            this.name = name;
+        }
+
+        boolean open(String specifier, boolean test) {
+            dev = test ? SOFTLoopback.alcLoopbackOpenDeviceSOFT((ByteBuffer) null) : alcOpenDevice(specifier);
+            if (dev == 0L) {
+                return false;
+            }
+            ALCCapabilities dc = ALC.createCapabilities(dev);
+            List<Integer> a = new ArrayList<>();
+            if (dc.ALC_SOFT_HRTF) {
+                a.add(SOFTHRTF.ALC_HRTF_SOFT);
+                a.add(ALC_FALSE);
+            }
+            if (dc.ALC_SOFT_output_mode && !test) {
+                a.add(SOFTOutputMode.ALC_OUTPUT_MODE_SOFT);
+                a.add(SOFTOutputMode.ALC_STEREO_BASIC_SOFT);
+            }
+            if (dc.ALC_SOFT_output_limiter) {
+                a.add(SOFTOutputLimiter.ALC_OUTPUT_LIMITER_SOFT);
+                a.add(ALC_TRUE);
+            }
+            if (test) {
+                a.add(SOFTLoopback.ALC_FORMAT_CHANNELS_SOFT);
+                a.add(SOFTLoopback.ALC_STEREO_SOFT);
+                a.add(SOFTLoopback.ALC_FORMAT_TYPE_SOFT);
+                a.add(SOFTLoopback.ALC_SHORT_SOFT);
+                a.add(ALC_FREQUENCY);
+                a.add(RENDER_RATE);
+            }
+            a.add(0);
+            ctx = alcCreateContext(dev, a.stream().mapToInt(Integer::intValue).toArray());
+            if (ctx == 0L || !alcMakeContextCurrent(ctx)) {
+                close();
+                return false;
+            }
+            caps = AL.createCapabilities(dc);
+            AL.setCurrentProcess(caps);
+            if (test) {
+                try {
+                    out = new WavOut(System.getProperty("nfm.sound.render2"), lockstep ? 0L : System.nanoTime());
+                } catch (IOException ex) {
+                    HLogger.warn("Second speaker cannot write its test file: " + ex);
+                    close();
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private void use() {
+            alcMakeContextCurrent(ctx);
+            AL.setCurrentProcess(caps);
+        }
+
+        boolean connected() {
+            return out != null || alcGetInteger(dev, EXTDisconnect.ALC_CONNECTED) != ALC_FALSE;
+        }
+
+        /** Plays, loops or stops a clip here, centred. */
+        void clip(int kind, String clip) {
+            use();
+            try {
+                int buffer = buffer(clip, clipBuffers);
+                if (buffer == 0) {
+                    return;
+                }
+                int source = sources.computeIfAbsent(clip, n -> {
+                    int s = alGenSources();
+                    alSourcei(s, AL_BUFFER, buffer);
+                    alSourcei(s, AL_SOURCE_RELATIVE, AL_TRUE);
+                    alSource3f(s, AL_POSITION, 0F, 0F, 0F);
+                    alSourcef(s, AL_ROLLOFF_FACTOR, 0F);
+                    return s;
+                });
+                alSourcef(source, AL_GAIN, gain(clip));
+                switch (kind) {
+                    case PLAY -> {
+                        alSourcei(source, AL_LOOPING, AL_FALSE);
+                        alSourceRewind(source);
+                        alSourcePlay(source);
+                    }
+                    case LOOP -> {
+                        alSourcei(source, AL_LOOPING, AL_TRUE);
+                        if (alGetSourcei(source, AL_SOURCE_STATE) != AL_PLAYING) {
+                            alSourcePlay(source);
+                        }
+                    }
+                    default -> alSourceStop(source);
+                }
+            } finally {
+                useMain();
+            }
+        }
+
+        /* the interface bus and the master volume, the loud moments above HDR audio's everyday level */
+        private float gain(String clip) {
+            return bus[BUS_MASTER] * bus[BUS_INTERFACE] * (loud(clip) ? 1F : everyday);
+        }
+
+        void applyGains() {
+            use();
+            try {
+                sources.forEach((clip, s) -> alSourcef(s, AL_GAIN, gain(clip)));
+            } finally {
+                useMain();
+            }
+        }
+
+        void stopAll() {
+            use();
+            try {
+                for (int s : sources.values()) {
+                    alSourceStop(s);
+                }
+            } finally {
+                useMain();
+            }
+        }
+
+        void render(long now) throws IOException {
+            if (out != null) {
+                out.render(dev, now);
+            }
+        }
+
+        void close() {
+            if (ctx != 0L) {
+                use();
+                for (int s : sources.values()) {
+                    alDeleteSources(s);
+                }
+                for (int b : clipBuffers.values()) {
+                    if (b != 0) {
+                        alDeleteBuffers(b);
+                    }
+                }
+                alcMakeContextCurrent(0L);
+                alcDestroyContext(ctx);
+                ctx = 0L;
+            }
+            if (dev != 0L) {
+                alcCloseDevice(dev);
+                dev = 0L;
+            }
+            if (out != null) {
+                out.close();
+                out = null;
+            }
         }
     }
 
     private void close() {
+        closeSecond();
         stopEverything();
         stopMusic();
         if (acoustics != null) {
@@ -870,6 +1361,11 @@ public final class Sound3D implements Runnable {
      * when the new sound starts. 0 when the clip is not (yet) there.
      */
     private int buffer(String name) {
+        return buffer(name, buffers);
+    }
+
+    /** The same, into the given device's buffers, in the context current now. */
+    private int buffer(String name, Map<String, Integer> buffers) {
         Integer known = buffers.get(name);
         if (known != null) {
             return known;
@@ -916,6 +1412,11 @@ public final class Sound3D implements Runnable {
     private void handle(Command c) {
         switch (c.kind) {
             case PLAY, LOOP, STOP -> clip(c.kind, c.clip);
+            case EVENT -> {
+                if (second != null) {
+                    second.clip(PLAY, c.clip);
+                }
+            }
             case CRASH -> crash(c.car, c.a, (int) c.b);
             case SKID -> skid(c.car, (int) c.a);
             case STOP_ALL -> stopEverything();
@@ -1072,6 +1573,10 @@ public final class Sound3D implements Runnable {
     private void clip(int kind, String name) {
         if (name.startsWith("engs") || name.startsWith("crash") || name.startsWith("lowcrash")
                 || name.startsWith("skid") || name.startsWith("dustskid") || name.equals("tires")) {
+            return;
+        }
+        if (toSecond(name)) {
+            second.clip(kind, name);
             return;
         }
         int buffer = buffer(name);
@@ -1307,6 +1812,9 @@ public final class Sound3D implements Runnable {
     private void stopEverything() {
         if (context == 0L) {
             return;
+        }
+        if (second != null) {
+            second.stopAll();
         }
         for (int source : named.values()) {
             alSourceStop(source);
@@ -1857,54 +2365,72 @@ public final class Sound3D implements Runnable {
     /* ---------------------------------------------------- test rendering */
 
     private void openRenderFile() throws IOException {
-        renderFile = new RandomAccessFile(renderTo, "rw");
-        renderFile.setLength(0L);
-        renderFile.write(new byte[44]); // the header is written when the file is closed
-        rendered = MemoryUtil.memAllocShort(RENDER_RATE * 2 / 10);
-        renderStart = lockstep ? 0L : System.nanoTime();
+        wav = new WavOut(renderTo, lockstep ? 0L : System.nanoTime());
     }
 
     /** Mixes the sound up to now into the test file, as fast as a device would play it. */
     private void render(long now) throws IOException {
-        long due = (now - renderStart) * RENDER_RATE / 1_000_000_000L;
-        byte[] bytes = null;
-        while (renderedSamples < due) {
-            int n = (int) Math.min(due - renderedSamples, rendered.capacity() / 2);
-            rendered.clear();
-            SOFTLoopback.alcRenderSamplesSOFT(device, rendered, n);
-            if (bytes == null || bytes.length < n * 4) {
-                bytes = new byte[n * 4];
-            }
-            ByteBuffer.wrap(bytes, 0, n * 4).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
-                    .put(rendered.limit(n * 2));
-            renderFile.write(bytes, 0, n * 4);
-            renderedSamples += n;
-        }
+        wav.render(device, now);
     }
 
     private void closeRenderFile() {
-        if (renderFile == null) {
-            return;
+        if (wav != null) {
+            wav.close();
+            wav = null;
         }
-        try {
-            long data = renderedSamples * 4L;
-            ByteArrayOutputStream header = new ByteArrayOutputStream();
-            ByteBuffer h = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN);
-            h.put("RIFF".getBytes()).putInt((int) (36 + data)).put("WAVE".getBytes()).put("fmt ".getBytes())
-                    .putInt(16).putShort((short) 1).putShort((short) 2).putInt(RENDER_RATE)
-                    .putInt(RENDER_RATE * 4).putShort((short) 4).putShort((short) 16).put("data".getBytes())
-                    .putInt((int) data);
-            header.write(h.array());
-            renderFile.seek(0L);
-            renderFile.write(header.toByteArray());
-            renderFile.close();
-        } catch (IOException ex) {
-            HLogger.warn("3D sound could not finish " + renderTo + ": " + ex);
+    }
+
+    /** A loopback device's mix written to a 16-bit stereo WAV file, for tests: never heard. */
+    private static final class WavOut {
+        private final String path;
+        private final RandomAccessFile file;
+        private final ShortBuffer rendered = MemoryUtil.memAllocShort(RENDER_RATE * 2 / 10);
+        private final long start;
+        private long samples;
+        private byte[] bytes;
+
+        WavOut(String path, long start) throws IOException {
+            this.path = path;
+            this.start = start;
+            file = new RandomAccessFile(path, "rw");
+            file.setLength(0L);
+            file.write(new byte[44]); // the header is written when the file is closed
         }
-        renderFile = null;
-        if (rendered != null) {
+
+        /** Mixes the device's sound up to now into the file. */
+        void render(long dev, long now) throws IOException {
+            long due = (now - start) * RENDER_RATE / 1_000_000_000L;
+            while (samples < due) {
+                int n = (int) Math.min(due - samples, rendered.capacity() / 2);
+                rendered.clear();
+                SOFTLoopback.alcRenderSamplesSOFT(dev, rendered, n);
+                if (bytes == null || bytes.length < n * 4) {
+                    bytes = new byte[n * 4];
+                }
+                ByteBuffer.wrap(bytes, 0, n * 4).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+                        .put(rendered.limit(n * 2));
+                file.write(bytes, 0, n * 4);
+                samples += n;
+            }
+        }
+
+        void close() {
+            try {
+                long data = samples * 4L;
+                ByteArrayOutputStream header = new ByteArrayOutputStream();
+                ByteBuffer h = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN);
+                h.put("RIFF".getBytes()).putInt((int) (36 + data)).put("WAVE".getBytes()).put("fmt ".getBytes())
+                        .putInt(16).putShort((short) 1).putShort((short) 2).putInt(RENDER_RATE)
+                        .putInt(RENDER_RATE * 4).putShort((short) 4).putShort((short) 16).put("data".getBytes())
+                        .putInt((int) data);
+                header.write(h.array());
+                file.seek(0L);
+                file.write(header.toByteArray());
+                file.close();
+            } catch (IOException ex) {
+                HLogger.warn("3D sound could not finish " + path + ": " + ex);
+            }
             MemoryUtil.memFree(rendered);
-            rendered = null;
         }
     }
 }

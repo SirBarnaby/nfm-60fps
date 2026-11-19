@@ -163,6 +163,13 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
     private boolean grrd;
     private boolean pwastd;
     public boolean mutes;
+    /** The menus' click, which the second speaker also plays where the original menus were silent. */
+    static final String CLICK_CLIP = "tick";
+    /** Wrecking a car: the original had no sound for it, so it plays only on the second speaker. */
+    static final String WRECK_CLIP = "tliu";
+    /** The menu and the highlighted item as the last frame left them: a move clicks on the second speaker. */
+    private int clickedMenu = -1;
+    private long clickedMenuAt;
 
     // private RadicalMusic stages;
     // private RadicalMusic cars;
@@ -2243,6 +2250,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             }
             control.down = false;
         }
+        clickOnMove(1);
         if (opselect >= 0 && opselect < items) {
             int width = pausebox_op_widths[opselect];
             int y = pausebox_y + pausebox_option_start_off + pausebox_option_gap * opselect;
@@ -2272,6 +2280,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         SettingsScreen.drawPauseItem(rd, "Settings", GameFacts.screenWidth / 2F + pausebox_op_x_correction,
                 pausebox_y + pausebox_option_start_off + pausebox_option_gap * PAUSE_SETTINGS + 23);
         if (control.enter || control.handb) {
+            clickNow();
             if (opselect == 0) {
                 if (!mutem) {
                     if (loadedt) {
@@ -3019,6 +3028,9 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                             wasay = true;
                             say = "You wasted " + names[sc[other]] + "!";
                             tcnt = -15;
+                            if (!mutes) {
+                                Sound3D.event(WRECK_CLIP, false);
+                            }
                         }
                     }
                 } while (++other < GameFacts.numberOfPlayers);
@@ -4185,6 +4197,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             }
             control.down = false;
         }
+        clickOnMove(0);
         if (opselect == 0) {
             if (shaded) {
                 rd.setColor(new Color(140, 70, 0));
@@ -4294,6 +4307,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         SettingsScreen.drawMenuItem(rd, "Settings", GameFacts.screenWidth / 2F, main_menu_op_3_y + 18);
         SettingsScreen.drawMenuItem(rd, "Exit Game", GameFacts.screenWidth / 2F, main_menu_op_4_y + 18);
         if (control.enter || control.handb) {
+            clickNow();
             if (opselect == 0) {
                 if (unlocked == 1 && oldfase == Phase.INGAME) {
                     oldfase = Phase.CARSELECTTRIGGER;
@@ -4341,6 +4355,29 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         rd.drawImage(opback, x, y, x + w, y + at, 0, 0, w, at, null);
         rd.drawImage(opback, x, y + at, x + w, y + at + OPBACK_GAP, 0, at, w, at + 1, null);
         rd.drawImage(opback, x, y + at + OPBACK_GAP, x + w, y + h + OPBACK_GAP, 0, at, w, h, null);
+    }
+
+    /**
+     * A click on the second speaker when the highlighted item of a menu
+     * moves, by key or by mouse (the mouse moves it between frames); the
+     * original menus were silent there. Coming into a menu does not click.
+     */
+    private void clickOnMove(int menu) {
+        int at = menu * 100 + opselect;
+        long now = System.nanoTime();
+        // a menu shown again after a while is a menu come into, not a move
+        if (clickedMenu / 100 == menu && at != clickedMenu && now - clickedMenuAt < 200_000_000L) {
+            clickNow();
+        }
+        clickedMenu = at;
+        clickedMenuAt = now;
+    }
+
+    /** A click on the second speaker only. */
+    private void clickNow() {
+        if (!mutes) {
+            Sound3D.event(CLICK_CLIP, true);
+        }
     }
 
     public void blendude(Image image) {

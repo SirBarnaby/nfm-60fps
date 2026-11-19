@@ -832,6 +832,28 @@ public class GameSparker extends Panel implements Runnable {
     }
 
     /**
+     * Reads a cookie that holds words (a device's name): the text, trimmed,
+     * or null when it was never saved or is empty.
+     */
+    private static String readcookieText(String name) {
+        try (ZipFile zipFile = new ZipFile(cookieDirZip)) {
+            String found = null;
+            Enumeration<? extends ZipEntry> entries = zipFile.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                if (entry.getName().contains(name)) {
+                    try (InputStream stream = zipFile.getInputStream(entry)) {
+                        found = fromStream(stream).trim();
+                    }
+                }
+            }
+            return found == null || found.isEmpty() ? null : found;
+        } catch (IOException ex) {
+            return null;
+        }
+    }
+
+    /**
      * Puts the finished frame in the window: scaled to fit, keeping its shape,
      * or pixel for pixel when scaling is off or the window is exactly the
      * picture's size. What the picture does not cover is black.
@@ -3949,6 +3971,99 @@ public class GameSparker extends Panel implements Runnable {
         monoChanged = true;
     }
 
+    /* ---------------------------------------------------------- the speakers */
+
+    /* device names are saved as text; none of these names holds another cookie's */
+    private static final String SPEAKER_COOKIE = "speakermain";
+    private static final String SECOND_SPEAKER_COOKIE = "speakersecond";
+    /** 1 the second speaker plays race events and clicks, 2 race events only. */
+    private static final String SECOND_PLAYS_COOKIE = "speakerplays";
+    private static volatile boolean speakersChanged;
+    /** The devices as last listed, and when: listing asks Windows, so the settings ask at most twice a second. */
+    private static volatile java.util.List<String> devicesSeen = java.util.List.of();
+    private static volatile long devicesSeenAt;
+
+    /** Windows' output devices by name, listed at most twice a second. */
+    public static java.util.List<String> soundDevices() {
+        long now = System.nanoTime();
+        if (now - devicesSeenAt > 500_000_000L || devicesSeenAt == 0L) {
+            devicesSeen = nfm.lit.audio.Sound3D.devices();
+            devicesSeenAt = now;
+        }
+        return devicesSeen;
+    }
+
+    /** Chooses where the game plays, by device name; null follows Windows' default. Saved; at once. */
+    public static void setSpeaker(String name) {
+        nfm.lit.audio.Sound3D.setSpeakers(name, nfm.lit.audio.Sound3D.secondSpeaker(),
+                nfm.lit.audio.Sound3D.secondClicks());
+        speakersChanged = true;
+    }
+
+    /** Chooses the second speaker, by device name; null for none. Saved; at once. */
+    public static void setSecondSpeaker(String name) {
+        nfm.lit.audio.Sound3D.setSpeakers(nfm.lit.audio.Sound3D.speaker(), name,
+                nfm.lit.audio.Sound3D.secondClicks());
+        speakersChanged = true;
+    }
+
+    /** Whether the second speaker takes the menus' clicks as well as the race's events. Saved; at once. */
+    public static void setSecondPlaysClicks(boolean clicks) {
+        nfm.lit.audio.Sound3D.setSpeakers(nfm.lit.audio.Sound3D.speaker(),
+                nfm.lit.audio.Sound3D.secondSpeaker(), clicks);
+        speakersChanged = true;
+    }
+
+    /** The speakers in words, for the console and the log. */
+    public static String describeSpeakers() {
+        String main = nfm.lit.audio.Sound3D.speaker();
+        String second = nfm.lit.audio.Sound3D.secondSpeaker();
+        return "speaker " + (main == null ? "Windows default" : main) + ", second "
+                + (second == null ? "off" : second + " (" + nfm.lit.audio.Sound3D.secondStatus() + ")")
+                + (nfm.lit.audio.Sound3D.secondClicks() ? ", race events and clicks" : ", race events");
+    }
+
+    /**
+     * The speakers: -Dnfm.sound.speaker, .second and .secondplays where
+     * given, else as saved. A hidden run plays on no device and keeps no
+     * second speaker unless its properties ask for one (render, for tests).
+     */
+    private void loadSpeakers() {
+        boolean hidden = runsHidden();
+        String main = System.getProperty("nfm.sound.speaker");
+        if (main == null && !hidden) {
+            main = readcookieText(SPEAKER_COOKIE);
+        }
+        String second = System.getProperty("nfm.sound.second");
+        if (second == null && !hidden) {
+            second = readcookieText(SECOND_SPEAKER_COOKIE);
+        }
+        String plays = System.getProperty("nfm.sound.secondplays");
+        boolean clicks = plays != null ? !plays.equalsIgnoreCase("events") : hidden || readcookie(SECOND_PLAYS_COOKIE) != 2;
+        if (Boolean.getBoolean("nfm.sound.devicetest")) {
+            nfm.lit.audio.Sound3D.fakeDevices(java.util.List.of("Speakers (Realtek(R) Audio)",
+                    "Headphones (Wireless Controller)", "LG ULTRAGEAR (NVIDIA High Definition Audio)"));
+        }
+        nfm.lit.audio.Sound3D.setSpeakers(isDefault(main) ? null : main,
+                second == null || second.equalsIgnoreCase("off") ? null : second, clicks);
+        speakersChanged = false;
+    }
+
+    private static boolean isDefault(String name) {
+        return name == null || name.equalsIgnoreCase("default");
+    }
+
+    private void saveSpeakersIfChanged() {
+        if (speakersChanged) {
+            speakersChanged = false;
+            String main = nfm.lit.audio.Sound3D.speaker();
+            String second = nfm.lit.audio.Sound3D.secondSpeaker();
+            savecookie(SPEAKER_COOKIE, main == null ? "" : main);
+            savecookie(SECOND_SPEAKER_COOKIE, second == null ? "" : second);
+            savecookie(SECOND_PLAYS_COOKIE, nfm.lit.audio.Sound3D.secondClicks() ? "1" : "2");
+        }
+    }
+
     /* the track's sound effects and HDR audio; the names must not hold another cookie's (they are matched in part) */
     private static final String OCCLUSION_COOKIE = "occlusion";
     private static final String PATHS_COOKIE = "soundpaths";
@@ -5123,7 +5238,7 @@ public class GameSparker extends Panel implements Runnable {
             if (phase == Phase.SETTINGS && (settingsStep == 1 || settingsStep == 4) && now - phaseSettledAt >= 700L) {
                 // a few settings chosen in turn, each shown for a moment (the main menu's, then the pause menu's)
                 String[] shown = settingsStep == 1 ? new String[] {"Supersampling", "Resolution", "Accelerate", "Video memory"}
-                        : new String[] {"Sound system", "HDR audio"};
+                        : new String[] {"Sound system", "Second speaker", "HDR audio"};
                 int at = settingsDowns / 4;
                 if (at >= shown.length) {
                     settingsStep++;
@@ -5392,6 +5507,7 @@ public class GameSparker extends Panel implements Runnable {
         loadSound();
         loadMusicSeparation();
         loadVolumes();
+        loadSpeakers();
         loadSmoothEffects();
         loadPerfOverlay();
         startAutoTest();
@@ -5483,6 +5599,7 @@ public class GameSparker extends Panel implements Runnable {
                 applySound();
                 saveMusicSeparationIfChanged();
                 saveVolumesIfChanged();
+                saveSpeakersIfChanged();
                 saveGamepadIfChanged();
                 saveSmoothEffectsIfChanged();
                 if (PerfOverlay.takeChanged()) {

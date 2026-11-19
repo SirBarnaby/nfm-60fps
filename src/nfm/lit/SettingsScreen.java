@@ -114,7 +114,7 @@ final class SettingsScreen {
     private static final java.util.Set<String> PICTURED = java.util.Set.of(
             "Fullscreen", "Aspect ratio", "Resolution", "UI scale", "VSync", "Renderer",
             "MSAA", "Supersampling", "Smooth particles", "HDR", "Paper white", "Peak brightness",
-            "Sound system", "Output", "Occlusion", "Sound paths", "Reverb", "HDR audio",
+            "Sound system", "Channels", "Occlusion", "Sound paths", "Reverb", "HDR audio",
             "Dynamic resolution", "Performance overlay");
 
     /** The settings' pictures by name; null where there is none. Game thread only. */
@@ -242,6 +242,7 @@ final class SettingsScreen {
 
     /** Called as the screen opens. */
     void open() {
+        clickedAt = null;
         selected = tabRows[tab].length > 0 ? tabRows[tab][0] : TABS;
         scroll[tab] = 0;
         pressed = false;
@@ -356,16 +357,36 @@ final class SettingsScreen {
                 v -> v == 0 ? "Monitor" : v + " nits", GameSparker::getPeak, GameSparker::setPeak)
                 .when(hdr, "Only with HDR on."));
 
-        tab("Audio", "The sound system, its effects, and the volumes.");
+        tab("Audio", "The sound system, the speakers, the effects and the volumes.");
         group("Sound");
         add(new Choice("Sound system",
                 "Steam Audio: sounds come from where they are, mixed and spread. Classic: as the game always sounded.",
                 () -> "Now: " + GameSparker.describeSound() + ".",
                 new int[] {1, 0}, v -> v == 1 ? "Steam Audio" : "Classic",
                 () -> GameSparker.isNewSound() ? 1 : 0, v -> GameSparker.setNewSound(v == 1)));
-        add(new Choice("Output", "Mono plays everything on both speakers, for one ear or one speaker.", null,
+        add(new Choice("Channels", "Mono plays everything on both speakers, for one ear or one speaker.", null,
                 new int[] {0, 1}, v -> v == 1 ? "Mono" : "Stereo", () -> Sound3D.isMono() ? 1 : 0,
                 v -> GameSparker.setMono(v == 1)).when(sound3d, sound3dOnly));
+        group("Speakers");
+        add(new DeviceRow("Speaker",
+                "Where the game's sound plays. Windows default follows Windows when something is plugged in or"
+                        + " out.",
+                "Windows default", Sound3D::speaker, GameSparker::setSpeaker, SettingsScreen::describeSpeaker)
+                .when(sound3d, sound3dOnly));
+        add(new DeviceRow("Second speaker",
+                "A second sound device for the race's announcements, like a PS5 controller's speaker: the"
+                        + " countdown, checkpoints, repair hoops, power-ups, wrecking a car, and menu clicks. A"
+                        + " controller, a headset or a small desk speaker all work; Bluetooth ones play a little"
+                        + " late.",
+                "Off", Sound3D::secondSpeaker, GameSparker::setSecondSpeaker, SettingsScreen::describeSecondSpeaker)
+                .when(sound3d, sound3dOnly));
+        add(new Choice("Second speaker plays",
+                "Race events: the countdown, checkpoints, repair hoops, power-ups and wrecking a car. Clicks: the"
+                        + " menus' clicks too.",
+                null, new int[] {1, 0}, v -> v == 1 ? "Race events and clicks" : "Race events",
+                () -> Sound3D.secondClicks() ? 1 : 0, v -> GameSparker.setSecondPlaysClicks(v == 1))
+                .when(() -> GameSparker.isNewSound() && Sound3D.secondSpeaker() != null,
+                        "Only with a second speaker."));
         group("Effects");
         add(new Choice("Occlusion",
                 "A car behind a hill or a wall is muffled, as it would be: quieter and duller, by how much of"
@@ -603,8 +624,12 @@ final class SettingsScreen {
      *
      * @return true when the player goes back
      */
+    /** Where the player was, and the value there, as the last frame left it: a change clicks. */
+    private String clickedAt;
+
     boolean frame(Graphics2D rd, Control control) {
         boolean leave = handleKeys(control);
+        clickOnMove();
         int dx = GameFacts.marginX();
         int dy = GameFacts.marginY();
         rd.translate(dx, dy);
@@ -614,6 +639,18 @@ final class SettingsScreen {
             rd.translate(-dx, -dy);
         }
         return leave;
+    }
+
+    /**
+     * A click on the second speaker as the player moves between tabs and
+     * rows or changes a value; the original game had no settings to click.
+     */
+    private void clickOnMove() {
+        String at = tab + "/" + selected + "/" + (isRow(selected) ? rows.get(selected).value() : "");
+        if (clickedAt != null && !at.equals(clickedAt) && !Control.mutes) {
+            Sound3D.event(GameUi.CLICK_CLIP, true);
+        }
+        clickedAt = at;
     }
 
     private boolean handleKeys(Control control) {
@@ -1649,6 +1686,95 @@ final class SettingsScreen {
             }
             return choosing == this ? null : "Left and right choose a key, Enter changes it, Backspace clears it.";
         }
+    }
+
+    /**
+     * A sound device: the first choice (Windows default, or Off), then the
+     * devices Windows has now, and the chosen one if it is not plugged in,
+     * kept so a controller that is off for now stays chosen.
+     */
+    private static final class DeviceRow extends Row {
+        private final String none;
+        private final Supplier<String> get;
+        private final java.util.function.Consumer<String> set;
+
+        DeviceRow(String label, String help, String none, Supplier<String> get,
+                java.util.function.Consumer<String> set, Supplier<String> status) {
+            super(label, help, status);
+            this.none = none;
+            this.get = get;
+            this.set = set;
+        }
+
+        /** The choices: null first (the default or none), then each device. */
+        private List<String> choices() {
+            List<String> list = new ArrayList<>();
+            list.add(null);
+            list.addAll(GameSparker.soundDevices());
+            String now = get.get();
+            if (now != null && Sound3D.match(now, list.subList(1, list.size())) == null) {
+                list.add(now);
+            }
+            return list;
+        }
+
+        @Override
+        void step(int direction, boolean wrap) {
+            List<String> list = choices();
+            String now = get.get();
+            int at = 0;
+            if (now != null) {
+                String m = Sound3D.match(now, list.subList(1, list.size()));
+                at = Math.max(0, list.indexOf(m == null ? now : m));
+            }
+            int next = at + direction;
+            if (next < 0 || next >= list.size()) {
+                if (!wrap) {
+                    return;
+                }
+                next = (next + list.size()) % list.size();
+            }
+            set.accept(list.get(next));
+        }
+
+        @Override
+        String value() {
+            String now = get.get();
+            return now == null ? none : now;
+        }
+    }
+
+    /** The main speaker's line: where the sound plays now. */
+    private static String describeSpeaker() {
+        String chosen = Sound3D.speaker();
+        if (chosen != null && Sound3D.match(chosen, GameSparker.soundDevices()) == null) {
+            return "Not connected: playing on Windows default.";
+        }
+        return null;
+    }
+
+    /** The second speaker's line: playing, the same as the main one, unplugged, or a PS5 controller to choose. */
+    private static String describeSecondSpeaker() {
+        String chosen = Sound3D.secondSpeaker();
+        String status = Sound3D.secondStatus();
+        if (chosen == null) {
+            for (String d : GameSparker.soundDevices()) {
+                if (d.contains("Wireless Controller") || d.contains("DualSense")) {
+                    return "A PS5 controller is connected: choose it to hear events from the controller.";
+                }
+            }
+            return null;
+        }
+        if (status.equals("same")) {
+            return "Same as Speaker: events play there.";
+        }
+        if (status.startsWith("on, ")) {
+            return "Now: " + status.substring(4) + ".";
+        }
+        if (!Sound3D.isActive()) {
+            return null;
+        }
+        return "Not connected: events play on Speaker.";
     }
 
     /** Something to do rather than a setting: Enter or a click does it. */
