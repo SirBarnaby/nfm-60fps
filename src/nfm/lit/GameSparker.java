@@ -461,6 +461,9 @@ public class GameSparker extends Panel implements Runnable {
     private SceneRecorder shownRecorder = sceneRecorder;
     private long profileRecordNanos;
     private int profileRecords;
+    /* kept scenes made ready for the graphics card to place, see ProjectedScene */
+    private long profileProjectNanos;
+    private int profileProjects;
     private long profilePlaceNanos;
     private int profilePlaces;
     /** The frame being drawn goes to the graphics card as a recorded scene. */
@@ -2105,6 +2108,18 @@ public class GameSparker extends Panel implements Runnable {
             keptBlocked = true; // until the next tick
             return false;
         }
+        GpuDisplay card = gpu;
+        if (card != null && card.projecting()) {
+            // made ready for the card here, once, so no frame of the presenter's pays for it
+            long projectStart = System.nanoTime();
+            kept.scene.realize(kept.scene.recorded, kept.recorder.list().data());
+            kept.scene.export(kept.projected.points());
+            kept.projected.build(kept.recorder.list());
+            profileProjectNanos += System.nanoTime() - projectStart;
+            profileProjects++;
+        } else {
+            kept.projected.clear();
+        }
         if (hudImage instanceof BufferedImage hud) {
             if (kept.hud == null || kept.hud.getWidth() != hud.getWidth() || kept.hud.getHeight() != hud.getHeight()) {
                 kept.hud = new BufferedImage(hud.getWidth(), hud.getHeight(), BufferedImage.TYPE_INT_ARGB);
@@ -2223,6 +2238,8 @@ public class GameSparker extends Panel implements Runnable {
         final class Kept {
             final SceneRecorder recorder = new SceneRecorder();
             final RetainedScene scene = new RetainedScene();
+            /** The scene made ready for the card to place, when the card does. */
+            final nfm.lit.gpu.ProjectedScene projected = new nfm.lit.gpu.ProjectedScene();
             BufferedImage hud;
             boolean flash;
             long version;
@@ -2250,6 +2267,9 @@ public class GameSparker extends Panel implements Runnable {
         private final PreciseSleep sleep = new PreciseSleep();
         private final FramePose pose = new FramePose();
         private final FramePose carried = new FramePose();
+        /** -Dnfm.projectiontest=N: compares N frames placed on the card with the same frames placed here. */
+        private int projectionTests = Integer.getInteger("nfm.projectiontest", 0);
+        private int projectionTestFrame;
         /* the span frames are placed with, and the one before it for the profile */
         private final PoseSpan span = new PoseSpan();
         private final PoseSpan previousSpan = new PoseSpan();
@@ -2452,7 +2472,19 @@ public class GameSparker extends Panel implements Runnable {
                 }
             }
             spanChanged = false;
-            k.scene.realize(pose, k.recorder.list().data());
+            GpuDisplay card = gpu;
+            boolean onCard = card != null && card.projecting() && k.projected.built();
+            if (!onCard || projectionTests > 0) {
+                k.scene.realize(pose, k.recorder.list().data());
+            }
+            if (onCard) {
+                // the card places every point: only what the frame's moment changes goes to it
+                k.scene.frameConstants(pose, k.projected.points());
+                if (projectionTests > 0 && ++projectionTestFrame % 30 == 0) {
+                    projectionTests--;
+                    testProjection(k);
+                }
+            }
             boolean flash = k.flash && k.version != flashedVersion;
             if (flash) {
                 flashedVersion = k.version;
@@ -2460,7 +2492,8 @@ public class GameSparker extends Panel implements Runnable {
             long placed = System.nanoTime();
             boolean shown;
             try {
-                shown = showOnGpu(false, k.recorder.list(), k.hud, k.version, k.version, flash, true);
+                shown = showOnGpu(false, k.recorder.list(), onCard ? k.projected : null, k.hud, k.version, k.version,
+                        flash, true);
             } catch (RuntimeException | LinkageError ex) {
                 HLogger.warn("The graphics card stopped drawing a race: " + ex);
                 shown = false;
@@ -2490,6 +2523,61 @@ public class GameSparker extends Panel implements Runnable {
             }
             pace(end);
         }
+
+        /**
+         * Draws this frame twice, placed here and on the card, and logs how
+         * many pixels differ: the proof that placing on the card shows what
+         * placing here does. The pictures of the first frame that differs
+         * most go to the autotest folder.
+         */
+        private void testProjection(Kept k) {
+            nfm.lit.gpu.SceneList list = k.recorder.list();
+            if (!showOnGpu(true, list, null, k.hud, -1L, -1L, false, true)) {
+                return;
+            }
+            BufferedImage here = capturedGpuScene;
+            if (!showOnGpu(true, list, k.projected, k.hud, k.version, -1L, false, true)) {
+                return;
+            }
+            BufferedImage onCard = capturedGpuScene;
+            if (here == null || onCard == null || here.getWidth() != onCard.getWidth()
+                    || here.getHeight() != onCard.getHeight()) {
+                HLogger.warn("Projection test: no pictures to compare");
+                return;
+            }
+            int w = here.getWidth();
+            int h = here.getHeight();
+            int[] a = here.getRGB(0, 0, w, h, null, 0, w);
+            int[] b = onCard.getRGB(0, 0, w, h, null, 0, w);
+            int differ = 0;
+            int worst = 0;
+            for (int i = 0; i < a.length; i++) {
+                int x = a[i];
+                int y = b[i];
+                if (x != y) {
+                    differ++;
+                    int d = Math.max(Math.abs((x >> 16 & 0xff) - (y >> 16 & 0xff)), Math.max(
+                            Math.abs((x >> 8 & 0xff) - (y >> 8 & 0xff)), Math.abs((x & 0xff) - (y & 0xff))));
+                    worst = Math.max(worst, d);
+                }
+            }
+            double share = 100D * differ / a.length;
+            HLogger.info(String.format("Projection test: %d of %d pixels differ (%.4f%%), at most by %d",
+                    differ, a.length, share, worst));
+            if (share > projectionWorst) {
+                projectionWorst = share;
+                try {
+                    java.io.File folder = new java.io.File(System.getProperty("nfm.autotest", "autotest"));
+                    folder.mkdirs();
+                    javax.imageio.ImageIO.write(here, "png", new java.io.File(folder, "projection-here.png"));
+                    javax.imageio.ImageIO.write(onCard, "png", new java.io.File(folder, "projection-card.png"));
+                } catch (java.io.IOException ex) {
+                    HLogger.warn("Projection test: " + ex);
+                }
+            }
+        }
+
+        private double projectionWorst;
 
         /** Waits until the next frame is due: the display's refresh, the frame limit or, with none, not at all. */
         private void pace(long now) {
@@ -2950,7 +3038,8 @@ public class GameSparker extends Panel implements Runnable {
      * @return false if the frame still has to be drawn in software
      */
     private boolean presentOnGpu(boolean capture) {
-        return showOnGpu(capture, gpuSceneFrame ? shownRecorder.list() : null, gpuSceneHud, -1L, gpuSceneHudVersion,
+        return showOnGpu(capture, gpuSceneFrame ? shownRecorder.list() : null, null, gpuSceneHud, -1L,
+                gpuSceneHudVersion,
                 gpuSceneFlash, false);
     }
 
@@ -2962,7 +3051,8 @@ public class GameSparker extends Panel implements Runnable {
      * game thread's picture. A frame the {@code presenter} draws on its own
      * never falls back to the picture.
      */
-    private boolean showOnGpu(boolean capture, nfm.lit.gpu.SceneList scene, BufferedImage hud, long version,
+    private boolean showOnGpu(boolean capture, nfm.lit.gpu.SceneList scene, nfm.lit.gpu.ProjectedScene projected,
+            BufferedImage hud, long version,
             long hudVersion, boolean flash, boolean presenterFrame) {
         if (gpu == null && presenterFrame) {
             return false;
@@ -3006,7 +3096,8 @@ public class GameSparker extends Panel implements Runnable {
                     gpu.setMultisample(multisample);
                     float scale = dynamicResolution == 0 ? 1F : resolution.scale();
                     Dimension target = sceneTargetSize(place, gpu.maxTextureSize());
-                    boolean drawn = gpu.drawScene(scene, hud, version, hudVersion, flash, capture, target, scale);
+                    boolean drawn = gpu.drawScene(scene, projected, hud, version, hudVersion, flash, capture, target,
+                            scale);
                     multisampleInUse = gpu.multisample();
                     float across = supersample > 1 ? target.width / (float) Math.max(GameFacts.screenWidth, place.width) : 1F;
                     supersampleInUse = across;
@@ -4717,7 +4808,7 @@ public class GameSparker extends Panel implements Runnable {
             long now = System.currentTimeMillis();
 
             if (phase != lastPhase) {
-                System.out.println("[autotest] phase " + lastPhase + " -> " + phase);
+                System.out.println("[autotest] phase " + lastPhase + " -> " + phase + " at " + java.time.LocalTime.now());
                 lastPhase = phase;
                 phaseSettledAt = now;
                 pendingPhaseShot = phase;
@@ -5966,6 +6057,10 @@ public class GameSparker extends Panel implements Runnable {
                                 profileRecords, profileRecordNanos / 1e6D / profileRecords, profilePlaces,
                                 profilePlaces == 0 ? 0D : profilePlaceNanos / 1e6D / profilePlaces);
                     }
+                    if (profileProjects > 0) {
+                        System.out.printf("[kept] made ready for the card %d times (%.2f ms each)%n", profileProjects,
+                                profileProjectNanos / 1e6D / profileProjects);
+                    }
                     System.out.printf("[pace] frame gaps: median %.1f ms, 99%% %.1f ms, longest %.1f ms; %d of %d frames came late%n",
                             median / 1e6D, gaps[Math.min(gaps.length - 1, gaps.length * 99 / 100)] / 1e6D,
                             gaps[gaps.length - 1] / 1e6D, hitches, gaps.length);
@@ -5973,6 +6068,8 @@ public class GameSparker extends Panel implements Runnable {
                 profileGapCount = 0;
                 profileRecords = 0;
                 profileRecordNanos = 0L;
+                profileProjects = 0;
+                profileProjectNanos = 0L;
                 profilePlaces = 0;
                 profilePlaceNanos = 0L;
                 profileAheads = 0;

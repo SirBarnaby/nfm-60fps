@@ -24,6 +24,7 @@ final class BgfxShaderBinary {
     static final int ATTRIB_POSITION = 0x0001;
     static final int ATTRIB_COLOR0 = 0x0005;
     static final int ATTRIB_TEXCOORD0 = 0x0010;
+    static final int ATTRIB_TEXCOORD1 = 0x0011;
 
     private static final int UNIFORM_SAMPLER = 0;
     private static final int UNIFORM_VEC4 = 2;
@@ -37,6 +38,15 @@ final class BgfxShaderBinary {
     /** A vertex shader that reads the given attributes and uses no uniforms. */
     static byte[] vertex(byte[] bytecode, int... attributes) {
         return pack('V', 0, STAGE_HASH, bytecode, attributes, null, new Vec4[0]);
+    }
+
+    /**
+     * A vertex shader reading the given attributes, a 2D texture at register
+     * 0 (by Load, so no sampler state) and the given float4s, as
+     * {@link #fragment(byte[], String, Vec4...)} lays them out.
+     */
+    static byte[] vertex(byte[] bytecode, String samplerName, Vec4[] vec4s, int... attributes) {
+        return pack('V', 0, STAGE_HASH, bytecode, attributes, samplerName, vec4s);
     }
 
     /** A fragment shader using no uniforms, or one 2D texture sampler at register 0. */

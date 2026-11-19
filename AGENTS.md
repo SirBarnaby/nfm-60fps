@@ -75,6 +75,11 @@ Before a release or a large change, also run:
   `data\*.radq` or `data\stages` directly.
 - **Shaders** live in `gpu\Shaders.java` and are compiled at build time; a
   changed shader is recompiled by the next build.
+- **Kept scenes are placed on the graphics card** (`gpu\ProjectedScene.java`,
+  `Shaders.PROJECTED_VS`), which mirrors `RetainedScene.placeOne` and
+  `project`. A change to how a point kind is placed goes into both, and
+  `-Dnfm.projectiontest=40` proves they still agree (well under 0.1% of
+  pixels).
 - **Natives** (bgfx, OpenAL Soft, SDL, libopenmpt, Steam Audio) are called
   through LWJGL or Java's foreign function interface; no JNI of our own.
 - **Commits** go to `staging`, one change per commit, with a message that says

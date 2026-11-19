@@ -54,7 +54,7 @@ thread pinning, large pages, GraalVM) are left out.
 | 9 | Stable O(n log n) painter's sorts | ✅ | 3e4833e |
 | 10 | View test above and below | ❌ | |
 | 11 | Grid culling | ❌ | |
-| 12 | Transform models on worker threads | ❌ | |
+| 12 | Transform models on worker threads | ❌ | done on the graphics card instead (row 23) |
 | 13 | Instanced draws per track piece | ❌ | scene recorded once per tick instead (d8febce) |
 | 14 | High-resolution frame timer | ✅ | `PreciseSleep.java` |
 | 15 | MMCSS for the game threads | ✅ | `WindowsScheduling.java` ("Games") |
@@ -67,6 +67,7 @@ thread pinning, large pages, GraalVM) are left out.
 | 21 | Battery mode: 60 fps cap | ✅ | console `fps battery`, cookie `batteryfps` |
 | 21 | Battery mode: sound reflections pause | ❌ | |
 | 22 | Performance gate | ✅ | `test\perf.ps1` |
+| 23 | Corners placed on the graphics card | ✅ | `gpu\ProjectedScene.java`, `Shaders.PROJECTED_VS`; `-Dnfm.projectiontest=40` at most 0.008% of pixels differ |
 | | Quake-style span rasteriser | ❌ | GPU came first, as the plan allowed |
 | | Flat data layout for models | ❌ | |
 

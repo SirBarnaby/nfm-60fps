@@ -230,6 +230,55 @@ final class RetainedScene {
         codeCount += 2 * n;
     }
 
+    /* ---------------------------------------------- placing on the card */
+
+    /** Hands the recording to {@code out}, for the graphics card to place its points (no copy). */
+    void export(nfm.lit.gpu.ScenePoints out) {
+        out.kinds = kinds;
+        out.points = points;
+        out.pointCount = pointCount;
+        out.polygons = polygons;
+        out.polygonCount = polygonCount;
+        out.codes = codes;
+    }
+
+    /**
+     * Works out what the points share at moment {@code pose}, as
+     * {@link #realize} does, into {@code out}'s constants for the card,
+     * instead of placing every point here.
+     */
+    void frameConstants(FramePose pose, nfm.lit.gpu.ScenePoints out) {
+        prepare(pose);
+        float[] c = out.camera;
+        c[0] = cx;
+        c[1] = cy;
+        c[2] = cz;
+        c[3] = focus;
+        c[4] = sinYaw;
+        c[5] = cosYaw;
+        c[6] = sinPitch;
+        c[7] = cosPitch;
+        c[8] = moveX;
+        c[9] = moveY;
+        c[10] = moveZ;
+        c[11] = trailShare;
+        c[12] = top;
+        c[13] = bottom;
+        int slots = Math.min(pose.slots, nfm.lit.gpu.ScenePoints.CAR_SLOTS);
+        float[] cars = out.cars;
+        for (int s = 0; s < slots; s++) {
+            int at = s * 16;
+            float[] t = carTurn[s];
+            cars[at] = carX[s];
+            cars[at + 1] = carY[s];
+            cars[at + 2] = carZ[s];
+            System.arraycopy(t, 0, cars, at + 4, 8);
+            cars[at + 12] = t[8];
+            cars[at + 13] = t[9];
+        }
+        out.carCount = slots;
+    }
+
     /* -------------------------------------------------------------- placing */
 
     /**

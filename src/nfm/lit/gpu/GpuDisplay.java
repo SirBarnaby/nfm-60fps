@@ -9,6 +9,7 @@ import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import org.lwjgl.bgfx.BGFXInit;
 import org.lwjgl.bgfx.BGFXPlatform;
@@ -84,6 +85,25 @@ public final class GpuDisplay {
     private short overlayProgram = BGFX_INVALID_HANDLE;
     private short colorProgram = BGFX_INVALID_HANDLE;
     private short hdrProgram = BGFX_INVALID_HANDLE;
+    /* placing kept scenes on the card: see Shaders.PROJECTED_VS and SceneGeometry#buildProjected */
+    private final boolean projectionWanted = !"off".equalsIgnoreCase(System.getProperty("nfm.projection"));
+    private short projectedProgram = BGFX_INVALID_HANDLE;
+    private short cameraUniform = BGFX_INVALID_HANDLE;
+    private short carUniform = BGFX_INVALID_HANDLE;
+    private short pointsSampler = BGFX_INVALID_HANDLE;
+    private BGFXVertexLayout projectedLayout;
+    /** The kept scene's points, three RGBA32F texels each, ProjectedScene.POINTS_WIDTH texels a row. */
+    private short pointsTexture = BGFX_INVALID_HANDLE;
+    private int pointsRows;
+    private short projectedBuffer = BGFX_INVALID_HANDLE;
+    /** The kept scene the card holds the triangles and points of, -1 for none. */
+    private long projectedVersion = -1L;
+    /** The geometry the last scene was drawn from, for the statistics. */
+    private SceneGeometry lastGeometry;
+    /* points and bytes sent to the card for kept scenes since the last statistics */
+    private int projectedUploads;
+    private long projectedBytes;
+    private boolean projectedLast;
     private short sampler = BGFX_INVALID_HANDLE;
     private short hdrUniform = BGFX_INVALID_HANDLE;
     private final float[] hdrValues = new float[4];
@@ -294,6 +314,14 @@ public final class GpuDisplay {
         byte[] colorVs = hlsl.bytecode(Shaders.COLOR_VERTEX);
         byte[] colorFs = hlsl.bytecode(Shaders.COLOR_FRAGMENT);
         byte[] hdrFs = hlsl.bytecode(Shaders.HDR_FRAGMENT);
+        byte[] projectedVs = null;
+        if (projectionWanted) {
+            try {
+                projectedVs = hlsl.bytecode(Shaders.PROJECTED_VERTEX);
+            } catch (RuntimeException ex) {
+                HLogger.warn("Placing scenes on the graphics card is off: its shader did not compile: " + ex);
+            }
+        }
         if (hlsl.compiled() > 0) {
             HLogger.info("Compiled " + hlsl.compiled() + " shaders at the start: madness.jar has no baked copy of them");
         }
@@ -341,6 +369,9 @@ public final class GpuDisplay {
                         BgfxShaderBinary.ATTRIB_TEXCOORD0),
                 BgfxShaderBinary.fragment(colorFs, null));
         sampler = bgfx_create_uniform("s_picture", BGFX_UNIFORM_TYPE_SAMPLER, 1);
+        if (projectedVs != null) {
+            startProjection(projectedVs, colorFs);
+        }
         hdrProgram = program(BgfxShaderBinary.vertex(pictureVs, pictureAttributes),
                 BgfxShaderBinary.fragment(hdrFs, "s_picture", new BgfxShaderBinary.Vec4("u_hdr", 1), down));
         hdrBackBuffer = (bgfx_get_caps().formats(BGFX_TEXTURE_FORMAT_RGBA16F)
@@ -368,6 +399,44 @@ public final class GpuDisplay {
         transientBuffer = BGFXTransientVertexBuffer.calloc();
         bgfx_set_view_clear(SCREEN_VIEW, BGFX_CLEAR_COLOR, BLACK, 1F, 0);
         bgfx_set_view_clear(CAPTURE_VIEW, BGFX_CLEAR_COLOR, BLACK, 1F, 0);
+    }
+
+    /** Makes what placing kept scenes on the card needs; leaves it off if the card will not have it. */
+    private void startProjection(byte[] projectedVs, byte[] colorFs) {
+        int floatFormats = bgfx_get_caps().formats(BGFX_TEXTURE_FORMAT_RGBA32F);
+        if ((floatFormats & BGFX_CAPS_FORMAT_TEXTURE_VERTEX) == 0 && (floatFormats & BGFX_CAPS_FORMAT_TEXTURE_2D) == 0) {
+            HLogger.warn("Placing scenes on the graphics card is off: it cannot read float textures");
+            return;
+        }
+        cameraUniform = bgfx_create_uniform("u_cam", BGFX_UNIFORM_TYPE_VEC4, ScenePoints.CAMERA_VEC4S);
+        carUniform = bgfx_create_uniform("u_car", BGFX_UNIFORM_TYPE_VEC4,
+                ScenePoints.CAR_VEC4S * ScenePoints.CAR_SLOTS);
+        pointsSampler = bgfx_create_uniform("s_points", BGFX_UNIFORM_TYPE_SAMPLER, 1);
+        BgfxShaderBinary.Vec4[] constants = {
+            new BgfxShaderBinary.Vec4("u_cam", ScenePoints.CAMERA_VEC4S),
+            new BgfxShaderBinary.Vec4("u_car", ScenePoints.CAR_VEC4S * ScenePoints.CAR_SLOTS)};
+        try {
+            projectedProgram = program(
+                    BgfxShaderBinary.vertex(projectedVs, "s_points", constants, BgfxShaderBinary.ATTRIB_POSITION,
+                            BgfxShaderBinary.ATTRIB_COLOR0, BgfxShaderBinary.ATTRIB_TEXCOORD0,
+                            BgfxShaderBinary.ATTRIB_TEXCOORD1),
+                    BgfxShaderBinary.fragment(colorFs, null));
+        } catch (IllegalStateException ex) {
+            HLogger.warn("Placing scenes on the graphics card is off: " + ex.getMessage());
+            return;
+        }
+        projectedLayout = BGFXVertexLayout.calloc();
+        bgfx_vertex_layout_begin(projectedLayout, backend);
+        bgfx_vertex_layout_add(projectedLayout, BGFX_ATTRIB_POSITION, 2, BGFX_ATTRIB_TYPE_FLOAT, false, false);
+        bgfx_vertex_layout_add(projectedLayout, BGFX_ATTRIB_COLOR0, 4, BGFX_ATTRIB_TYPE_UINT8, true, false);
+        bgfx_vertex_layout_add(projectedLayout, BGFX_ATTRIB_TEXCOORD0, 4, BGFX_ATTRIB_TYPE_FLOAT, false, false);
+        bgfx_vertex_layout_add(projectedLayout, BGFX_ATTRIB_TEXCOORD1, 1, BGFX_ATTRIB_TYPE_FLOAT, false, false);
+        bgfx_vertex_layout_end(projectedLayout);
+    }
+
+    /** True if kept scenes are placed on the card, not here. */
+    public boolean projecting() {
+        return isValid(projectedProgram);
     }
 
     private static boolean isValid(short handle) {
@@ -420,6 +489,17 @@ public final class GpuDisplay {
      */
     public boolean drawScene(SceneList scene, BufferedImage hudImage, long version, long hudVersion, boolean flash,
             boolean capture, Dimension size, float scale) {
+        return drawScene(scene, null, hudImage, version, hudVersion, flash, capture, size, scale);
+    }
+
+    /**
+     * Draws a scene as {@link #drawScene(SceneList, BufferedImage, long, long, boolean, boolean, Dimension, float)}
+     * does; a kept scene {@code projected} for the card (not null, and
+     * built) is placed for the frame on the card instead, with the camera
+     * and cars in its points, and {@code scene}'s corners are not read.
+     */
+    public boolean drawScene(SceneList scene, ProjectedScene projected, BufferedImage hudImage, long version,
+            long hudVersion, boolean flash, boolean capture, Dimension size, float scale) {
         fitSceneTarget(Math.max(1, size.width), Math.max(1, size.height));
         sceneWidth = Math.min(targetWidth, Math.max(pictureWidth, Math.round(targetWidth * scale)));
         sceneHeight = Math.min(targetHeight, Math.max(pictureHeight, Math.round(targetHeight * scale)));
@@ -431,20 +511,30 @@ public final class GpuDisplay {
             uploadedHud = hudVersion;
             hudUploads++;
         }
-        long buildStart = System.nanoTime();
-        geometry.build(scene, pictureWidth, pictureHeight, sceneWidth / (float) pictureWidth, version);
-        buildNanos += System.nanoTime() - buildStart;
-        builds++;
-        int vertexCount = geometry.vertexCount();
         bgfx_set_view_rect(SCENE_VIEW, 0, 0, sceneWidth, sceneHeight);
         bgfx_touch(SCENE_VIEW);
-        if (vertexCount > 0) {
-            if (bgfx_get_avail_transient_vertex_buffer(vertexCount, colorLayout) < vertexCount) {
-                return false;
+        projectedLast = projected != null && projected.built() && version >= 0L && projecting();
+        if (projectedLast) {
+            if (version != projectedVersion) {
+                uploadProjected(projected);
+                projectedVersion = version;
             }
-            bgfx_alloc_transient_vertex_buffer(transientBuffer, vertexCount, colorLayout);
-            geometry.copyVertices(transientBuffer.data());
-            submitScene();
+            submitProjected(projected);
+        } else {
+            long buildStart = System.nanoTime();
+            geometry.build(scene, pictureWidth, pictureHeight, sceneWidth / (float) pictureWidth, version);
+            buildNanos += System.nanoTime() - buildStart;
+            builds++;
+            lastGeometry = geometry;
+            int vertexCount = geometry.vertexCount();
+            if (vertexCount > 0) {
+                if (bgfx_get_avail_transient_vertex_buffer(vertexCount, colorLayout) < vertexCount) {
+                    return false;
+                }
+                bgfx_alloc_transient_vertex_buffer(transientBuffer, vertexCount, colorLayout);
+                geometry.copyVertices(transientBuffer.data());
+                submitScene(geometry, false);
+            }
         }
         if (hudImage != null) {
             boolean scaled = sceneWidth != hudTextureWidth || sceneHeight != hudTextureHeight;
@@ -459,6 +549,54 @@ public final class GpuDisplay {
         }
         source = sceneColor;
         return true;
+    }
+
+    /** Sends a kept scene to the card once, for all its frames: its triangles and its points. */
+    private void uploadProjected(ProjectedScene projected) {
+        SceneGeometry g = projected.geometry;
+        lastGeometry = g;
+        ByteBuffer vertices = projected.vertices();
+        int vertexCount = g.vertexCount();
+        if (vertexCount > 0) {
+            if (!isValid(projectedBuffer)) {
+                projectedBuffer = bgfx_create_dynamic_vertex_buffer(Math.max(vertexCount, 65536), projectedLayout,
+                        BGFX_BUFFER_ALLOW_RESIZE);
+            }
+            bgfx_update_dynamic_vertex_buffer(projectedBuffer, 0, bgfx_copy(vertices));
+        }
+        int rows = projected.rows();
+        if (rows > pointsRows || !isValid(pointsTexture)) {
+            destroyTexture(pointsTexture);
+            pointsRows = Math.min(Math.max(16, Integer.highestOneBit(rows - 1) << 1), maxTextureSize());
+            pointsTexture = bgfx_create_texture_2d(ProjectedScene.POINTS_WIDTH, pointsRows, false, 1,
+                    BGFX_TEXTURE_FORMAT_RGBA32F, CLAMP | BGFX_SAMPLER_POINT, null, 0);
+            if (!isValid(pointsTexture) || rows > pointsRows) {
+                throw new IllegalStateException("the card cannot hold the scene's " + projected.pointCount() + " points");
+            }
+        }
+        FloatBuffer texels = projected.texels();
+        bgfx_update_texture_2d(pointsTexture, 0, 0, 0, 0, ProjectedScene.POINTS_WIDTH, rows, bgfx_copy(texels),
+                ProjectedScene.POINTS_WIDTH * 16);
+        projectedUploads++;
+        projectedBytes += vertices.remaining() + (long) texels.remaining() * 4;
+        // built on the game thread, counted here with the scenes it made
+        buildNanos += projected.buildNanos();
+        builds++;
+    }
+
+    /** Draws the kept scene on the card, placed for the frame whose camera and cars its points hold. */
+    private void submitProjected(ProjectedScene projected) {
+        ScenePoints points = projected.points();
+        float[] camera = points.camera;
+        camera[14] = 2F / pictureWidth;
+        camera[15] = 2F / pictureHeight;
+        camera[16] = sceneWidth / (float) pictureWidth;
+        bgfx_set_uniform(cameraUniform, camera, ScenePoints.CAMERA_VEC4S);
+        bgfx_set_uniform(carUniform, points.cars, Math.max(1, points.carCount) * ScenePoints.CAR_VEC4S);
+        lastGeometry = projected.geometry;
+        if (projected.geometry.vertexCount() > 0) {
+            submitScene(projected.geometry, true);
+        }
     }
 
     /** The scene read back by the last {@link #drawScene} that asked for it, once presented. */
@@ -481,16 +619,21 @@ public final class GpuDisplay {
 
     /** Draw calls, vertices, stencil-filled polygons and antialiased outlines of the last scene, for the profile. */
     public String sceneStatistics() {
-        if (geometry == null) {
+        SceneGeometry g = lastGeometry;
+        if (g == null) {
             return "";
         }
-        String text = geometry.draws() + " draws, " + geometry.vertexCount() + " vertices, "
-                + geometry.evenOddPolygons() + " even-odd, " + geometry.antialiased() + " antialiased"
+        String text = g.draws() + " draws, " + g.vertexCount() + " vertices, "
+                + g.evenOddPolygons() + " even-odd, " + g.antialiased() + " antialiased"
                 + String.format(", triangles made in %.2f ms", builds == 0 ? 0D : buildNanos / 1e6D / builds)
-                + ", " + hudUploads + " HUD uploads of " + hudTextureWidth + "x" + hudTextureHeight;
+                + ", " + hudUploads + " HUD uploads of " + hudTextureWidth + "x" + hudTextureHeight
+                + (projectedLast ? String.format(", placed on the card: %d scenes sent, %.1f MB",
+                        projectedUploads, projectedBytes / 1e6D) : "");
         buildNanos = 0L;
         builds = 0;
         hudUploads = 0;
+        projectedUploads = 0;
+        projectedBytes = 0L;
         return text;
     }
 
@@ -642,33 +785,44 @@ public final class GpuDisplay {
         return bgfx_create_frame_buffer_from_handles(new short[] {sceneColor, stencil}, true);
     }
 
-    private void submitScene() {
+    /** Submits {@code g}'s draws: from the transient buffer, or with {@code points} placed on the card. */
+    private void submitScene(SceneGeometry g, boolean onCard) {
+        short program = onCard ? projectedProgram : colorProgram;
         int stencilFlip = BGFX_STENCIL_TEST_ALWAYS | BGFX_STENCIL_FUNC_REF(0) | BGFX_STENCIL_FUNC_RMASK(0xff)
                 | BGFX_STENCIL_OP_FAIL_S_KEEP | BGFX_STENCIL_OP_FAIL_Z_KEEP | BGFX_STENCIL_OP_PASS_Z_INVERT;
         int stencilOdd = BGFX_STENCIL_TEST_NOTEQUAL | BGFX_STENCIL_FUNC_REF(0) | BGFX_STENCIL_FUNC_RMASK(0xff)
                 | BGFX_STENCIL_OP_FAIL_S_KEEP | BGFX_STENCIL_OP_FAIL_Z_KEEP | BGFX_STENCIL_OP_PASS_Z_ZERO;
-        for (int d = 0; d < geometry.draws(); d++) {
-            int start = geometry.start(d);
-            int count = geometry.count(d);
+        for (int d = 0; d < g.draws(); d++) {
+            int start = g.start(d);
+            int count = g.count(d);
             if (count == 0) {
                 continue;
             }
-            int glow = geometry.glow(d); // the blend factor's alpha
-            if (geometry.kind(d) == SceneGeometry.PLAIN) {
-                bgfx_set_transient_vertex_buffer(0, transientBuffer, start, count);
+            int glow = g.glow(d); // the blend factor's alpha
+            if (g.kind(d) == SceneGeometry.PLAIN) {
+                bindScene(onCard, start, count);
                 bgfx_set_state(OPAQUE | SCENE_BLEND, glow); // only antialiased lines are not opaque
-                bgfx_submit(SCENE_VIEW, colorProgram, 0, BGFX_DISCARD_ALL);
+                bgfx_submit(SCENE_VIEW, program, 0, BGFX_DISCARD_ALL);
             } else {
                 // flip the stencil where the fan covers, then colour where it is odd and clear it again
-                bgfx_set_transient_vertex_buffer(0, transientBuffer, start, count);
+                bindScene(onCard, start, count);
                 bgfx_set_stencil(stencilFlip, BGFX_STENCIL_NONE);
                 bgfx_set_state(0L, 0);
-                bgfx_submit(SCENE_VIEW, colorProgram, 0, BGFX_DISCARD_ALL);
-                bgfx_set_transient_vertex_buffer(0, transientBuffer, start, count);
+                bgfx_submit(SCENE_VIEW, program, 0, BGFX_DISCARD_ALL);
+                bindScene(onCard, start, count);
                 bgfx_set_stencil(stencilOdd, BGFX_STENCIL_NONE);
                 bgfx_set_state(OPAQUE | COVER_BLEND, glow);
-                bgfx_submit(SCENE_VIEW, colorProgram, 0, BGFX_DISCARD_ALL);
+                bgfx_submit(SCENE_VIEW, program, 0, BGFX_DISCARD_ALL);
             }
+        }
+    }
+
+    private void bindScene(boolean onCard, int start, int count) {
+        if (!onCard) {
+            bgfx_set_transient_vertex_buffer(0, transientBuffer, start, count);
+        } else {
+            bgfx_set_dynamic_vertex_buffer(0, projectedBuffer, start, count);
+            bgfx_set_texture(0, pointsSampler, pointsTexture, (int) (CLAMP | BGFX_SAMPLER_POINT));
         }
     }
 
@@ -1010,12 +1164,18 @@ public final class GpuDisplay {
             if (isValid(sceneBuffer)) {
                 bgfx_destroy_frame_buffer(sceneBuffer);
             }
-            for (short uniform : new short[] {sampler, hdrUniform, downUniform}) {
+            destroyTexture(pointsTexture);
+            if (isValid(projectedBuffer)) {
+                bgfx_destroy_dynamic_vertex_buffer(projectedBuffer);
+            }
+            for (short uniform : new short[] {sampler, hdrUniform, downUniform, cameraUniform, carUniform,
+                    pointsSampler}) {
                 if (isValid(uniform)) {
                     bgfx_destroy_uniform(uniform);
                 }
             }
-            for (short program : new short[] {pictureProgram, overlayProgram, colorProgram, hdrProgram}) {
+            for (short program : new short[] {pictureProgram, overlayProgram, colorProgram, hdrProgram,
+                    projectedProgram}) {
                 if (isValid(program)) {
                     bgfx_destroy_program(program);
                 }
@@ -1034,6 +1194,18 @@ public final class GpuDisplay {
         pictureProgram = BGFX_INVALID_HANDLE;
         overlayProgram = BGFX_INVALID_HANDLE;
         colorProgram = BGFX_INVALID_HANDLE;
+        projectedProgram = BGFX_INVALID_HANDLE;
+        cameraUniform = BGFX_INVALID_HANDLE;
+        carUniform = BGFX_INVALID_HANDLE;
+        pointsSampler = BGFX_INVALID_HANDLE;
+        pointsTexture = BGFX_INVALID_HANDLE;
+        pointsRows = 0;
+        projectedBuffer = BGFX_INVALID_HANDLE;
+        projectedVersion = -1L;
+        if (projectedLayout != null) {
+            projectedLayout.free();
+            projectedLayout = null;
+        }
         if (pictureLayout != null) {
             pictureLayout.free();
             pictureLayout = null;

@@ -161,7 +161,11 @@ final class SceneGeometry {
                     int h = data[i + 4];
                     if (w > 0 && h > 0) {
                         begin(PLAIN);
-                        quad(x, y, x + w, y, x + w, y + h, x, y + h);
+                        if (projecting) {
+                            constantQuad(x, y, x + w, y + h);
+                        } else {
+                            quad(x, y, x + w, y, x + w, y + h, x, y + h);
+                        }
                     }
                     i += 5;
                 }
@@ -171,6 +175,9 @@ final class SceneGeometry {
                     int n = data[i + 1];
                     boolean exact = op == SceneList.FILL_POLYGON_EXACT || op == SceneList.DRAW_POLYGON_EXACT;
                     corners(data, i + 2, n, exact);
+                    if (projecting) {
+                        cornerPoints(exact ? i + 2 + 2 * n : -1, n);
+                    }
                     if (op == SceneList.FILL_POLYGON || op == SceneList.FILL_POLYGON_EXACT) {
                         fillPolygon(n);
                     } else {
@@ -203,6 +210,21 @@ final class SceneGeometry {
             return;
         }
         boolean convex = isConvex(px, py, n);
+        if (projecting) {
+            if (!convex && earClip(which, n)) {
+                return;
+            }
+            if (!convex) {
+                evenOddPolygons++;
+            }
+            begin(convex ? PLAIN : EVEN_ODD);
+            for (int k = 1; k + 1 < n; k++) {
+                cornerVertex(0);
+                cornerVertex(k);
+                cornerVertex(k + 1);
+            }
+            return;
+        }
         if (!convex && (reuseCut(which, n) || earClip(which, n))) {
             return; // concave but not crossing itself: plain triangles cover what even-odd would
         }
@@ -268,6 +290,13 @@ final class SceneGeometry {
     /** Draws the triangles in {@code t[from..to)} (corner numbers), leaving out flat ones, which cover nothing. */
     private void triangles(int[] t, int from, int to) {
         begin(PLAIN);
+        if (projecting) {
+            // flat ones too: placed on the card the corners move, and a flat triangle may cover something then
+            for (int k = from; k < to; k++) {
+                cornerVertex(t[k]);
+            }
+            return;
+        }
         for (int k = from; k < to; k += 3) {
             int a = t[k];
             int b = t[k + 1];
@@ -510,6 +539,10 @@ final class SceneGeometry {
         begin(PLAIN);
         for (int k = 0; k < n; k++) {
             int next = k + 1 < n ? k + 1 : 0;
+            if (projecting) {
+                segmentVertices(k, next, antialias ? ROLE_SMOOTH : ROLE_SEGMENT);
+                continue;
+            }
             if (antialias) {
                 smoothSegment(px[k], py[k], px[next], py[next]);
             } else {
@@ -629,5 +662,174 @@ final class SceneGeometry {
 
     void free() {
         vertices = new int[0];
+        projected = new int[0];
+    }
+
+    /* ------------------------------------------------ placed on the card */
+
+    /*
+     * Roles of a vertex placed on the card (see Shaders.PROJECTED_VS): a
+     * polygon's corner, a fixed position, or one of the four corners of a
+     * one-pixel line's parallelogram (ROLE_SEGMENT + 0..3), plain or
+     * antialiased, which the shader works out from the line's two ends.
+     */
+    static final int ROLE_FILL = 0;
+    static final int ROLE_FIXED = 1;
+    static final int ROLE_SEGMENT = 10;
+    static final int ROLE_SMOOTH = 20;
+
+    /** Bytes per vertex placed on the card: the fixed position, the colour, four point numbers and the role. */
+    static final int PROJECTED_STRIDE = 32;
+    private static final int PROJECTED_INTS = PROJECTED_STRIDE / 4;
+
+    /** True while building for the card: vertices name points instead of holding positions. */
+    private boolean projecting;
+    private ScenePoints scenePoints;
+    private int[] projected = new int[0];
+    private int listPolygon;
+    /* the points the corners of the polygon being built take x and y from */
+    private int[] refX = new int[16];
+    private int[] refY = new int[16];
+    /* points made for values the game worked out itself, after the recording's own */
+    private float[] extra = new float[ScenePoints.STRIDE * 1024];
+    private int extraCount;
+
+    /**
+     * Builds a kept scene's triangles once for all its frames, for the card
+     * to place: each vertex names the points its position comes from, and
+     * the shader places them for each frame's camera and cars. Polygons are
+     * cut into triangles where {@code list}'s corners are now (placed for
+     * the frame being drawn): a flat polygon seen from in front keeps how it
+     * was cut while it moves, as {@link #reuseCut} relies on too, and one
+     * crossing itself is filled with the stencil, wherever its corners go.
+     */
+    void buildProjected(SceneList list, ScenePoints points, int width, int height) {
+        projecting = true;
+        scenePoints = points;
+        listPolygon = 0;
+        extraCount = 0;
+        if (projected.length < PROJECTED_INTS * 65536) {
+            projected = new int[PROJECTED_INTS * 65536];
+        }
+        try {
+            build(list, width, height, 1F, -1L);
+        } finally {
+            projecting = false;
+            scenePoints = null;
+        }
+    }
+
+    /** The points made for fixed values by the last {@link #buildProjected}, ScenePoints.STRIDE floats each. */
+    float[] extraPoints() {
+        return extra;
+    }
+
+    int extraPointCount() {
+        return extraCount;
+    }
+
+    /** Copies the vertices built for the card to {@code to}, which holds {@link #vertexCount} of them. */
+    void copyProjected(ByteBuffer to) {
+        to.duplicate().order(ByteOrder.LITTLE_ENDIAN).asIntBuffer().put(projected, 0, vertexCount * PROJECTED_INTS);
+    }
+
+    /**
+     * The points the corners of the polygon whose exact corners start at
+     * {@code exactAt} in the list (-1 if it has none) come from, into
+     * {@link #refX}/{@link #refY}: the recording's, or points made here for
+     * corners the game worked out itself.
+     */
+    private void cornerPoints(int exactAt, int n) {
+        if (refX.length < n) {
+            refX = new int[n];
+            refY = new int[n];
+        }
+        ScenePoints p = scenePoints;
+        int code = -1;
+        if (exactAt >= 0) {
+            // the recording's polygons are the list's, in order; one drawn while nothing was recorded has none
+            for (int q = listPolygon; q < p.polygonCount; q++) {
+                int at = p.polygons[q * 3];
+                if (at > exactAt) {
+                    break;
+                }
+                if (at == exactAt && p.polygons[q * 3 + 1] == n) {
+                    code = p.polygons[q * 3 + 2];
+                    listPolygon = q + 1;
+                    break;
+                }
+            }
+        }
+        for (int k = 0; k < n; k++) {
+            int cx = code < 0 ? -1 : p.codes[code + k];
+            int cy = code < 0 ? -1 : p.codes[code + n + k];
+            if (cx >= 0 && cy >= 0) {
+                refX[k] = cx >> 1;
+                refY[k] = cy >> 1;
+            } else {
+                int fixed = fixedPoint(px[k], py[k]);
+                refX[k] = cx >= 0 ? cx >> 1 : fixed;
+                refY[k] = cy >= 0 ? cy >> 1 : fixed;
+            }
+        }
+    }
+
+    /** A point of its own for a position the game worked out on screen: the number it is drawn by. */
+    private int fixedPoint(float x, float y) {
+        int at = extraCount * ScenePoints.STRIDE;
+        if (at + ScenePoints.STRIDE > extra.length) {
+            extra = Arrays.copyOf(extra, extra.length * 2);
+        }
+        extra[at] = x;
+        extra[at + 1] = y;
+        return scenePoints.pointCount + extraCount++;
+    }
+
+    /** A filled polygon's corner {@code k}, placed on the card. */
+    private void cornerVertex(int k) {
+        projectedVertex(0F, 0F, refX[k], refY[k], refX[k], refY[k], ROLE_FILL);
+    }
+
+    /** The six vertices of the line from corner {@code k} to corner {@code next}, worked out on the card. */
+    private void segmentVertices(int k, int next, int role) {
+        int ax = refX[k];
+        int ay = refY[k];
+        int bx = refX[next];
+        int by = refY[next];
+        projectedVertex(0F, 0F, ax, ay, bx, by, role);
+        projectedVertex(0F, 0F, ax, ay, bx, by, role + 1);
+        projectedVertex(0F, 0F, ax, ay, bx, by, role + 2);
+        projectedVertex(0F, 0F, ax, ay, bx, by, role);
+        projectedVertex(0F, 0F, ax, ay, bx, by, role + 2);
+        projectedVertex(0F, 0F, ax, ay, bx, by, role + 3);
+    }
+
+    /** A rectangle at fixed picture coordinates. */
+    private void constantQuad(float x0, float y0, float x1, float y1) {
+        projectedVertex(x0, y0, 0, 0, 0, 0, ROLE_FIXED);
+        projectedVertex(x1, y0, 0, 0, 0, 0, ROLE_FIXED);
+        projectedVertex(x1, y1, 0, 0, 0, 0, ROLE_FIXED);
+        projectedVertex(x0, y0, 0, 0, 0, 0, ROLE_FIXED);
+        projectedVertex(x1, y1, 0, 0, 0, 0, ROLE_FIXED);
+        projectedVertex(x0, y1, 0, 0, 0, 0, ROLE_FIXED);
+    }
+
+    private void projectedVertex(float x, float y, int ax, int ay, int bx, int by, int role) {
+        int at = vertexCount * PROJECTED_INTS;
+        if (at + PROJECTED_INTS > projected.length) {
+            projected = Arrays.copyOf(projected, projected.length * 2);
+        }
+        int[] v = projected;
+        v[at] = Float.floatToRawIntBits(x);
+        v[at + 1] = Float.floatToRawIntBits(y);
+        v[at + 2] = abgr;
+        // point numbers as floats: exact up to 16 million
+        v[at + 3] = Float.floatToRawIntBits(ax);
+        v[at + 4] = Float.floatToRawIntBits(ay);
+        v[at + 5] = Float.floatToRawIntBits(bx);
+        v[at + 6] = Float.floatToRawIntBits(by);
+        v[at + 7] = Float.floatToRawIntBits(role);
+        vertexCount++;
+        drawCount[open]++;
     }
 }
