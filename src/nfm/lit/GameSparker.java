@@ -3587,6 +3587,63 @@ public class GameSparker extends Panel implements Runnable {
         monoChanged = true;
     }
 
+    /* the track's sound effects and HDR audio; the names must not hold another cookie's (they are matched in part) */
+    private static final String OCCLUSION_COOKIE = "occlusion";
+    private static final String PATHS_COOKIE = "soundpaths";
+    private static final String REVERB_COOKIE = "trackreverb";
+    private static final String HDR_AUDIO_COOKIE = "audiorange";
+    private static volatile boolean audioEffectsChanged;
+
+    public static void setOcclusion(boolean on) {
+        nfm.lit.audio.Sound3D.setOcclusion(on);
+        audioEffectsChanged = true;
+    }
+
+    public static void setSoundPaths(boolean on) {
+        nfm.lit.audio.Sound3D.setPaths(on);
+        audioEffectsChanged = true;
+    }
+
+    public static void setReverb(boolean on) {
+        nfm.lit.audio.Sound3D.setReverb(on);
+        audioEffectsChanged = true;
+    }
+
+    /** HDR audio's range in dB, 0 for off, saved. */
+    public static void setHdrAudio(int db) {
+        nfm.lit.audio.Sound3D.setHdrRange(db);
+        audioEffectsChanged = true;
+    }
+
+    public static String describeAudioEffects() {
+        int range = nfm.lit.audio.Sound3D.hdrRange();
+        return "occlusion " + (nfm.lit.audio.Sound3D.isOcclusion() ? "on" : "off")
+                + ", paths " + (nfm.lit.audio.Sound3D.isPaths() ? "on" : "off")
+                + ", reverb " + (nfm.lit.audio.Sound3D.isReverb() ? "on" : "off")
+                + ", HDR audio " + (range == 0 ? "off" : range + " dB");
+    }
+
+    /** The saved switches (each saved as 1 on, 2 off), or all on in hidden runs; HDR audio off unless saved. */
+    private void loadAudioEffects() {
+        boolean hidden = runsHidden();
+        nfm.lit.audio.Sound3D.setOcclusion(hidden || readcookie(OCCLUSION_COOKIE) != 2);
+        nfm.lit.audio.Sound3D.setPaths(hidden || readcookie(PATHS_COOKIE) != 2);
+        nfm.lit.audio.Sound3D.setReverb(hidden || readcookie(REVERB_COOKIE) != 2);
+        int range = hidden ? -1 : readcookie(HDR_AUDIO_COOKIE);
+        nfm.lit.audio.Sound3D.setHdrRange(range > 0 && range <= 24 ? range : 0);
+        audioEffectsChanged = false;
+    }
+
+    private void saveAudioEffectsIfChanged() {
+        if (audioEffectsChanged) {
+            audioEffectsChanged = false;
+            savecookie(OCCLUSION_COOKIE, nfm.lit.audio.Sound3D.isOcclusion() ? "1" : "2");
+            savecookie(PATHS_COOKIE, nfm.lit.audio.Sound3D.isPaths() ? "1" : "2");
+            savecookie(REVERB_COOKIE, nfm.lit.audio.Sound3D.isReverb() ? "1" : "2");
+            savecookie(HDR_AUDIO_COOKIE, String.valueOf(nfm.lit.audio.Sound3D.hdrRange()));
+        }
+    }
+
     /** The volumes and mono as saved; hidden runs keep everything at full and in stereo. */
     private void loadVolumes() {
         boolean hidden = runsHidden();
@@ -4620,7 +4677,7 @@ public class GameSparker extends Panel implements Runnable {
             if (phase == Phase.SETTINGS && (settingsStep == 1 || settingsStep == 4) && now - phaseSettledAt >= 700L) {
                 // a few settings chosen in turn, each shown for a moment (the main menu's, then the pause menu's)
                 String[] shown = settingsStep == 1 ? new String[] {"Supersampling", "Resolution", "Run-ahead", "Video memory"}
-                        : new String[] {"Sound system"};
+                        : new String[] {"Sound system", "HDR audio"};
                 int at = settingsDowns / 4;
                 if (at >= shown.length) {
                     settingsStep++;
@@ -4875,6 +4932,7 @@ public class GameSparker extends Panel implements Runnable {
         loadFpsLimit();
         loadBatteryFps();
         loadVsync();
+        loadAudioEffects();
         loadRunAhead();
         loadScaleToWindow();
         loadRenderer();
@@ -4964,6 +5022,7 @@ public class GameSparker extends Panel implements Runnable {
                 saveFpsLimitIfChanged();
                 saveBatteryFpsIfChanged();
                 saveVsyncIfChanged();
+                saveAudioEffectsIfChanged();
                 fitUiResolution(now);
                 ticksRun++;
                 saveRunAheadIfChanged();

@@ -315,6 +315,29 @@ final class SettingsScreen {
         add(new Choice("Output", "Mono plays everything on both speakers, for one ear or one speaker.", null,
                 new int[] {0, 1}, v -> v == 1 ? "Mono" : "Stereo", () -> Sound3D.isMono() ? 1 : 0,
                 v -> GameSparker.setMono(v == 1)).when(sound3d, sound3dOnly));
+        group("Effects");
+        add(new Choice("Occlusion",
+                "A car behind a hill or a wall is muffled, as it would be: quieter and duller, by how much of"
+                        + " the track is in the way.",
+                null, new int[] {0, 1}, SettingsScreen::onOff, () -> Sound3D.isOcclusion() ? 1 : 0,
+                v -> GameSparker.setOcclusion(v == 1)).when(sound3d, sound3dOnly));
+        add(new Choice("Sound paths",
+                "Sound bends over a crest and round the end of a wall: a hidden car is heard from the way its"
+                        + " sound comes round.",
+                null, new int[] {0, 1}, SettingsScreen::onOff, () -> Sound3D.isPaths() ? 1 : 0,
+                v -> GameSparker.setSoundPaths(v == 1))
+                .when(() -> GameSparker.isNewSound() && Sound3D.isOcclusion(), "Only with occlusion on."));
+        add(new Choice("Reverb",
+                "Half-pipes, walls and canyons make the engines, skids and crashes ring on; open ground stays"
+                        + " dry.",
+                null, new int[] {0, 1}, SettingsScreen::onOff, () -> Sound3D.isReverb() ? 1 : 0,
+                v -> GameSparker.setReverb(v == 1)).when(sound3d, sound3dOnly));
+        add(new Choice("HDR audio",
+                "The engines, skids, music and menus play this far below full scale, and crashes and a wreck"
+                        + " use the room above: they stand out as they would. Raise the master volume to match.",
+                null, new int[] {0, 6, 12, 18}, v -> v == 0 ? "Off" : new String[] {"", "Narrow", "Medium", "Wide"}[v / 6]
+                        + " (" + v + " dB)",
+                Sound3D::hdrRange, GameSparker::setHdrAudio).when(sound3d, sound3dOnly));
         group("Volume");
         String[] busLabels = {"Master volume", "Engines", "Effects", "Music", "Interface"};
         String[] busHelp = {"Everything the game plays.", "The cars' engines and skids.",

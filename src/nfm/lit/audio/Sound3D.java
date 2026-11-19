@@ -260,6 +260,65 @@ public final class Sound3D implements Runnable {
     private static volatile int busVersion;
     private static volatile boolean mono;
 
+    /* the track's effects, each of which can be switched off: muffling behind the track, the way round, the reverb */
+    private static volatile boolean occlusionOn = true;
+    private static volatile boolean pathsOn = true;
+    private static volatile boolean reverbOn = true;
+    /**
+     * HDR audio's range in dB, 0 for off: the race's everyday sounds (the
+     * engines, skids, wind, music and menus) play this much below full
+     * scale, and the loud moments (crashes, a wreck, a repair) use the room
+     * above them, so a crash stands out from the engines as it would in the
+     * room, not only as loud as everything else.
+     */
+    private static volatile int hdrRange;
+    /** The everyday sounds' gain under HDR audio, 1 with it off. */
+    private static volatile float everyday = 1F;
+
+    public static boolean isOcclusion() {
+        return occlusionOn;
+    }
+
+    /** Muffling a car behind the track (and with it, the way round): on by default. */
+    public static void setOcclusion(boolean on) {
+        occlusionOn = on;
+    }
+
+    public static boolean isPaths() {
+        return pathsOn;
+    }
+
+    /** Sound bending over a crest and round the end of a wall, toward the listener: on by default. */
+    public static void setPaths(boolean on) {
+        pathsOn = on;
+    }
+
+    public static boolean isReverb() {
+        return reverbOn;
+    }
+
+    /** The track ringing on where the listener is, from half-pipes, walls and canyons: on by default. */
+    public static void setReverb(boolean on) {
+        reverbOn = on;
+    }
+
+    public static int hdrRange() {
+        return hdrRange;
+    }
+
+    /** Sets HDR audio's range, 0 (off) to 24 dB; the sound takes it within a hundredth of a second. */
+    public static synchronized void setHdrRange(int db) {
+        hdrRange = Math.max(0, Math.min(24, db));
+        everyday = (float) Math.pow(10D, -hdrRange / 20D);
+        busVersion++;
+    }
+
+    /** Whether a clip is one of the loud moments HDR audio leaves at full scale. */
+    private static boolean loud(String name) {
+        return name.startsWith("crash") || name.startsWith("lowcrash") || name.equals("wasted")
+                || name.equals("firewasted") || name.equals("carfixed");
+    }
+
     /** Sets a bus's volume, 0 to 1; the sound takes it within a hundredth of a second. */
     public static synchronized void setBusLevel(int bus, float level) {
         busLevels[bus] = Math.max(0F, Math.min(1F, level));
@@ -722,7 +781,7 @@ public final class Sound3D implements Runnable {
     private void namedGain(String name, int source) {
         boolean atCar = namedAtPlayer.containsKey(name);
         int b = atCar || name.startsWith("air") ? BUS_EFFECTS : BUS_INTERFACE;
-        alSourcef(source, AL_GAIN, (atCar ? 1F : flatGain) * bus[b]);
+        alSourcef(source, AL_GAIN, (atCar ? 1F : flatGain) * bus[b] * (loud(name) ? 1F : everyday));
     }
 
     /** The gain of a clip heard as it is, undoing the listener's makeup. */
@@ -960,7 +1019,7 @@ public final class Sound3D implements Runnable {
 
     /* the music's level, its bus, and the dip under a big crash, as the engines dip */
     private void setMusicGain() {
-        float g = flatGain * musicLevel * bus[BUS_MUSIC] * (1F - duck);
+        float g = flatGain * musicLevel * bus[BUS_MUSIC] * (1F - duck) * everyday;
         if (Math.abs(g - musicGainApplied) > 1e-4F) {
             musicGainApplied = g;
             alSourcef(musicSource, AL_GAIN, g);
@@ -1096,6 +1155,9 @@ public final class Sound3D implements Runnable {
     }
 
     /** Eases the reverb toward the place's reverb times and sets it when it has moved enough to hear. */
+    /** Whether the reverb was last set switched on, so switching it applies at once. */
+    private boolean reverbOnApplied = true;
+
     private void updateReverb(float dt) {
         if (reverbSlot == 0 || acoustics == null) {
             return;
@@ -1103,9 +1165,10 @@ public final class Sound3D implements Runnable {
         float[] target = acoustics.reverbTimes();
         float k = 1F - (float) Math.exp(-dt / REVERB_SMOOTHING);
         enclosed += (acoustics.enclosure() - enclosed) * k;
-        boolean moved = Math.abs(enclosed - enclosedApplied) > 0.02F;
+        boolean moved = Math.abs(enclosed - enclosedApplied) > 0.02F || reverbOn != reverbOnApplied;
         if (moved) {
             enclosedApplied = enclosed;
+            reverbOnApplied = reverbOn;
         }
         for (int b = 0; b < 3; b++) {
             reverbNow[b] += (target[b] - reverbNow[b]) * k;
@@ -1127,7 +1190,7 @@ public final class Sound3D implements Runnable {
             EXTEfx.alEffectf(reverbEffect, EXTEfx.AL_REVERB_DECAY_HFRATIO, hf);
         }
         // open ground stays dry; walls and a half-pipe around bring the reverb in
-        EXTEfx.alAuxiliaryEffectSlotf(reverbSlot, EXTEfx.AL_EFFECTSLOT_GAIN, enclosed * REVERB_LEVEL);
+        EXTEfx.alAuxiliaryEffectSlotf(reverbSlot, EXTEfx.AL_EFFECTSLOT_GAIN, reverbOn ? enclosed * REVERB_LEVEL : 0F);
         EXTEfx.alAuxiliaryEffectSloti(reverbSlot, EXTEfx.AL_EFFECTSLOT_EFFECT, reverbEffect);
     }
 
@@ -1160,11 +1223,12 @@ public final class Sound3D implements Runnable {
             acoustics.direct(carPlaces, carTraced, cars, traced);
         }
         float k = 1F - (float) Math.exp(-dt / OCCLUSION_SMOOTHING);
+        boolean occluding = occlusionOn;
         for (int i = 0; i < 3 * MAX_CARS; i++) {
-            float target = i / 3 < cars && carTraced[i / 3] ? traced[i] : 1F;
+            float target = occluding && i / 3 < cars && carTraced[i / 3] ? traced[i] : 1F;
             through[i] += (target - through[i]) * k;
         }
-        float[] paths = acoustics.paths();
+        float[] paths = occluding && pathsOn ? acoustics.paths() : null;
         for (int i = 0; i < MAX_CARS; i++) {
             int at = SteamAcoustics.PATH_FLOATS * i;
             boolean found = paths != null && i < cars && carTraced[i] && paths[at] > 0F;
@@ -1382,6 +1446,7 @@ public final class Sound3D implements Runnable {
         alSourceStop(voice.source);
         alSourcei(voice.source, AL_BUFFER, buffer);
         world(voice.source);
+        gain *= loud(name) ? 1F : everyday;
         alSourcef(voice.source, AL_GAIN, gain * bus[BUS_EFFECTS]);
         alSourcef(voice.source, AL_PITCH, pitch);
         voice.car = car;
@@ -1413,7 +1478,7 @@ public final class Sound3D implements Runnable {
         float dt = UPDATE_NANOS / 1e9F;
         updateOcclusion(dt);
         updateReverb(dt);
-        engineLevel = (1F - duck) * bus[BUS_ENGINES];
+        engineLevel = (1F - duck) * bus[BUS_ENGINES] * everyday;
         duck *= (float) Math.exp(-dt / DUCK_RELEASE);
         for (int i = 0; i < engines.size(); i++) {
             engines.get(i).update(i < cars ? m.cars[i] : null, i, ahead, dt, m.muted);
