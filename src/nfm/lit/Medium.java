@@ -79,16 +79,21 @@ public class Medium {
     public static int flex = 0;
     public static boolean trk = false;
     public static boolean crs = false;
-    public static int cx = GameFacts.screenWidth / 2;
-    public static int cy = GameFacts.screenHeight / 2;
+    /*
+     * The projection: the picture's centre (cx, cy) and size (w, h). They are
+     * the game's own view's (GameFacts.GAME_WIDTH x GAME_HEIGHT) but while a
+     * picture of another shape is drawn, see showView().
+     */
+    public static int cx = GameFacts.GAME_WIDTH / 2;
+    public static int cy = GameFacts.GAME_HEIGHT / 2;
     public static int cz = 50;
     public static int xz = 0;
     public static int zy = 0;
     public static int x = 0;
     public static int y = 0;
     public static int z = 0;
-    public static int w = GameFacts.screenWidth;
-    public static int h = GameFacts.screenHeight;
+    public static int w = GameFacts.GAME_WIDTH;
+    public static int h = GameFacts.GAME_HEIGHT;
     public static int nsp = 0;
     public static int spx[] = new int[7];
     public static int spz[] = new int[7];
@@ -201,6 +206,44 @@ public class Medium {
     private static int savedLastmaf;
     private static int[] savedTwn;
     private static int[][][] savedStc;
+
+    /**
+     * Projects into the picture as it is shown, GameFacts.screenWidth x
+     * screenHeight, from the same place: the camera's x and y are counted
+     * from the picture's corner, so they move by as much as its centre does.
+     * Drawing a frame does this and {@link #gameView()} after; the camera is
+     * placed, and what is on screen is read back for the race, in the game's
+     * own view, so a race plays out the same in a window of any shape.
+     */
+    public static void showView() {
+        setView(GameFacts.screenWidth, GameFacts.screenHeight);
+    }
+
+    /** Projects into the game's own view again, the view everything but drawing works in. */
+    public static void gameView() {
+        setView(GameFacts.GAME_WIDTH, GameFacts.GAME_HEIGHT);
+    }
+
+    private static void setView(int width, int height) {
+        int centreX = width / 2;
+        int centreY = height / 2;
+        x += cx - centreX;
+        y += cy - centreY;
+        cx = centreX;
+        cy = centreY;
+        w = width;
+        h = height;
+    }
+
+    /** How far the camera's x moves from the game's own view to the picture as shown. */
+    public static int shownShiftX() {
+        return GameFacts.GAME_WIDTH / 2 - GameFacts.screenWidth / 2;
+    }
+
+    /** How far the camera's y moves from the game's own view to the picture as shown. */
+    public static int shownShiftY() {
+        return GameFacts.GAME_HEIGHT / 2 - GameFacts.screenHeight / 2;
+    }
 
     public static void saveDrawState() {
         fxRandom.exportState(savedFx);
@@ -564,16 +607,16 @@ public class Medium {
         trk = false;
         crs = false;
         noelec = 0;
-        cx = GameFacts.screenWidth / 2;
-        cy = GameFacts.screenHeight / 2;
+        cx = GameFacts.GAME_WIDTH / 2;
+        cy = GameFacts.GAME_HEIGHT / 2;
         cz = 50;
         xz = 0;
         zy = 0;
         x = 0;
         y = 0;
         z = 0;
-        w = GameFacts.screenWidth;
-        h = GameFacts.screenHeight;
+        w = GameFacts.GAME_WIDTH;
+        h = GameFacts.GAME_HEIGHT;
         nsp = 0;
         spx = new int[7];
         spz = new int[7];

@@ -50,11 +50,11 @@ import javax.imageio.ImageIO;
  */
 final class SettingsScreen {
 
-    /* the box, in the 1280x720 picture */
+    /* the box, in the game's own 1280x720 view; a picture of another shape has it in the middle */
     private static final int BOX_W = 940;
     private static final int BOX_H = 660;
-    private static final int BOX_X = (GameFacts.screenWidth - BOX_W) / 2;
-    private static final int BOX_Y = (GameFacts.screenHeight - BOX_H) / 2;
+    private static final int BOX_X = (GameFacts.GAME_WIDTH - BOX_W) / 2;
+    private static final int BOX_Y = (GameFacts.GAME_HEIGHT - BOX_H) / 2;
     /** The tabs' lettering stands on this line. */
     private static final int TABS_Y = BOX_Y + 78;
     private static final int TAB_SPACING = 200;
@@ -280,10 +280,17 @@ final class SettingsScreen {
                 null, new int[] {0, 1}, SettingsScreen::onOff, () -> RunApp.isFullscreen() ? 1 : 0,
                 v -> RunApp.setFullscreen(v == 1)));
         add(new Choice("Aspect ratio",
-                "The window's shape. The race and the menus are drawn 16:9, so other shapes show them with bars.",
+                "The window's shape. The race and the menus take it too, see Picture shape.",
                 () -> "Now: " + describeWindow() + ".", aspectChoices(), SettingsScreen::aspectName,
                 SettingsScreen::currentAspect, SettingsScreen::setAspect).when(windowed, windowOnly));
         add(windowSize.when(windowed, windowOnly));
+        add(new Choice("Picture shape",
+                "Window: the race and the menus are drawn the window's shape, with no bars. A wider window sees more"
+                        + " to the sides, a taller one more above and below; races play out the same."
+                        + " 16:9: drawn as the original was, with bars on other shapes.",
+                () -> "Now: " + GameSparker.describePictureShape() + ".", new int[] {1, 0},
+                v -> v == 1 ? "Window" : "16:9", () -> GameSparker.isWindowShape() ? 1 : 0,
+                v -> GameSparker.setWindowShape(v == 1)));
         add(new Choice("Fill the window",
                 "Scales the picture to the window, keeping its shape. Off shows it pixel for pixel.",
                 null, new int[] {0, 1}, SettingsScreen::onOff, () -> GameSparker.isScaleToWindow() ? 1 : 0,
@@ -588,8 +595,25 @@ final class SettingsScreen {
      */
     boolean frame(Graphics2D rd, Control control) {
         boolean leave = handleKeys(control);
-        draw(rd);
+        int dx = offsetX();
+        int dy = offsetY();
+        rd.translate(dx, dy);
+        try {
+            draw(rd);
+        } finally {
+            rd.translate(-dx, -dy);
+        }
         return leave;
+    }
+
+    /** How far right the screen stands in a picture wider than 1280: in the middle. */
+    private static int offsetX() {
+        return (GameFacts.screenWidth - GameFacts.GAME_WIDTH) / 2;
+    }
+
+    /** How far down the screen stands in a picture taller than 720: in the middle. */
+    private static int offsetY() {
+        return (GameFacts.screenHeight - GameFacts.GAME_HEIGHT) / 2;
     }
 
     private boolean handleKeys(Control control) {
@@ -737,7 +761,9 @@ final class SettingsScreen {
      * it, a click on Back goes back. {@code state} is 1 on the tick a button
      * went down.
      */
-    void mouse(int x, int y, int state, Control control) {
+    void mouse(int pictureX, int pictureY, int state, Control control) {
+        int x = pictureX - offsetX();
+        int y = pictureY - offsetY();
         boolean moved = x != lastMouseX || y != lastMouseY;
         lastMouseX = x;
         lastMouseY = y;
@@ -820,7 +846,7 @@ final class SettingsScreen {
     }
 
     private float tabCentre(int t) {
-        return GameFacts.screenWidth / 2F + (t - (tabNames.size() - 1) / 2F) * TAB_SPACING;
+        return GameFacts.GAME_WIDTH / 2F + (t - (tabNames.size() - 1) / 2F) * TAB_SPACING;
     }
 
     private int tabAt(int x, int y) {
@@ -840,7 +866,7 @@ final class SettingsScreen {
         if (b == null) {
             return false;
         }
-        int bx = (GameFacts.screenWidth - b.getWidth(null)) / 2;
+        int bx = (GameFacts.GAME_WIDTH - b.getWidth(null)) / 2;
         return x > bx - 5 && x < bx + b.getWidth(null) + 5 && y > BACK_Y - 5 && y < BACK_Y + b.getHeight(null) + 5;
     }
 
@@ -859,7 +885,7 @@ final class SettingsScreen {
         Shape clip = rd.getClip();
         drawBox(rd);
         rd.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        drawTitle(rd, "Settings", GameFacts.screenWidth / 2F, BOX_Y + 38);
+        drawTitle(rd, "Settings", GameFacts.GAME_WIDTH / 2F, BOX_Y + 38);
         flash = !flash;
         drawTabs(rd);
         rd.clipRect(LIST_X - 2, LIST_TOP - 2, LIST_W + 4, LIST_BOTTOM - LIST_TOP + 4);
@@ -1132,7 +1158,7 @@ final class SettingsScreen {
     private void drawFooter(Graphics2D rd) {
         Image b = back[selected == rows.size() && backPressed == 1 ? 1 : 0];
         if (b != null) {
-            int bx = (GameFacts.screenWidth - b.getWidth(null)) / 2;
+            int bx = (GameFacts.GAME_WIDTH - b.getWidth(null)) / 2;
             if (selected == rows.size()) {
                 highlight(rd, bx - 8, BACK_Y - 3, b.getWidth(null) + 16, b.getHeight(null) + 6);
             }
@@ -1141,7 +1167,7 @@ final class SettingsScreen {
         menuLetters(rd, smallFont, windowSize.typing()
                 ? "Type the width, then x and the height. Enter sets it, Escape keeps the size as it is."
                 : "Arrows choose and change a setting. Page Up and Page Down change the tab. Escape goes back.",
-                GameFacts.screenWidth / 2F, BOX_Y + BOX_H - 16, DIMMED, null);
+                GameFacts.GAME_WIDTH / 2F, BOX_Y + BOX_H - 16, DIMMED, null);
     }
 
     /** Where the screen goes back to; set by the menu that opens it. */
@@ -1483,8 +1509,8 @@ final class SettingsScreen {
             int w = width.length() == 0 ? 0 : Integer.parseInt(width.toString());
             int h = height.length() == 0 ? 0 : Integer.parseInt(height.toString());
             Dimension screen = RunApp.screenPixels();
-            int minW = GameFacts.screenWidth / 2;
-            int minH = GameFacts.screenHeight / 2;
+            int minW = GameFacts.GAME_WIDTH / 2;
+            int minH = GameFacts.GAME_HEIGHT / 2;
             if (w < minW || h < minH) {
                 problem = "At least " + minW + "x" + minH + ".";
             } else if (w > screen.width || h > screen.height) {

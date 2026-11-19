@@ -966,6 +966,90 @@ public class GameSparker extends Panel implements Runnable {
         }
     }
 
+    /* ---------------------------------------------------------- picture shape */
+
+    /** Draw the picture at the window's own shape (on unless turned off), else at 16:9 with bars. */
+    private static volatile boolean windowShape = true;
+    private static volatile boolean windowShapeChanged;
+    private static final String SHAPE_COOKIE = "pictureshape";
+    /* the shape the picture should take, and since when (a window being dragged changes it often) */
+    private int shapeWantedWidth = GameFacts.GAME_WIDTH;
+    private int shapeWantedHeight = GameFacts.GAME_HEIGHT;
+    private long shapeWantedSince;
+    private boolean shapeFitted;
+
+    /** Draws the picture at the window's shape, or at 16:9; saves the choice. */
+    public static void setWindowShape(boolean on) {
+        windowShape = on;
+        windowShapeChanged = true;
+    }
+
+    public static boolean isWindowShape() {
+        return windowShape;
+    }
+
+    public static String describePictureShape() {
+        return "drawn " + GameFacts.screenWidth + "x" + GameFacts.screenHeight;
+    }
+
+    /** -Dnfm.shape=window|16:9, else the saved choice, else the window's. */
+    private void loadWindowShape() {
+        String property = System.getProperty("nfm.shape");
+        if (property != null) {
+            windowShape = !property.trim().equals("16:9");
+        } else {
+            windowShape = readcookie(SHAPE_COOKIE) != 0;
+        }
+        windowShapeChanged = false;
+    }
+
+    /**
+     * At the start of a tick: saves a changed choice, and when the picture
+     * should take another shape, and has wanted it for a moment, gives it
+     * that shape (see GameFacts.pictureShape). The first time, at once.
+     */
+    private void fitPictureShape(long now) {
+        if (windowShapeChanged) {
+            windowShapeChanged = false;
+            savecookie(SHAPE_COOKIE, windowShape ? "1" : "0");
+        }
+        Dimension want = windowShape ? GameFacts.pictureShape(getWidth(), getHeight())
+                : new Dimension(GameFacts.GAME_WIDTH, GameFacts.GAME_HEIGHT);
+        if (want.width != shapeWantedWidth || want.height != shapeWantedHeight) {
+            shapeWantedWidth = want.width;
+            shapeWantedHeight = want.height;
+            shapeWantedSince = now;
+        }
+        boolean settled = !shapeFitted || now - shapeWantedSince > 250_000_000L;
+        if (!settled || want.width == GameFacts.screenWidth && want.height == GameFacts.screenHeight) {
+            return;
+        }
+        shapeFitted = getWidth() > 0 && getHeight() > 0;
+        synchronized (presentLock) {
+            GameFacts.screenWidth = want.width;
+            GameFacts.screenHeight = want.height;
+            if (gpu != null) {
+                gpu.setPictureSize(want.width, want.height);
+            }
+        }
+        if (offImage != null) {
+            // the menus and HUD keep how sharp they are drawn; fitUiResolution goes on from here
+            int width = Math.round(want.width * uiScale);
+            int height = Math.round(want.height * uiScale);
+            makeBuffers(width, height);
+            uiWantedWidth = width;
+            uiWantedHeight = height;
+            uiResolutionNow = width + "x" + height;
+        }
+        if (ui != null) {
+            ui.setTarget(rd);
+            ui.fitScreen();
+        }
+        keptStale = true;
+        HLogger.info("The picture is now " + want.width + "x" + want.height
+                + (windowShape ? ", the window's shape" : ", 16:9"));
+    }
+
     public GameSparker() {
 
         // INFO
@@ -1856,6 +1940,7 @@ public class GameSparker extends Panel implements Runnable {
         saveSceneDrawState();
         // smooth effects: where dust and debris are drawn between the ticks (the kept scene moves them itself)
         EffectTrails.begin(smoothEffects, retainedRecording ? Float.NaN : prevFrameValid ? alpha : 1F);
+        Medium.showView(); // drawn the shape the picture is; the camera stays where it is
         try {
             Graphics2D target = retainedRecording ? recordingRecorder.begin(rd)
                     : gpuSceneFrame ? sceneRecorder.begin(rd) : rd;
@@ -1864,6 +1949,7 @@ public class GameSparker extends Panel implements Runnable {
             Precise.cameraAngles();
             drawWorldObjects(target);
         } finally {
+            Medium.gameView();
             EffectTrails.end();
             restoreSceneDrawState();
             Precise.end();
@@ -1995,7 +2081,7 @@ public class GameSparker extends Panel implements Runnable {
                 Medium.startCountdown();
                 mouses = 0;
                 Medium.vert = false;
-                Medium.adv = GameFacts.screenWidth;
+                Medium.adv = GameFacts.GAME_WIDTH;
                 Medium.vxz = 180;
                 raceCheckpoints.checkstat(racers, sceneObjects, raceRecord, GameFacts.numberOfPlayers);
                 Medium.follow(sceneObjects[0], racers[0].cxz, 0);
@@ -2212,6 +2298,13 @@ public class GameSparker extends Panel implements Runnable {
         to[4] = ahead ? aheadPoses.camZY : Medium.zy;
         out.cameraMode = teleported(to[0] - from[0], to[1] - from[1], to[2] - from[2]) ? PoseSpan.AT_END
                 : PoseSpan.MOVING;
+        // placed as frames are drawn: in the picture as it is shown (see Medium.showView)
+        int shiftX = Medium.shownShiftX();
+        int shiftY = Medium.shownShiftY();
+        from[0] += shiftX;
+        to[0] += shiftX;
+        from[1] += shiftY;
+        to[1] += shiftY;
     }
 
     /** How often the game thread looks at the keys while the presenter draws, for a new run-ahead tick. */
@@ -5100,6 +5193,7 @@ public class GameSparker extends Panel implements Runnable {
         loadKeys();
         loadRunAhead();
         loadScaleToWindow();
+        loadWindowShape();
         loadRenderer();
         loadMultisample();
         loadSupersample();
@@ -5189,6 +5283,7 @@ public class GameSparker extends Panel implements Runnable {
                 saveVsyncIfChanged();
                 saveKeysIfChanged();
                 saveAudioEffectsIfChanged();
+                fitPictureShape(now);
                 fitUiResolution(now);
                 ticksRun++;
                 saveRunAheadIfChanged();
@@ -5455,10 +5550,13 @@ public class GameSparker extends Panel implements Runnable {
             if (gameUi.fase == Phase.STAGESELECT) {
                 rd.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
                 gameUi.trackbg(true);
+                Medium.showView();
                 Medium.d(rd);
+                Medium.gameView();
                 Medium.aroundTrack(checkpoints);
                 int farCount = 0;
                 int far[] = new int[200];
+                Medium.showView();
                 for (int piece = GameFacts.numberOfPlayers; piece < notb; piece++)
                     if (scene[piece].dist != 0) {
                         far[farCount] = piece;
@@ -5491,6 +5589,7 @@ public class GameSparker extends Panel implements Runnable {
                             scene[far[slot]].d(rd);
 
                 }
+                Medium.gameView();
 
                 rd.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
                 gameUi.ctachm(xm, ym, mouses, u[0]);
@@ -5501,8 +5600,10 @@ public class GameSparker extends Panel implements Runnable {
                 gameUi.stageselect(checkpoints, u[0]);
             }
             if (gameUi.fase == Phase.DRAWENVIRONMENT) {
+                Medium.showView();
                 Medium.d(rd);
                 drawWorldObjects(rd); // scene is sceneObjects
+                Medium.gameView();
                 Medium.follow(scene[0], 0, 0);
                 gameUi.hipnoload(checkpoints.stage, false);
                 if (previewFrames != 0) {

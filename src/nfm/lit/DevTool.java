@@ -403,6 +403,15 @@ public class DevTool {
                             + ".\nUsage: scale <fit|off>");
                 }
                 break;
+            case "shape":
+                if (args.length == 1 && (args[0].equalsIgnoreCase("window") || args[0].equals("16:9"))) {
+                    GameSparker.setWindowShape(args[0].equalsIgnoreCase("window"));
+                    print("Picture shape " + (GameSparker.isWindowShape() ? "window" : "16:9") + " (saved).");
+                } else {
+                    print("Picture shape is " + (GameSparker.isWindowShape() ? "window" : "16:9") + ", "
+                            + GameSparker.describePictureShape() + ".\nUsage: shape <window|16:9>");
+                }
+                break;
             case "runahead":
                 if (args.length == 1 && (args[0].equalsIgnoreCase("on") || args[0].equalsIgnoreCase("off"))) {
                     GameSparker.setRunAhead(args[0].equalsIgnoreCase("on"));
@@ -663,6 +672,7 @@ public class DevTool {
         commandDescriptions.put("map", "Loads a stage from the specified path. Usage: map <path-to-.txt>");
         commandDescriptions.put("stagesubdir", "Sets the stage subdirectory. Usage: stagesubdir <subdir>");
         commandDescriptions.put("status", "Displays the current game state.");
+        commandDescriptions.put("shape", "window draws the race and the menus the window's shape, with no bars (races play out the same); 16:9 draws them as the original did. Usage: shape <window|16:9>");
         commandDescriptions.put("scale", "fit scales the picture to fill the window, keeping its shape; off shows it pixel for pixel. Usage: scale <fit|off>");
         commandDescriptions.put("hdr", "HDR output on a monitor that has HDR turned on in Windows: the game looks as it does in SDR, at the brightness Windows shows SDR white at, and flames, lamps, sparks, stars and lightning shine brighter than white, rolling off smoothly into the display's peak. hdr white sets how bright the game's white is in nits (auto: Windows' SDR content brightness); hdr peak sets the display's peak in nits (auto: what the monitor tells Windows). Needs the gpu renderer. Usage: hdr <auto|off>, hdr white <auto|80-500>, hdr peak <auto|200-10000>");
         commandDescriptions.put("gamepad", "Game controllers (Xbox, PlayStation, Switch and others): RT or A accelerates, LT or X brakes, the left stick or d-pad steers, B is the handbrake, LB/RB look back, Y changes the view, Start pauses; in menus the stick moves and A selects. Hard hits shake the pad. Usage: gamepad <on|off>, gamepad rumble <on|off>");

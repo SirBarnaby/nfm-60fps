@@ -71,7 +71,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
     private boolean holdit;
     private int holdcnt;
     public boolean winner;
-    private final int[] flexpix;
+    private int[] flexpix;
     private final int[] smokey;
     private Image fleximg;
     private int flatrstart;
@@ -238,12 +238,13 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
     private float shload;
     private int radpx;
     private int pin;
-    private final int[] bgmy = {
-            0, GameFacts.screenHeight
-    };
-    private final int[] trkx = {
-            0, GameFacts.screenWidth
-    };
+    /** How far the menus' grey backdrop has scrolled up, and the stage pictures along. */
+    private int bgScroll;
+    private int trackScroll;
+    /* the full-screen art, fitted to the picture's shape; null until drawn at it (see fitScreen) */
+    private Image backdropShown;
+    private Image carsbgShown;
+    private Image[][] trackbgShown;
     private int trkl;
     private int trklim;
     private final float hipno = 1.0F;
@@ -838,14 +839,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         } else if (screen.backTo == Phase.PAUSEMENU) {
             rd.drawImage(fleximg, 0, 0, null);
         } else {
-            int i = 0;
-            do {
-                rd.drawImage(bgmain, 0, bgmy[i], null);
-                bgmy[i] -= 20;
-                if (bgmy[i] <= -GameFacts.screenHeight) {
-                    bgmy[i] = GameFacts.screenHeight;
-                }
-            } while (++i < 2);
+            scrollBackdrop(20);
         }
         if (screen.frame(rd, control)) {
             fase = screen.backTo;
@@ -856,8 +850,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
     public void inst(Control control) {
         if (flipo == 0) {
             flipo = 1;
-            bgmy[0] = 0;
-            bgmy[1] = GameFacts.screenHeight;
+            bgScroll = 0;
         }
         if (flipo == 2) {
             flipo = 3;
@@ -887,14 +880,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             flipo = 15;
             dudo = 100;
         }
-        int i = 0;
-        do {
-            rd.drawImage(bgmain, 0, bgmy[i], null);
-            bgmy[i] -= 2;
-            if (bgmy[i] <= -GameFacts.screenHeight) {
-                bgmy[i] = GameFacts.screenHeight;
-            }
-        } while (++i < 2);
+        scrollBackdrop(2);
         aflk = !aflk;
         int hint_all_width = dude[duds].getWidth(null) + oflaot.getWidth(null);
         int start_x = Utility.centeredWidthX(hint_all_width);
@@ -1199,7 +1185,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             }
             Color blurred = new Color(outRed, outGreen, outBlue);
             flexpix[pixel] = blurred.getRGB();
-        } while (++pixel < 0xE1000);
+        } while (++pixel < flexpix.length);
         fleximg = createImage(new MemoryImageSource(GameFacts.screenWidth, GameFacts.screenHeight, flexpix, 0,
                 GameFacts.screenWidth));
         rd.drawImage(fleximg, 0, 0, null);
@@ -2022,7 +2008,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                 }
                 if ("paused.gif".equals(name)) {
                     paused = loadimage(data, tracker, toolkit);
-                    pausebox_y = Utility.centeredImageY(paused) / 4;
+                    pausebox_y = pauseBoxY();
                 }
                 if ("select.gif".equals(name)) {
                     select = loadimage(data, tracker, toolkit);
@@ -2349,8 +2335,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             sm.play("powerup");
             rad(0);
             flipo = 1;
-            bgmy[0] = 0;
-            bgmy[1] = GameFacts.screenHeight;
+            bgScroll = 0;
         }
         if (flipo >= 1 && flipo <= 100) {
             rad(flipo);
@@ -2360,14 +2345,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             }
         }
         if (flipo == 101) {
-            int i = 0;
-            do {
-                rd.drawImage(bgmain, 0, bgmy[i], null);
-                bgmy[i] -= 10;
-                if (bgmy[i] <= -GameFacts.screenHeight) {
-                    bgmy[i] = GameFacts.screenHeight;
-                }
-            } while (++i < 2);
+            scrollBackdrop(10);
             rd.drawImage(mdness, Utility.centeredImageX(mdness), 7, null);
             rd.setFont(new Font("SansSerif", 1, 13));
             FontHandler.fMetrics = rd.getFontMetrics();
@@ -2393,14 +2371,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                     3);
         }
         if (flipo == 102) {
-            int i = 0;
-            do {
-                rd.drawImage(bgmain, 0, bgmy[i], null);
-                bgmy[i] -= 10;
-                if (bgmy[i] <= -GameFacts.screenHeight) {
-                    bgmy[i] = GameFacts.screenHeight;
-                }
-            } while (++i < 2);
+            scrollBackdrop(10);
             rd.setFont(new Font("SansSerif", 1, 13));
             FontHandler.fMetrics = rd.getFontMetrics();
             //////////////////////////////////////////////////////////////////////
@@ -2416,14 +2387,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             //////////////////////////////////////////////////////////////////////
         }
         if (flipo == 103) {
-            int j = 0;
-            do {
-                rd.drawImage(bgmain, 0, bgmy[j], null);
-                bgmy[j] -= 16;
-                if (bgmy[j] <= -GameFacts.screenHeight) {
-                    bgmy[j] = GameFacts.screenHeight;
-                }
-            } while (++j < 2);
+            scrollBackdrop(16);
             rd.drawImage(nfmcom, Utility.centeredImageX(nfmcom), 170, null);
         }
 
@@ -3183,7 +3147,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                                 125);
                         models[unlockedCar].y = carY;
                         Medium.crs = true;
-                        Medium.x = -(GameFacts.screenWidth / 2);
+                        Medium.x = -(GameFacts.GAME_WIDTH / 2);
                         Medium.y = -130;
                         Medium.z = -50;
                         Medium.xz = 0;
@@ -3195,7 +3159,9 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                         models[unlockedCar].xz += 5;
                         models[unlockedCar].zy = 0;
                         models[unlockedCar].wzy -= 10;
+                        Medium.showView();
                         models[unlockedCar].d(rd);
+                        Medium.gameView();
                         if (flicker < 0.10000000000000001D) {
                             rd.setColor(new Color(236, 226, 202));
                             int row = 0;
@@ -3501,14 +3467,117 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         if (steady) {
             frame = 0;
         }
-        int j = 0;
-        do {
-            rd.drawImage(trackbg[frame][j], trkx[j], 0, null);
-            trkx[j]--;
-            if (trkx[j] <= -GameFacts.screenWidth) {
-                trkx[j] = GameFacts.screenWidth;
+        // the two pictures one after the other, scrolling left a pixel a tick, as many as the picture is wide
+        Image[][] shown = trackPictures();
+        int tile = shown[frame][0].getWidth(null);
+        int x = Math.floorMod(trackScroll, 2 * tile) - 2 * tile;
+        for (int j = 0; x < GameFacts.screenWidth; j ^= 1, x += tile) {
+            if (x > -tile) {
+                rd.drawImage(shown[frame][j], x, 0, null);
             }
-        } while (++j < 2);
+        }
+        trackScroll = Math.floorMod(trackScroll - 1, 2 * tile);
+    }
+
+    /** The stage pictures, as tall as the picture is (they are made for 720). */
+    private Image[][] trackPictures() {
+        if (GameFacts.screenHeight == trackbg[0][0].getHeight(null)) {
+            return trackbg;
+        }
+        if (trackbgShown == null) {
+            trackbgShown = new Image[2][2];
+            for (int f = 0; f < 2; f++) {
+                for (int j = 0; j < 2; j++) {
+                    Image art = trackbg[f][j];
+                    trackbgShown[f][j] = Utility.extendArt(art, art.getWidth(null), GameFacts.screenHeight);
+                }
+            }
+        }
+        return trackbgShown;
+    }
+
+    /**
+     * The menus' grey backdrop, drawn over the whole picture and then
+     * scrolled up by {@code speed}: as many tiles as the picture is tall,
+     * and across a wide one, its neighbours mirrored so they meet.
+     */
+    private void scrollBackdrop(int speed) {
+        if (backdropShown == null) {
+            backdropShown = GameFacts.screenWidth == bgmain.getWidth(null) ? bgmain
+                    : Utility.mirrorAcross(bgmain, GameFacts.screenWidth);
+        }
+        int tile = bgmain.getHeight(null);
+        for (int y = Math.floorMod(bgScroll, tile) - tile; y < GameFacts.screenHeight; y += tile) {
+            rd.drawImage(backdropShown, 0, y, null);
+        }
+        bgScroll = Math.floorMod(bgScroll - speed, tile);
+    }
+
+    /** Where the pause box stands: where it always has at 720 tall, and lower by half what a taller picture adds. */
+    private int pauseBoxY() {
+        return (GameFacts.GAME_WIDTH / 2 - paused.getHeight(null) / 2) / 4
+                + (GameFacts.screenHeight - GameFacts.GAME_HEIGHT) / 2;
+    }
+
+    /** The car select's picture, filling the picture whatever its shape. */
+    private Image carsBackdrop() {
+        if (carsbgShown == null) {
+            carsbgShown = carsbg.getWidth(null) == GameFacts.screenWidth
+                    && carsbg.getHeight(null) == GameFacts.screenHeight ? carsbg
+                    : Utility.extendArt(carsbg, GameFacts.screenWidth, GameFacts.screenHeight);
+        }
+        return carsbgShown;
+    }
+
+    /**
+     * Lays the screens out again for the picture's new size,
+     * GameFacts.screenWidth x screenHeight, after it took another shape; the
+     * full-screen art is fitted to it again as it is next drawn.
+     */
+    public void fitScreen() {
+        int width = GameFacts.screenWidth;
+        int height = GameFacts.screenHeight;
+        press_enter_to_continue_height = height - 100;
+        main_menu_height_origin = (int) (height * 0.2);
+        main_menu_op_0_y = 246 + main_menu_height_origin;
+        main_menu_op_1_y = 275 + main_menu_height_origin;
+        main_menu_op_2_y = 306 + main_menu_height_origin;
+        main_menu_op_3_y = 337 + main_menu_height_origin;
+        car_select_next_back_button_y = (int) (height * 0.68);
+        car_select_next_button_x = width - 90;
+        car_select_continue_button_y = height - 120;
+        stage_select_next_back_button_y = (int) (height * 0.5);
+        stage_select_next_button_x = car_select_next_button_x;
+        stage_select_continue_button_y = height - 80;
+        post_game_continue_button_y = stage_select_continue_button_y;
+        credits_next_button_y = height - 100;
+        instructions_next_back_button_y = stage_select_next_back_button_y;
+        instructions_next_button_x = stage_select_next_button_x;
+        instructions_continue_button_x = instructions_next_button_x - 5;
+        if (paused != null) {
+            pausebox_y = pauseBoxY();
+        }
+        if (dude[0] != null) {
+            insano_mainmenu_x_original = ((width / 2) - dude[0].getWidth(null) / 2) + 10;
+            insano_mainmenu_y_original = 2 + main_menu_height_origin;
+            insano_mainmenu_x = insano_mainmenu_x_original;
+            insano_mainmenu_y = insano_mainmenu_y_original;
+        }
+        if (flexpix.length != width * height) {
+            flexpix = new int[width * height];
+        }
+        if (fleximg != null) {
+            // the paused race behind the pause menu, stretched until it is taken again
+            BufferedImage stretched = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+            Graphics2D g = stretched.createGraphics();
+            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g.drawImage(fleximg, 0, 0, width, height, null);
+            g.dispose();
+            fleximg = stretched;
+        }
+        backdropShown = null;
+        carsbgShown = null;
+        trackbgShown = null;
     }
 
     public void stageselect(CheckPoints checkpoints, Control control) {
@@ -4027,20 +4096,12 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         }
 
         if (flipo == 0) {
-            bgmy[0] = 0;
-            bgmy[1] = GameFacts.screenHeight;
+            bgScroll = 0;
             app.setCursor(new Cursor(0));
         }
 
         /* handle the moving background in main menu */
-        int i = 0;
-        do {
-            rd.drawImage(bgmain, 0, bgmy[i], null);
-            bgmy[i] -= 20;
-            if (bgmy[i] <= -GameFacts.screenHeight) {
-                bgmy[i] = GameFacts.screenHeight;
-            }
-        } while (++i < 2);
+        scrollBackdrop(20);
 
         /* handle the light red/ping background behind "need for madness!?" text */
         int logomadbg_xpos = Utility.centeredImageX(logomadbg);
@@ -4364,7 +4425,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                     int dy = (int) (((j - flyr) / distance) * flatr);
                     int target = i + dx + 100 + (j + dy + 110) * GameFacts.screenWidth;
                     if (i + dx + 100 < GameFacts.screenWidth && i + dx + 100 > 0 && j + dy + 110 < GameFacts.screenHeight
-                            && j + dy + 110 > 0 && target < 0xE1000
+                            && j + dy + 110 > 0 && target < flexpix.length
                             && target >= 0) {
                         Color color = new Color(flexpix[target]);
                         Color smoke = new Color(smokey[i + j * 466]);
@@ -4880,7 +4941,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         /* this is a mess... */
 
         if (flatrstart == 6) {
-            rd.drawImage(carsbg, 0, 0, null);
+            rd.drawImage(carsBackdrop(), 0, 0, null);
             // } else if (flatrstart <= 1) {
             // drawSmokeCarsbg();
         } else {
@@ -4892,13 +4953,15 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         intertrack.play();
         rd.drawImage(selectcar, Utility.centeredImageX(selectcar), 12, null);
         Medium.crs = true;
-        Medium.x = -GameFacts.screenWidth/2;
-        Medium.y = -(int)(GameFacts.screenHeight*0.83);
+        Medium.x = -GameFacts.GAME_WIDTH / 2;
+        Medium.y = -(int) (GameFacts.GAME_HEIGHT * 0.83);
         Medium.z = 200;
         Medium.xz = 0;
         Medium.zy = 10;
         Medium.ground = 570;
+        Medium.showView();
         models[sc[0]].d(rd);
+        Medium.gameView();
 
         if (GameSparker.DEBUG) {
             if (debugmode) {
@@ -5639,8 +5702,8 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         flangados = (int) (Medium.fxRandom() * 6F + 2.0F);
         blackn = 0.0F;
         blacknados = Medium.fxRandom() * 0.4F;
-        PixelGrabber grabber = new PixelGrabber(carsbg, 0, 0, GameFacts.screenWidth, GameFacts.screenHeight,
-                flexpix, 0, GameFacts.screenWidth);
+        PixelGrabber grabber = new PixelGrabber(carsBackdrop(), 0, 0, GameFacts.screenWidth,
+                GameFacts.screenHeight, flexpix, 0, GameFacts.screenWidth);
         try {
             grabber.grabPixels();
         } catch (InterruptedException ignored) {

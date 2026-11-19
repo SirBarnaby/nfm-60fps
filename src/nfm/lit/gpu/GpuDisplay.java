@@ -11,6 +11,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
+import java.util.Arrays;
 import org.lwjgl.bgfx.BGFXInit;
 import org.lwjgl.bgfx.BGFXPlatform;
 import org.lwjgl.bgfx.BGFXStats;
@@ -70,8 +71,9 @@ public final class GpuDisplay {
     /** How often to ask Windows whether HDR was switched, or the window moved to another monitor. */
     private static final long COLOR_CHECK_NANOS = 2_000_000_000L;
 
-    private final int pictureWidth;
-    private final int pictureHeight;
+    /** The picture's size in the game's pixels: scenes are placed in it, then scaled to the target. */
+    private int pictureWidth;
+    private int pictureHeight;
     private final long window;
 
     private boolean started;
@@ -434,6 +436,19 @@ public final class GpuDisplay {
         bgfx_vertex_layout_end(projectedLayout);
     }
 
+    /**
+     * The picture took another shape (GameFacts.screenWidth x screenHeight):
+     * scenes are placed in it from now on, and the HUD and kept scene are
+     * sent again. The textures follow the frames given.
+     */
+    public void setPictureSize(int width, int height) {
+        pictureWidth = width;
+        pictureHeight = height;
+        uploadedHud = -1L;
+        hudShownValid = false;
+        projectedVersion = -1L;
+    }
+
     /** True if kept scenes are placed on the card, not here. */
     public boolean projecting() {
         return isValid(projectedProgram);
@@ -505,7 +520,7 @@ public final class GpuDisplay {
         sceneHeight = Math.min(targetHeight, Math.max(pictureHeight, Math.round(targetHeight * scale)));
         if (hudImage != null && (hudVersion < 0L || hudVersion != uploadedHud)) {
             fitHudTexture(hudImage.getWidth(), hudImage.getHeight());
-            if (!uploadPicture(hudImage, hud, hudUpload, hudTextureWidth, hudTextureHeight)) {
+            if (!uploadHud(hudImage)) {
                 return false;
             }
             uploadedHud = hudVersion;
@@ -627,11 +642,13 @@ public final class GpuDisplay {
                 + g.evenOddPolygons() + " even-odd, " + g.antialiased() + " antialiased"
                 + String.format(", triangles made in %.2f ms", builds == 0 ? 0D : buildNanos / 1e6D / builds)
                 + ", " + hudUploads + " HUD uploads of " + hudTextureWidth + "x" + hudTextureHeight
+                + String.format(" (%.1f MB)", hudBytes / 1e6D)
                 + (projectedLast ? String.format(", placed on the card: %d scenes sent, %.1f MB",
                         projectedUploads, projectedBytes / 1e6D) : "");
         buildNanos = 0L;
         builds = 0;
         hudUploads = 0;
+        hudBytes = 0L;
         projectedUploads = 0;
         projectedBytes = 0L;
         return text;
@@ -748,6 +765,7 @@ public final class GpuDisplay {
             hud = bgfx_create_texture_2d(pictureWidth, pictureHeight, false, 1, BGFX_TEXTURE_FORMAT_BGRA8,
                     CLAMP, null, 0);
             hudUpload = MemoryUtil.memAllocInt(pictureWidth * pictureHeight);
+            hudShownValid = false;
             hudTextureWidth = pictureWidth;
             hudTextureHeight = pictureHeight;
             geometry = new SceneGeometry();
@@ -1017,6 +1035,75 @@ public final class GpuDisplay {
         return paperWhite() / DisplayColor.SDR_WHITE_NITS;
     }
 
+    /**
+     * The HUD as the HUD texture holds it, to send only the rows that
+     * changed: most of a HUD is transparent and the same from tick to tick,
+     * and the whole of it is 3.7 MB at 1280x720.
+     */
+    private int[] hudShown = new int[0];
+    private boolean hudShownValid;
+    /** Unchanged rows between two changed ones that are sent along rather than starting another upload. */
+    private static final int HUD_ROW_GAP = 8;
+
+    /** Sends the rows of the HUD that differ from what the texture holds; false if it is not the texture's size. */
+    private boolean uploadHud(BufferedImage image) {
+        int width = hudTextureWidth;
+        int height = hudTextureHeight;
+        if (!(image.getRaster().getDataBuffer() instanceof DataBufferInt pixels)
+                || image.getWidth() != width || image.getHeight() != height
+                || image.getRaster().getSampleModel().getWidth() != width) {
+            return false;
+        }
+        int[] from = pixels.getData();
+        int offset = pixels.getOffset();
+        if (hudShown.length != width * height) {
+            hudShown = new int[width * height];
+            hudShownValid = false;
+        }
+        if (!hudShownValid) {
+            System.arraycopy(from, offset, hudShown, 0, width * height);
+            hudShownValid = true;
+            return uploadPicture(image, hud, hudUpload, width, height);
+        }
+        int bandStart = -1;
+        int bandEnd = -1;
+        for (int y = 0; y < height; y++) {
+            int at = y * width;
+            if (Arrays.mismatch(from, offset + at, offset + at + width, hudShown, at, at + width) < 0) {
+                continue;
+            }
+            System.arraycopy(from, offset + at, hudShown, at, width);
+            if (bandStart >= 0 && y - bandEnd > HUD_ROW_GAP) {
+                uploadHudRows(bandStart, bandEnd);
+                bandStart = -1;
+            }
+            if (bandStart < 0) {
+                bandStart = y;
+            }
+            bandEnd = y + 1;
+        }
+        if (bandStart >= 0) {
+            uploadHudRows(bandStart, bandEnd);
+        }
+        return true;
+    }
+
+    /** Sends rows {@code [from, to)} of {@link #hudShown} to the HUD texture. */
+    private void uploadHudRows(int from, int to) {
+        int width = hudTextureWidth;
+        int start = from * width;
+        int count = (to - from) * width;
+        // the rows stay where they are in the buffer, which bgfx reads at bgfx_frame(): bands never overlap
+        IntBuffer rows = hudUpload.clear().position(start).limit(start + count).slice();
+        rows.put(hudShown, start, count).flip();
+        bgfx_update_texture_2d(hud, 0, 0, 0, from, width, to - from,
+                bgfx_make_ref(MemoryUtil.memByteBuffer(rows)), width * 4);
+        hudBytes += count * 4L;
+    }
+
+    /** HUD bytes sent to the card since the last statistics. */
+    private long hudBytes;
+
     /** Copies an image into a texture; false if it is not a packed-int image of the texture's size. */
     private static boolean uploadPicture(BufferedImage frame, short texture, IntBuffer buffer, int width, int height) {
         if (!(frame.getRaster().getDataBuffer() instanceof DataBufferInt pixels)
@@ -1074,6 +1161,7 @@ public final class GpuDisplay {
         hudUpload = free(hudUpload);
         hudUpload = MemoryUtil.memAllocInt(width * height);
         uploadedHud = -1L;
+        hudShownValid = false;
     }
 
     /**
@@ -1185,6 +1273,7 @@ public final class GpuDisplay {
         }
         picture = BGFX_INVALID_HANDLE;
         hud = BGFX_INVALID_HANDLE;
+        hudShownValid = false;
         sceneBuffer = BGFX_INVALID_HANDLE;
         sceneColor = BGFX_INVALID_HANDLE;
         sampler = BGFX_INVALID_HANDLE;
