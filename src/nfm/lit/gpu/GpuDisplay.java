@@ -11,7 +11,6 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
-import java.util.Arrays;
 import org.lwjgl.bgfx.BGFXInit;
 import org.lwjgl.bgfx.BGFXPlatform;
 import org.lwjgl.bgfx.BGFXStats;

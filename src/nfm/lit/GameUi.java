@@ -3137,7 +3137,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                         models[unlockedCar].xz += 5;
                         models[unlockedCar].zy = 0;
                         models[unlockedCar].wzy -= 10;
-                        try (Medium.ShownView shown = Medium.shownView()) {
+                        try (var _ = Medium.shownView()) {
                             models[unlockedCar].d(rd);
                         }
                         if (flicker < 0.10000000000000001D) {
@@ -4882,7 +4882,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         Medium.xz = 0;
         Medium.zy = 10;
         Medium.ground = 570;
-        try (Medium.ShownView shown = Medium.shownView()) {
+        try (var _ = Medium.shownView()) {
             models[sc[0]].d(rd);
         }
 

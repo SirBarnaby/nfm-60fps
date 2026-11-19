@@ -1001,7 +1001,7 @@ public class GameSparker extends Panel implements Runnable {
     private void loadWindowShape() {
         String property = System.getProperty("nfm.shape");
         if (property != null) {
-            windowShape = !property.trim().equals("16:9");
+            windowShape = !"16:9".equals(property.trim());
         } else {
             windowShape = readcookie(SHAPE_COOKIE) != 0;
         }
@@ -1938,7 +1938,7 @@ public class GameSparker extends Panel implements Runnable {
         saveSceneDrawState();
         // smooth effects: where dust and debris are drawn between the ticks (the kept scene moves them itself)
         EffectTrails.begin(smoothEffects, retainedRecording ? Float.NaN : prevFrameValid ? alpha : 1F);
-        try (Medium.ShownView shown = Medium.shownView()) { // drawn the picture's shape, from the same place
+        try (var _ = Medium.shownView()) { // drawn the picture's shape, from the same place
             Graphics2D target = retainedRecording ? recordingRecorder.begin(rd)
                     : gpuSceneFrame ? sceneRecorder.begin(rd) : rd;
             Precise.cameraAngles();
@@ -5546,13 +5546,13 @@ public class GameSparker extends Panel implements Runnable {
             if (gameUi.fase == Phase.STAGESELECT) {
                 rd.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
                 gameUi.trackbg(true);
-                try (Medium.ShownView shown = Medium.shownView()) {
+                try (var _ = Medium.shownView()) {
                     Medium.d(rd);
                 }
                 Medium.aroundTrack(checkpoints);
                 int farCount = 0;
                 int far[] = new int[200];
-                try (Medium.ShownView shown = Medium.shownView()) {
+                try (var _ = Medium.shownView()) {
                 for (int piece = GameFacts.numberOfPlayers; piece < notb; piece++)
                     if (scene[piece].dist != 0) {
                         far[farCount] = piece;
@@ -5596,7 +5596,7 @@ public class GameSparker extends Panel implements Runnable {
                 gameUi.stageselect(checkpoints, u[0]);
             }
             if (gameUi.fase == Phase.DRAWENVIRONMENT) {
-                try (Medium.ShownView shown = Medium.shownView()) {
+                try (var _ = Medium.shownView()) {
                     Medium.d(rd);
                     drawWorldObjects(rd); // scene is sceneObjects
                 }
