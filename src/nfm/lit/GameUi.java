@@ -266,6 +266,11 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
     /* Settings, lettered under the menu's picture */
     private int main_menu_op_3_y; // see fitScreen
     private int main_menu_op_3_width = 100;
+    private int main_menu_op_4_y; // see fitScreen
+    private int main_menu_op_4_width = 110;
+    /** Where the menu's brown backdrop is opened up for the fifth item, and by how much (its rows stay whole). */
+    private static final int OPBACK_GAP_AT = 90;
+    private static final int OPBACK_GAP = 38;
 
     /** The settings screen, made when first opened (the menu font is registered by then). */
     private SettingsScreen settingsScreen;
@@ -1197,12 +1202,12 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         /**
          * Base X position
          */
-        int centerX = GameFacts.screenWidth / 2;
+        int centerX = GameFacts.GAME_WIDTH / 2; // the HUD projects in the game's own view; marginX moves it into the HUD
         byte arrowY = -90;
         /**
          * Base Y position
          */
-        int centerZ = GameFacts.screenHeight; // 2BC
+        int centerZ = GameFacts.GAME_HEIGHT; // 2BC
         int angle = 0;
         do {
             ys[angle] = arrowY;
@@ -1307,7 +1312,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             if (angle > 7 || missed > 0 || missed == -2 || cntan != 0) {
                 int red = 0;
                 do {
-                    xs[red] = Utility.cXs(xs[red], zs[red]);
+                    xs[red] = Utility.cXs(xs[red], zs[red]) + GameFacts.marginX();
                     ys[red] = Utility.cYs(ys[red], zs[red]);
                 } while (++red < 7);
                 red = (int) (190F + 190F * (Medium.snap[0] / 100F));
@@ -1409,7 +1414,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         } else {
             int red = 0;
             do {
-                xs[red] = Utility.cXs(xs[red], zs[red]);
+                xs[red] = Utility.cXs(xs[red], zs[red]) + GameFacts.marginX();
                 ys[red] = Utility.cYs(ys[red], zs[red]);
             } while (++red < 7);
             red = (int) (159F + 159F * (Medium.snap[0] / 100F));
@@ -3524,6 +3529,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         main_menu_op_1_y = 275 + main_menu_height_origin;
         main_menu_op_2_y = 306 + main_menu_height_origin;
         main_menu_op_3_y = 337 + main_menu_height_origin;
+        main_menu_op_4_y = 368 + main_menu_height_origin;
         car_select_next_back_button_y = (int) (height * 0.68);
         car_select_next_button_x = width - 90;
         car_select_continue_button_y = height - 120;
@@ -4069,7 +4075,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
     public void maini(Control control, CheckPoints checkpoints, Madness drivers[], ContO models[], ContO scene[]) {
         // might redo the entire menu its horrible
 
-        int menuItems = 4;
+        int menuItems = 5;
 
         if (GameSparker.DEBUG) {
             if (!devtriggered) {
@@ -4161,9 +4167,9 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             movly = 10;
         }
 
-        rd.drawImage(opback, Utility.centeredImageX(opback), 212 + main_menu_height_origin, null);
+        drawMenuBackdrop(212 + main_menu_height_origin);
         rd.drawImage(nfmcoms, Utility.centeredImageX(nfmcoms), 195 + main_menu_height_origin, null);
-        rd.drawImage(byrd, Utility.centeredImageX(byrd), 383 + main_menu_height_origin, null);
+        rd.drawImage(byrd, Utility.centeredImageX(byrd), 383 + OPBACK_GAP + main_menu_height_origin, null);
 
         if (control.up) {
             opselect--;
@@ -4263,8 +4269,30 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             rd.drawRoundRect(Utility.centeredWidthX(main_menu_op_3_width), main_menu_op_3_y, main_menu_op_3_width,
                     main_menu_button_height, 7, 20);
         }
+        if (opselect == 4) {
+            if (shaded) {
+                rd.setColor(new Color(140, 70, 0));
+                rd.fillRect(Utility.centeredWidthX(main_menu_op_4_width), main_menu_op_4_y, main_menu_op_4_width,
+                        main_menu_button_height);
+                aflk = false;
+            }
+            if (aflk) {
+                rd.setColor(new Color(128, 0, 200));
+                aflk = false;
+            } else {
+                rd.setColor(new Color(255, 128, 0));
+                aflk = true;
+            }
+            rd.drawRoundRect(Utility.centeredWidthX(main_menu_op_4_width), main_menu_op_4_y, main_menu_op_4_width,
+                    main_menu_button_height, 7, 20);
+        } else {
+            rd.setColor(new Color(0, 0, 0));
+            rd.drawRoundRect(Utility.centeredWidthX(main_menu_op_4_width), main_menu_op_4_y, main_menu_op_4_width,
+                    main_menu_button_height, 7, 20);
+        }
         rd.drawImage(opti, Utility.centeredImageX(opti), 250 + main_menu_height_origin, null);
         SettingsScreen.drawMenuItem(rd, "Settings", GameFacts.screenWidth / 2F, main_menu_op_3_y + 18);
+        SettingsScreen.drawMenuItem(rd, "Exit Game", GameFacts.screenWidth / 2F, main_menu_op_4_y + 18);
         if (control.enter || control.handb) {
             if (opselect == 0) {
                 if (unlocked == 1 && oldfase == Phase.INGAME) {
@@ -4284,6 +4312,9 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             if (opselect == 3) {
                 openSettings(Phase.MAINMENU);
             }
+            if (opselect == 4) {
+                RunApp.requestExit();
+            }
             flipo = 0;
             control.enter = false;
             control.handb = false;
@@ -4295,6 +4326,21 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             } catch (InterruptedException ignored) {
             }
         }
+    }
+
+    /**
+     * The main menu's brown backdrop, taller than its picture by one item: the
+     * picture's rows above {@link #OPBACK_GAP_AT}, that row stretched over
+     * {@link #OPBACK_GAP} pixels, then the rest, so its round ends stay whole.
+     */
+    private void drawMenuBackdrop(int y) {
+        int x = Utility.centeredImageX(opback);
+        int w = opback.getWidth(null);
+        int h = opback.getHeight(null);
+        int at = OPBACK_GAP_AT;
+        rd.drawImage(opback, x, y, x + w, y + at, 0, 0, w, at, null);
+        rd.drawImage(opback, x, y + at, x + w, y + at + OPBACK_GAP, 0, at, w, at + 1, null);
+        rd.drawImage(opback, x, y + at + OPBACK_GAP, x + w, y + h + OPBACK_GAP, 0, at, w, h, null);
     }
 
     public void blendude(Image image) {
@@ -5238,6 +5284,11 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                     opselect = 3;
                     shaded = true;
                 }
+                if (overon(Utility.centeredWidthX(main_menu_op_4_width), main_menu_op_4_y, main_menu_op_4_width,
+                        main_menu_button_height, mouseX, mouseY)) {
+                    opselect = 4;
+                    shaded = true;
+                }
             }
             if (mouseState == 2 && shaded) {
                 control.enter = true;
@@ -5259,6 +5310,10 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                 if (overon(Utility.centeredWidthX(main_menu_op_3_width), main_menu_op_3_y, main_menu_op_3_width,
                         main_menu_button_height, mouseX, mouseY)) {
                     opselect = 3;
+                }
+                if (overon(Utility.centeredWidthX(main_menu_op_4_width), main_menu_op_4_y, main_menu_op_4_width,
+                        main_menu_button_height, mouseX, mouseY)) {
+                    opselect = 4;
                 }
                 lxm = mouseX;
                 lym = mouseY;

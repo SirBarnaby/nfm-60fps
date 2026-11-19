@@ -112,7 +112,7 @@ final class SettingsScreen {
      * readouts, volumes) and any setting added later show only their words.
      */
     private static final java.util.Set<String> PICTURED = java.util.Set.of(
-            "Fullscreen", "Aspect ratio", "Resolution", "Fill the window", "UI scale", "VSync", "Renderer",
+            "Fullscreen", "Aspect ratio", "Resolution", "UI scale", "VSync", "Renderer",
             "MSAA", "Supersampling", "Smooth particles", "HDR", "Paper white", "Peak brightness",
             "Sound system", "Output", "Occlusion", "Sound paths", "Reverb", "HDR audio",
             "Dynamic resolution", "Performance overlay");
@@ -289,27 +289,21 @@ final class SettingsScreen {
                 null, new int[] {0, 1}, SettingsScreen::onOff, () -> RunApp.isFullscreen() ? 1 : 0,
                 v -> RunApp.setFullscreen(v == 1)));
         add(new Choice("Aspect ratio",
-                "The window's shape, or in fullscreen the resolution's (a shape not the monitor's has bars)."
+                "The window's shape, or in fullscreen the resolution's (a shape not the monitor's is cut to fill it)."
                         + " The race and the menus take it, with no bars.",
                 () -> "Now: " + describeWindow() + ".", aspectChoices(), SettingsScreen::aspectName,
                 SettingsScreen::currentAspect, SettingsScreen::setAspect));
         add(windowSize);
-        add(new Choice("Fill the window",
-                "On: the game fills the window at any shape, with no bars. The race is drawn at the window's"
-                        + " resolution and seen wider or taller to fill it; the menus and HUD keep their own size in"
-                        + " pixels (see UI scale), with more of the backdrop around them on a larger screen."
-                        + " Off: the original 1280x720 picture, scaled to fit, with bars.",
-                () -> "Now: " + GameSparker.describePicture() + ".", new int[] {0, 1}, SettingsScreen::onOff,
-                () -> GameSparker.isScaleToWindow() ? 1 : 0, v -> GameSparker.setScaleToWindow(v == 1)));
         add(new Choice("UI scale",
                 "How big the menus, lettering and HUD are: 1, 2 or 4 times their own size in pixels, so they stay"
-                        + " sharp. Auto: the largest that fits, 1x on a 1080p screen, 2x on 1440p and 4K. A scale"
-                        + " needs room for 1280x720 at it, so a smaller window takes the next one down.",
+                        + " sharp, with more of the backdrop around them on a larger screen. Auto: the largest that"
+                        + " fits, 1x on a 1080p screen, 2x on 1440p and 4K. A scale needs room for 1280x720 at it,"
+                        + " so a smaller window takes the next one down, and one under 1280x720 shows the game"
+                        + " shrunk to fit.",
                 () -> "Now: " + GameSparker.describePicture() + ".", new int[] {0, 1, 2, 4},
                 v -> v == 0 ? "Auto" : v + "x", GameSparker::getUiZoom, GameSparker::setUiZoom)
-                .when(() -> GameSparker.isScaleToWindow() && GameSparker.isGpuRenderer(),
-                        "Only with Fill the window on and the Graphics card renderer: otherwise the menus are"
-                                + " scaled with the race."));
+                .when(GameSparker::isGpuRenderer,
+                        "Only with the Graphics card renderer: in software the menus are scaled with the race."));
         add(new Choice("Frame rate",
                 "Frames a second. Variable refresh stays just under the monitor's rate, for G-Sync and FreeSync.",
                 null, fpsLimits, SettingsScreen::fpsName, GameSparker::getFpsLimit, GameSparker::setFpsLimit));

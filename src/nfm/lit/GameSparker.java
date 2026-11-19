@@ -317,14 +317,6 @@ public class GameSparker extends Panel implements Runnable {
     private final FrameScaler frameScaler = new FrameScaler();
     /** Waits between ticks and frames; used only by the game thread. */
     private final PreciseSleep frameSleep = new PreciseSleep();
-    private static final String SCALING_COOKIE = "scaling";
-    /**
-     * Fill the window (on unless turned off): the 1280x720 picture is scaled
-     * to the largest size that fits, keeping its shape, with a smooth filter.
-     * Off, it is shown pixel for pixel in the middle of the window.
-     */
-    private static volatile boolean scaleToWindow = true;
-    private static volatile boolean scaleToWindowChanged;
     private static final String RENDERER_COOKIE = "renderer";
     /**
      * Put frames on screen through the graphics card (on unless turned off):
@@ -862,12 +854,14 @@ public class GameSparker extends Panel implements Runnable {
      * where the menus' picture is, for turning mouse positions into its
      * coordinates.
      * <p>
-     * The race's picture is scaled to fill the window, keeping its shape,
-     * which is the window's (see GameFacts.pictureShape). The menus' picture
-     * is shown a whole number of times its size, the UI scale, so every pixel
-     * of it is a square of the window's; cut by a pixel or two where the
-     * window is not a whole multiple. When the menus are not at native size
-     * it is the race's picture, scaled the same.
+     * The race's picture is scaled to cover the window, keeping its shape,
+     * which is the window's (see GameFacts.pictureShape): never with bars,
+     * so beyond the widest and narrowest shapes, or by a pixel of rounding,
+     * a little of it is cut off instead. The menus' picture is shown a whole
+     * number of times its size, the UI scale, so every pixel of it is a
+     * square of the window's; cut by a pixel or two where the window is not
+     * a whole multiple. When the menus are not at native size it is the
+     * race's picture, scaled the same.
      */
     private Places placePictures(int width, int height) {
         int shakeX = 0;
@@ -884,11 +878,12 @@ public class GameSparker extends Panel implements Runnable {
         if (width <= 0 || height <= 0) {
             return null;
         }
-        // the size the game draws at, fitted in the window: the same unless a fullscreen resolution is chosen
-        double fit = Math.min(width / (double) Math.max(1, drawWidthNow), height / (double) Math.max(1, drawHeightNow));
+        // the size the game draws at, covering the window: the same unless a fullscreen resolution is chosen
+        double cover = Math.max(width / (double) Math.max(1, drawWidthNow),
+                height / (double) Math.max(1, drawHeightNow));
         int zoom = uiZoomNow;
-        double canvasScale = zoom > 0 ? zoom * fit : Math.min(width / (double) canvasW, height / (double) canvasH);
-        double sceneScale = Math.min(width / (double) sceneW, height / (double) sceneH);
+        double canvasScale = zoom > 0 ? zoom * cover : Math.max(width / (double) canvasW, height / (double) canvasH);
+        double sceneScale = Math.max(width / (double) sceneW, height / (double) sceneH);
         Rectangle canvas = centred(width, height, canvasW, canvasH, canvasScale);
         Rectangle scene = centred(width, height, sceneW, sceneH, sceneScale);
         apx = canvas.x;
@@ -969,36 +964,6 @@ public class GameSparker extends Panel implements Runnable {
         return (int) Math.floor((windowY - apy) / presentScale);
     }
 
-    /** Turns filling the window on or off, and saves the choice. */
-    public static void setScaleToWindow(boolean on) {
-        scaleToWindow = on;
-        scaleToWindowChanged = true;
-    }
-
-    public static boolean isScaleToWindow() {
-        return scaleToWindow;
-    }
-
-    /** -Dnfm.scale=fit|off, else the saved choice, else fit (off: the original 1280x720, with bars). */
-    private void loadScaleToWindow() {
-        String property = System.getProperty("nfm.scale");
-        if (property != null) {
-            scaleToWindow = !property.trim().equalsIgnoreCase("off");
-        } else if (runsHidden()) {
-            scaleToWindow = true; // a test run ignores saved settings
-        } else {
-            scaleToWindow = readcookie(SCALING_COOKIE) != 0;
-        }
-        scaleToWindowChanged = false;
-    }
-
-    private void saveScaleToWindowIfChanged() {
-        if (scaleToWindowChanged) {
-            scaleToWindowChanged = false;
-            savecookie(SCALING_COOKIE, scaleToWindow ? "1" : "0");
-        }
-    }
-
     /* ---------------------------------------------------------- the picture's size */
 
     /** UI scale Auto: the menus and HUD as many times their own size as fits (1, 2 or 4). */
@@ -1026,31 +991,21 @@ public class GameSparker extends Panel implements Runnable {
     }
 
     /**
-     * The pictures for drawing at {@code drawWidth} x {@code drawHeight}.
-     * Filling the window, the race takes the window's shape; the menus and
-     * HUD are the window's pixels divided by the UI scale when
-     * {@code nativeUi} (the graphics card shows them) and a 1280x720 screen
-     * fits at some scale, else they are the race's picture. Not filling it,
-     * both are the original 1280x720.
+     * The pictures for drawing at {@code drawWidth} x {@code drawHeight}:
+     * the race takes the window's shape; the menus and HUD are the window's
+     * pixels divided by the UI scale when {@code nativeUi} (the graphics card
+     * shows them) and a 1280x720 screen fits at some scale, at any shape,
+     * else they are the race's picture.
      */
-    static PictureSize pictureSizeFor(int drawWidth, int drawHeight, boolean fill, boolean nativeUi,
-            int zoomSetting) {
-        int gw = GameFacts.GAME_WIDTH;
-        int gh = GameFacts.GAME_HEIGHT;
-        if (!fill) {
-            return new PictureSize(gw, gh, gw, gh, 0);
-        }
+    static PictureSize pictureSizeFor(int drawWidth, int drawHeight, boolean nativeUi, int zoomSetting) {
         Dimension scene = GameFacts.pictureShape(drawWidth, drawHeight);
         int zoom = nativeUi ? uiZoomFor(drawWidth, drawHeight, zoomSetting) : 0;
         if (zoom == 0) {
             return new PictureSize(scene.width, scene.height, scene.width, scene.height, 0);
         }
-        int w = (drawWidth + zoom - 1) / zoom;
-        int h = (drawHeight + zoom - 1) / zoom;
-        // beyond the widest and narrowest shapes the menus keep those, as the race does
-        w = Math.min(w, h * 32 / 9);
-        h = Math.min(h, w * 4 / 5);
-        return new PictureSize(w, h, scene.width, scene.height, zoom);
+        // the menus tile and extend their art to any shape, so they fill the window whatever it is
+        return new PictureSize((drawWidth + zoom - 1) / zoom, (drawHeight + zoom - 1) / zoom, scene.width,
+                scene.height, zoom);
     }
 
     /**
@@ -1123,7 +1078,7 @@ public class GameSparker extends Panel implements Runnable {
         saveFullscreenResolutionIfChanged();
         Dimension draw = drawingSize();
         boolean nativeUi = gpuRenderer && !gpuUnavailable && GPU_SCENE;
-        PictureSize want = pictureSizeFor(draw.width, draw.height, scaleToWindow, nativeUi, uiZoomSetting);
+        PictureSize want = pictureSizeFor(draw.width, draw.height, nativeUi, uiZoomSetting);
         if (!want.equals(pictureWanted)) {
             pictureWanted = want;
             pictureWantedSince = now;
@@ -2303,7 +2258,10 @@ public class GameSparker extends Panel implements Runnable {
         recordingScene = scene;
         try {
             framePose(RETAINED_AT, ahead, scene.recorded);
-            scene.begin();
+            // the kept scene is projected as the frames are drawn: in the race's picture as shown
+            try (var _ = Medium.shownView()) {
+                scene.begin();
+            }
             if (ahead) {
                 renderAheadScene(RETAINED_AT);
             } else {
@@ -4430,6 +4388,29 @@ public class GameSparker extends Panel implements Runnable {
     /** How long a hidden test run stays in the main menu before going on, for watching it: -Dnfm.autotest.menuhold=<ms>. */
     private static final long MENU_HOLD_MILLIS = Long.getLong("nfm.autotest.menuhold", 0L);
 
+    /**
+     * Window sizes a hidden test run changes to during the race, as a player
+     * would from the settings: -Dnfm.autotest.resize=3840x1080@9000,1920x1080@15000
+     * (in milliseconds of the race).
+     */
+    private static final String[] RESIZES = System.getProperty("nfm.autotest.resize", "").isBlank() ? new String[0]
+            : System.getProperty("nfm.autotest.resize").split(",");
+
+    /** Makes the next of {@link #RESIZES} once the race has run long enough; returns how many are made. */
+    private static int resizeHiddenWindowAt(long inGameMillis, int step) {
+        if (step >= RESIZES.length) {
+            return step;
+        }
+        String[] sizeAt = RESIZES[step].trim().split("@");
+        if (inGameMillis < Long.parseLong(sizeAt[1])) {
+            return step;
+        }
+        String[] wh = sizeAt[0].split("x");
+        RunApp.resizeHiddenWindow(Integer.parseInt(wh[0]), Integer.parseInt(wh[1]));
+        System.out.println("[autotest] window now " + sizeAt[0]);
+        return step + 1;
+    }
+
     private static final boolean HIDDEN_RUN = System.getProperty("nfm.autotest") != null || RaceSession.runsHidden();
 
     private void saveGamepadIfChanged() {
@@ -5096,6 +5077,7 @@ public class GameSparker extends Panel implements Runnable {
         /* the settings screen, from the main menu (0 to 3) and the pause menu (4 to 6) */
         int settingsStep = 0;
         int settingsDowns = 0;
+        int resizeStep = 0;
 
         while (System.currentTimeMillis() - startMillis < budgetMillis) {
             try {
@@ -5187,6 +5169,7 @@ public class GameSparker extends Panel implements Runnable {
                         saveFrame(directory, String.format("%02d-ingame-%04dms.png", shots++, inGameMillis));
                         lastShot = now;
                     }
+                    resizeStep = resizeHiddenWindowAt(inGameMillis, resizeStep);
                     /*
                      * The countdown eats the first ~7 s of INGAME, and instant
                      * replay needs 300 recorded ticks, so wait a little longer
@@ -5399,7 +5382,6 @@ public class GameSparker extends Panel implements Runnable {
         loadAudioEffects();
         loadKeys();
         loadRunAhead();
-        loadScaleToWindow();
         loadFullscreenResolution();
         loadRenderer();
         loadMultisample();
@@ -5493,7 +5475,6 @@ public class GameSparker extends Panel implements Runnable {
                 fitPicture(now);
                 ticksRun++;
                 saveRunAheadIfChanged();
-                saveScaleToWindowIfChanged();
                 saveRendererIfChanged();
                 saveMultisampleIfChanged();
                 saveSupersampleIfChanged();

@@ -305,6 +305,18 @@ class RunApp extends Panel {
         return new Dimension((int) Math.round(applet.getWidth() * s), (int) Math.round(applet.getHeight() * s));
     }
 
+    /** Hidden test runs only: resizes the off-screen window's inside, as dragging an edge would. */
+    static void resizeHiddenWindow(int width, int height) {
+        if (frame == null || frame.isVisible()) {
+            return;
+        }
+        EventQueue.invokeLater(() -> {
+            Insets insets = frame.getInsets();
+            frame.setSize(width + insets.left + insets.right, height + insets.top + insets.bottom);
+            frame.validate();
+        });
+    }
+
     /**
      * Makes the inside of the window {@code width} by {@code height} of the
      * monitor's pixels, keeping its centre where it fits on the monitor.
@@ -359,6 +371,11 @@ class RunApp extends Panel {
                 applet.requestFocus();
             }
         });
+    }
+
+    /** Closes the game as the window's close button does, from any thread (Exit Game on the main menu). */
+    static void requestExit() {
+        EventQueue.invokeLater(RunApp::exitSequence);
     }
 
     private static void exitSequence() {
