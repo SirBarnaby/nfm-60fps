@@ -183,17 +183,6 @@ public class Utility {
         return (GameFacts.screenWidth / 2) - (image.getWidth(null) / 2);
     }
 
-    /**
-     * Gets the Y coordinate an image should be loaded at in order for it to be
-     * centered.
-     * 
-     * @param image The image
-     * @return The Y coordinate
-     */
-    public static int centeredImageY(Image image) {
-        return (GameFacts.screenHeight / 2) - (image.getHeight(null) / 2);
-    }
-
     /** The pixels of art {@code width} x {@code height}, a row after another. */
     private static int[] pixelsOf(Image art, int width, int height) {
         BufferedImage copy = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
@@ -229,7 +218,8 @@ public class Utility {
                 int beyond = Math.max(beside, below);
                 if (beyond > 0) {
                     float t = Math.min(1F, beyond / 96F);
-                    colour = mix(colour, base, t * t * (3F - 2F * t)); // eased, so neither end shows an edge
+                    // eased, so neither end shows an edge
+                    colour = FrameScaler.mix(colour, base, Math.round(256F * t * t * (3F - 2F * t)));
                 }
                 out[y * width + x] = colour;
             }
@@ -269,14 +259,6 @@ public class Utility {
             }
         }
         return darkest;
-    }
-
-    /** Colour {@code a} turned share {@code t} (0 to 1) of the way to colour {@code b}. */
-    private static int mix(int a, int b, float t) {
-        int red = Math.round(((a >> 16) & 0xff) * (1F - t) + ((b >> 16) & 0xff) * t);
-        int green = Math.round(((a >> 8) & 0xff) * (1F - t) + ((b >> 8) & 0xff) * t);
-        int blue = Math.round((a & 0xff) * (1F - t) + (b & 0xff) * t);
-        return (red << 16) | (green << 8) | blue;
     }
 
     /**

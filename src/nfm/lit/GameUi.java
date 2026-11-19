@@ -72,7 +72,6 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
     private int holdcnt;
     public boolean winner;
     private int[] flexpix;
-    private final int[] smokey;
     private Image fleximg;
     private int flatrstart;
     private Thread runner;
@@ -251,21 +250,21 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
     private int flkat;
     private int movly;
 
-    private int press_enter_to_continue_height = GameFacts.screenHeight - 100;
+    private int press_enter_to_continue_height; // see fitScreen
 
     /* TODO: define each page's constants in their own files */
     /* main menu */
-    private int main_menu_height_origin = (int) (GameFacts.screenHeight * 0.2);
+    private int main_menu_height_origin; // see fitScreen
 
     private int main_menu_button_height = 22;
-    private int main_menu_op_0_y = 246 + main_menu_height_origin;
+    private int main_menu_op_0_y; // see fitScreen
     private int main_menu_op_0_width = 110;
-    private int main_menu_op_1_y = 275 + main_menu_height_origin;
+    private int main_menu_op_1_y; // see fitScreen
     private int main_menu_op_1_width = 196;
-    private int main_menu_op_2_y = 306 + main_menu_height_origin;
+    private int main_menu_op_2_y; // see fitScreen
     private int main_menu_op_2_width = 85;
     /* Settings, lettered under the menu's picture */
-    private int main_menu_op_3_y = 337 + main_menu_height_origin;
+    private int main_menu_op_3_y; // see fitScreen
     private int main_menu_op_3_width = 100;
 
     /** The settings screen, made when first opened (the menu font is registered by then). */
@@ -281,20 +280,20 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
     private int insano_mainmenu_target_y;
 
     /* car select */
-    private int car_select_next_back_button_y = (int) (GameFacts.screenHeight * 0.68);
+    private int car_select_next_back_button_y; // see fitScreen
     private int car_select_back_button_x = 30;
-    private int car_select_next_button_x = GameFacts.screenWidth - 90;
-    private int car_select_continue_button_y = GameFacts.screenHeight - 120;
+    private int car_select_next_button_x; // see fitScreen
+    private int car_select_continue_button_y; // see fitScreen
 
     /* stage select */
-    private int stage_select_next_back_button_y = (int) (GameFacts.screenHeight * 0.5);;
+    private int stage_select_next_back_button_y; // see fitScreen
     private int stage_select_back_button_x = car_select_back_button_x;
-    private int stage_select_next_button_x = car_select_next_button_x;
-    private int stage_select_continue_button_y = GameFacts.screenHeight - 80;
+    private int stage_select_next_button_x; // see fitScreen
+    private int stage_select_continue_button_y; // see fitScreen
     private int stage_select_text_y = 25;
 
     /* post-game continue */
-    private int post_game_continue_button_y = stage_select_continue_button_y;
+    private int post_game_continue_button_y; // see fitScreen
 
     /* pause */
     /* set in loadimages */
@@ -311,13 +310,13 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
     private int pausebox_op_x_correction = -3;
 
     /* credits */
-    private int credits_next_button_y = GameFacts.screenHeight - 100;
+    private int credits_next_button_y; // see fitScreen
 
     /* instructions */
-    private int instructions_next_back_button_y = stage_select_next_back_button_y;
-    private int instructions_next_button_x = stage_select_next_button_x;
+    private int instructions_next_back_button_y; // see fitScreen
+    private int instructions_next_button_x; // see fitScreen
     private int instructions_back_button_x = stage_select_back_button_x;
-    private int instructions_continue_button_x = instructions_next_button_x - 5;
+    private int instructions_continue_button_x; // see fitScreen
 
     private final int[] pgatx = {
             146, 175, 215, 267, 334, 401, 452, 493, 521
@@ -1799,20 +1798,6 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         return createImage(new MemoryImageSource(width, height, pixels, 0, width));
     }
 
-    private void smokeypix(byte data[], MediaTracker tracker, Toolkit toolkit) {
-        Image image = toolkit.createImage(data);
-        tracker.addImage(image, 0);
-        try {
-            tracker.waitForID(0);
-        } catch (Exception ignored) {
-        }
-        PixelGrabber grabber = new PixelGrabber(image, 0, 0, 466, 202, smokey, 0, 466);
-        try {
-            grabber.grabPixels();
-        } catch (InterruptedException ignored) {
-        }
-    }
-
     public void stoploading() {
         // Thread.stop() throws on Java 20+, so end the loader loop cooperatively
         Thread loader = runner;
@@ -1994,9 +1979,6 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                 if ("cars.gif".equals(name)) {
                     carsbg = loadimage(data, tracker, toolkit);
                 }
-                if ("smokey.gif".equals(name)) {
-                    smokeypix(data, tracker, toolkit);
-                }
                 if ("gameh.gif".equals(name)) {
                     ogameh = loadimage(data, tracker, toolkit);
                 }
@@ -2021,11 +2003,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                 }
                 if ("d1.gif".equals(name)) {
                     dude[0] = loadimage(data, tracker, toolkit);
-                    /* setup initial position since it's dynamic */
-                    insano_mainmenu_x = ((GameFacts.screenWidth / 2) - dude[0].getWidth(null) / 2) + 10;
-                    insano_mainmenu_x_original = insano_mainmenu_x;
-                    insano_mainmenu_y = 2 + main_menu_height_origin;
-                    insano_mainmenu_y_original = insano_mainmenu_y;
+                    placeInsano();
                 }
                 if ("d2.gif".equals(name)) {
                     dude[1] = loadimage(data, tracker, toolkit);
@@ -3159,9 +3137,9 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                         models[unlockedCar].xz += 5;
                         models[unlockedCar].zy = 0;
                         models[unlockedCar].wzy -= 10;
-                        Medium.showView();
-                        models[unlockedCar].d(rd);
-                        Medium.gameView();
+                        try (Medium.ShownView shown = Medium.shownView()) {
+                            models[unlockedCar].d(rd);
+                        }
                         if (flicker < 0.10000000000000001D) {
                             rd.setColor(new Color(236, 226, 202));
                             int row = 0;
@@ -3513,10 +3491,13 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         bgScroll = Math.floorMod(bgScroll - speed, tile);
     }
 
-    /** Where the pause box stands: where it always has at 720 tall, and lower by half what a taller picture adds. */
+    /**
+     * Where the pause box stands: where it always has at 720 tall (the
+     * original's formula, from the width, kept so it does not move), and
+     * lower by half what a taller picture adds.
+     */
     private int pauseBoxY() {
-        return (GameFacts.GAME_WIDTH / 2 - paused.getHeight(null) / 2) / 4
-                + (GameFacts.screenHeight - GameFacts.GAME_HEIGHT) / 2;
+        return (GameFacts.GAME_WIDTH / 2 - paused.getHeight(null) / 2) / 4 + GameFacts.marginY();
     }
 
     /** The car select's picture, filling the picture whatever its shape. */
@@ -3558,10 +3539,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             pausebox_y = pauseBoxY();
         }
         if (dude[0] != null) {
-            insano_mainmenu_x_original = ((width / 2) - dude[0].getWidth(null) / 2) + 10;
-            insano_mainmenu_y_original = 2 + main_menu_height_origin;
-            insano_mainmenu_x = insano_mainmenu_x_original;
-            insano_mainmenu_y = insano_mainmenu_y_original;
+            placeInsano();
         }
         if (flexpix.length != width * height) {
             flexpix = new int[width * height];
@@ -3578,6 +3556,14 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         backdropShown = null;
         carsbgShown = null;
         trackbgShown = null;
+    }
+
+    /** Insano's place on the main menu, over the middle of the menu, where he goes back to. */
+    private void placeInsano() {
+        insano_mainmenu_x_original = ((GameFacts.screenWidth / 2) - dude[0].getWidth(null) / 2) + 10;
+        insano_mainmenu_y_original = 2 + main_menu_height_origin;
+        insano_mainmenu_x = insano_mainmenu_x_original;
+        insano_mainmenu_y = insano_mainmenu_y_original;
     }
 
     public void stageselect(CheckPoints checkpoints, Control control) {
@@ -3966,7 +3952,6 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         holdcnt = 0;
         winner = false;
         flexpix = new int[GameFacts.screenHeight * GameFacts.screenWidth];
-        smokey = new int[0x16fb4];
         flatrstart = 0;
         runtyp = 0;
         trackbg = new Image[2][2];
@@ -4078,6 +4063,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         }
         int i = 0;
         loadedt = false;
+        fitScreen();
     }
 
     public void maini(Control control, CheckPoints checkpoints, Madness drivers[], ContO models[], ContO scene[]) {
@@ -4389,67 +4375,6 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             control.handb = false;
             control.enter = false;
         }
-    }
-
-    private void drawSmokeCarsbg() {
-        if (Math.abs(flyr - flyrdest) > 20) {
-            if (flyr > flyrdest) {
-                flyr -= 20;
-            } else {
-                flyr += 20;
-            }
-        } else {
-            flyr = flyrdest;
-            flyrdest = (int) ((flyr + Medium.fxRandom() * 160F) - 80F);
-        }
-        if (flyr > 160) {
-            flyr = 160;
-        }
-        if (flatr > 170) {
-            flatrstart++;
-            flatr = flatrstart * 3;
-            flyr = (int) (Medium.fxRandom() * 160F - 80F);
-            flyrdest = (int) ((flyr + Medium.fxRandom() * 160F) - 80F);
-            flang = 1;
-            flangados = (int) (Medium.fxRandom() * 6F + 2.0F);
-            blackn = 0.0F;
-            blacknados = Medium.fxRandom() * 0.4F;
-        }
-        int i = 0;
-        do {
-            int j = 0;
-            do {
-                if (smokey[i + j * 466] != smokey[0]) {
-                    float distance = Utility.pys(i, 233, j, flyr);
-                    int dx = (int) (((i - 233) / distance) * flatr);
-                    int dy = (int) (((j - flyr) / distance) * flatr);
-                    int target = i + dx + 100 + (j + dy + 110) * GameFacts.screenWidth;
-                    if (i + dx + 100 < GameFacts.screenWidth && i + dx + 100 > 0 && j + dy + 110 < GameFacts.screenHeight
-                            && j + dy + 110 > 0 && target < flexpix.length
-                            && target >= 0) {
-                        Color color = new Color(flexpix[target]);
-                        Color smoke = new Color(smokey[i + j * 466]);
-                        float density = (255F - smoke.getRed()) / 255F;
-                        int gray = (int) ((color.getRed() * (flang * density)
-                                + smoke.getRed() * (1.0F - density)) / (flang * density + (1.0F - density) + blackn));
-                        if (gray > 255) {
-                            gray = 255;
-                        }
-                        if (gray < 0) {
-                            gray = 0;
-                        }
-                        Color grayColor = new Color(gray, gray, gray);
-                        flexpix[target] = grayColor.getRGB();
-                    }
-                }
-            } while (++j < 202);
-        } while (++i < 466);
-        blackn += blacknados;
-        flang += flangados;
-        flatr += 10 + flatrstart * 2;
-        Image image = createImage(new MemoryImageSource(GameFacts.screenWidth, GameFacts.screenHeight, flexpix, 0,
-                GameFacts.screenWidth));
-        rd.drawImage(image, 0, 0, null);
     }
 
     public void loaddata() {
@@ -4942,8 +4867,6 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
 
         if (flatrstart == 6) {
             rd.drawImage(carsBackdrop(), 0, 0, null);
-            // } else if (flatrstart <= 1) {
-            // drawSmokeCarsbg();
         } else {
             rd.setColor(new Color(255, 255, 255, 50));
             rd.fillRect(0, 0, GameFacts.screenWidth, GameFacts.screenHeight);
@@ -4959,9 +4882,9 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         Medium.xz = 0;
         Medium.zy = 10;
         Medium.ground = 570;
-        Medium.showView();
-        models[sc[0]].d(rd);
-        Medium.gameView();
+        try (Medium.ShownView shown = Medium.shownView()) {
+            models[sc[0]].d(rd);
+        }
 
         if (GameSparker.DEBUG) {
             if (debugmode) {

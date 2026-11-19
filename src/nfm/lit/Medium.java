@@ -235,14 +235,22 @@ public class Medium {
         h = height;
     }
 
-    /** How far the camera's x moves from the game's own view to the picture as shown. */
-    public static int shownShiftX() {
-        return GameFacts.GAME_WIDTH / 2 - GameFacts.screenWidth / 2;
+    /** The shown view while open, see {@link #shownView()}; closing it goes back to the game's own. */
+    public interface ShownView extends AutoCloseable {
+        @Override
+        void close();
     }
 
-    /** How far the camera's y moves from the game's own view to the picture as shown. */
-    public static int shownShiftY() {
-        return GameFacts.GAME_HEIGHT / 2 - GameFacts.screenHeight / 2;
+    private static final ShownView SHOWN = Medium::gameView;
+
+    /**
+     * {@link #showView()} for a try-with-resources block, so the game's own
+     * view is back however the block ends: a race placed in the shown view
+     * would no longer play out as recorded.
+     */
+    public static ShownView shownView() {
+        showView();
+        return SHOWN;
     }
 
     public static void saveDrawState() {

@@ -151,7 +151,7 @@ final class FrameScaler {
      * are blended at once in each 32-bit multiply: their 8 bits stay apart
      * because a weighted sum never exceeds 255 * 256.
      */
-    private static int mix(int first, int second, int weight) {
+    static int mix(int first, int second, int weight) {
         int keep = 256 - weight;
         int redBlue = ((first & 0xFF00FF) * keep + (second & 0xFF00FF) * weight) >>> 8 & 0xFF00FF;
         int alphaGreen = ((first >>> 8 & 0xFF00FF) * keep + (second >>> 8 & 0xFF00FF) * weight) & 0xFF00FF00;

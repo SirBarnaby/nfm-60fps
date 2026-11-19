@@ -444,8 +444,7 @@ public final class GpuDisplay {
     public void setPictureSize(int width, int height) {
         pictureWidth = width;
         pictureHeight = height;
-        uploadedHud = -1L;
-        hudShownValid = false;
+        invalidateHud();
         projectedVersion = -1L;
     }
 
@@ -765,7 +764,7 @@ public final class GpuDisplay {
             hud = bgfx_create_texture_2d(pictureWidth, pictureHeight, false, 1, BGFX_TEXTURE_FORMAT_BGRA8,
                     CLAMP, null, 0);
             hudUpload = MemoryUtil.memAllocInt(pictureWidth * pictureHeight);
-            hudShownValid = false;
+            hudHeld = false;
             hudTextureWidth = pictureWidth;
             hudTextureHeight = pictureHeight;
             geometry = new SceneGeometry();
@@ -1036,43 +1035,43 @@ public final class GpuDisplay {
     }
 
     /**
-     * The HUD as the HUD texture holds it, to send only the rows that
-     * changed: most of a HUD is transparent and the same from tick to tick,
-     * and the whole of it is 3.7 MB at 1280x720.
+     * True while {@link #hudUpload} holds what the HUD texture does, so only
+     * the rows that changed need sending: most of a HUD is transparent and
+     * the same from tick to tick, and the whole of it is 3.7 MB at 1280x720.
      */
-    private int[] hudShown = new int[0];
-    private boolean hudShownValid;
+    private boolean hudHeld;
     /** Unchanged rows between two changed ones that are sent along rather than starting another upload. */
     private static final int HUD_ROW_GAP = 8;
+
+    /** The HUD is sent whole next time: its texture is new, or the picture changed. */
+    private void invalidateHud() {
+        uploadedHud = -1L;
+        hudHeld = false;
+    }
 
     /** Sends the rows of the HUD that differ from what the texture holds; false if it is not the texture's size. */
     private boolean uploadHud(BufferedImage image) {
         int width = hudTextureWidth;
         int height = hudTextureHeight;
-        if (!(image.getRaster().getDataBuffer() instanceof DataBufferInt pixels)
-                || image.getWidth() != width || image.getHeight() != height
-                || image.getRaster().getSampleModel().getWidth() != width) {
+        DataBufferInt pixels = packedPixels(image, width, height);
+        if (pixels == null) {
             return false;
+        }
+        if (!hudHeld) {
+            hudHeld = true;
+            return uploadPicture(image, hud, hudUpload, width, height);
         }
         int[] from = pixels.getData();
         int offset = pixels.getOffset();
-        if (hudShown.length != width * height) {
-            hudShown = new int[width * height];
-            hudShownValid = false;
-        }
-        if (!hudShownValid) {
-            System.arraycopy(from, offset, hudShown, 0, width * height);
-            hudShownValid = true;
-            return uploadPicture(image, hud, hudUpload, width, height);
-        }
+        IntBuffer held = hudUpload.clear();
         int bandStart = -1;
         int bandEnd = -1;
         for (int y = 0; y < height; y++) {
             int at = y * width;
-            if (Arrays.mismatch(from, offset + at, offset + at + width, hudShown, at, at + width) < 0) {
+            if (held.slice(at, width).mismatch(IntBuffer.wrap(from, offset + at, width)) < 0) {
                 continue;
             }
-            System.arraycopy(from, offset + at, hudShown, at, width);
+            held.put(at, from, offset + at, width);
             if (bandStart >= 0 && y - bandEnd > HUD_ROW_GAP) {
                 uploadHudRows(bandStart, bandEnd);
                 bandStart = -1;
@@ -1088,17 +1087,22 @@ public final class GpuDisplay {
         return true;
     }
 
-    /** Sends rows {@code [from, to)} of {@link #hudShown} to the HUD texture. */
+    /** Sends rows {@code [from, to)} of {@link #hudUpload}, which holds them already, to the HUD texture. */
     private void uploadHudRows(int from, int to) {
         int width = hudTextureWidth;
-        int start = from * width;
         int count = (to - from) * width;
-        // the rows stay where they are in the buffer, which bgfx reads at bgfx_frame(): bands never overlap
-        IntBuffer rows = hudUpload.clear().position(start).limit(start + count).slice();
-        rows.put(hudShown, start, count).flip();
+        // a reference into the buffer, which bgfx reads at bgfx_frame(): bands never overlap
+        IntBuffer rows = hudUpload.slice(from * width, count);
         bgfx_update_texture_2d(hud, 0, 0, 0, from, width, to - from,
                 bgfx_make_ref(MemoryUtil.memByteBuffer(rows)), width * 4);
         hudBytes += count * 4L;
+    }
+
+    /** An image's pixels, if it is a packed-int image {@code width} x {@code height} with no padding; else null. */
+    private static DataBufferInt packedPixels(BufferedImage image, int width, int height) {
+        return image.getRaster().getDataBuffer() instanceof DataBufferInt pixels
+                && image.getWidth() == width && image.getHeight() == height
+                && image.getRaster().getSampleModel().getWidth() == width ? pixels : null;
     }
 
     /** HUD bytes sent to the card since the last statistics. */
@@ -1106,9 +1110,8 @@ public final class GpuDisplay {
 
     /** Copies an image into a texture; false if it is not a packed-int image of the texture's size. */
     private static boolean uploadPicture(BufferedImage frame, short texture, IntBuffer buffer, int width, int height) {
-        if (!(frame.getRaster().getDataBuffer() instanceof DataBufferInt pixels)
-                || frame.getWidth() != width || frame.getHeight() != height
-                || frame.getRaster().getSampleModel().getWidth() != width) {
+        DataBufferInt pixels = packedPixels(frame, width, height);
+        if (pixels == null) {
             return false;
         }
         buffer.clear();
@@ -1160,8 +1163,7 @@ public final class GpuDisplay {
         hudTextureHeight = height;
         hudUpload = free(hudUpload);
         hudUpload = MemoryUtil.memAllocInt(width * height);
-        uploadedHud = -1L;
-        hudShownValid = false;
+        invalidateHud();
     }
 
     /**
@@ -1273,7 +1275,7 @@ public final class GpuDisplay {
         }
         picture = BGFX_INVALID_HANDLE;
         hud = BGFX_INVALID_HANDLE;
-        hudShownValid = false;
+        hudHeld = false;
         sceneBuffer = BGFX_INVALID_HANDLE;
         sceneColor = BGFX_INVALID_HANDLE;
         sampler = BGFX_INVALID_HANDLE;

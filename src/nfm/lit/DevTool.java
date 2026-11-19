@@ -406,9 +406,9 @@ public class DevTool {
             case "shape":
                 if (args.length == 1 && (args[0].equalsIgnoreCase("window") || args[0].equals("16:9"))) {
                     GameSparker.setWindowShape(args[0].equalsIgnoreCase("window"));
-                    print("Picture shape " + (GameSparker.isWindowShape() ? "window" : "16:9") + " (saved).");
+                    print("Picture shape " + GameSparker.pictureShapeName() + " (saved).");
                 } else {
-                    print("Picture shape is " + (GameSparker.isWindowShape() ? "window" : "16:9") + ", "
+                    print("Picture shape is " + GameSparker.pictureShapeName() + ", "
                             + GameSparker.describePictureShape() + ".\nUsage: shape <window|16:9>");
                 }
                 break;

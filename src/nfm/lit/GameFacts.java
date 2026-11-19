@@ -34,9 +34,19 @@ public class GameFacts
      public static volatile int screenHeight = GAME_HEIGHT;
 
      /** The narrowest and the widest shapes the picture takes; beyond them it is shown with bars. */
-     public static final float NARROWEST = 5F / 4F;
+     private static final float NARROWEST = 5F / 4F;
 
-     public static final float WIDEST = 32F / 9F;
+     private static final float WIDEST = 32F / 9F;
+
+     /** How far right of the picture's corner the game's own 1280x720 view stands: it is in the middle. */
+     public static int marginX() {
+          return (screenWidth - GAME_WIDTH) / 2;
+     }
+
+     /** How far down from the picture's corner the game's own 1280x720 view stands. */
+     public static int marginY() {
+          return (screenHeight - GAME_HEIGHT) / 2;
+     }
 
      /**
       * The picture's size for a window {@code width} x {@code height}: the

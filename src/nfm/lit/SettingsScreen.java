@@ -595,8 +595,8 @@ final class SettingsScreen {
      */
     boolean frame(Graphics2D rd, Control control) {
         boolean leave = handleKeys(control);
-        int dx = offsetX();
-        int dy = offsetY();
+        int dx = GameFacts.marginX();
+        int dy = GameFacts.marginY();
         rd.translate(dx, dy);
         try {
             draw(rd);
@@ -604,16 +604,6 @@ final class SettingsScreen {
             rd.translate(-dx, -dy);
         }
         return leave;
-    }
-
-    /** How far right the screen stands in a picture wider than 1280: in the middle. */
-    private static int offsetX() {
-        return (GameFacts.screenWidth - GameFacts.GAME_WIDTH) / 2;
-    }
-
-    /** How far down the screen stands in a picture taller than 720: in the middle. */
-    private static int offsetY() {
-        return (GameFacts.screenHeight - GameFacts.GAME_HEIGHT) / 2;
     }
 
     private boolean handleKeys(Control control) {
@@ -762,8 +752,8 @@ final class SettingsScreen {
      * went down.
      */
     void mouse(int pictureX, int pictureY, int state, Control control) {
-        int x = pictureX - offsetX();
-        int y = pictureY - offsetY();
+        int x = pictureX - GameFacts.marginX();
+        int y = pictureY - GameFacts.marginY();
         boolean moved = x != lastMouseX || y != lastMouseY;
         lastMouseX = x;
         lastMouseY = y;

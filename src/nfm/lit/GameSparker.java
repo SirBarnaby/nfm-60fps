@@ -984,6 +984,11 @@ public class GameSparker extends Panel implements Runnable {
         windowShapeChanged = true;
     }
 
+    /** The picture shape setting as the console and the log write it: window or 16:9. */
+    public static String pictureShapeName() {
+        return windowShape ? "window" : "16:9";
+    }
+
     public static boolean isWindowShape() {
         return windowShape;
     }
@@ -1034,20 +1039,13 @@ public class GameSparker extends Panel implements Runnable {
         }
         if (offImage != null) {
             // the menus and HUD keep how sharp they are drawn; fitUiResolution goes on from here
-            int width = Math.round(want.width * uiScale);
-            int height = Math.round(want.height * uiScale);
-            makeBuffers(width, height);
-            uiWantedWidth = width;
-            uiWantedHeight = height;
-            uiResolutionNow = width + "x" + height;
+            resizeBuffers(Math.round(want.width * uiScale), Math.round(want.height * uiScale));
         }
         if (ui != null) {
-            ui.setTarget(rd);
             ui.fitScreen();
         }
         keptStale = true;
-        HLogger.info("The picture is now " + want.width + "x" + want.height
-                + (windowShape ? ", the window's shape" : ", 16:9"));
+        HLogger.info("The picture is now " + want.width + "x" + want.height + ", shape " + pictureShapeName());
     }
 
     public GameSparker() {
@@ -1940,8 +1938,7 @@ public class GameSparker extends Panel implements Runnable {
         saveSceneDrawState();
         // smooth effects: where dust and debris are drawn between the ticks (the kept scene moves them itself)
         EffectTrails.begin(smoothEffects, retainedRecording ? Float.NaN : prevFrameValid ? alpha : 1F);
-        Medium.showView(); // drawn the shape the picture is; the camera stays where it is
-        try {
+        try (Medium.ShownView shown = Medium.shownView()) { // drawn the picture's shape, from the same place
             Graphics2D target = retainedRecording ? recordingRecorder.begin(rd)
                     : gpuSceneFrame ? sceneRecorder.begin(rd) : rd;
             Precise.cameraAngles();
@@ -1949,7 +1946,6 @@ public class GameSparker extends Panel implements Runnable {
             Precise.cameraAngles();
             drawWorldObjects(target);
         } finally {
-            Medium.gameView();
             EffectTrails.end();
             restoreSceneDrawState();
             Precise.end();
@@ -2299,8 +2295,8 @@ public class GameSparker extends Panel implements Runnable {
         out.cameraMode = teleported(to[0] - from[0], to[1] - from[1], to[2] - from[2]) ? PoseSpan.AT_END
                 : PoseSpan.MOVING;
         // placed as frames are drawn: in the picture as it is shown (see Medium.showView)
-        int shiftX = Medium.shownShiftX();
-        int shiftY = Medium.shownShiftY();
+        int shiftX = -GameFacts.marginX();
+        int shiftY = -GameFacts.marginY();
         from[0] += shiftX;
         to[0] += shiftX;
         from[1] += shiftY;
@@ -5550,13 +5546,13 @@ public class GameSparker extends Panel implements Runnable {
             if (gameUi.fase == Phase.STAGESELECT) {
                 rd.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
                 gameUi.trackbg(true);
-                Medium.showView();
-                Medium.d(rd);
-                Medium.gameView();
+                try (Medium.ShownView shown = Medium.shownView()) {
+                    Medium.d(rd);
+                }
                 Medium.aroundTrack(checkpoints);
                 int farCount = 0;
                 int far[] = new int[200];
-                Medium.showView();
+                try (Medium.ShownView shown = Medium.shownView()) {
                 for (int piece = GameFacts.numberOfPlayers; piece < notb; piece++)
                     if (scene[piece].dist != 0) {
                         far[farCount] = piece;
@@ -5589,7 +5585,7 @@ public class GameSparker extends Panel implements Runnable {
                             scene[far[slot]].d(rd);
 
                 }
-                Medium.gameView();
+                }
 
                 rd.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
                 gameUi.ctachm(xm, ym, mouses, u[0]);
@@ -5600,10 +5596,10 @@ public class GameSparker extends Panel implements Runnable {
                 gameUi.stageselect(checkpoints, u[0]);
             }
             if (gameUi.fase == Phase.DRAWENVIRONMENT) {
-                Medium.showView();
-                Medium.d(rd);
-                drawWorldObjects(rd); // scene is sceneObjects
-                Medium.gameView();
+                try (Medium.ShownView shown = Medium.shownView()) {
+                    Medium.d(rd);
+                    drawWorldObjects(rd); // scene is sceneObjects
+                }
                 Medium.follow(scene[0], 0, 0);
                 gameUi.hipnoload(checkpoints.stage, false);
                 if (previewFrames != 0) {
@@ -6369,12 +6365,19 @@ public class GameSparker extends Panel implements Runnable {
         boolean settled = now - uiWantedSince > 250_000_000L || setting != UI_SCALE_AUTO;
         if (settled && offImage != null
                 && (offImage.getWidth(null) != width || offImage.getHeight(null) != height)) {
-            makeBuffers(width, height);
-            if (ui != null) {
-                ui.setTarget(rd);
-            }
-            uiResolutionNow = width + "x" + height;
+            resizeBuffers(width, height);
             HLogger.info("Menus and HUD now drawn at " + uiResolutionNow);
+        }
+    }
+
+    /** The menus and HUD drawn at {@code width} x {@code height} from now on. */
+    private void resizeBuffers(int width, int height) {
+        makeBuffers(width, height);
+        uiWantedWidth = width;
+        uiWantedHeight = height;
+        uiResolutionNow = width + "x" + height;
+        if (ui != null) {
+            ui.setTarget(rd);
         }
     }
 
