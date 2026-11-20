@@ -125,6 +125,13 @@ public final class SceneList {
         data[size++] = height;
     }
 
+    /** Adds {@code other}'s commands after these. */
+    public void append(SceneList other) {
+        ensure(other.size);
+        System.arraycopy(other.data, 0, data, size, other.size);
+        size += other.size;
+    }
+
     public void fillRect(int x, int y, int width, int height) {
         ensure(5);
         data[size++] = FILL_RECT;

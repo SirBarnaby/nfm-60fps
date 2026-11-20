@@ -286,12 +286,21 @@ final class RetainedScene {
      * {@code data}, the recorded scene's commands.
      */
     void realize(FramePose pose, int[] data) {
+        realize(pose, data, 0);
+    }
+
+    /**
+     * As {@link #realize(FramePose, int[])}, for the recorded commands copied
+     * into {@code data} from {@code base} on (a split-screen pane's, joined
+     * with the other's, see SceneRecorder#panes).
+     */
+    void realize(FramePose pose, int[] data, int base) {
         prepare(pose);
         for (int id = 0; id < pointCount; id++) {
             place(id);
         }
         for (int p = 0; p < polygonCount * 3; p += 3) {
-            int at = polygons[p];
+            int at = base + polygons[p];
             int n2 = polygons[p + 1] * 2;
             int code = polygons[p + 2];
             for (int k = 0; k < n2; k++) {

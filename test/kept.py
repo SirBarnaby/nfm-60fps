@@ -6,7 +6,8 @@ scene recorded once for the tick and moved to the same moments on the
 graphics card's behalf (kept-<tick>.bin, see RetainedScene). For every
 polygon in both, this measures how far the kept corners are from the ones
 drawn the whole way, by kind (scenery, objects), and how smoothly the kept
-corners move (as motion.py does).
+corners move (as motion.py does). Halfway, where the kept scene was
+recorded, it is the scene drawn the whole way: the same colours too.
 
     python test/kept.py <dir>
 """
@@ -31,12 +32,16 @@ def main(d):
         diffs = {'scenery': [], 'objects': []}
         worst = {'scenery': (0, None, 0), 'objects': (0, None, 0)}
         shared = 0
+        middle = len(kept) // 2
+        recoloured = 0
         for k, (kf, wf) in enumerate(zip(kept, whole)):
             for key, wp in wf.items():
                 kp = kf.get(key)
                 if kp is None or kp[3] is None or wp[3] is None or kp[1] != wp[1]:
                     continue
                 shared += 1
+                if k == middle and kp[4] != wp[4]:
+                    recoloured += 1
                 group = 'scenery' if isinstance(key[0], tuple) else 'objects'
                 ex = np.array(wp[3])
                 kx = np.array(kp[3])
@@ -48,7 +53,8 @@ def main(d):
                 diffs[group].append(dev)
                 if dev > worst[group][0]:
                     worst[group] = (dev, key, k)
-        print(f"tick {tick}: {len(kept[0])} kept polygons, {len(whole[0])} drawn the whole way, {shared // len(kept)} matched per moment")
+        print(f"tick {tick}: {len(kept[0])} kept polygons, {len(whole[0])} drawn the whole way, {shared // len(kept)} matched per moment,"
+              f" {recoloured} another colour halfway")
         for group, values in diffs.items():
             if not values:
                 continue

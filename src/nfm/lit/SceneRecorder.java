@@ -74,6 +74,29 @@ final class SceneRecorder extends NullGraphics {
         list.pane(area.x, area.y, area.width, area.height);
     }
 
+    /**
+     * Makes this the split-screen frame of {@code parts}, each recorded on
+     * its own in its pane's coordinates, one after the other, pane
+     * {@code areas[p]} each: what one recording of the whole frame with
+     * {@link #pane} holds, drawn and replayed the same way. Where each
+     * part's commands start in this list goes into {@code starts}, for
+     * placing its kept scene's corners here (RetainedScene#realize).
+     */
+    void panes(java.awt.Rectangle[] areas, SceneRecorder[] parts, int[] starts) {
+        SceneRecorder first = parts[0];
+        target = first.target;
+        startColor = first.startColor;
+        startAntialias = first.startAntialias;
+        list.clear();
+        unsupported = false;
+        for (int p = 0; p < parts.length; p++) {
+            pane(areas[p]);
+            starts[p] = list.size();
+            list.append(parts[p].list);
+            unsupported |= parts[p].unsupported;
+        }
+    }
+
     /** Draws the recorded frame into {@code g}, exactly as the game would have. */
     void replay(Graphics2D g) {
         if (startColor != null) {

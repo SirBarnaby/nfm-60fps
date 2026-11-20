@@ -24,7 +24,7 @@ import java.util.Map;
  */
 final class FrameLog {
 
-    /** How a frame was drawn: the presenter's kept scene, recorded for the card, the picture, software. */
+    /** How a frame was drawn: from a scene kept for the tick, recorded for the card, the picture, software. */
     static final String KEPT = "kept scene";
     static final String CARD = "recorded scene";
     static final String PICTURE = "picture";

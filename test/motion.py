@@ -12,6 +12,7 @@ import os
 import numpy as np
 
 FILL, DRAW, FILL_X, DRAW_X = 2, 3, 6, 7
+PANE = 10
 
 
 def read(path):
@@ -27,19 +28,29 @@ def read(path):
 
 
 def polygons(data):
-    """[(op, n, ints xy, exact xy or None)] in order."""
+    """[(key, n, ints xy, exact xy or None, colour)] in order; in split
+    screen each key ends with its pane, as a car seen in both is two
+    polygons."""
     out = []
     i = 0
     tag = None
+    pane = -1
+    color = None
     seen = {}
     while i < len(data):
         op = int(data[i])
         if op == 8:
             tag = int(data[i + 1])
             i += 2
-        elif op in (1, 5, 9):
+        elif op == 1:
+            color = int(data[i + 1])
+            i += 2
+        elif op in (5, 9):
             i += 2
         elif op == 4:
+            i += 5
+        elif op == PANE:
+            pane += 1
             i += 5
         elif op in (FILL, DRAW, FILL_X, DRAW_X):
             n = int(data[i + 1])
@@ -53,10 +64,10 @@ def polygons(data):
                 i += 2 + 4 * n
             else:
                 i += 2 + 2 * n
-            base = (('scenery', tag) if tag is None or tag < 0 else tag, op in (FILL, FILL_X), n)
+            base = (('scenery', tag) if tag is None or tag < 0 else tag, op in (FILL, FILL_X), n, pane)
             seen[base] = seen.get(base, 0) + 1
             key = base + (seen[base],)
-            out.append((key, n, (xs.astype(float), ys.astype(float)), ex))
+            out.append((key, n, (xs.astype(float), ys.astype(float)), ex, color))
         else:
             raise ValueError(op)
     return out

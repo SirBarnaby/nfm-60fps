@@ -86,8 +86,11 @@ Before a release or a large change, also run:
    `hud2`, swapped in with `GameUi.asPlayer`. Every split path is behind
    `SplitRace.active != null` (the race) or `SplitRace.on` (its screens), and
    `GameFacts.humans` is 1 outside it, so the computer cars, `paceCar` and
-   every recorded race are as before. Both panes are recorded into one scene
-   for the card, each after a `SceneList.PANE` (its rectangle, clipped). Check
+   every recorded race are as before. Each pane is kept once a tick from its
+   own camera (`GameSparker.KeptPanes`, a `RetainedScene` each) and placed for
+   every frame like one player's race, on the presenter thread too; the two
+   are joined into one scene for the card, each after a `SceneList.PANE` (its
+   rectangle, clipped). Check
    a change to the race or the HUD with `-Dnfm.autotest.split=auto,3`, with
    and without `-Dnfm.renderer=gpu`, as well as the gates.
 

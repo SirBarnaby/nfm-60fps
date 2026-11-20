@@ -26,6 +26,11 @@ this file is about everything else.
   `test\live.ps1` (and `-Split`) flags a race part drawn in software, and the
   game's log says how every part was drawn ("Frames in race: ... kept scene
   100%").
+- **Race frames are placed, not recorded.** Each game tick records the race's
+  scene once, with a margin, and every frame until the next tick moves it to
+  where the camera is now: one player's race, each split-screen pane, replays.
+  Recording every frame is what made split screen slow. Check: the game's log
+  says "kept scene 100%" for every race part, split races too.
 - **No black bars.** The race and the menus take the window's shape, from 5:4
   to 32:9; past those shapes the race is cut a little to fill. Check: hidden
   autotest screenshots at 1920x1080, 2560x1080 and 1720x720.
