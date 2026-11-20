@@ -242,15 +242,21 @@ class RunApp extends Panel {
     }
 
     /**
-     * Fullscreen draws at {@code width} x {@code height} from now on, scaled to
-     * fill the monitor (with bars if its shape is not the monitor's); the
-     * monitor's own size, or larger, goes back to drawing at that.
+     * Fullscreen draws at {@code width} wide from now on, in the monitor's
+     * shape, scaled to fill it: another shape would have to be cut or barred
+     * to fill the monitor, so the height follows the width. The monitor's
+     * own width, or more, goes back to drawing at the monitor's size.
      */
     static void setFullscreenResolution(int width, int height) {
-        Dimension screen = screenPixels();
-        fullscreenResolution = width >= screen.width && height >= screen.height || width <= 0 || height <= 0 ? null
-                : new Dimension(Math.min(width, screen.width), Math.min(height, screen.height));
+        fullscreenResolution = width >= screenPixels().width || width <= 0 || height <= 0 ? null
+                : new Dimension(width, fullscreenHeight(width));
         fullscreenResolutionChanged = true;
+    }
+
+    /** How tall fullscreen draws at {@code width} wide: the monitor's shape, the only one that fills it. */
+    static int fullscreenHeight(int width) {
+        Dimension screen = screenPixels();
+        return Math.max(1, Math.round(width * screen.height / (float) screen.width));
     }
 
     /** True once after each change, for the game to save it. */

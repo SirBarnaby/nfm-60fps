@@ -304,10 +304,11 @@ final class SettingsScreen {
                 null, new int[] {0, 1}, SettingsScreen::onOff, () -> RunApp.isFullscreen() ? 1 : 0,
                 v -> RunApp.setFullscreen(v == 1)));
         add(new Choice("Aspect ratio",
-                "The window's shape, or in fullscreen the resolution's (a shape not the monitor's is cut to fill it)."
-                        + " The race and the menus take it, with no bars.",
+                "The window's shape. The race and the menus take it, with no bars.",
                 () -> "Now: " + describeWindow() + ".", aspectChoices(), SettingsScreen::aspectName,
-                SettingsScreen::currentAspect, SettingsScreen::setAspect));
+                SettingsScreen::currentAspect, SettingsScreen::setAspect)
+                .when(() -> !RunApp.isFullscreen(),
+                        "Only in a window: fullscreen takes the monitor's shape, so nothing is cut off or barred."));
         add(windowSize);
         add(new Choice("UI scale",
                 "How big the menus, lettering and HUD are: 1, 2 or 4 times their own size in pixels, so they stay"
@@ -653,8 +654,38 @@ final class SettingsScreen {
         return sizes;
     }
 
-    /** Changes the window's (or fullscreen resolution's) shape, keeping its height as near as the sizes allow. */
+    /**
+     * Fullscreen's resolutions: the monitor's shape only (another would be
+     * cut or barred to fill it), the common sizes of that shape under the
+     * monitor's, or for a shape with none, set shares of it; then the
+     * monitor's own.
+     */
+    private static List<int[]> fullscreenSizes() {
+        Dimension screen = RunApp.screenPixels();
+        List<int[]> sizes = new ArrayList<>();
+        int aspect = aspectOf(screen.width, screen.height);
+        if (aspect != OTHER_ASPECT) {
+            for (int[] size : SIZES[aspect]) {
+                if (size[0] < screen.width) {
+                    sizes.add(new int[] {size[0], RunApp.fullscreenHeight(size[0])});
+                }
+            }
+        }
+        if (sizes.isEmpty()) {
+            for (int share : new int[] {50, 67, 75, 83}) {
+                int width = (screen.width * share / 100) & ~1; // even
+                sizes.add(new int[] {width, RunApp.fullscreenHeight(width)});
+            }
+        }
+        sizes.add(new int[] {screen.width, screen.height});
+        return sizes;
+    }
+
+    /** Changes the window's shape, keeping its height as near as the sizes allow; fullscreen keeps the monitor's. */
     private static void setAspect(int aspect) {
+        if (RunApp.isFullscreen()) {
+            return;
+        }
         Dimension now = RunApp.drawingPixels();
         int[] best = null;
         for (int[] size : sizesFor(aspect)) {
@@ -1489,7 +1520,7 @@ final class SettingsScreen {
 
         WindowSize() {
             super("Resolution", "The size of the window's inside, in the monitor's pixels. In fullscreen, the"
-                    + " resolution the game draws at, scaled to fill the monitor: lower is faster.",
+                    + " resolution the game draws at, in the monitor's shape, scaled to fill it: lower is faster.",
                     null);
         }
 
@@ -1501,11 +1532,15 @@ final class SettingsScreen {
             return typingNow;
         }
 
-        /** The common sizes of the window's shape that fit, and its own size among them if it is not one. */
+        /**
+         * The common sizes of the window's shape that fit (in fullscreen, of
+         * the monitor's), and its own size among them if it is not one.
+         */
         private List<int[]> choices() {
             Dimension now = RunApp.drawingPixels();
             int aspect = aspectOf(now.width, now.height);
-            List<int[]> sizes = new ArrayList<>(sizesFor(aspect == OTHER_ASPECT ? 0 : aspect));
+            List<int[]> sizes = RunApp.isFullscreen() ? fullscreenSizes()
+                    : new ArrayList<>(sizesFor(aspect == OTHER_ASPECT ? 0 : aspect));
             int at = 0;
             boolean listed = false;
             for (int[] size : sizes) {
@@ -1618,6 +1653,9 @@ final class SettingsScreen {
                 problem = "At least " + minW + "x" + minH + ".";
             } else if (w > screen.width || h > screen.height) {
                 problem = "At most the monitor's " + screen.width + "x" + screen.height + ".";
+            } else if (RunApp.isFullscreen()
+                    && Math.abs(w * (long) screen.height - h * (long) screen.width) > screen.width * (long) h / 100) {
+                problem = "In fullscreen, the monitor's shape: " + w + "x" + RunApp.fullscreenHeight(w) + ", say.";
             } else {
                 stopTyping();
                 RunApp.setDrawingPixels(w, h);
