@@ -62,7 +62,9 @@ this file is about everything else.
 - **The live test plays it your way.** `test\live.ps1` reads the saved
   settings and mods and starts Java as `madness64.exe` does, switches
   fullscreen the way F11 does, and reports frames a second and frame times per
-  part, but stays off screen, silent and unsaved.
+  part, but stays off screen, silent and unsaved. What an off-screen window
+  cannot show (frames paced by VSync, frames Windows holds up) is a note, not a
+  flag, so exit code 0 means nothing is wrong.
 - **Every frame shown is counted.** A new way of putting frames on screen
   must call `FrameLog.shown`, or the game's log and the live test cannot see
   it.

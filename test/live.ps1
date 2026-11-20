@@ -31,7 +31,9 @@
 # stalls (told apart from frames the card held up: the game was ready, the
 # card or Windows took that long to take the frame), the card near its time
 # per frame. Exit code 0 means nothing was flagged, 1 something was, 2 the
-# game could not be run.
+# game could not be run. What a window off every monitor cannot show is a note, not a flag: with
+# vsync its frames wait for Windows' own clock, not your monitor's refresh (their median says
+# so), and Windows sometimes holds one of its frames up for half a second.
 # Build first with build.ps1: this uses madness.jar and the runtime it makes.
 
 param(
@@ -102,6 +104,7 @@ function Get-Target($run) {
     return $refresh
 }
 
+# Flags, and notes (starting "note: ") for what this window, off every monitor, cannot show.
 function Get-Flags($run, $part) {
     $flags = @()
     if ($part.frames -lt 10) { return $flags }
@@ -111,23 +114,33 @@ function Get-Flags($run, $part) {
     if ($race -and $drawn -contains 'software' -and $run.settings['renderer'] -like 'gpu*') {
         $flags += 'drawn in software'
     }
+    $pacing = @()
     if ($race -and $target -gt 0 -and $part.fps -lt $target * 0.9) {
-        $flags += ('{0:N0} fps, under {1}' -f $part.fps, $target)
+        $pacing += ('{0:N0} fps, under {1}' -f $part.fps, $target)
     }
     # unevenness needs enough frames to tell: a menu's second of 25 frames has one 99th-percentile frame
     $enough = $part.frames -ge 100
     if ($enough -and $part.ms.p99 -gt $part.ms.median * 2.5 -and $part.ms.p99 - $part.ms.median -gt 4) {
-        $flags += ('uneven: 99% of frames within {0:N1} ms, half within {1:N1}' -f $part.ms.p99, $part.ms.median)
+        $pacing += ('uneven: 99% of frames within {0:N1} ms, half within {1:N1}' -f $part.ms.p99, $part.ms.median)
     }
     if ($enough -and $part.late -gt $part.frames * 0.05) {
-        $flags += ('{0} of {1} frames late' -f $part.late, $part.frames)
+        $pacing += ('{0} of {1} frames late' -f $part.late, $part.frames)
+    }
+    $refresh = if ($run.settings['refresh'] -match '^(\d+)') { [int]$Matches[1] } else { 0 }
+    if ($pacing.Count -gt 0 -and $run.settings['vsync'] -match '^on' -and $refresh -gt 0) {
+        # off every monitor vsync waits for Windows' clock, not the monitor's refresh: the median shows which
+        $flags += ('note: paced by vsync off screen, on Windows'' clock (half the frames within {0:N1} ms, ' +
+            'the monitor''s refresh {1:N1}): {2}') -f $part.ms.median, (1000 / $refresh), ($pacing -join ', ')
+    } else {
+        $flags += $pacing
     }
     # a stall the card held up (handing it the frame took that long) is the card's, not the game's drawing
     $held = if ($part.cardHeld) { [double]$part.cardHeld.longestMs } else { 0 }
     $limit = if ($race) { 100 } else { 250 }
     if ($part.ms.max -gt $limit -and ($race -or $part.name -notin @('start', 'loading', 'fullscreen switch'))) {
         if ($held -gt 0 -and $held -ge $part.ms.max - 100) {
-            $flags += ('the card held a frame up {0:N0} ms' -f $held)
+            # Windows does this now and then to a window off every monitor: the test cannot tell whether a screen would
+            $flags += ('note: the card held a frame up {0:N0} ms' -f $held)
         } else {
             $flags += ('{0} of {1:N0} ms' -f $(if ($race) { 'hitch' } else { 'stall' }), $part.ms.max)
         }
@@ -164,7 +177,7 @@ foreach ($run in $runs) {
         'longest', 'late', 'card', 'flags')
     foreach ($part in $run.parts) {
         $flags = @(Get-Flags $run $part)
-        if ($flags.Count -gt 0) { $flagged = $true }
+        if (@($flags | Where-Object { $_ -notlike 'note: *' }).Count -gt 0) { $flagged = $true }
         $drawn = ($part.drawn.PSObject.Properties | ForEach-Object { "$($_.Name) $($_.Value)" }) -join ', '
         if ($part.screenshotFrames) { $drawn += "; $($part.screenshotFrames) screenshot frames left out" }
         $md += ('| {0} | {1:N1} | {2:N1} | {3:N2} | {4:N2} | {5:N1} | {6} | {7:N2} | {8} | {9} |' -f $part.name,

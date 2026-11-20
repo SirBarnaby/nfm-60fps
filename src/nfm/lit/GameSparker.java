@@ -5818,6 +5818,12 @@ public class GameSparker extends Panel implements Runnable {
 
     /** -Dnfm.autotest.shots=false: a test run takes no screenshots, so every frame is the game's own. */
     private static final boolean SHOTS = !"false".equalsIgnoreCase(System.getProperty("nfm.autotest.shots"));
+    /**
+     * How often the live test takes a race screenshot: rarely, as writing one
+     * takes a processor core from the frames it measures (split screen's
+     * countdown went uneven with one every 2 s).
+     */
+    private static final long LIVE_SHOT_MILLIS = 10_000L;
 
     private void saveFrame(File directory, String name) {
         if (!SHOTS) {
@@ -6083,7 +6089,7 @@ public class GameSparker extends Panel implements Runnable {
                         u[p].right = cycle > 2200L + p * 300L && cycle < 2500L + p * 300L;
                         u[p].left = cycle > 3400L - p * 300L && cycle < 3700L - p * 300L;
                     }
-                    if (now - lastShot >= 2000L) {
+                    if (now - lastShot >= (LIVE ? LIVE_SHOT_MILLIS : 2000L)) {
                         saveFrame(directory, String.format("%02d-race%d-%05dms.png", shots++, races, inGameMillis));
                         lastShot = now;
                     }
@@ -6239,7 +6245,8 @@ public class GameSparker extends Panel implements Runnable {
                 } else {
                     if (settingsDowns % 4 == 0) {
                         ui.selectSetting(shown[at]);
-                    } else if (settingsDowns % 4 == 3) {
+                    } else if (settingsDowns % 4 == 3 && (!LIVE || at == 0)) {
+                        // the live test shoots the first only: a screenshot takes a core from the frames it measures
                         saveFrame(directory, String.format("%02d-settings-%s.png", shots++,
                                 shown[at].toLowerCase(java.util.Locale.ROOT).replace(' ', '-')));
                     }
@@ -6274,7 +6281,7 @@ public class GameSparker extends Panel implements Runnable {
                     u[0].right = cycle > 2200L && cycle < 2500L;
                     u[0].left = cycle > 3400L && cycle < 3700L;
 
-                    if (now - lastShot >= 1000L) {
+                    if (now - lastShot >= (LIVE ? LIVE_SHOT_MILLIS : 1000L)) {
                         saveFrame(directory, String.format("%02d-ingame-%04dms.png", shots++, inGameMillis));
                         lastShot = now;
                     }
