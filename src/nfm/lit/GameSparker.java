@@ -2275,30 +2275,39 @@ public class GameSparker extends Panel implements Runnable {
     }
 
     /**
-     * Draws a split-screen race's frame in software: each player's pane from
-     * their camera, the cars and both cameras {@code alpha} of the way from
-     * the last tick to this one, into the menus' picture as the window shows
-     * the race's.
+     * Draws a split-screen race's frame: each player's pane from their
+     * camera, the cars and both cameras {@code alpha} of the way from the
+     * last tick to this one. For the graphics card both panes go into one
+     * recording, each marked as its pane (placed and clipped there by the
+     * card); in software, into the menus' picture as the window shows the
+     * race's.
      */
     private void renderSplitScene(SplitRace split, float alpha) {
         boolean side = SplitRace.pictureSide;
-        AffineTransform toCanvas = sceneToCanvas();
+        if (gpuSceneFrame) {
+            sceneRecorder.begin(rd);
+        }
+        AffineTransform toCanvas = gpuSceneFrame ? null : sceneToCanvas();
         AffineTransform before = rd.getTransform();
         Shape clipBefore = rd.getClip();
         try {
             for (int p = 0; p < 2; p++) {
                 Rectangle pane = SplitRace.pane(p, GameFacts.sceneWidth, GameFacts.sceneHeight, side);
-                rd.setTransform(before);
-                if (toCanvas != null) {
-                    rd.transform(toCanvas);
+                if (gpuSceneFrame) {
+                    sceneRecorder.pane(pane);
+                } else {
+                    rd.setTransform(before);
+                    if (toCanvas != null) {
+                        rd.transform(toCanvas);
+                    }
+                    rd.translate(pane.x, pane.y);
+                    rd.setClip(0, 0, pane.width, pane.height);
                 }
-                rd.translate(pane.x, pane.y);
-                rd.setClip(0, 0, pane.width, pane.height);
                 if (p == 1) {
                     Medium.swap(split.cam2);
                 }
                 try {
-                    renderPane(p, pane.width, pane.height, alpha);
+                    renderScene(alpha, p, pane);
                 } finally {
                     if (p == 1) {
                         Medium.swap(split.cam2);
@@ -2309,79 +2318,6 @@ public class GameSparker extends Panel implements Runnable {
             rd.setTransform(before);
             rd.setClip(clipBefore);
         }
-    }
-
-    /** One split-screen pane, {@code width} x {@code height}, from the camera in place (see renderSplitScene). */
-    private void renderPane(int player, int width, int height, float alpha) {
-        int np = Math.min(GameFacts.numberOfPlayers, savedCarX.length);
-        for (int i = 0; i < np; i++) {
-            ContO conto = sceneObjects[i];
-            savedCarX[i] = conto.x;
-            savedCarY[i] = conto.y;
-            savedCarZ[i] = conto.z;
-            savedCarXZ[i] = conto.xz;
-            savedCarXY[i] = conto.xy;
-            savedCarZY[i] = conto.zy;
-            savedCarWXZ[i] = conto.wxz;
-            savedCarWZY[i] = conto.wzy;
-        }
-        int camX = Medium.x;
-        int camY = Medium.y;
-        int camZ = Medium.z;
-        int camXZ = Medium.xz;
-        int camZY = Medium.zy;
-        if (prevFrameValid && alpha < 1F) {
-            for (int i = 0; i < np; i++) {
-                ContO conto = sceneObjects[i];
-                if (conto != prevCarRef[i] || teleported(savedCarX[i] - prevCarX[i], savedCarY[i] - prevCarY[i],
-                        savedCarZ[i] - prevCarZ[i])) {
-                    continue;
-                }
-                conto.x = mix(prevCarX[i], savedCarX[i], alpha);
-                conto.y = mix(prevCarY[i], savedCarY[i], alpha);
-                conto.z = mix(prevCarZ[i], savedCarZ[i], alpha);
-                conto.xz = mixAngle(prevCarXZ[i], savedCarXZ[i], alpha);
-                conto.xy = mixAngle(prevCarXY[i], savedCarXY[i], alpha);
-                conto.zy = mixAngle(prevCarZY[i], savedCarZY[i], alpha);
-                conto.wxz = mix(prevCarWXZ[i], savedCarWXZ[i], alpha);
-                conto.wzy = mixPeriodic(prevCarWZY[i], savedCarWZY[i], alpha, 45);
-            }
-            int fromX = player == 0 ? prevCamX : prevCam2X;
-            int fromY = player == 0 ? prevCamY : prevCam2Y;
-            int fromZ = player == 0 ? prevCamZ : prevCam2Z;
-            if (!teleported(camX - fromX, camY - fromY, camZ - fromZ)) {
-                Medium.x = mix(fromX, camX, alpha);
-                Medium.y = mix(fromY, camY, alpha);
-                Medium.z = mix(fromZ, camZ, alpha);
-                Medium.xz = mixAngle(player == 0 ? prevCamXZ : prevCam2XZ, camXZ, alpha);
-                Medium.zy = mixAngle(player == 0 ? prevCamZY : prevCam2ZY, camZY, alpha);
-            }
-        }
-        saveSceneDrawState();
-        EffectTrails.begin(smoothEffects, prevFrameValid ? alpha : 1F);
-        try (var _ = Medium.paneView(width, height)) {
-            Medium.d(rd);
-            drawWorldObjects(rd);
-        } finally {
-            EffectTrails.end();
-            restoreSceneDrawState();
-        }
-        for (int i = 0; i < np; i++) {
-            ContO conto = sceneObjects[i];
-            conto.x = savedCarX[i];
-            conto.y = savedCarY[i];
-            conto.z = savedCarZ[i];
-            conto.xz = savedCarXZ[i];
-            conto.xy = savedCarXY[i];
-            conto.zy = savedCarZY[i];
-            conto.wxz = savedCarWXZ[i];
-            conto.wzy = savedCarWZY[i];
-        }
-        Medium.x = camX;
-        Medium.y = camY;
-        Medium.z = camZ;
-        Medium.xz = camXZ;
-        Medium.zy = camZY;
     }
 
     /**
@@ -2408,6 +2344,17 @@ public class GameSparker extends Panel implements Runnable {
      *              most recent one
      */
     private void renderIngameScene(float alpha) {
+        renderScene(alpha, 0, null);
+    }
+
+    /**
+     * {@link #renderIngameScene} from player {@code player}'s camera (in
+     * place in Medium) into split-screen pane {@code pane}, or with null into
+     * the whole picture. A pane is drawn in its own coordinates into what
+     * {@link #renderSplitScene} set up: the recording, marked as the pane, or
+     * the back buffer, moved to the pane and clipped to it.
+     */
+    private void renderScene(float alpha, int player, Rectangle pane) {
         final int np = Math.min(GameFacts.numberOfPlayers, savedCarX.length);
 
         for (int i = 0; i < np; i++) {
@@ -2458,18 +2405,24 @@ public class GameSparker extends Panel implements Runnable {
                             periodicFraction(prevCarWZY[i], savedCarWZY[i], alpha, 45));
                 }
             }
-            if (!teleported(camX - prevCamX, camY - prevCamY, camZ - prevCamZ)) {
-                Medium.x = mix(prevCamX, camX, alpha);
-                Medium.y = mix(prevCamY, camY, alpha);
-                Medium.z = mix(prevCamZ, camZ, alpha);
-                Medium.xz = mixAngle(prevCamXZ, camXZ, alpha);
-                Medium.zy = mixAngle(prevCamZY, camZY, alpha);
+            // Player 2's camera came from its own last tick
+            int fromX = player == 0 ? prevCamX : prevCam2X;
+            int fromY = player == 0 ? prevCamY : prevCam2Y;
+            int fromZ = player == 0 ? prevCamZ : prevCam2Z;
+            int fromXZ = player == 0 ? prevCamXZ : prevCam2XZ;
+            int fromZY = player == 0 ? prevCamZY : prevCam2ZY;
+            if (!teleported(camX - fromX, camY - fromY, camZ - fromZ)) {
+                Medium.x = mix(fromX, camX, alpha);
+                Medium.y = mix(fromY, camY, alpha);
+                Medium.z = mix(fromZ, camZ, alpha);
+                Medium.xz = mixAngle(fromXZ, camXZ, alpha);
+                Medium.zy = mixAngle(fromZY, camZY, alpha);
                 if (Precise.on) {
-                    Precise.camX = fraction(prevCamX, camX, alpha);
-                    Precise.camY = fraction(prevCamY, camY, alpha);
-                    Precise.camZ = fraction(prevCamZ, camZ, alpha);
-                    Precise.camXZ = periodicFraction(prevCamXZ, camXZ, alpha, 360);
-                    Precise.camZY = periodicFraction(prevCamZY, camZY, alpha, 360);
+                    Precise.camX = fraction(fromX, camX, alpha);
+                    Precise.camY = fraction(fromY, camY, alpha);
+                    Precise.camZ = fraction(fromZ, camZ, alpha);
+                    Precise.camXZ = periodicFraction(fromXZ, camXZ, alpha, 360);
+                    Precise.camZY = periodicFraction(fromZY, camZY, alpha, 360);
                 }
             }
         }
@@ -2478,14 +2431,21 @@ public class GameSparker extends Panel implements Runnable {
         // smooth effects: where dust and debris are drawn between the ticks (the kept scene moves them itself)
         EffectTrails.begin(smoothEffects, retainedRecording ? Float.NaN : prevFrameValid ? alpha : 1F);
         // drawn in software straight into the menus' picture: placed as the window shows the race
-        AffineTransform toCanvas = retainedRecording || gpuSceneFrame ? null : sceneToCanvas();
+        AffineTransform toCanvas = retainedRecording || gpuSceneFrame || pane != null ? null : sceneToCanvas();
         AffineTransform canvasBefore = toCanvas == null ? null : rd.getTransform();
         if (toCanvas != null) {
             rd.transform(toCanvas);
         }
-        try (var _ = Medium.shownView()) { // drawn the picture's shape, from the same place
-            Graphics2D target = retainedRecording ? recordingRecorder.begin(rd)
-                    : gpuSceneFrame ? sceneRecorder.begin(rd) : rd;
+        // drawn the picture's (or the pane's) shape, from the same place
+        try (var _ = pane == null ? Medium.shownView() : Medium.paneView(pane.width, pane.height)) {
+            Graphics2D target;
+            if (retainedRecording) {
+                target = recordingRecorder.begin(rd);
+            } else if (gpuSceneFrame) {
+                target = pane == null ? sceneRecorder.begin(rd) : sceneRecorder; // a pane's recording is begun
+            } else {
+                target = rd;
+            }
             Precise.cameraAngles();
             Medium.d(target);
             Precise.cameraAngles();
@@ -7090,8 +7050,8 @@ public class GameSparker extends Panel implements Runnable {
                 }
 
                 SplitRace splitFrame = SplitRace.active;
-                // split screen is drawn in software, each pane from its own camera
-                gpuSceneFrame = scenePhase && GPU_SCENE && gpuActive && !gameUi.debugmode && splitFrame == null;
+                // split screen too: each pane from its own camera, both in one recording for the card
+                gpuSceneFrame = scenePhase && GPU_SCENE && gpuActive && !gameUi.debugmode;
                 if (scenePhase) {
                     double elapsed = (double) (frameNow - tickStartNanos) / (double) currentTickNanos;
                     if (!prevFrameValid || elapsed >= 1D) {

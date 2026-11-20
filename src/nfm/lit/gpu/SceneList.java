@@ -35,6 +35,12 @@ public final class SceneList {
      * display, and as nothing anywhere else.
      */
     public static final int GLOW = 9;
+    /**
+     * x, y, width, height: everything after it, until the next PANE, is one
+     * split-screen pane's, drawn in the pane's own coordinates (0, 0 at its
+     * top left) and clipped to it, the pane being at x, y of the picture.
+     */
+    public static final int PANE = 10;
 
     private int[] data = new int[1 << 16];
     private int size;
@@ -107,6 +113,16 @@ public final class SceneList {
         ensure(2);
         data[size++] = GLOW;
         data[size++] = Math.max(0, Math.min(255, level));
+    }
+
+    /** The commands from now on draw split-screen pane {@code x, y, width, height}, see {@link #PANE}. */
+    public void pane(int x, int y, int width, int height) {
+        ensure(5);
+        data[size++] = PANE;
+        data[size++] = x;
+        data[size++] = y;
+        data[size++] = width;
+        data[size++] = height;
     }
 
     public void fillRect(int x, int y, int width, int height) {

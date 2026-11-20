@@ -56,8 +56,18 @@ final class SceneGeometry {
     private int[] drawStart = new int[256];
     private int[] drawCount = new int[256];
     private int[] drawGlow = new int[256];
+    /** The split-screen pane each draw is clipped to (its number in {@link #panes}), -1 for none. */
+    private int[] drawPane = new int[256];
     private int draws;
     private int open;
+
+    /* split-screen panes: x, y, width and height in the picture, four ints each */
+    private int[] panes = new int[8];
+    private int paneCount;
+    /** The pane being built (see SceneList.PANE), -1 for none, and where its top left is in the picture. */
+    private int pane;
+    private float paneX;
+    private float paneY;
 
     private float scaleX;
     private float scaleY;
@@ -102,6 +112,19 @@ final class SceneGeometry {
         return drawGlow[draw];
     }
 
+    /**
+     * The split-screen pane the draw is clipped to, as x, y, width and height
+     * in the picture's pixels into {@code into}; false if it is not in one.
+     */
+    boolean pane(int draw, int[] into) {
+        int p = drawPane[draw];
+        if (p < 0) {
+            return false;
+        }
+        System.arraycopy(panes, p * 4, into, 0, 4);
+        return true;
+    }
+
     /** Polygons in the last frame that needed the stencil. */
     int evenOddPolygons() {
         return evenOddPolygons;
@@ -135,6 +158,10 @@ final class SceneGeometry {
         scaleY = 2F / height;
         abgr = 0xff000000;
         glow = 0;
+        paneCount = 0;
+        pane = -1;
+        paneX = 0F;
+        paneY = 0F;
         boolean antialias = false;
         int[] data = list.data();
         int size = list.size();
@@ -153,6 +180,14 @@ final class SceneGeometry {
                 case SceneList.GLOW -> {
                     glow = data[i + 1];
                     i += 2;
+                }
+                case SceneList.PANE -> {
+                    if (projecting) {
+                        // a kept scene has one camera; split screen's panes are recorded frame by frame
+                        throw new IllegalStateException("a kept scene cannot hold split-screen panes");
+                    }
+                    startPane(data[i + 1], data[i + 2], data[i + 3], data[i + 4]);
+                    i += 5;
                 }
                 case SceneList.FILL_RECT -> {
                     int x = data[i + 1];
@@ -189,6 +224,21 @@ final class SceneGeometry {
                 default -> throw new IllegalStateException("bad scene command " + data[i]);
             }
         }
+    }
+
+    /** The shapes from now on are pane {@code x, y, w, h}'s: placed from its top left and clipped to it. */
+    private void startPane(int x, int y, int w, int h) {
+        if (panes.length < (paneCount + 1) * 4) {
+            panes = Arrays.copyOf(panes, panes.length * 2);
+        }
+        int at = paneCount * 4;
+        panes[at] = x;
+        panes[at + 1] = y;
+        panes[at + 2] = w;
+        panes[at + 3] = h;
+        pane = paneCount++;
+        paneX = x;
+        paneY = y;
     }
 
     /** Loads a polygon's corners into {@link #px}/{@link #py}: the exact ones when it has them. */
@@ -624,7 +674,8 @@ final class SceneGeometry {
      * starts one; every even-odd polygon is a draw call of its own.
      */
     private void begin(int kind) {
-        if (kind == PLAIN && draws > 0 && drawKind[draws - 1] == PLAIN && drawGlow[draws - 1] == glow) {
+        if (kind == PLAIN && draws > 0 && drawKind[draws - 1] == PLAIN && drawGlow[draws - 1] == glow
+                && drawPane[draws - 1] == pane) {
             open = draws - 1;
             return;
         }
@@ -633,9 +684,11 @@ final class SceneGeometry {
             drawStart = Arrays.copyOf(drawStart, draws * 2);
             drawCount = Arrays.copyOf(drawCount, draws * 2);
             drawGlow = Arrays.copyOf(drawGlow, draws * 2);
+            drawPane = Arrays.copyOf(drawPane, draws * 2);
         }
         drawKind[draws] = kind;
         drawGlow[draws] = glow;
+        drawPane[draws] = pane;
         drawStart[draws] = vertexCount;
         drawCount[draws] = 0;
         open = draws++;
@@ -651,8 +704,8 @@ final class SceneGeometry {
             vertices = Arrays.copyOf(vertices, vertices.length * 2);
         }
         int[] v = vertices;
-        v[at] = Float.floatToRawIntBits(x * scaleX - 1F);
-        v[at + 1] = Float.floatToRawIntBits(1F - y * scaleY);
+        v[at] = Float.floatToRawIntBits((x + paneX) * scaleX - 1F);
+        v[at + 1] = Float.floatToRawIntBits(1F - (y + paneY) * scaleY);
         v[at + 2] = abgr;
         v[at + 3] = Float.floatToRawIntBits(across);
         v[at + 4] = Float.floatToRawIntBits(halfWidth);

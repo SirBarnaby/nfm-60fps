@@ -815,6 +815,7 @@ public final class GpuDisplay {
                 | BGFX_STENCIL_OP_FAIL_S_KEEP | BGFX_STENCIL_OP_FAIL_Z_KEEP | BGFX_STENCIL_OP_PASS_Z_INVERT;
         int stencilOdd = BGFX_STENCIL_TEST_NOTEQUAL | BGFX_STENCIL_FUNC_REF(0) | BGFX_STENCIL_FUNC_RMASK(0xff)
                 | BGFX_STENCIL_OP_FAIL_S_KEEP | BGFX_STENCIL_OP_FAIL_Z_KEEP | BGFX_STENCIL_OP_PASS_Z_ZERO;
+        clipCached = NO_CLIP; // bgfx keeps scissors for one frame
         for (int d = 0; d < g.draws(); d++) {
             int start = g.start(d);
             int count = g.count(d);
@@ -822,17 +823,18 @@ public final class GpuDisplay {
                 continue;
             }
             int glow = g.glow(d); // the blend factor's alpha
+            short clip = paneScissor(g, d);
             if (g.kind(d) == SceneGeometry.PLAIN) {
-                bindScene(onCard, start, count);
+                bindScene(onCard, start, count, clip);
                 bgfx_set_state(OPAQUE | SCENE_BLEND, glow); // only antialiased lines are not opaque
                 bgfx_submit(SCENE_VIEW, program, 0, BGFX_DISCARD_ALL);
             } else {
                 // flip the stencil where the fan covers, then colour where it is odd and clear it again
-                bindScene(onCard, start, count);
+                bindScene(onCard, start, count, clip);
                 bgfx_set_stencil(stencilFlip, BGFX_STENCIL_NONE);
                 bgfx_set_state(0L, 0);
                 bgfx_submit(SCENE_VIEW, program, 0, BGFX_DISCARD_ALL);
-                bindScene(onCard, start, count);
+                bindScene(onCard, start, count, clip);
                 bgfx_set_stencil(stencilOdd, BGFX_STENCIL_NONE);
                 bgfx_set_state(OPAQUE | COVER_BLEND, glow);
                 bgfx_submit(SCENE_VIEW, program, 0, BGFX_DISCARD_ALL);
@@ -840,7 +842,43 @@ public final class GpuDisplay {
         }
     }
 
-    private void bindScene(boolean onCard, int start, int count) {
+    private final int[] paneArea = new int[4];
+    /* the last pane's scissor, kept by bgfx for this frame, and the pane it is for */
+    private final int[] clipArea = new int[4];
+    private short clipCached = NO_CLIP;
+
+    /**
+     * The scissor of draw {@code d}'s split-screen pane, in the target's
+     * pixels (its edges where the picture's land, so the panes meet without
+     * a gap or an overlap), kept by bgfx for the frame; NO_CLIP when it has
+     * none. A pane's draws come one after another, so each pane is worked
+     * out once.
+     */
+    private short paneScissor(SceneGeometry g, int d) {
+        if (!g.pane(d, paneArea)) {
+            return NO_CLIP;
+        }
+        if (clipCached != NO_CLIP && java.util.Arrays.equals(paneArea, clipArea)) {
+            return clipCached;
+        }
+        System.arraycopy(paneArea, 0, clipArea, 0, 4);
+        float sx = sceneWidth / (float) pictureWidth;
+        float sy = sceneHeight / (float) pictureHeight;
+        int left = Math.round(paneArea[0] * sx);
+        int top = Math.round(paneArea[1] * sy);
+        int right = Math.round((paneArea[0] + paneArea[2]) * sx);
+        int bottom = Math.round((paneArea[1] + paneArea[3]) * sy);
+        clipCached = (short) bgfx_set_scissor(left, top, Math.max(0, right - left), Math.max(0, bottom - top));
+        return clipCached;
+    }
+
+    /** No scissor: {@link #bindScene} draws over the whole target. */
+    private static final short NO_CLIP = -1;
+
+    private void bindScene(boolean onCard, int start, int count, short clip) {
+        if (clip != NO_CLIP) {
+            bgfx_set_scissor_cached(Short.toUnsignedInt(clip));
+        }
         if (!onCard) {
             bgfx_set_transient_vertex_buffer(0, transientBuffer, start, count);
         } else {

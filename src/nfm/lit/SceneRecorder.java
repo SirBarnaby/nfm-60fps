@@ -65,6 +65,15 @@ final class SceneRecorder extends NullGraphics {
         return unsupported;
     }
 
+    /**
+     * The drawing from now on is split-screen pane {@code area} of the
+     * picture's, in the pane's own coordinates, as software draws a pane
+     * (translated to its corner and clipped to it).
+     */
+    void pane(java.awt.Rectangle area) {
+        list.pane(area.x, area.y, area.width, area.height);
+    }
+
     /** Draws the recorded frame into {@code g}, exactly as the game would have. */
     void replay(Graphics2D g) {
         if (startColor != null) {
@@ -73,12 +82,29 @@ final class SceneRecorder extends NullGraphics {
         if (startAntialias != null) {
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, startAntialias);
         }
+        AffineTransform base = g.getTransform();
+        Shape baseClip = g.getClip();
+        try {
+            replayCommands(g, base);
+        } finally {
+            g.setTransform(base);
+            g.setClip(baseClip);
+        }
+    }
+
+    private void replayCommands(Graphics2D g, AffineTransform base) {
         int[] data = list.data();
         int size = list.size();
         int[] xs = new int[16];
         int[] ys = new int[16];
         for (int i = 0; i < size;) {
             switch (data[i]) {
+                case SceneList.PANE -> {
+                    g.setTransform(base);
+                    g.translate(data[i + 1], data[i + 2]);
+                    g.setClip(0, 0, data[i + 3], data[i + 4]);
+                    i += 5;
+                }
                 case SceneList.SET_COLOR -> {
                     g.setColor(new Color(data[i + 1]));
                     i += 2;
