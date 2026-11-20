@@ -153,6 +153,28 @@ In the menus the left stick and d-pad are the arrow keys, repeating while held a
 
 `gamepad` in the developer console says which pads are connected; `gamepad off` / `gamepad on` and `gamepad rumble off` / `gamepad rumble on` are saved. Hidden test runs never read pads, so a pad on the desk cannot drive them.
 
+## Split screen
+
+Split Screen on the main menu races two players on one screen. Both choose a car at once on its own car select: each steers to choose (only the cars unlocked) and accelerates when ready, the brake takes it back, and the mouse does it all too. The same screen sets the race's computer cars (none to five), how the window is shared and where the players are heard; **Keys and controllers...** opens the settings' **Split screen** tab, which also has each player's controller and keys. Escape goes back, from the car select to the main menu and from the stage select to the cars.
+
+How the window is shared: **Auto** picks side by side or top and bottom, whichever gives each player a picture nearer 16:9 (a 16:9 window splits top and bottom, a 32:9 one side by side), and changes at once when the window is resized; or always **Side by side**, or always **Top and bottom**. Each pane sees as much as its shape lets it, as a wide window does, never stretched, and each player has the whole HUD in their own pane, with their own minimap arrow, at full size in a pane at least 640x360 and smaller in a smaller one.
+
+| Keys | Player 1 | Player 2 |
+| --- | --- | --- |
+| Accelerate, brake | W, S | Up, Down |
+| Steer | A, D | Left, Right |
+| Handbrake | Space or Left Shift | Right Ctrl or Num 0 |
+| Look back | Q, E | Right Shift or Num 1, / or Num 3 |
+| Change the view, arrow | C, F | . or Num ., `,` or Num + |
+
+Every key can be changed on the **Split screen** tab (two each), and Left and Right Shift, Ctrl and Alt are told apart, as are the number pad's keys. Controllers are shared out by themselves (**Auto**: the first connected one is Player 1's, the next Player 2's, a player with **None** leaves theirs to the other), or each player is given one by number. Enter or Escape pauses for both.
+
+The sound, with a second speaker chosen on the Audio tab: **One speaker** plays both players on the main one; **Race events** puts the countdown, checkpoints, repair hoops and wrecks on the second speaker, as outside split screen; **A speaker each** gives Player 2 the second speaker for their car and announcements, and Player 1 the main one. Without a second speaker everything plays on the main one. Each player's announcements are their own: two players through checkpoints at once each hear theirs.
+
+The first car over the finish line wins, a player or a computer car. Otherwise it is down to wrecks: a player whose car is the last one left wins, and with both players wasted nobody does; a player wasted while the other races on watches the wreck until it ends. The results show every car in the order they stood, then **Race Again**, **Choose Stage**, **Change Cars** or **Main Menu**. Instant replay works from the pause menu, each pane round its own player's car. A split-screen race unlocks nothing and is not kept in `replays` (a recording holds one player's input).
+
+The choices, both players' cars and their keys are saved. `split` in the developer console shows them and changes them: `split view <auto|side|stacked>`, `split cars <0-5>`, `split sound <one|events|each>`, `split pad <1|2> <auto|none|1-4>`, `split keys <1|2> <action> <key> [second key]`, `split keys reset`. Split screen draws the race in software, each pane from its own camera, at about 55 fps at 1280x720 here; one player's races still go through the graphics card.
+
 ## Sound
 
 Race sound is placed in 3D, mixed by OpenAL Soft (`lib\lwjgl-openal-*.jar`). Every car's engine is heard from where the car is, not only yours: the game's five recordings per engine play together, cross-faded and bent in pitch as the car rises through its speed bands, so the engine climbs smoothly instead of jumping between loops, and a car off the throttle sounds duller. Crashes and skids come from the car that made them, for every car, and the wreck and the repair from your car. Cars passing are heard passing (a gentle Doppler), far cars are quieter and lose their treble, and with headphones the sound is rendered for the ears (HRTF), so a car behind is heard behind. Your car, at the chase camera's distance, is as loud as Classic plays it; menus, the countdown and the wind are heard as they are; an output limiter keeps a pile-up from clipping. When Windows' default output changes (headphones plugged in, a Bluetooth headset connected), the sound moves to it without stopping, and an unplugged device is left for the default one within a second.
@@ -214,6 +236,7 @@ The `mods` folder holds mods: each is a folder that mirrors `data`, its files re
 | `-Dnfm.retained=false` | With the GPU renderer, draws each race frame's whole scene again instead of moving the scene kept for the tick. |
 | `-Dnfm.gpuscene=<false or picture>` | `false` draws races in software even with the GPU renderer, which then only puts frames on screen; `picture` draws them on the card at 1280x720 rather than the window's resolution. |
 | `-Dnfm.window=<width>x<height>` | Size of the window's inside at start, for example `1920x1080` (default: the size it was left at, else 1280x720). Also sets the size of hidden test runs, which then save each screenshot twice when the size is not 1280x720: the picture itself and `<name>-window.png`, the window as shown. |
+| `-Dnfm.autotest.split=<auto, side or stacked>[,<computer cars>]` | With `-Dnfm.autotest`: plays split screen instead, from the main menu through its car select and settings tab, a race driven by both players (paused for an instant replay), its results, Race Again and a second race, with screenshots throughout; `-Dnfm.autotest.resize` resizes the window during the first race. |
 | `-Dnfm.autotest=<dir>` | Run the scripted smoke test and write screenshots to `<dir>`. The window is never shown and the test drives the game through its own controls, so it is safe to run while using the machine. |
 
 For example:

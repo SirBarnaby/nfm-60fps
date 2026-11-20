@@ -101,7 +101,8 @@ final class SettingsScreen {
     private static final AtomicInteger TAB_KEYS = new AtomicInteger();
     /** A key is being chosen for an action: the next key is the screen's (see {@link #captureKey}). */
     private static volatile boolean choosingKey;
-    private static final ConcurrentLinkedQueue<Integer> CHOSEN = new ConcurrentLinkedQueue<>();
+    /** The keys pressed while one was asked for: each its code and its split-screen number ({@link SplitKeys#id}). */
+    private static final ConcurrentLinkedQueue<int[]> CHOSEN = new ConcurrentLinkedQueue<>();
     /** Backspace and Delete since the last frame: they clear a key. */
     private static final AtomicInteger CLEAR_KEYS = new AtomicInteger();
     /** The mouse wheel's notches since the last frame (down is more). */
@@ -190,6 +191,16 @@ final class SettingsScreen {
         escapePressed = true;
     }
 
+    /** True once for each Escape since the last call: split screen's own screens go back on it too. */
+    static boolean takeEscape() {
+        boolean was = escapePressed;
+        escapePressed = false;
+        return was;
+    }
+
+    /** The Split screen tab, which split screen's car select opens on. */
+    static final int TAB_SPLIT = 3;
+
     /** Page Up (-1), Page Down or Tab (1) went down: the next or the previous tab. */
     static void noteTabKey(int direction) {
         TAB_KEYS.addAndGet(direction);
@@ -221,9 +232,9 @@ final class SettingsScreen {
      *
      * @return true if the key was taken
      */
-    static boolean captureKey(int keyCode) {
+    static boolean captureKey(int keyCode, int id) {
         if (choosingKey && keyCode != KeyEvent.VK_F11) {
-            CHOSEN.add(keyCode);
+            CHOSEN.add(new int[] {keyCode, id});
             return true;
         }
         if (keyCode == KeyEvent.VK_BACK_SPACE || keyCode == KeyEvent.VK_DELETE) {
@@ -240,8 +251,11 @@ final class SettingsScreen {
         return windowSize.typing() || choosing != null;
     }
 
-    /** Called as the screen opens. */
-    void open() {
+    /** Called as the screen opens: on {@code showTab}, or the tab last shown if -1. */
+    void open(int showTab) {
+        if (showTab >= 0) {
+            tab = showTab;
+        }
         clickedAt = null;
         selected = tabRows[tab].length > 0 ? tabRows[tab][0] : TABS;
         scroll[tab] = 0;
@@ -449,6 +463,52 @@ final class SettingsScreen {
                 "Puts every key back as the game had it. Out of a race the arrows, Enter and Escape always move"
                         + " through the menus, whatever the keys.",
                 KeyBindings::reset).when(() -> !KeyBindings.isDefault(), "The keys are the game's own."));
+
+        tab("Split screen", "Two players on one screen: the screen, the computer cars, the sound, and each"
+                + " player's controller and keys.");
+        group("Race");
+        add(new Choice("Screen", "How the window is shared. Auto: side by side in a wide window, top and bottom"
+                + " in a tall one.", null,
+                new int[] {SplitRace.VIEW_AUTO, SplitRace.VIEW_SIDE, SplitRace.VIEW_STACKED},
+                v -> SplitScreens.screenText(v), () -> SplitRace.view, v -> {
+                    SplitRace.view = v;
+                    SplitRace.changed = true;
+                }));
+        add(new Choice("Computer cars", "How many computer cars race the two of you.", null,
+                new int[] {0, 1, 2, 3, 4, 5}, v -> SplitScreens.rivalsText(v), () -> SplitRace.rivals, v -> {
+                    SplitRace.rivals = v;
+                    SplitRace.changed = true;
+                }));
+        add(new Choice("Sound",
+                "One speaker: everything on the main speaker. Race events: the countdown, checkpoints and wrecks"
+                        + " on the second speaker, as outside split screen. A speaker each: Player 2's car and"
+                        + " announcements on the second speaker, Player 1's on the main one.",
+                () -> Sound3D.secondSpeaker() == null ? "No second speaker is chosen (Audio): it all plays on the"
+                        + " main one." : null,
+                new int[] {SplitRace.SOUND_ONE, SplitRace.SOUND_EVENTS, SplitRace.SOUND_EACH},
+                v -> SplitScreens.soundText(v), () -> SplitRace.sound, v -> {
+                    SplitRace.sound = v;
+                    SplitRace.changed = true;
+                }).when(sound3d, sound3dOnly));
+        for (int p = 0; p < 2; p++) {
+            final int player = p;
+            group("Player " + (p + 1));
+            add(new Choice("Controller",
+                    "Auto: the players without a choice share the connected controllers out in turn, Player 1"
+                            + " first. None: the keys only.",
+                    () -> "Now: " + SplitScreens.padText(player) + ".",
+                    new int[] {SplitRace.PAD_AUTO, SplitRace.PAD_NONE, 0, 1, 2, 3},
+                    SplitScreens::padName, () -> SplitRace.pads[player], v -> {
+                        SplitRace.pads[player] = v;
+                        SplitRace.changed = true;
+                    }).when(Gamepads::isOn, "Only with game controllers on (Controls)."));
+            for (int a = 0; a < SplitKeys.ACTIONS.length; a++) {
+                add(new KeyRow(p, a));
+            }
+        }
+        add(new Button("Restore the split-screen keys", "Restore",
+                "Player 1 on W A S D with Space for the handbrake, Player 2 on the arrows with Right Ctrl.",
+                SplitKeys::reset).when(() -> !SplitKeys.isDefault(), "The keys are the game's own."));
 
         tab("Advanced", "For tinkering: how the game draws, and readouts of how fast it runs.");
         group("Drawing");
@@ -666,8 +726,8 @@ final class SettingsScreen {
             return false;
         }
         if (choosing != null) {
-            for (Integer key; choosing != null && (key = CHOSEN.poll()) != null;) {
-                choosing.chosen(key);
+            for (int[] key; choosing != null && (key = CHOSEN.poll()) != null;) {
+                choosing.chosen(key[0], key[1]);
             }
             control.up = control.down = control.left = control.right = false;
             control.enter = control.handb = false;
@@ -1039,9 +1099,9 @@ final class SettingsScreen {
             if (chosen) {
                 rd.drawRect(x + 1, y + 3, w - 3, ROW_H - 10);
             }
-            int code = KeyBindings.key(key.action, slot);
+            int code = key.key(slot);
             String text = asking ? (System.currentTimeMillis() / 400L % 2L == 0L ? "Press a key" : "")
-                    : KeyBindings.name(code);
+                    : key.name(code);
             Font f = shape(smallFont, text).getBounds2D().getWidth() > w - 8 ? smallFont.deriveFont(12F) : smallFont;
             Color color = asking ? Color.WHITE : code == 0 ? DIMMED : LETTERS;
             menuLetters(rd, f, text, x + w / 2F, y + 16, color, null);
@@ -1598,7 +1658,10 @@ final class SettingsScreen {
      * click) asks for a new one, Backspace or Delete clears it.
      */
     private final class KeyRow extends Row {
+        /** The action: KeyBindings' number, or for a split-screen player its place in {@link SplitKeys#ACTIONS}. */
         final int action;
+        /** The split-screen player whose key this is, or -1 for the Controls tab's. */
+        final int player;
         /** The key chosen of the two. */
         int slot;
         /** What the last key chosen did, until the row is left. */
@@ -1607,6 +1670,22 @@ final class SettingsScreen {
         KeyRow(int action) {
             super(KeyBindings.label(action), KeyBindings.help(action), null);
             this.action = action;
+            this.player = -1;
+        }
+
+        /** A split-screen player's key for one of {@link SplitKeys#ACTIONS}. */
+        KeyRow(int player, int action) {
+            super(SplitKeys.label(action), KeyBindings.help(SplitKeys.ACTIONS[action]), null);
+            this.action = action;
+            this.player = player;
+        }
+
+        private int key(int s) {
+            return player < 0 ? KeyBindings.key(action, s) : SplitKeys.key(player, action, s);
+        }
+
+        private String name(int key) {
+            return player < 0 ? KeyBindings.name(key) : SplitKeys.name(key);
         }
 
         /** Notes are forgotten on every key row but the selected one. */
@@ -1644,32 +1723,42 @@ final class SettingsScreen {
         }
 
         /** The key pressed while one was asked for. */
-        void chosen(int keyCode) {
+        void chosen(int keyCode, int id) {
             if (keyCode == KeyEvent.VK_ESCAPE) {
                 stopListening();
-            } else if (keyCode == KeyEvent.VK_BACK_SPACE || keyCode == KeyEvent.VK_DELETE) {
+            } else if (keyCode == KeyEvent.VK_BACK_SPACE || keyCode == KeyEvent.VK_DELETE && id == keyCode) {
                 stopListening();
                 clear();
             } else if (KeyBindings.reserved(keyCode)) {
                 note = KeyBindings.name(keyCode) + " is the game's own: choose another key.";
-            } else {
+            } else if (player < 0) {
                 stopListening();
                 int from = KeyBindings.bind(action, slot, keyCode);
                 note = from == KeyBindings.NONE ? null
                         : KeyBindings.name(keyCode) + " was on " + KeyBindings.label(from) + ": now it is here.";
+            } else {
+                stopListening();
+                int from = SplitKeys.bind(player, action, slot, id);
+                note = from < 0 ? null
+                        : SplitKeys.name(id) + " was Player " + ((from >> 8) + 1) + "'s " + SplitKeys.label(from & 0xFF)
+                                + ": now it is here.";
             }
         }
 
         void clear() {
-            if (KeyBindings.key(action, slot) != 0) {
-                KeyBindings.bind(action, slot, 0);
+            if (key(slot) != 0) {
+                if (player < 0) {
+                    KeyBindings.bind(action, slot, 0);
+                } else {
+                    SplitKeys.bind(player, action, slot, 0);
+                }
                 note = (slot == 0 ? "The first" : "The second") + " key is cleared.";
             }
         }
 
         @Override
         String value() {
-            return KeyBindings.name(KeyBindings.key(action, 0)) + ", " + KeyBindings.name(KeyBindings.key(action, 1));
+            return name(key(0)) + ", " + name(key(1));
         }
 
         @Override

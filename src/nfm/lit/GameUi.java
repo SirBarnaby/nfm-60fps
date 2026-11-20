@@ -104,7 +104,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
     private Image gameov;
     private Image carsbg;
     private Image pgate;
-    private Image selectcar;
+    Image selectcar;
     private Image statb;
     private Image statbo;
     public Image mdness;
@@ -145,8 +145,8 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
     private final Image[] dudeb;
     private int duds;
     private int dudo;
-    private final Image[] next;
-    private final Image[] back;
+    final Image[] next;
+    final Image[] back;
     private final Image[] contin;
     private final Image[] ostar;
     private final Image[] star;
@@ -264,23 +264,33 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
     private int main_menu_height_origin; // see fitScreen
 
     private int main_menu_button_height = 22;
-    private int main_menu_op_0_y; // see fitScreen
-    private int main_menu_op_0_width = 110;
-    private int main_menu_op_1_y; // see fitScreen
-    private int main_menu_op_1_width = 196;
-    private int main_menu_op_2_y; // see fitScreen
-    private int main_menu_op_2_width = 85;
-    /* Settings, lettered under the menu's picture */
-    private int main_menu_op_3_y; // see fitScreen
-    private int main_menu_op_3_width = 100;
-    private int main_menu_op_4_y; // see fitScreen
-    private int main_menu_op_4_width = 110;
-    /** Where the menu's brown backdrop is opened up for the fifth item, and by how much (its rows stay whole). */
+    /** The main menu's items, in order: the first three are in its picture, the rest are lettered under it. */
+    static final int MENU_PLAY = 0;
+    static final int MENU_INSTRUCTIONS = 1;
+    static final int MENU_CREDITS = 2;
+    static final int MENU_SPLIT = 3;
+    static final int MENU_SETTINGS = 4;
+    static final int MENU_EXIT = 5;
+    private static final int MENU_ITEMS = 6;
+    /** Each item's box: how wide, and where it is at the top (see fitScreen), 31 pixels apart give or take. */
+    private static final int[] MENU_WIDTH = {110, 196, 85, 140, 100, 110};
+    private static final int[] MENU_TOP = {246, 275, 306, 337, 368, 399};
+    /** The colour each item's box flickers to while chosen. */
+    private static final Color[] MENU_FLICKER = {new Color(200, 255, 0), new Color(200, 128, 0), new Color(200, 0, 0),
+        new Color(0, 160, 220), new Color(200, 0, 128), new Color(128, 0, 200)};
+    private final int[] menuY = new int[MENU_ITEMS]; // see fitScreen
+    /** Where the menu's brown backdrop is opened up for the items under its picture, and by how much (its rows stay whole). */
     private static final int OPBACK_GAP_AT = 90;
-    private static final int OPBACK_GAP = 38;
+    private static final int OPBACK_GAP = 69;
 
     /** The settings screen, made when first opened (the menu font is registered by then). */
     private SettingsScreen settingsScreen;
+
+    /** Split screen's car select and results. */
+    final SplitScreens splitScreens = new SplitScreens(this);
+
+    /** Race Again after a split-screen race: the stage select goes on with the same stage at once. */
+    boolean raceAgain;
 
     private int insano_mainmenu_x;
     private int insano_mainmenu_y;
@@ -694,7 +704,9 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         if (!setnumber) {
             setnumber = true;
 
-            if (!nplayers_debug) {
+            if (SplitRace.on) {
+                GameFacts.numberOfPlayers = 2 + SplitRace.rivals; // both players and the computer cars chosen
+            } else if (!nplayers_debug) {
                 switch (checkpoints.stage) {
                     // case 2:
                     // GameFacts.numberOfPlayers = 10;
@@ -818,11 +830,16 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
 
     /** Opens the settings screen; Back returns to {@code from}, the main menu or the pause menu. */
     private void openSettings(Phase from) {
+        openSettings(from, -1);
+    }
+
+    /** Opens the settings screen on a tab (-1 the one last shown); Back returns to {@code from}. */
+    void openSettings(Phase from, int tab) {
         if (settingsScreen == null) {
             settingsScreen = new SettingsScreen(back);
         }
         settingsScreen.backTo = from;
-        settingsScreen.open();
+        settingsScreen.open(tab);
         fase = Phase.SETTINGS;
     }
 
@@ -849,6 +866,8 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             // the race is drawn underneath, as it is now
         } else if (screen.backTo == Phase.PAUSEMENU) {
             rd.drawImage(fleximg, 0, 0, null);
+        } else if (screen.backTo == Phase.SPLITCARSELECT) {
+            rd.drawImage(carsBackdrop(), 0, 0, null);
         } else {
             scrollBackdrop(20);
         }
@@ -1202,6 +1221,9 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         rd.drawImage(fleximg, 0, 0, null);
     }
 
+    /** The car whose HUD is being drawn: car 0, or car 1 for split screen's Player 2. */
+    private int hudCar;
+
     private void arrow(int checkpoint, int missed, CheckPoints checkpoints, ContO cars[], boolean toRacers) {
         int xs[] = new int[7];
         int ys[] = new int[7];
@@ -1234,25 +1256,28 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         xs[6] = centerX + 35;
         zs[6] = centerZ + 50;
         angle = 0;
-        int nearest = 0;
+        int nearest = hudCar;
         if (!toRacers) {
             char flip = '\0';
-            if (checkpoints.x[checkpoint] - checkpoints.opx[0] >= 0) {
+            if (checkpoints.x[checkpoint] - checkpoints.opx[hudCar] >= 0) {
                 flip = '\264';
             }
             angle = (int) (90 + flip + StrictMath.atan(
-                    (double) (checkpoints.z[checkpoint] - checkpoints.opz[0]) / (double) (checkpoints.x[checkpoint] - checkpoints.opx[0]))
+                    (double) (checkpoints.z[checkpoint] - checkpoints.opz[hudCar]) / (double) (checkpoints.x[checkpoint] - checkpoints.opx[hudCar]))
                     / 0.017453292519943295D);
         } else {
             int nearestDistance = -1;
             boolean seenOnScreen = false;
-            int other = 1;
+            int other = hudCar == 0 ? 1 : 0;
             do {
-                if ((Utility.py(checkpoints.opx[0] / 100, checkpoints.opx[other] / 100, checkpoints.opz[0] / 100,
+                if (other == hudCar) {
+                    continue; // split screen's Player 2 points at Player 1 too, never at itself
+                }
+                if ((Utility.py(checkpoints.opx[hudCar] / 100, checkpoints.opx[other] / 100, checkpoints.opz[hudCar] / 100,
                         checkpoints.opz[other] / 100) < nearestDistance || nearestDistance == -1) && (!seenOnScreen || checkpoints.onscreen[other] != 0)
                         && checkpoints.dested[other] == 0) {
                     nearest = other;
-                    nearestDistance = Utility.py(checkpoints.opx[0] / 100, checkpoints.opx[other] / 100, checkpoints.opz[0] / 100,
+                    nearestDistance = Utility.py(checkpoints.opx[hudCar] / 100, checkpoints.opx[other] / 100, checkpoints.opz[hudCar] / 100,
                             checkpoints.opz[other] / 100);
                     if (checkpoints.onscreen[other] != 0) {
                         seenOnScreen = true;
@@ -1260,11 +1285,11 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                 }
             } while (++other < GameFacts.numberOfPlayers);
             other = 0;
-            if (checkpoints.opx[nearest] - checkpoints.opx[0] >= 0) {
+            if (checkpoints.opx[nearest] - checkpoints.opx[hudCar] >= 0) {
                 other = 180;
             }
-            angle = (int) (90 + other + StrictMath.atan((double) (checkpoints.opz[nearest] - checkpoints.opz[0])
-                    / (double) (checkpoints.opx[nearest] - checkpoints.opx[0])) / 0.017453292519943295D);
+            angle = (int) (90 + other + StrictMath.atan((double) (checkpoints.opz[nearest] - checkpoints.opz[hudCar])
+                    / (double) (checkpoints.opx[nearest] - checkpoints.opx[hudCar])) / 0.017453292519943295D);
             drawcs(13, "[ " + names[sc[nearest]] + " ]", 76, 67, 240, 0);
             drawcs(13, names[sc[nearest]], 0, 0, 0, 0);
             /*
@@ -1670,11 +1695,82 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         }
     }
 
+    /*
+     * A split-screen race's events for a car: car 1's are Player 2's, heard
+     * and shown with Player 2's state swapped in (see PlayerHud). The classic
+     * game has only car 0's, which go straight on.
+     */
+
+    @Override
+    public void crash(int car, float force, int kind) {
+        if (SplitRace.active == null) {
+            crash(force, kind);
+        } else {
+            asPlayer(car, () -> crash(force, kind));
+        }
+    }
+
+    @Override
+    public void skid(int car, int surface, float speed) {
+        if (SplitRace.active == null) {
+            skid(surface, speed);
+        } else {
+            asPlayer(car, () -> skid(surface, speed));
+        }
+    }
+
+    @Override
+    public void carFixed(int car) {
+        if (SplitRace.active == null) {
+            carFixed();
+        } else {
+            asPlayer(car, this::carFixed);
+        }
+    }
+
+    @Override
+    public void showCheckpoint(int car, int next) {
+        SplitRace split = SplitRace.active;
+        if (split != null && car == 1) {
+            split.cam2.showCheckpoint(next);
+        } else {
+            showCheckpoint(next);
+        }
+    }
+
+    @Override
+    public void showLastCheckpoint(int car, boolean last) {
+        SplitRace split = SplitRace.active;
+        if (split != null && car == 1) {
+            split.cam2.showLastCheckpoint(last);
+        } else {
+            showLastCheckpoint(last);
+        }
+    }
+
+    /** Runs {@code event} as split-screen player {@code car} (0 or 1), that player's HUD state swapped in. */
+    void asPlayer(int car, Runnable event) {
+        SplitRace split = SplitRace.active;
+        if (split == null || car == SplitRace.drawing) {
+            event.run();
+            return;
+        }
+        int was = SplitRace.drawing;
+        split.hud2.exchange(this);
+        SplitRace.drawing = car;
+        try {
+            event.run();
+        } finally {
+            SplitRace.drawing = was;
+            split.hud2.exchange(this);
+        }
+    }
+
     @Override
     public void crash(float force, int kind) {
         if (bfcrash == 0) {
             if (Math.abs(force) > 25F && !SoundManager.isDiscarding()) {
-                Gamepads.hit(force);
+                Gamepads.hit(SplitRace.active == null ? -1 : SplitRace.drawing, force);
             }
             if (kind == 0) {
                 if (Math.abs(force) > 25F && Math.abs(force) < 170F) {
@@ -1848,6 +1944,11 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         return pointX > x && pointX < x + width && pointY > y && pointY < y + height;
     }
 
+    /** The race as it was when it stopped, greyed by {@link #pauseimage}, behind a menu over it. */
+    void drawPauseBackdrop() {
+        rd.drawImage(fleximg, 0, 0, null);
+    }
+
     public void pauseimage(Image image) {
         PixelGrabber grabber = new PixelGrabber(image, 0, 0, GameFacts.screenWidth, GameFacts.screenHeight,
                 flexpix, 0, GameFacts.screenWidth);
@@ -1868,7 +1969,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                 gray = (color.getRed() + color.getGreen() + color.getBlue() + lastGray * 30) / 33;
                 lastGray = gray;
             }
-            if (++column == 900) {
+            if (++column == GameFacts.screenWidth) { // each row greyed on its own
                 column = 0;
             }
             Color grayColor = new Color(gray, gray, gray);
@@ -2403,6 +2504,19 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
     }
 
     public void stat(Madness drivers[], CheckPoints checkpoints, Control control, ContO scene[], boolean chaseView) {
+        statFlow(drivers, checkpoints, control);
+        if (fase != Phase.CAUGHTHIGHLIGHT) {
+            statPlayer(0, drivers, checkpoints, control, scene, chaseView);
+        }
+        statLightning(checkpoints);
+    }
+
+    /**
+     * The race's flow, once a tick: pausing, the end of the race and its
+     * banner, and the highlight after it. Split screen has its own, see
+     * {@link #splitFlow}.
+     */
+    private void statFlow(Madness drivers[], CheckPoints checkpoints, Control control) {
         if (holdit) {
             holdcnt++;
             if (Medium.flex != 0) {
@@ -2509,512 +2623,535 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                     }
                 } while (++racer < GameFacts.numberOfPlayers);
             }
-            if (chaseView) {
+        }
+    }
+
+    /**
+     * One player's HUD for a tick: the arrow, the standings, the bars, the
+     * countdown, the captions and the stunts, and the sounds that go with
+     * them. Car {@code me}'s: car 0 in the classic game; in split screen
+     * each player's pane runs it with that player's state swapped in (see
+     * {@link PlayerHud}).
+     */
+    void statPlayer(int me, Madness drivers[], CheckPoints checkpoints, Control control, ContO scene[],
+            boolean chaseView) {
+        hudCar = me;
+        SplitRace split = SplitRace.active;
+        if (split != null) {
+            splitBanner(me, split, checkpoints);
+        }
+        if (chaseView) {
+            if (!arrowDisabled) {
+                if (checkpoints.stage != 110 && arrace != control.arrace) {
+                    arrace = control.arrace;
+                    if (arrace) {
+                        wasay = true;
+                        say = " Arrow now pointing at  Cars  <";
+                        tcnt = -5;
+                    }
+                    if (!arrace) {
+                        wasay = false;
+                        say = " Arrow now pointing at  Track  <";
+                        tcnt = -5;
+                        cntan = 20;
+                    }
+                }
+            }
+            if (!holdit && fase != Phase.PAUSETRIGGER && starcnt == 0) {
+                rd.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
                 if (!arrowDisabled) {
-                    if (checkpoints.stage != 110 && arrace != control.arrace) {
-                        arrace = control.arrace;
-                        if (arrace) {
-                            wasay = true;
-                            say = " Arrow now pointing at  Cars  <";
-                            tcnt = -5;
-                        }
-                        if (!arrace) {
-                            wasay = false;
-                            say = " Arrow now pointing at  Track  <";
-                            tcnt = -5;
-                            cntan = 20;
-                        }
-                    }
+                    arrow(drivers[spectate].point, drivers[spectate].missedcp, checkpoints, scene, arrace);
                 }
-                if (!holdit && fase != Phase.PAUSETRIGGER && starcnt == 0) {
-                    rd.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-                    if (!arrowDisabled) {
-                        arrow(drivers[spectate].point, drivers[spectate].missedcp, checkpoints, scene, arrace);
-                    }
+                if (!opstatusDisabled) {
+                    int num_cars = GameFacts.numberOfPlayers;
+                    for (int array_one = 0; array_one < num_cars; array_one++) {
+                        boolean flag_status = false;
+                        for (int array_two = 0; array_two < num_cars; array_two++) {
+                            if (checkpoints.pos[array_two] == array_one && checkpoints.dested[array_two] == 0
+                                    && !flag_status) {
+                                int y_value = 30; // use to move status up or down
+                                int x_value = GameFacts.screenWidth - 700; // use to move status left or right
 
-                    if (!opstatusDisabled) {
-                        int num_cars = GameFacts.numberOfPlayers;
-                        for (int array_one = 0; array_one < num_cars; array_one++) {
-                            boolean flag_status = false;
-                            for (int array_two = 0; array_two < num_cars; array_two++) {
-                                if (checkpoints.pos[array_two] == array_one && checkpoints.dested[array_two] == 0
-                                        && !flag_status) {
-                                    int y_value = 30; // use to move status up or down
-                                    int x_value = GameFacts.screenWidth - 700; // use to move status left or right
-
-                                    rd.setColor(new Color(0, 0, 100));
-                                    if (array_one == 0)
-                                        rd.drawString("1st", 543 + x_value, 76 + 30 + y_value * array_one);
-                                    if (array_one == 1)
-                                        rd.drawString("2nd", 541 + x_value, 76 + 30 + y_value * array_one);
-                                    if (array_one == 2)
-                                        rd.drawString("3rd", 541 + x_value, 76 + 30 + y_value * array_one);
-                                    if (array_one >= 3)
-                                        rd.drawString((array_one + 1) + "th", 541 + x_value, 76 + y_value + 30 * array_one);
-                                    rd.setColor(new Color(0, 0, 0));
-                                    rd.drawString(names[sc[array_two]],
-                                            600 - ((FontHandler.fMetrics.stringWidth(names[sc[array_two]])) / 2) + x_value,
-                                            70 + y_value + 30 * array_one);
-                                    if (drivers[0].im == array_two) {
-                                        int red = (int) (159.0F + (159.0F * ((float) Medium.snap[0] / 100.0F)));
-                                        if (red > 255)
-                                            red = 255;
-                                        if (red < 0)
-                                            red = 0;
-                                        int green = (int) (207.0F + (207.0F * ((float) Medium.snap[1] / 100.0F)));
-                                        if (green > 255)
-                                            green = 255;
-                                        if (green < 0)
-                                            green = 0;
-                                        int blue = (int) (255.0F + (255.0F * ((float) Medium.snap[2] / 100.0F)));
-                                        if (blue > 255)
-                                            blue = 255;
-                                        if (blue < 0)
-                                            blue = 0;
-                                        rd.setColor(new Color(red, green, blue));
-                                        rd.drawRect(531 + x_value, 58 + y_value + 30 * array_one, 114, 25);
-                                        rd.drawRect(532 + x_value, 59 + y_value + 30 * array_one, 112, 23);
-                                    }
-                                    if (arrace) {
-                                        int dmg = (int) (60F * ((float) drivers[array_two].hitmag
-                                                / (float) drivers[array_two].stat.maxmag));
-
-                                        int red = 244;
-                                        int green = 244;
-                                        int blue = 11;
-
-                                        if (dmg > 20)
-                                            green = (int) (244F - 233F * ((float) (dmg - 20) / 40F));
-
-                                        red = (int) ((float) red + (float) red * ((float) Medium.snap[0] / 100F));
-                                        if (dmg > 60)
-                                            dmg = 60;
-                                        if (red > 255)
-                                            red = 255;
-                                        if (red < 0)
-                                            red = 0;
-
-                                        green = (int) ((float) green + (float) green * ((float) Medium.snap[1] / 100F));
-                                        if (green > 255)
-                                            green = 255;
-                                        if (green < 0)
-                                            green = 0;
-
-                                        blue = (int) ((float) blue + (float) blue * ((float) Medium.snap[2] / 100F));
-                                        if (blue > 255)
-                                            blue = 255;
-                                        if (blue < 0)
-                                            blue = 0;
-
-                                        rd.setColor(new Color(red, green, blue));
-                                        rd.fillRect(565 + x_value, 75 + y_value + 30 * array_one, dmg, 5);
-                                    } else {
-                                        int pwr = (int) (60F * (drivers[array_two].power / 98F));
-                                        if (pwr > 98) {
-                                            pwr = 98;
-                                        }
-                                        rd.setColor(new Color(45, 150, 255));
-                                        rd.fillRect(565 + x_value, 75 + y_value + 30 * array_one, pwr, 5);
-                                    }
-                                    rd.setColor(new Color(0, 0, 0));
-                                    rd.drawRect(565 + x_value, 75 + y_value + 30 * array_one, 60, 5);
-
-                                    flag_status = true;
+                                rd.setColor(new Color(0, 0, 100));
+                                if (array_one == 0)
+                                    rd.drawString("1st", 543 + x_value, 76 + 30 + y_value * array_one);
+                                if (array_one == 1)
+                                    rd.drawString("2nd", 541 + x_value, 76 + 30 + y_value * array_one);
+                                if (array_one == 2)
+                                    rd.drawString("3rd", 541 + x_value, 76 + 30 + y_value * array_one);
+                                if (array_one >= 3)
+                                    rd.drawString((array_one + 1) + "th", 541 + x_value, 76 + y_value + 30 * array_one);
+                                rd.setColor(new Color(0, 0, 0));
+                                rd.drawString(names[sc[array_two]],
+                                        600 - ((FontHandler.fMetrics.stringWidth(names[sc[array_two]])) / 2) + x_value,
+                                        70 + y_value + 30 * array_one);
+                                if (drivers[me].im == array_two) {
+                                    int red = (int) (159.0F + (159.0F * ((float) Medium.snap[0] / 100.0F)));
+                                    if (red > 255)
+                                        red = 255;
+                                    if (red < 0)
+                                        red = 0;
+                                    int green = (int) (207.0F + (207.0F * ((float) Medium.snap[1] / 100.0F)));
+                                    if (green > 255)
+                                        green = 255;
+                                    if (green < 0)
+                                        green = 0;
+                                    int blue = (int) (255.0F + (255.0F * ((float) Medium.snap[2] / 100.0F)));
+                                    if (blue > 255)
+                                        blue = 255;
+                                    if (blue < 0)
+                                        blue = 0;
+                                    rd.setColor(new Color(red, green, blue));
+                                    rd.drawRect(531 + x_value, 58 + y_value + 30 * array_one, 114, 25);
+                                    rd.drawRect(532 + x_value, 59 + y_value + 30 * array_one, 112, 23);
                                 }
-                            }
-                        }
-                    }
-                    rd.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
-                    if (!arrace && auscnt == 45 && drivers[0].capcnt == 0) {
-                        if (drivers[0].missedcp > 0) {
-                            if (drivers[0].missedcp > 15 && drivers[0].missedcp < 50) {
-                                if (flk) {
-                                    drawcs(70, "Checkpoint Missed!", 255, 0, 0, 0);
+                                if (arrace) {
+                                    int dmg = (int) (60F * ((float) drivers[array_two].hitmag
+                                            / (float) drivers[array_two].stat.maxmag));
+
+                                    int red = 244;
+                                    int green = 244;
+                                    int blue = 11;
+
+                                    if (dmg > 20)
+                                        green = (int) (244F - 233F * ((float) (dmg - 20) / 40F));
+
+                                    red = (int) ((float) red + (float) red * ((float) Medium.snap[0] / 100F));
+                                    if (dmg > 60)
+                                        dmg = 60;
+                                    if (red > 255)
+                                        red = 255;
+                                    if (red < 0)
+                                        red = 0;
+
+                                    green = (int) ((float) green + (float) green * ((float) Medium.snap[1] / 100F));
+                                    if (green > 255)
+                                        green = 255;
+                                    if (green < 0)
+                                        green = 0;
+
+                                    blue = (int) ((float) blue + (float) blue * ((float) Medium.snap[2] / 100F));
+                                    if (blue > 255)
+                                        blue = 255;
+                                    if (blue < 0)
+                                        blue = 0;
+
+                                    rd.setColor(new Color(red, green, blue));
+                                    rd.fillRect(565 + x_value, 75 + y_value + 30 * array_one, dmg, 5);
                                 } else {
-                                    drawcs(70, "Checkpoint Missed!", 255, 150, 0, 2);
+                                    int pwr = (int) (60F * (drivers[array_two].power / 98F));
+                                    if (pwr > 98) {
+                                        pwr = 98;
+                                    }
+                                    rd.setColor(new Color(45, 150, 255));
+                                    rd.fillRect(565 + x_value, 75 + y_value + 30 * array_one, pwr, 5);
                                 }
-                            }
-                            drivers[0].missedcp++;
-                            if (drivers[0].missedcp == 70) {
-                                drivers[0].missedcp = -2;
-                            }
-                        } else if (drivers[0].mtouch && cntovn < 70) {
-                            if (Math.abs(ana) > 100) {
-                                cntan++;
-                            } else if (cntan != 0) {
-                                cntan--;
-                            }
-                            if (cntan > 40) {
-                                cntovn++;
-                                cntan = 40;
-                                if (flk) {
-                                    drawcs(70, "Wrong Way!", 255, 150, 0, 0);
-                                    flk = false;
-                                } else {
-                                    drawcs(70, "Wrong Way!", 255, 0, 0, 2);
-                                    flk = true;
-                                }
+                                rd.setColor(new Color(0, 0, 0));
+                                rd.drawRect(565 + x_value, 75 + y_value + 30 * array_one, 60, 5);
+
+                                flag_status = true;
                             }
                         }
                     }
                 }
-
-                if (Medium.flex != 2 || Medium.flex == 2) {
-                    int bar_x = GameFacts.screenWidth - dmg.getWidth(null) - 50;
-
-                    rd.drawImage(dmg, bar_x, 7, null);
-                    rd.drawImage(pwr, bar_x, 27, null);
-                    rd.drawImage(lap, 19, 7, null);
-                    rd.setColor(new Color(0, 0, 100));
-                    rd.drawString("" + (drivers[spectate].nlaps + 1) + " / " + checkpoints.nlaps + "", 51, 18);
-                    rd.drawImage(was, 92, 7, null);
-                    rd.setColor(new Color(0, 0, 100));
-                    rd.drawString("" + checkpoints.wasted + " / " + (GameFacts.numberOfPlayers - 1), 150, 18);
-                    rd.drawImage(pos, 42, 27, null);
-                    rd.setFont(new Font("SansSerif", 1, 15));
-                    FontHandler.fMetrics = rd.getFontMetrics();
-                    String suffix = "";
-                    int position = checkpoints.pos[0] + 1;
-                    if ((position - 1) % 10 == 0 && position != 11) {
-                        suffix = "st";
-                    }
-                    if ((position - 2) % 10 == 0 && position != 12) {
-                        suffix = "nd";
-                    }
-                    if ((position - 3) % 10 == 0 && position != 13) {
-                        suffix = "rd";
-                    }
-                    if (position % 10 == 0 || position % 10 >= 4 || position == 11 || position == 12
-                            || position == 13) {
-                        suffix = "th";
-                    }
-                    rd.drawString("" + position + suffix + "", 110, 43);
-                    rd.setFont(new Font("SansSerif", 1, 11));
-                    FontHandler.fMetrics = rd.getFontMetrics();
-                    drawstat(drivers[spectate].stat.maxmag, drivers[spectate].hitmag, drivers[spectate].newcar,
-                            drivers[spectate].power, bar_x);
-
-                    if (GameSparker.DEBUG) {
-                        if (debugmode) {
-                            rd.setColor(new Color(0, 0, 0));
-                            rd.drawString("pcleared: " + drivers[spectate].pcleared, 20, 80);
-                            rd.drawString("checkpoints.clear[" + spectate + "]: " + checkpoints.clear[spectate], 20,
-                                    95);
-                            rd.drawString("X: " + scene[spectate].x, 20, 400);
-                            rd.drawString("Y: " + scene[spectate].y, 20, 420);
-                            rd.drawString("Z: " + scene[spectate].z, 20, 440);
+                rd.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
+                if (!arrace && auscnt == 45 && drivers[me].capcnt == 0) {
+                    if (drivers[me].missedcp > 0) {
+                        if (drivers[me].missedcp > 15 && drivers[me].missedcp < 50) {
+                            if (flk) {
+                                drawcs(70, "Checkpoint Missed!", 255, 0, 0, 0);
+                            } else {
+                                drawcs(70, "Checkpoint Missed!", 255, 150, 0, 2);
+                            }
+                        }
+                        drivers[me].missedcp++;
+                        if (drivers[me].missedcp == 70) {
+                            drivers[me].missedcp = -2;
+                        }
+                    } else if (drivers[me].mtouch && cntovn < 70) {
+                        if (Math.abs(ana) > 100) {
+                            cntan++;
+                        } else if (cntan != 0) {
+                            cntan--;
+                        }
+                        if (cntan > 40) {
+                            cntovn++;
+                            cntan = 40;
+                            if (flk) {
+                                drawcs(70, "Wrong Way!", 255, 150, 0, 0);
+                                flk = false;
+                            } else {
+                                drawcs(70, "Wrong Way!", 255, 0, 0, 2);
+                                flk = true;
+                            }
                         }
                     }
                 }
             }
-            if (!holdit) {
-                if (starcnt != 0 && starcnt <= 35) {
-                    if (starcnt == 35 && !mutes) {
-                        sm.play("three");
-                    }
-                    if (starcnt == 24) {
-                        gocnt = 2;
-                        if (!mutes) {
-                            sm.play("two");
-                        }
-                    }
-                    if (starcnt == 13) {
-                        gocnt = 1;
-                        if (!mutes) {
-                            sm.play("one");
-                        }
-                    }
-                    if (starcnt == 2) {
-                        gocnt = 0;
-                        if (!mutes) {
-                            sm.play("go");
-                        }
-                    }
-                    duds = 0;
-                    if (starcnt <= 37 && starcnt > 32) {
-                        duds = 1;
-                    }
-                    if (starcnt <= 26 && starcnt > 21) {
-                        duds = 1;
-                    }
-                    if (starcnt <= 15 && starcnt > 10) {
-                        duds = 1;
-                    }
-                    if (starcnt <= 4) {
-                        duds = 2;
-                        Medium.flex = 0;
-                    }
-                    if (dudo != -1) {
-                        rd.drawImage(dudeb[duds], Utility.centeredImageX(dudeb[duds]) - 50, 0, null);
-                    }
-                    if (gocnt != 0) {
-                        rd.drawImage(cntdn[gocnt], Utility.centeredImageX(dudeb[duds]) + 50, 50, null);
-                    } else {
-                        rd.drawImage(cntdn[gocnt], Utility.centeredImageX(dudeb[duds]) + 60, 50, null);
+
+            if (Medium.flex != 2 || Medium.flex == 2) {
+                int bar_x = GameFacts.screenWidth - dmg.getWidth(null) - 50;
+
+                rd.drawImage(dmg, bar_x, 7, null);
+                rd.drawImage(pwr, bar_x, 27, null);
+                rd.drawImage(lap, 19, 7, null);
+                rd.setColor(new Color(0, 0, 100));
+                rd.drawString("" + (drivers[spectate].nlaps + 1) + " / " + checkpoints.nlaps + "", 51, 18);
+                rd.drawImage(was, 92, 7, null);
+                rd.setColor(new Color(0, 0, 100));
+                rd.drawString("" + wastedSeen(me, checkpoints) + " / " + (GameFacts.numberOfPlayers - 1), 150, 18);
+                rd.drawImage(pos, 42, 27, null);
+                rd.setFont(new Font("SansSerif", 1, 15));
+                FontHandler.fMetrics = rd.getFontMetrics();
+                String suffix = "";
+                int position = checkpoints.pos[me] + 1;
+                if ((position - 1) % 10 == 0 && position != 11) {
+                    suffix = "st";
+                }
+                if ((position - 2) % 10 == 0 && position != 12) {
+                    suffix = "nd";
+                }
+                if ((position - 3) % 10 == 0 && position != 13) {
+                    suffix = "rd";
+                }
+                if (position % 10 == 0 || position % 10 >= 4 || position == 11 || position == 12
+                        || position == 13) {
+                    suffix = "th";
+                }
+                rd.drawString("" + position + suffix + "", 110, 43);
+                if (split != null) {
+                    rd.setFont(new Font("SansSerif", 1, 11));
+                    rd.setColor(new Color(0, 0, 100));
+                    rd.drawString("Player " + (me + 1), 19, 58);
+                }
+                rd.setFont(new Font("SansSerif", 1, 11));
+                FontHandler.fMetrics = rd.getFontMetrics();
+                drawstat(drivers[spectate].stat.maxmag, drivers[spectate].hitmag, drivers[spectate].newcar,
+                        drivers[spectate].power, bar_x);
+
+                if (GameSparker.DEBUG) {
+                    if (debugmode) {
+                        rd.setColor(new Color(0, 0, 0));
+                        rd.drawString("pcleared: " + drivers[spectate].pcleared, 20, 80);
+                        rd.drawString("checkpoints.clear[" + spectate + "]: " + checkpoints.clear[spectate], 20,
+                                95);
+                        rd.drawString("X: " + scene[spectate].x, 20, 400);
+                        rd.drawString("Y: " + scene[spectate].y, 20, 420);
+                        rd.drawString("Z: " + scene[spectate].z, 20, 440);
                     }
                 }
-                if (looped != 0 && drivers[0].loop == 2) {
-                    looped = 0;
+            }
+        }
+        if (!holdit) {
+            if (starcnt != 0 && starcnt <= 35) {
+                if (starcnt == 35 && !mutes && me == 0) {
+                    sm.play("three");
                 }
-                if (drivers[0].power < 45F) {
-                    if (tcnt == 30 && auscnt == 45 && drivers[0].mtouch && drivers[0].capcnt == 0) {
-                        if (looped != 2) {
-                            if (pwcnt < 70 || pwcnt < 160 && looped != 0) {
-                                if (pwflk) {
-                                    drawcs(110, "Power low, perform stunt!", 0, 0, 200, 0);
-                                    pwflk = false;
-                                } else {
-                                    drawcs(110, "Power low, perform stunt!", 255, 100, 0, 0);
-                                    pwflk = true;
-                                }
-                            }
-                        } else if (pwcnt < 250) {
+                if (starcnt == 24) {
+                    gocnt = 2;
+                    if (!mutes && me == 0) {
+                        sm.play("two");
+                    }
+                }
+                if (starcnt == 13) {
+                    gocnt = 1;
+                    if (!mutes && me == 0) {
+                        sm.play("one");
+                    }
+                }
+                if (starcnt == 2) {
+                    gocnt = 0;
+                    if (!mutes && me == 0) {
+                        sm.play("go");
+                    }
+                }
+                duds = 0;
+                if (starcnt <= 37 && starcnt > 32) {
+                    duds = 1;
+                }
+                if (starcnt <= 26 && starcnt > 21) {
+                    duds = 1;
+                }
+                if (starcnt <= 15 && starcnt > 10) {
+                    duds = 1;
+                }
+                if (starcnt <= 4) {
+                    duds = 2;
+                    Medium.flex = 0;
+                }
+                if (dudo != -1) {
+                    rd.drawImage(dudeb[duds], Utility.centeredImageX(dudeb[duds]) - 50, 0, null);
+                }
+                if (gocnt != 0) {
+                    rd.drawImage(cntdn[gocnt], Utility.centeredImageX(dudeb[duds]) + 50, 50, null);
+                } else {
+                    rd.drawImage(cntdn[gocnt], Utility.centeredImageX(dudeb[duds]) + 60, 50, null);
+                }
+            }
+            if (looped != 0 && drivers[me].loop == 2) {
+                looped = 0;
+            }
+            if (drivers[me].power < 45F) {
+                if (tcnt == 30 && auscnt == 45 && drivers[me].mtouch && drivers[me].capcnt == 0) {
+                    if (looped != 2) {
+                        if (pwcnt < 70 || pwcnt < 160 && looped != 0) {
                             if (pwflk) {
-                                drawcs(105, "> >  Press Enter for GAME INSTRUCTIONS!  < <", 0, 0, 200, 0);
-                                drawcs(120, "To learn how to preform STUNTS!", 0, 0, 200, 0);
+                                drawcs(110, "Power low, perform stunt!", 0, 0, 200, 0);
                                 pwflk = false;
                             } else {
-                                drawcs(105, "> >  Press Enter for GAME INSTRUCTIONS!  < <", 255, 100, 0, 0);
-                                drawcs(120, "To learn how to preform STUNTS!", 255, 100, 0, 0);
+                                drawcs(110, "Power low, perform stunt!", 255, 100, 0, 0);
                                 pwflk = true;
                             }
                         }
-                        pwcnt++;
-                        if (pwcnt == 300) {
-                            pwcnt = 0;
-                            if (looped != 0) {
-                                looped++;
-                                if (looped == 3) {
-                                    looped = 1;
-                                }
+                    } else if (pwcnt < 250) {
+                        if (pwflk) {
+                            drawcs(105, "> >  Press Enter for GAME INSTRUCTIONS!  < <", 0, 0, 200, 0);
+                            drawcs(120, "To learn how to preform STUNTS!", 0, 0, 200, 0);
+                            pwflk = false;
+                        } else {
+                            drawcs(105, "> >  Press Enter for GAME INSTRUCTIONS!  < <", 255, 100, 0, 0);
+                            drawcs(120, "To learn how to preform STUNTS!", 255, 100, 0, 0);
+                            pwflk = true;
+                        }
+                    }
+                    pwcnt++;
+                    if (pwcnt == 300) {
+                        pwcnt = 0;
+                        if (looped != 0) {
+                            looped++;
+                            if (looped == 3) {
+                                looped = 1;
                             }
                         }
                     }
-                } else if (pwcnt != 0) {
-                    pwcnt = 0;
                 }
-                if (drivers[0].capcnt == 0) {
-                    if (tcnt < 30) {
-                        if (tflk) {
-                            if (!wasay) {
-                                drawcs(105, say, 0, 0, 0, 0);
-                            } else {
-                                drawcs(105, say, 0, 0, 0, 0);
-                            }
-                            tflk = false;
-                        } else {
-                            if (!wasay) {
-                                drawcs(105, say, 0, 128, 255, 0);
-                            } else {
-                                drawcs(105, say, 255, 128, 0, 0);
-                            }
-                            tflk = true;
-                        }
-                        tcnt++;
-                    } else if (wasay) {
-                        wasay = false;
-                    }
-                    if (auscnt < 45) {
-                        if (aflk) {
-                            drawcs(85, asay, 98, 176, 255, 0);
-                            aflk = false;
-                        } else {
-                            drawcs(85, asay, 0, 128, 255, 0);
-                            aflk = true;
-                        }
-                        auscnt++;
-                    }
-                } else if (tflk) {
-                    drawcs(110, "Bad Landing!", 0, 0, 200, 0);
-                    tflk = false;
-                } else {
-                    drawcs(110, "Bad Landing!", 255, 100, 0, 0);
-                    tflk = true;
-                }
-                if (drivers[0].trcnt == 10) {
-                    loop = "";
-                    spin = "";
-                    asay = "";
-                    int turns;
-                    for (turns = 0; drivers[0].travzy > 225; turns++) {
-                        drivers[0].travzy -= 360;
-                    }
-
-                    while (drivers[0].travzy < -225) {
-                        drivers[0].travzy += 360;
-                        turns--;
-                    }
-                    if (turns == 1) {
-                        loop = "Forward loop";
-                    }
-                    if (turns == 2) {
-                        loop = "double Forward";
-                    }
-                    if (turns == 3) {
-                        loop = "triple Forward";
-                    }
-                    if (turns >= 4) {
-                        loop = "massive Forward looping";
-                    }
-                    if (turns == -1) {
-                        loop = "Backloop";
-                    }
-                    if (turns == -2) {
-                        loop = "double Back";
-                    }
-                    if (turns == -3) {
-                        loop = "triple Back";
-                    }
-                    if (turns <= -4) {
-                        loop = "massive Back looping";
-                    }
-                    if (turns == 0) {
-                        if (drivers[0].ftab && drivers[0].btab) {
-                            loop = "Tabletop and reversed Tabletop";
-                        } else if (drivers[0].ftab || drivers[0].btab) {
-                            loop = "Tabletop";
-                        }
-                    }
-                    if (turns > 0 && drivers[0].btab) {
-                        loop = "Hanged " + loop;
-                    }
-                    if (turns < 0 && drivers[0].ftab) {
-                        loop = "Hanged " + loop;
-                    }
-                    if (!("").equals(loop)) {
-                        asay += " " + loop;
-                    }
-                    turns = 0;
-                    for (drivers[0].travxy = Math.abs(drivers[0].travxy); drivers[0].travxy > 270;) {
-                        drivers[0].travxy -= 360;
-                        turns++;
-                    }
-
-                    if (turns == 0 && drivers[0].rtab) {
-                        if (("").equals(loop)) {
-                            spin = "Tabletop";
-                        } else {
-                            spin = "Flipside";
-                        }
-                    }
-                    if (turns == 1) {
-                        spin = "Rollspin";
-                    }
-                    if (turns == 2) {
-                        spin = "double Rollspin";
-                    }
-                    if (turns == 3) {
-                        spin = "triple Rollspin";
-                    }
-                    if (turns >= 4) {
-                        spin = "massive Roll spinning";
-                    }
-                    turns = 0;
-                    boolean maxed = false;
-                    for (drivers[0].travxz = Math.abs(drivers[0].travxz); drivers[0].travxz > 90;) {
-                        drivers[0].travxz -= 180;
-                        if ((turns += 180) > GameFacts.screenWidth) {
-                            turns = GameFacts.screenWidth;
-                            maxed = true;
-                        }
-                    }
-
-                    if (turns != 0) {
-                        if (("").equals(loop) && ("").equals(spin)) {
-                            asay += " " + turns;
-                            if (maxed) {
-                                asay += " and beyond";
-                            }
-                        } else {
-                            if (!("").equals(loop)) {
-                                if (("").equals(loop)) {
-                                    asay += " " + spin;
-                                } else {
-                                    asay += " with " + spin;
-                                }
-                            }
-                            asay += " by " + turns;
-                            if (maxed) {
-                                asay += " and beyond";
-                            }
-                        }
-                    } else if (!("").equals(spin)) {
-                        if (("").equals(loop)) {
-                            asay += " " + spin;
-                        } else {
-                            asay += " by " + spin;
-                        }
-                    }
-                    if (!("").equals(asay)) {
-                        auscnt -= 15;
-                    }
-                    if (!("").equals(loop)) {
-                        auscnt -= 25;
-                    }
-                    if (!("").equals(spin)) {
-                        auscnt -= 25;
-                    }
-                    if (turns != 0) {
-                        auscnt -= 25;
-                    }
-                    if (auscnt < 45) {
-                        if (!mutes) {
-                            sm.play("powerup");
-                        }
-                        if (auscnt < -20) {
-                            auscnt = -20;
-                        }
-                        byte praise = 0;
-                        if (drivers[0].powerup > 20F) {
-                            praise = 1;
-                        }
-                        if (drivers[0].powerup > 40F) {
-                            praise = 2;
-                        }
-                        if (drivers[0].powerup > 150F) {
-                            praise = 3;
-                        }
-                        if (drivers[0].surfer) {
-                            asay = " " + adj[4][(int) (Medium.fxRandom() * 3F)] + asay;
-                        }
-                        if (praise != 3) {
-                            asay = adj[praise][(int) (Medium.fxRandom() * 3F)] + asay + exlm[praise];
-                        } else {
-                            asay = adj[praise][(int) (Medium.fxRandom() * 3F)];
-                        }
+            } else if (pwcnt != 0) {
+                pwcnt = 0;
+            }
+            if (drivers[me].capcnt == 0) {
+                if (tcnt < 30) {
+                    if (tflk) {
                         if (!wasay) {
-                            tcnt = auscnt;
-                            if (drivers[0].power != 98F) {
-                                say = "Power Up " + (int) ((100F * drivers[0].powerup) / 98F) + "%";
+                            drawcs(105, say, 0, 0, 0, 0);
+                        } else {
+                            drawcs(105, say, 0, 0, 0, 0);
+                        }
+                        tflk = false;
+                    } else {
+                        if (!wasay) {
+                            drawcs(105, say, 0, 128, 255, 0);
+                        } else {
+                            drawcs(105, say, 255, 128, 0, 0);
+                        }
+                        tflk = true;
+                    }
+                    tcnt++;
+                } else if (wasay) {
+                    wasay = false;
+                }
+                if (auscnt < 45) {
+                    if (aflk) {
+                        drawcs(85, asay, 98, 176, 255, 0);
+                        aflk = false;
+                    } else {
+                        drawcs(85, asay, 0, 128, 255, 0);
+                        aflk = true;
+                    }
+                    auscnt++;
+                }
+            } else if (tflk) {
+                drawcs(110, "Bad Landing!", 0, 0, 200, 0);
+                tflk = false;
+            } else {
+                drawcs(110, "Bad Landing!", 255, 100, 0, 0);
+                tflk = true;
+            }
+            if (drivers[me].trcnt == 10) {
+                loop = "";
+                spin = "";
+                asay = "";
+                int turns;
+                for (turns = 0; drivers[me].travzy > 225; turns++) {
+                    drivers[me].travzy -= 360;
+                }
+
+                while (drivers[me].travzy < -225) {
+                    drivers[me].travzy += 360;
+                    turns--;
+                }
+                if (turns == 1) {
+                    loop = "Forward loop";
+                }
+                if (turns == 2) {
+                    loop = "double Forward";
+                }
+                if (turns == 3) {
+                    loop = "triple Forward";
+                }
+                if (turns >= 4) {
+                    loop = "massive Forward looping";
+                }
+                if (turns == -1) {
+                    loop = "Backloop";
+                }
+                if (turns == -2) {
+                    loop = "double Back";
+                }
+                if (turns == -3) {
+                    loop = "triple Back";
+                }
+                if (turns <= -4) {
+                    loop = "massive Back looping";
+                }
+                if (turns == 0) {
+                    if (drivers[me].ftab && drivers[me].btab) {
+                        loop = "Tabletop and reversed Tabletop";
+                    } else if (drivers[me].ftab || drivers[me].btab) {
+                        loop = "Tabletop";
+                    }
+                }
+                if (turns > 0 && drivers[me].btab) {
+                    loop = "Hanged " + loop;
+                }
+                if (turns < 0 && drivers[me].ftab) {
+                    loop = "Hanged " + loop;
+                }
+                if (!("").equals(loop)) {
+                    asay += " " + loop;
+                }
+                turns = 0;
+                for (drivers[me].travxy = Math.abs(drivers[me].travxy); drivers[me].travxy > 270;) {
+                    drivers[me].travxy -= 360;
+                    turns++;
+                }
+
+                if (turns == 0 && drivers[me].rtab) {
+                    if (("").equals(loop)) {
+                        spin = "Tabletop";
+                    } else {
+                        spin = "Flipside";
+                    }
+                }
+                if (turns == 1) {
+                    spin = "Rollspin";
+                }
+                if (turns == 2) {
+                    spin = "double Rollspin";
+                }
+                if (turns == 3) {
+                    spin = "triple Rollspin";
+                }
+                if (turns >= 4) {
+                    spin = "massive Roll spinning";
+                }
+                turns = 0;
+                boolean maxed = false;
+                for (drivers[me].travxz = Math.abs(drivers[me].travxz); drivers[me].travxz > 90;) {
+                    drivers[me].travxz -= 180;
+                    if ((turns += 180) > GameFacts.screenWidth) {
+                        turns = GameFacts.screenWidth;
+                        maxed = true;
+                    }
+                }
+
+                if (turns != 0) {
+                    if (("").equals(loop) && ("").equals(spin)) {
+                        asay += " " + turns;
+                        if (maxed) {
+                            asay += " and beyond";
+                        }
+                    } else {
+                        if (!("").equals(loop)) {
+                            if (("").equals(loop)) {
+                                asay += " " + spin;
                             } else {
-                                say = "Power To The MAX";
+                                asay += " with " + spin;
                             }
-                            skidup = !skidup;
+                        }
+                        asay += " by " + turns;
+                        if (maxed) {
+                            asay += " and beyond";
                         }
                     }
-                }
-                if (drivers[0].newcar) {
-                    if (!wasay) {
-                        say = "Car Fixed";
-                        tcnt = 0;
+                } else if (!("").equals(spin)) {
+                    if (("").equals(loop)) {
+                        asay += " " + spin;
+                    } else {
+                        asay += " by " + spin;
                     }
-                    crashup = !crashup;
                 }
-                if (clear != drivers[0].clear && drivers[0].clear != 0) {
-                    if (!wasay) {
-                        say = "Checkpoint!";
-                        tcnt = 15;
-                    }
-                    clear = drivers[0].clear;
+                if (!("").equals(asay)) {
+                    auscnt -= 15;
+                }
+                if (!("").equals(loop)) {
+                    auscnt -= 25;
+                }
+                if (!("").equals(spin)) {
+                    auscnt -= 25;
+                }
+                if (turns != 0) {
+                    auscnt -= 25;
+                }
+                if (auscnt < 45) {
                     if (!mutes) {
-                        sm.play("checkpoint");
+                        sm.play("powerup");
                     }
-                    cntovn = 0;
-                    if (cntan != 0) {
-                        cntan = 0;
+                    if (auscnt < -20) {
+                        auscnt = -20;
+                    }
+                    byte praise = 0;
+                    if (drivers[me].powerup > 20F) {
+                        praise = 1;
+                    }
+                    if (drivers[me].powerup > 40F) {
+                        praise = 2;
+                    }
+                    if (drivers[me].powerup > 150F) {
+                        praise = 3;
+                    }
+                    if (drivers[me].surfer) {
+                        asay = " " + adj[4][(int) (Medium.fxRandom() * 3F)] + asay;
+                    }
+                    if (praise != 3) {
+                        asay = adj[praise][(int) (Medium.fxRandom() * 3F)] + asay + exlm[praise];
+                    } else {
+                        asay = adj[praise][(int) (Medium.fxRandom() * 3F)];
+                    }
+                    if (!wasay) {
+                        tcnt = auscnt;
+                        if (drivers[me].power != 98F) {
+                            say = "Power Up " + (int) ((100F * drivers[me].powerup) / 98F) + "%";
+                        } else {
+                            say = "Power To The MAX";
+                        }
+                        skidup = !skidup;
                     }
                 }
+            }
+            if (drivers[me].newcar) {
+                if (!wasay) {
+                    say = "Car Fixed";
+                    tcnt = 0;
+                }
+                crashup = !crashup;
+            }
+            if (clear != drivers[me].clear && drivers[me].clear != 0) {
+                if (!wasay) {
+                    say = "Checkpoint!";
+                    tcnt = 15;
+                }
+                clear = drivers[me].clear;
+                if (!mutes) {
+                    sm.play("checkpoint");
+                }
+                cntovn = 0;
+                if (cntan != 0) {
+                    cntan = 0;
+                }
+            }
+            if (split == null) {
                 int other = 1;
                 do {
                     if (dested[other] != checkpoints.dested[other]) {
@@ -3034,8 +3171,138 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                         }
                     }
                 } while (++other < GameFacts.numberOfPlayers);
+            } else {
+                splitWasted(me, split, checkpoints);
             }
         }
+    }
+
+    /** The cars wasted, as car {@code me}'s HUD counts them: every car but its own. */
+    private int wastedSeen(int me, CheckPoints checkpoints) {
+        if (SplitRace.active == null) {
+            return checkpoints.wasted;
+        }
+        int seen = 0;
+        for (int car = 0; car < GameFacts.numberOfPlayers; car++) {
+            if (car != me && checkpoints.dested[car] != 0) {
+                seen++;
+            }
+        }
+        return seen;
+    }
+
+    /**
+     * Split screen's "has been wasted" captions for player {@code me}: every
+     * other car, Player 1 or 2 by name, and "You wasted" only for the cars
+     * this player wrecked.
+     */
+    private void splitWasted(int me, SplitRace split, CheckPoints checkpoints) {
+        for (int other = 0; other < GameFacts.numberOfPlayers; other++) {
+            if (other == me || dested[other] == checkpoints.dested[other]) {
+                continue;
+            }
+            dested[other] = checkpoints.dested[other];
+            if (dested[other] == 0) {
+                continue;
+            }
+            String name = SplitRace.nameOf(other, names[sc[other]]);
+            wasay = true;
+            tcnt = -15;
+            if (dested[other] == 2 && split.hitBy[other] == me) {
+                say = "You wasted " + name + "!";
+                if (!mutes) {
+                    Sound3D.event(WRECK_CLIP, false, me);
+                }
+            } else {
+                say = name + " has been wasted!";
+            }
+        }
+    }
+
+    /**
+     * Split screen's race flow, once a tick, in place of statFlow: pausing,
+     * then whether the race is over and who won (see SplitRace#judge). Nothing
+     * is drawn here: each pane shows its player how it ended, see splitBanner.
+     */
+    void splitFlow(Madness drivers[], CheckPoints checkpoints, Control control) {
+        SplitRace split = SplitRace.active;
+        winner = false; // a split-screen race never unlocks or saves anything
+        if (holdit) {
+            holdcnt++;
+            if (control.enter || holdcnt > 250) {
+                fase = Phase.SPLITRESULTS;
+                control.enter = false;
+            }
+            return;
+        }
+        holdcnt = 0;
+        if (control.enter) {
+            if (loadedt) {
+                strack.setPaused(true);
+            }
+            fase = Phase.PAUSETRIGGER;
+            control.enter = false;
+        }
+        if (split.judge(drivers, checkpoints, GameFacts.numberOfPlayers)) {
+            checkpoints.haltall = true;
+            holdit = true;
+        }
+    }
+
+    /**
+     * How the race ended, or that this player is out of it, across the top
+     * of player {@code me}'s pane, as the classic game shows it across the
+     * screen.
+     */
+    private void splitBanner(int me, SplitRace split, CheckPoints checkpoints) {
+        if (!split.over) {
+            if (split.wasted[me] && cntwis == 8) {
+                banner(yourwasted, split.wasted[1 - me] ? null : "Player " + (2 - me) + " races on");
+            }
+            return;
+        }
+        int won = split.winner;
+        int other = 1 - me;
+        if (won == me && split.finished) {
+            banner(youwon, "You finished first, nice job!");
+        } else if (won == me) {
+            banner(youwastedem, split.rivalsNow > 0 ? "You won, all cars have been wasted!"
+                    : "You won, Player " + (other + 1) + " has been wasted!");
+        } else if (won == other && split.finished) {
+            banner(youlost, "Player " + (other + 1) + " finished first, race over!");
+        } else if (won == other) {
+            banner(yourwasted, "Player " + (other + 1) + " wins!");
+        } else if (won >= 2) {
+            banner(youlost, "" + names[sc[won]] + " finished first, race over!");
+        } else {
+            banner(yourwasted, "Both players have been wasted, nobody wins!");
+        }
+        drawcs(GameFacts.screenHeight - 100, "Press  [ Enter ]  to continue", 0, 0, 0, 0);
+    }
+
+    /** One of the race's end pictures at the top of the screen (or pane), with a flickering caption under it. */
+    private void banner(Image image, String caption) {
+        if (Medium.flex != 2) {
+            rd.setColor(new Color(Medium.csky[0], Medium.csky[1], Medium.csky[2]));
+            rd.fillRect(Utility.centeredImageX(image), 70, image.getWidth(ob), image.getHeight(ob));
+            rd.setColor(new Color(Medium.cfade[0], Medium.cfade[1], Medium.cfade[2]));
+            rd.drawRect(Utility.centeredImageX(image), 70, image.getWidth(ob), image.getHeight(ob));
+        }
+        rd.drawImage(image, Utility.centeredImageX(image), 70, null);
+        if (caption == null) {
+            return;
+        }
+        if (aflk) {
+            drawcs(120, caption, 0, 0, 0, 0);
+            aflk = false;
+        } else {
+            drawcs(120, caption, 0, 128, 255, 0);
+            aflk = true;
+        }
+    }
+
+    /** The stage 16 lightning pulses with the music, once a tick. */
+    void statLightning(CheckPoints checkpoints) {
         if (Medium.lightn != -1 && checkpoints.stage == 16) {
             // supposed to pulse during sections of the music, w/e
             Medium.lton = true;
@@ -3281,10 +3548,17 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
      * @author rafa
      */
     private void sortcars(int stage) {
+        // split screen: both players' cars are theirs, the computer cars come after
+        boolean split = SplitRace.on;
+        int humans = split ? 2 : 1;
+        if (split) {
+            sc[0] = SplitRace.cars[0];
+            sc[1] = SplitRace.cars[1];
+        }
         if (stage != 0) {
             int lastcar = GameFacts.numberOfPlayers;
 
-            if (GameFacts.numberOfPlayers == 1) {
+            if (GameFacts.numberOfPlayers == humans) {
                 return; // if there's only 1 car (the player), don't sort anything
             }
 
@@ -3293,7 +3567,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                 maxId = GameFacts.numberOfCars - 1;
             }
 
-            if (sc[0] != maxId) {
+            if (sc[0] != maxId && (!split || sc[1] != maxId)) {
                 if (stage != -1) {
                     sc[GameFacts.numberOfPlayers - 1] = maxId;
                     lastcar--; // boss car won't be randomized if stage isnt custom
@@ -3313,7 +3587,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             // create a list of car ids, each item completely unique
             ArrayList<Integer> list = new ArrayList<>();
             for (int k = stage / 2; k < GameFacts.numberOfPlayers + (stage / 2); k++) {
-                if (k == sc[0])
+                if (k == sc[0] || split && k == sc[1])
                     continue;
                 list.add(k);
             }
@@ -3328,7 +3602,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             // which item of the list should be picked
             int pick = 0;
 
-            for (int j = 1; j < lastcar; j++) {
+            for (int j = humans; j < lastcar; j++) {
 
                 // get an item from the "deck" - this can be any item as long as it's unique
                 sc[j] = list.get(pick);
@@ -3518,7 +3792,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
     }
 
     /** The car select's picture, filling the picture whatever its shape. */
-    private Image carsBackdrop() {
+    Image carsBackdrop() {
         if (carsbgShown == null) {
             carsbgShown = carsbg.getWidth(null) == GameFacts.screenWidth
                     && carsbg.getHeight(null) == GameFacts.screenHeight ? carsbg
@@ -3537,11 +3811,9 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         int height = GameFacts.screenHeight;
         press_enter_to_continue_height = height - 100;
         main_menu_height_origin = (int) (height * 0.2);
-        main_menu_op_0_y = 246 + main_menu_height_origin;
-        main_menu_op_1_y = 275 + main_menu_height_origin;
-        main_menu_op_2_y = 306 + main_menu_height_origin;
-        main_menu_op_3_y = 337 + main_menu_height_origin;
-        main_menu_op_4_y = 368 + main_menu_height_origin;
+        for (int item = 0; item < MENU_ITEMS; item++) {
+            menuY[item] = MENU_TOP[item] + main_menu_height_origin;
+        }
         car_select_next_back_button_y = (int) (height * 0.68);
         car_select_next_button_x = width - 90;
         car_select_continue_button_y = height - 120;
@@ -3624,6 +3896,10 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         rd.setFont(new Font("SansSerif", 1, 11));
         FontHandler.fMetrics = rd.getFontMetrics();
         drawcs(GameFacts.screenHeight - 5, "You can also use Keyboard Arrows and Enter to navigate.", 82, 90, 0, 3);
+        if (raceAgain) {
+            raceAgain = false;
+            control.enter = true;
+        }
         if (control.handb || control.enter) {
             sm.play("tick");
             if (checkpoints.stage != -1) {
@@ -4087,7 +4363,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
     public void maini(Control control, CheckPoints checkpoints, Madness drivers[], ContO models[], ContO scene[]) {
         // might redo the entire menu its horrible
 
-        int menuItems = 5;
+        int menuItems = MENU_ITEMS;
 
         if (GameSparker.DEBUG) {
             if (!devtriggered) {
@@ -4198,117 +4474,33 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             control.down = false;
         }
         clickOnMove(0);
-        if (opselect == 0) {
-            if (shaded) {
-                rd.setColor(new Color(140, 70, 0));
-                rd.fillRect(Utility.centeredWidthX(main_menu_op_0_width), main_menu_op_0_y, main_menu_op_0_width,
-                        main_menu_button_height);
-                aflk = false;
-            }
-            if (aflk) {
-                rd.setColor(new Color(200, 255, 0));
-                aflk = false;
+        for (int item = 0; item < menuItems; item++) {
+            int x = Utility.centeredWidthX(MENU_WIDTH[item]);
+            if (opselect == item) {
+                if (shaded) {
+                    rd.setColor(new Color(140, 70, 0));
+                    rd.fillRect(x, menuY[item], MENU_WIDTH[item], main_menu_button_height);
+                    aflk = false;
+                }
+                if (aflk) {
+                    rd.setColor(MENU_FLICKER[item]);
+                    aflk = false;
+                } else {
+                    rd.setColor(new Color(255, 128, 0));
+                    aflk = true;
+                }
             } else {
-                rd.setColor(new Color(255, 128, 0));
-                aflk = true;
+                rd.setColor(new Color(0, 0, 0));
             }
-            rd.drawRoundRect(Utility.centeredWidthX(main_menu_op_0_width), main_menu_op_0_y, main_menu_op_0_width,
-                    main_menu_button_height, 7, 20);
-        } else {
-            rd.setColor(new Color(0, 0, 0));
-            rd.drawRoundRect(Utility.centeredWidthX(main_menu_op_0_width), main_menu_op_0_y, main_menu_op_0_width,
-                    main_menu_button_height, 7, 20);
-        }
-        if (opselect == 1) {
-            if (shaded) {
-                rd.setColor(new Color(140, 70, 0));
-                rd.fillRect(Utility.centeredWidthX(main_menu_op_1_width), main_menu_op_1_y, main_menu_op_1_width,
-                        main_menu_button_height);
-                aflk = false;
-            }
-            if (aflk) {
-                rd.setColor(new Color(200, 128, 0));
-                aflk = false;
-            } else {
-                rd.setColor(new Color(255, 128, 0));
-                aflk = true;
-            }
-            rd.drawRoundRect(Utility.centeredWidthX(main_menu_op_1_width), main_menu_op_1_y, main_menu_op_1_width,
-                    main_menu_button_height, 7, 20);
-        } else {
-            rd.setColor(new Color(0, 0, 0));
-            rd.drawRoundRect(Utility.centeredWidthX(main_menu_op_1_width), main_menu_op_1_y, main_menu_op_1_width,
-                    main_menu_button_height, 7, 20);
-        }
-        if (opselect == 2) {
-            if (shaded) {
-                rd.setColor(new Color(140, 70, 0));
-                rd.fillRect(Utility.centeredWidthX(main_menu_op_2_width), main_menu_op_2_y, main_menu_op_2_width,
-                        main_menu_button_height);
-                aflk = false;
-            }
-            if (aflk) {
-                rd.setColor(new Color(200, 0, 0));
-                aflk = false;
-            } else {
-                rd.setColor(new Color(255, 128, 0));
-                aflk = true;
-            }
-            rd.drawRoundRect(Utility.centeredWidthX(main_menu_op_2_width), main_menu_op_2_y, main_menu_op_2_width,
-                    main_menu_button_height, 7, 20);
-        } else {
-            rd.setColor(new Color(0, 0, 0));
-            rd.drawRoundRect(Utility.centeredWidthX(main_menu_op_2_width), main_menu_op_2_y, main_menu_op_2_width,
-                    main_menu_button_height, 7, 20);
-        }
-        if (opselect == 3) {
-            if (shaded) {
-                rd.setColor(new Color(140, 70, 0));
-                rd.fillRect(Utility.centeredWidthX(main_menu_op_3_width), main_menu_op_3_y, main_menu_op_3_width,
-                        main_menu_button_height);
-                aflk = false;
-            }
-            if (aflk) {
-                rd.setColor(new Color(200, 0, 128));
-                aflk = false;
-            } else {
-                rd.setColor(new Color(255, 128, 0));
-                aflk = true;
-            }
-            rd.drawRoundRect(Utility.centeredWidthX(main_menu_op_3_width), main_menu_op_3_y, main_menu_op_3_width,
-                    main_menu_button_height, 7, 20);
-        } else {
-            rd.setColor(new Color(0, 0, 0));
-            rd.drawRoundRect(Utility.centeredWidthX(main_menu_op_3_width), main_menu_op_3_y, main_menu_op_3_width,
-                    main_menu_button_height, 7, 20);
-        }
-        if (opselect == 4) {
-            if (shaded) {
-                rd.setColor(new Color(140, 70, 0));
-                rd.fillRect(Utility.centeredWidthX(main_menu_op_4_width), main_menu_op_4_y, main_menu_op_4_width,
-                        main_menu_button_height);
-                aflk = false;
-            }
-            if (aflk) {
-                rd.setColor(new Color(128, 0, 200));
-                aflk = false;
-            } else {
-                rd.setColor(new Color(255, 128, 0));
-                aflk = true;
-            }
-            rd.drawRoundRect(Utility.centeredWidthX(main_menu_op_4_width), main_menu_op_4_y, main_menu_op_4_width,
-                    main_menu_button_height, 7, 20);
-        } else {
-            rd.setColor(new Color(0, 0, 0));
-            rd.drawRoundRect(Utility.centeredWidthX(main_menu_op_4_width), main_menu_op_4_y, main_menu_op_4_width,
-                    main_menu_button_height, 7, 20);
+            rd.drawRoundRect(x, menuY[item], MENU_WIDTH[item], main_menu_button_height, 7, 20);
         }
         rd.drawImage(opti, Utility.centeredImageX(opti), 250 + main_menu_height_origin, null);
-        SettingsScreen.drawMenuItem(rd, "Settings", GameFacts.screenWidth / 2F, main_menu_op_3_y + 18);
-        SettingsScreen.drawMenuItem(rd, "Exit Game", GameFacts.screenWidth / 2F, main_menu_op_4_y + 18);
+        SettingsScreen.drawMenuItem(rd, "Split Screen", GameFacts.screenWidth / 2F, menuY[MENU_SPLIT] + 18);
+        SettingsScreen.drawMenuItem(rd, "Settings", GameFacts.screenWidth / 2F, menuY[MENU_SETTINGS] + 18);
+        SettingsScreen.drawMenuItem(rd, "Exit Game", GameFacts.screenWidth / 2F, menuY[MENU_EXIT] + 18);
         if (control.enter || control.handb) {
             clickNow();
-            if (opselect == 0) {
+            if (opselect == MENU_PLAY) {
                 if (unlocked == 1 && oldfase == Phase.INGAME) {
                     oldfase = Phase.CARSELECTTRIGGER;
                     fase = Phase.INSTRUCTIONS;
@@ -4316,17 +4508,22 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                     fase = Phase.CARSELECTTRIGGER;
                 }
             }
-            if (opselect == 1) {
+            if (opselect == MENU_INSTRUCTIONS) {
                 oldfase = Phase.MAINMENU;
                 fase = Phase.INSTRUCTIONS;
             }
-            if (opselect == 2) {
+            if (opselect == MENU_CREDITS) {
                 fase = Phase.CREDITS;
             }
-            if (opselect == 3) {
+            if (opselect == MENU_SPLIT) {
+                SplitRace.on = true;
+                GameFacts.humans = 2; // each player's keys and controller are theirs from the car select on
+                fase = Phase.SPLITCARSELECT;
+            }
+            if (opselect == MENU_SETTINGS) {
                 openSettings(Phase.MAINMENU);
             }
-            if (opselect == 4) {
+            if (opselect == MENU_EXIT) {
                 RunApp.requestExit();
             }
             flipo = 0;
@@ -4374,7 +4571,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
     }
 
     /** A click on the second speaker only. */
-    private void clickNow() {
+    void clickNow() {
         if (!mutes) {
             Sound3D.event(CLICK_CLIP, true);
         }
@@ -4894,6 +5091,25 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         // intercar = null;
     }
 
+    /** The menus' music changes to another interface track, "cars" or "stages", as the classic screens' does. */
+    void switchIntertrack(String track) {
+        if (intertrack != null) {
+            intertrack.setPaused(true);
+            intertrack.unload();
+            intertrack = null;
+        }
+        loadIntertrack(track);
+    }
+
+    /** The menus' music stops: split screen is back at the main menu, which has none. */
+    void stopIntertrack() {
+        if (intertrack != null) {
+            intertrack.setPaused(true);
+            intertrack.unload();
+        }
+        intertrack = new RadicalMod(); // silent, as at the start, for the car select to play until its own loads
+    }
+
     void loadIntertrack(String track) {     //load interface track
         // the first of these that is there, a mod's before the game's
         String found = GameFiles.find("data/music/interface/" + track, ".mp3", ".ogg", ".mid", ".wav", ".zip", ".radq",
@@ -5300,57 +5516,24 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             settingsScreen.mouse(mouseX, mouseY, mouseState, control);
         }
         if (fase == Phase.MAINMENU) {
-            if (mouseState == 1) {
-                if (overon(Utility.centeredWidthX(main_menu_op_0_width), main_menu_op_0_y, main_menu_op_0_width,
+            int over = -1;
+            for (int item = 0; item < MENU_ITEMS; item++) {
+                if (overon(Utility.centeredWidthX(MENU_WIDTH[item]), menuY[item], MENU_WIDTH[item],
                         main_menu_button_height, mouseX, mouseY)) {
-                    opselect = 0;
-                    shaded = true;
+                    over = item;
                 }
-                if (overon(Utility.centeredWidthX(main_menu_op_1_width), main_menu_op_1_y, main_menu_op_1_width,
-                        main_menu_button_height, mouseX, mouseY)) {
-                    opselect = 1;
-                    shaded = true;
-                }
-                if (overon(Utility.centeredWidthX(main_menu_op_2_width), main_menu_op_2_y, main_menu_op_2_width,
-                        main_menu_button_height, mouseX, mouseY)) {
-                    opselect = 2;
-                    shaded = true;
-                }
-                if (overon(Utility.centeredWidthX(main_menu_op_3_width), main_menu_op_3_y, main_menu_op_3_width,
-                        main_menu_button_height, mouseX, mouseY)) {
-                    opselect = 3;
-                    shaded = true;
-                }
-                if (overon(Utility.centeredWidthX(main_menu_op_4_width), main_menu_op_4_y, main_menu_op_4_width,
-                        main_menu_button_height, mouseX, mouseY)) {
-                    opselect = 4;
-                    shaded = true;
-                }
+            }
+            if (mouseState == 1 && over >= 0) {
+                opselect = over;
+                shaded = true;
             }
             if (mouseState == 2 && shaded) {
                 control.enter = true;
                 shaded = false;
             }
             if (mouseState == 0 && (mouseX != lxm || mouseY != lym)) {
-                if (overon(Utility.centeredWidthX(main_menu_op_0_width), main_menu_op_0_y, main_menu_op_0_width,
-                        main_menu_button_height, mouseX, mouseY)) {
-                    opselect = 0;
-                }
-                if (overon(Utility.centeredWidthX(main_menu_op_1_width), main_menu_op_1_y, main_menu_op_1_width,
-                        main_menu_button_height, mouseX, mouseY)) {
-                    opselect = 1;
-                }
-                if (overon(Utility.centeredWidthX(main_menu_op_2_width), main_menu_op_2_y, main_menu_op_2_width,
-                        main_menu_button_height, mouseX, mouseY)) {
-                    opselect = 2;
-                }
-                if (overon(Utility.centeredWidthX(main_menu_op_3_width), main_menu_op_3_y, main_menu_op_3_width,
-                        main_menu_button_height, mouseX, mouseY)) {
-                    opselect = 3;
-                }
-                if (overon(Utility.centeredWidthX(main_menu_op_4_width), main_menu_op_4_y, main_menu_op_4_width,
-                        main_menu_button_height, mouseX, mouseY)) {
-                    opselect = 4;
+                if (over >= 0) {
+                    opselect = over;
                 }
                 lxm = mouseX;
                 lym = mouseY;

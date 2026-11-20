@@ -82,13 +82,14 @@ final class GameInput implements KeyListener, MouseListener, MouseMotionListener
     @Override
     public void keyPressed(KeyEvent e) {
         int keyCode = e.getKeyCode();
-        if (SettingsScreen.captureKey(keyCode)) {
+        int id = SplitKeys.id(e);
+        if (SettingsScreen.captureKey(keyCode, id)) {
             e.consume();
             return; // a key being chosen on the settings screen
         }
         int code = legacyCode(e);
-        if (code >= 0 || KeyBindings.action(keyCode) != KeyBindings.NONE) {
-            game.pressKeyboard(keyCode, code, e.isAltDown(), age(e));
+        if (code >= 0 || KeyBindings.action(keyCode) != KeyBindings.NONE || SplitKeys.find(id) >= 0) {
+            game.pressKeyboard(keyCode, id, code, e.isAltDown(), age(e));
             if (code < 0) {
                 e.consume(); // Alt on its own, given to an action, must not open the window's menu
             }
@@ -97,8 +98,9 @@ final class GameInput implements KeyListener, MouseListener, MouseMotionListener
 
     @Override
     public void keyReleased(KeyEvent e) {
-        game.releaseKeyboard(e.getKeyCode(), age(e));
-        if (e.getKeyCode() == KeyEvent.VK_ALT && KeyBindings.action(KeyEvent.VK_ALT) != KeyBindings.NONE) {
+        game.releaseKeyboard(SplitKeys.id(e), age(e));
+        if (e.getKeyCode() == KeyEvent.VK_ALT && (KeyBindings.action(KeyEvent.VK_ALT) != KeyBindings.NONE
+                || SplitKeys.find(SplitKeys.id(e)) >= 0)) {
             e.consume();
         }
     }

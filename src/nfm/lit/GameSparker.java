@@ -115,6 +115,8 @@ public class GameSparker extends Panel implements Runnable {
     private int nob;
     private int notb;
     private int view;
+    /** Player 2's camera in a split-screen race, as {@link #view} is Player 1's. */
+    private int view2;
 
     /* ------------------------------------------------------------------
      * Frame loop / presentation.
@@ -256,6 +258,16 @@ public class GameSparker extends Panel implements Runnable {
     private int prevCamZ;
     private int prevCamXZ;
     private int prevCamZY;
+    /* split screen's Player 2's camera at the last tick, which their pane's frames move from */
+    private int prevCam2X;
+    private int prevCam2Y;
+    private int prevCam2Z;
+    private int prevCam2XZ;
+    private int prevCam2ZY;
+    /* each object's distance from Player 1's camera in a split-screen tick's look at the world, see splitSimulationStep */
+    private int[] lookDist = new int[0];
+    /* the cars' distances the race reads, both players' looks together, while each player's HUD has its own */
+    private final int[] lookOnscreen = new int[51];
     private boolean prevFrameValid;
     /**
      * Target of the per-tick draw step: a graphics context that draws nothing,
@@ -278,14 +290,34 @@ public class GameSparker extends Panel implements Runnable {
      * recording stores exactly the input each tick used.
      */
     private final Object inputLock = new Object();
-    private boolean liveUp;
-    private boolean liveDown;
-    private boolean liveLeft;
-    private boolean liveRight;
-    private boolean liveHandb;
-    private int liveLookback;
-    private boolean liveEnter;
-    private int liveView;
+
+    /** One player's keys as the event thread last saw them (inputLock). */
+    private static final class LiveKeys {
+        boolean up;
+        boolean down;
+        boolean left;
+        boolean right;
+        boolean handb;
+        int lookback;
+        boolean enter;
+        int view;
+
+        void letGo() {
+            up = down = left = right = handb = enter = false;
+            lookback = 0;
+        }
+    }
+
+    /** Player 1's keys, and in split screen Player 2's. */
+    private final LiveKeys[] live = {new LiveKeys(), new LiveKeys()};
+    /** The player whose key last paused (Enter, Escape or Pause), for "Paused by Player 2". */
+    private volatile int pausedBy;
+    /**
+     * Each split-screen player's keys go to their own car: in the race, and
+     * while choosing cars. Elsewhere either player's keys move through the
+     * menus, as Player 1's.
+     */
+    private volatile boolean splitSelecting;
     /** The controls are being latched once per tick (a race is running). */
     private boolean latching;
 
@@ -499,12 +531,35 @@ public class GameSparker extends Panel implements Runnable {
      * the game's own keys, whatever the keyboard's are.
      */
     void pressKey(int key, boolean alt, long age) {
-        press(VIRTUAL_KEY | key, key, KeyBindings.legacyAction(key), alt, age);
+        press(VIRTUAL_KEY | key, key, 0, KeyBindings.legacyAction(key), alt, age);
     }
 
     /** A key pressed by the autopilot, a recording or a game controller came up; see {@link #pressKey}. */
     void releaseKey(int key, long age) {
         release(VIRTUAL_KEY | key, age);
+    }
+
+    /**
+     * A game controller's or the autopilot's key for a split-screen player
+     * (see {@link #pressKey}): it drives that player's car in the race and
+     * while choosing cars, and moves through the menus elsewhere.
+     */
+    void pressKeyFor(int player, int key, long age) {
+        int action = KeyBindings.legacyAction(key);
+        boolean own;
+        synchronized (inputLock) {
+            own = splitPlayers();
+        }
+        press(VIRTUAL_KEY | player << 24 | key, key, own ? player : 0, action, false, age);
+    }
+
+    void releaseKeyFor(int player, int key, long age) {
+        release(VIRTUAL_KEY | player << 24 | key, age);
+    }
+
+    /** Under {@link #inputLock}: each split-screen player's keys drive their own car now. */
+    private boolean splitPlayers() {
+        return GameFacts.humans > 1 && (latching || splitSelecting);
     }
 
     /**
@@ -515,26 +570,40 @@ public class GameSparker extends Panel implements Runnable {
      * Windows saw it, in nanoseconds. Out of a race the arrows always move
      * through the menus, whatever they do in one.
      */
-    void pressKeyboard(int keyCode, int legacy, boolean alt, long age) {
+    void pressKeyboard(int keyCode, int id, int legacy, boolean alt, long age) {
         int action;
+        int player = 0;
         synchronized (inputLock) {
-            int arrow = latching ? KeyBindings.NONE : KeyBindings.menuArrow(keyCode);
-            action = arrow != KeyBindings.NONE ? arrow : KeyBindings.action(keyCode);
+            boolean own = splitPlayers();
+            int arrow = latching || own ? KeyBindings.NONE : KeyBindings.menuArrow(keyCode);
+            int split = GameFacts.humans > 1 ? SplitKeys.find(id) : -1;
+            if (arrow != KeyBindings.NONE) {
+                action = arrow;
+            } else if (split >= 0) {
+                action = split & 0xFF;
+                player = own ? split >> 8 : 0;
+            } else {
+                action = KeyBindings.action(keyCode);
+                if (GameFacts.humans > 1 && action != KeyBindings.PAUSE && action != KeyBindings.MUSIC
+                        && action != KeyBindings.SOUNDS) {
+                    action = KeyBindings.NONE; // in split screen the players drive with their own keys
+                }
+            }
         }
-        press(keyCode, legacy, action, alt, age);
+        press(id, legacy, player, action, alt, age);
     }
 
-    /** A key came up on the keyboard; see {@link #pressKeyboard}. */
-    void releaseKeyboard(int keyCode, long age) {
-        release(keyCode, age);
+    /** A key came up on the keyboard, by its {@link SplitKeys#id}; see {@link #pressKeyboard}. */
+    void releaseKeyboard(int id, long age) {
+        release(id, age);
     }
 
     /* a key pressed by the autopilot, a recording or a controller, told apart from the keyboard's in keysDown */
     private static final int VIRTUAL_KEY = 1 << 30;
-    /** The keys down, keyboard and virtual, and the action each does (inputLock). */
+    /** The keys down, keyboard and virtual, and the player and action each does, {@code player << 8 | action} (inputLock). */
     private final java.util.Map<Integer, Integer> keysDown = new java.util.HashMap<>();
 
-    private void press(int id, int legacy, int action, boolean alt, long age) {
+    private void press(int id, int legacy, int player, int action, boolean alt, long age) {
         if (legacy >= 0 && SettingsScreen.typeKey(legacy)) {
             return; // a size being typed on the settings screen takes every key
         }
@@ -552,18 +621,23 @@ public class GameSparker extends Panel implements Runnable {
             if (fullscreenKey) {
                 RunApp.toggleFullscreen();
             } else if (legacy == 10 || legacy == 27) {
-                liveEnter = true;
+                live[player].enter = true;
+                pausedBy = player;
             }
             if (legacy == 27) {
                 SettingsScreen.noteEscape(); // the settings screen goes back on it
             }
             if (action != KeyBindings.NONE) {
-                keysDown.put(id, action);
+                keysDown.put(id, player << 8 | action);
+                LiveKeys keys = live[player];
                 switch (action) {
-                    case KeyBindings.LOOK_BACK -> liveLookback = 1;
-                    case KeyBindings.LOOK_BACK_OTHER -> liveLookback = -1;
-                    case KeyBindings.CHANGE_VIEW -> liveView = (liveView + 1) % 3;
-                    case KeyBindings.PAUSE -> liveEnter = true;
+                    case KeyBindings.LOOK_BACK -> keys.lookback = 1;
+                    case KeyBindings.LOOK_BACK_OTHER -> keys.lookback = -1;
+                    case KeyBindings.CHANGE_VIEW -> keys.view = (keys.view + 1) % 3;
+                    case KeyBindings.PAUSE -> {
+                        keys.enter = true;
+                        pausedBy = player;
+                    }
                     default -> heldFromKeys();
                 }
             }
@@ -574,7 +648,7 @@ public class GameSparker extends Panel implements Runnable {
             switch (action) {
                 case KeyBindings.MUSIC -> u[0].mutem = !u[0].mutem;
                 case KeyBindings.SOUNDS -> u[0].mutes = !u[0].mutes;
-                case KeyBindings.ARROW -> u[0].arrace = !u[0].arrace;
+                case KeyBindings.ARROW -> u[player].arrace = !u[player].arrace;
                 default -> {
                     // driving, looking and pausing are done above
                 }
@@ -588,13 +662,15 @@ public class GameSparker extends Panel implements Runnable {
             return;
         }
         synchronized (inputLock) {
-            Integer action = keysDown.remove(id);
-            if (action == null) {
+            Integer down = keysDown.remove(id);
+            if (down == null) {
                 return;
             }
+            int player = down >> 8;
+            int action = down & 0xFF;
             if (action == KeyBindings.LOOK_BACK || action == KeyBindings.LOOK_BACK_OTHER) {
-                liveLookback = keysDown.containsValue(KeyBindings.LOOK_BACK) ? 1
-                        : keysDown.containsValue(KeyBindings.LOOK_BACK_OTHER) ? -1 : 0;
+                live[player].lookback = keysDown.containsValue(player << 8 | KeyBindings.LOOK_BACK) ? 1
+                        : keysDown.containsValue(player << 8 | KeyBindings.LOOK_BACK_OTHER) ? -1 : 0;
             }
             heldFromKeys();
             if (!latching) {
@@ -606,23 +682,18 @@ public class GameSparker extends Panel implements Runnable {
 
     /** Under {@link #inputLock}: the driving keys held, from every key down (two keys can share an action). */
     private void heldFromKeys() {
-        boolean up = false;
-        boolean down = false;
-        boolean left = false;
-        boolean right = false;
-        boolean handbrake = false;
-        for (int action : keysDown.values()) {
-            up |= action == KeyBindings.ACCELERATE;
-            down |= action == KeyBindings.BRAKE;
-            left |= action == KeyBindings.STEER_LEFT;
-            right |= action == KeyBindings.STEER_RIGHT;
-            handbrake |= action == KeyBindings.HANDBRAKE;
+        for (LiveKeys keys : live) {
+            keys.up = keys.down = keys.left = keys.right = keys.handb = false;
         }
-        liveUp = up;
-        liveDown = down;
-        liveLeft = left;
-        liveRight = right;
-        liveHandb = handbrake;
+        for (int down : keysDown.values()) {
+            LiveKeys keys = live[down >> 8];
+            int action = down & 0xFF;
+            keys.up |= action == KeyBindings.ACCELERATE;
+            keys.down |= action == KeyBindings.BRAKE;
+            keys.left |= action == KeyBindings.STEER_LEFT;
+            keys.right |= action == KeyBindings.STEER_RIGHT;
+            keys.handb |= action == KeyBindings.HANDBRAKE;
+        }
     }
 
     /* for the profile's key-to-screen readout: when the driving keys or the camera last changed (inputLock) */
@@ -648,23 +719,30 @@ public class GameSparker extends Panel implements Runnable {
      */
     private void applyLiveKeys() {
         applyHeldKeys();
-        Control c = u[0];
-        if (liveEnter) {
-            c.enter = true;
-            liveEnter = false;
+        for (int p = 0; p < live.length; p++) {
+            if (live[p].enter) {
+                if (p < GameFacts.humans) {
+                    u[p].enter = true;
+                }
+                live[p].enter = false;
+            }
         }
-        view = liveView;
+        view = live[0].view;
+        view2 = live[1].view;
     }
 
     /** Only the keys held down: a consumed Enter press must not come back on release. */
     private void applyHeldKeys() {
-        Control c = u[0];
-        c.up = liveUp;
-        c.down = liveDown;
-        c.left = liveLeft;
-        c.right = liveRight;
-        c.handb = liveHandb;
-        c.lookback = liveLookback;
+        for (int p = 0; p < GameFacts.humans; p++) {
+            Control c = u[p];
+            LiveKeys keys = live[p];
+            c.up = keys.up;
+            c.down = keys.down;
+            c.left = keys.left;
+            c.right = keys.right;
+            c.handb = keys.handb;
+            c.lookback = keys.lookback;
+        }
     }
 
     /** Start of a race tick: the controls this tick will read. */
@@ -689,8 +767,10 @@ public class GameSparker extends Panel implements Runnable {
 
     private void resetView() {
         synchronized (inputLock) {
-            liveView = 0;
+            live[0].view = 0;
+            live[1].view = 0;
             view = 0;
+            view2 = 0;
         }
     }
 
@@ -721,15 +801,13 @@ public class GameSparker extends Panel implements Runnable {
             lostfcs = true;
             mouses = 0;
             synchronized (inputLock) {
-                liveUp = false;
-                liveDown = false;
-                liveLeft = false;
-                liveRight = false;
-                liveHandb = false;
-                liveLookback = 0;
-                liveEnter = false;
+                for (LiveKeys keys : live) {
+                    keys.letGo();
+                }
                 keysDown.clear();
-                u[0].falseo();
+                for (int p = 0; p < GameFacts.humans; p++) {
+                    u[p].falseo();
+                }
             }
             setCursor(new Cursor(0));
         }
@@ -1020,7 +1098,8 @@ public class GameSparker extends Panel implements Runnable {
      * else they are the race's picture.
      */
     static PictureSize pictureSizeFor(int drawWidth, int drawHeight, boolean nativeUi, int zoomSetting) {
-        Dimension scene = GameFacts.pictureShape(drawWidth, drawHeight);
+        Dimension scene = SplitRace.active != null ? SplitRace.pictureShape(drawWidth, drawHeight, SplitRace.view)
+                : GameFacts.pictureShape(drawWidth, drawHeight);
         int zoom = nativeUi ? uiZoomFor(drawWidth, drawHeight, zoomSetting) : 0;
         if (zoom == 0) {
             return new PictureSize(scene.width, scene.height, scene.width, scene.height, 0);
@@ -1105,7 +1184,11 @@ public class GameSparker extends Panel implements Runnable {
             pictureWanted = want;
             pictureWantedSince = now;
         }
-        boolean settled = !pictureFitted || now - pictureWantedSince > 250_000_000L;
+        // a split-screen race's panes come and go, or turn, at once; a window being dragged waits
+        boolean split = SplitRace.active != null;
+        boolean side = split && SplitRace.sideBySide(draw.width, draw.height, SplitRace.view);
+        boolean splitChanged = split != SplitRace.pictureSplit || side != SplitRace.pictureSide;
+        boolean settled = !pictureFitted || splitChanged || now - pictureWantedSince > 250_000_000L;
         if (!settled) {
             return;
         }
@@ -1115,6 +1198,8 @@ public class GameSparker extends Panel implements Runnable {
         synchronized (presentLock) {
             drawWidthNow = Math.max(1, draw.width);
             drawHeightNow = Math.max(1, draw.height);
+            SplitRace.pictureSplit = split;
+            SplitRace.pictureSide = side;
             if (!same) {
                 GameFacts.screenWidth = want.canvasWidth();
                 GameFacts.screenHeight = want.canvasHeight();
@@ -1761,22 +1846,31 @@ public class GameSparker extends Panel implements Runnable {
             u[racer].reset(checkpoints, gameUi.sc[racer]);
         while (++racer < GameFacts.numberOfPlayers);
         gameUi.resetstat(checkpoints.stage);
+        // split screen: the players side by side on the second row, a computer car on the first
+        boolean split = SplitRace.on;
         racer = 0;
         do {
-            if (racer % 3 == 0) {
+            int slot = split && racer < 3 ? (racer + 1) % 3 : racer;
+            if (slot % 3 == 0) {
                 scene[racer] = new ContO(models[gameUi.sc[racer]], 0, 250 - models[gameUi.sc[racer]].grat,
-                        -760 + ((racer / 3) * 760), 0);
+                        -760 + ((slot / 3) * 760), 0);
             }
-            if (racer % 3 == 1) {
+            if (slot % 3 == 1) {
                 scene[racer] = new ContO(models[gameUi.sc[racer]], -350, 250 - models[gameUi.sc[racer]].grat,
-                        -380 + ((int) (racer / 3) * 760), 0);
+                        -380 + ((int) (slot / 3) * 760), 0);
             }
-            if (racer % 3 == 2) {
+            if (slot % 3 == 2) {
                 scene[racer] = new ContO(models[gameUi.sc[racer]], 350, 250 - models[gameUi.sc[racer]].grat,
-                        -380 + ((int) (racer / 3) * 760), 0);
+                        -380 + ((int) (slot / 3) * 760), 0);
             }
             drivers[racer].reseto(gameUi.sc[racer], scene[racer], checkpoints);
         } while (++racer < GameFacts.numberOfPlayers);
+        if (split) {
+            GameFacts.humans = 2;
+            SplitRace.active = new SplitRace(gameUi, GameFacts.numberOfPlayers - 2);
+            SplitRace.active.cam2.copyFromStatics(RaceRandom.derive(seed, RaceRandom.STREAM_CAMERA2));
+            nfm.lit.audio.Sound3D.setSplitSound(SplitRace.sound);
+        }
         record.reset(scene);
         sendSoundStage(scene);
         if (session != null) {
@@ -1832,6 +1926,14 @@ public class GameSparker extends Panel implements Runnable {
         prevCamZ = Medium.z;
         prevCamXZ = Medium.xz;
         prevCamZY = Medium.zy;
+        SplitRace split = SplitRace.active;
+        if (split != null) {
+            prevCam2X = split.cam2.x();
+            prevCam2Y = split.cam2.y();
+            prevCam2Z = split.cam2.z();
+            prevCam2XZ = split.cam2.xz();
+            prevCam2ZY = split.cam2.zy();
+        }
         prevFrameValid = true;
     }
 
@@ -1989,8 +2091,312 @@ public class GameSparker extends Panel implements Runnable {
      * frames then draw on top and take their side effects back.
      */
     private void drawSimulationStep() {
+        SplitRace split = SplitRace.active;
+        if (split != null) {
+            splitSimulationStep(split);
+            return;
+        }
         Medium.d(stepGraphics);
         drawWorldObjects(stepGraphics);
+    }
+
+    /**
+     * Split screen's draw step: Player 1's look, as the classic game's, then
+     * Player 2's from their own camera. What either player sees is in view
+     * (a car on a screen waits for its repair animation, one on neither
+     * finishes it at once), and each player's arrow prefers the cars on their
+     * own screen.
+     */
+    private void splitSimulationStep(SplitRace split) {
+        if (lookDist.length < nob) {
+            lookDist = new int[nob];
+        }
+        for (int i = 0; i < nob; i++) {
+            if (hasDrawAnimation(i)) {
+                sceneObjects[i].saveDrawState(); // as they were before anyone looked
+            }
+        }
+        Medium.d(stepGraphics);
+        drawWorldObjects(stepGraphics);
+        int cars = GameFacts.numberOfPlayers;
+        for (int i = 0; i < nob; i++) {
+            lookDist[i] = sceneObjects[i].dist;
+        }
+        System.arraycopy(lookDist, 0, split.onscreen1, 0, cars);
+        Medium.swap(split.cam2);
+        try {
+            Medium.prepareLook();
+            for (int i = 0; i < nob; i++) {
+                ContO o = sceneObjects[i];
+                if (lookDist[i] == 0) {
+                    // out of Player 1's view: as Player 2 sees it, from where it was
+                    if (hasDrawAnimation(i)) {
+                        o.restoreDrawState();
+                    }
+                    o.d(stepGraphics);
+                } else if (i < cars) {
+                    // on Player 1's screen: what it does stays as that look left it; Player 2 only measures it
+                    o.saveDrawState();
+                    o.d(stepGraphics);
+                    split.onscreen2[i] = o.dist;
+                    o.restoreDrawState();
+                    o.dist = lookDist[i];
+                    continue;
+                }
+                if (i < cars) {
+                    split.onscreen2[i] = o.dist;
+                }
+            }
+        } finally {
+            Medium.swap(split.cam2);
+        }
+    }
+
+    /** The human the computer cars pace themselves on: car 0, or in split screen whichever player is ahead. */
+    private int paceCar() {
+        if (GameFacts.humans < 2) {
+            return 0;
+        }
+        if (racers[0].dest != racers[1].dest) {
+            return racers[0].dest ? 1 : 0;
+        }
+        return raceCheckpoints.pos[1] < raceCheckpoints.pos[0] ? 1 : 0;
+    }
+
+    /** Places car {@code car}'s player's camera in {@code mode}: 0 chasing, 1 around the car, 2 watching it go by. */
+    private void placeCamera(int car, int mode) {
+        if (mode == 0) {
+            Medium.follow(sceneObjects[car], racers[car].cxz, u[car].lookback);
+        } else if (mode == 1) {
+            Medium.around(sceneObjects[car], false);
+        } else {
+            Medium.watch(sceneObjects[car], racers[car].mxz);
+        }
+    }
+
+    /** End of a split-screen race tick: both players' cameras, then their HUDs. */
+    private void splitCameras(SplitRace split) {
+        placeCamera(0, view);
+        Medium.swap(split.cam2);
+        try {
+            placeCamera(1, view2);
+        } finally {
+            Medium.swap(split.cam2);
+        }
+        renderSplitHud(split);
+    }
+
+    /**
+     * Split screen's HUD layer: the race's flow once, then each player's HUD
+     * in their pane, drawn as on a screen of the pane's shape (see
+     * SplitRace#hudShape) with that player's camera and state in place, and
+     * the line between the panes.
+     */
+    private void renderSplitHud(SplitRace split) {
+        Graphics2D previous = ui.getTarget();
+        hudG.setComposite(AlphaComposite.Clear);
+        hudG.fillRect(0, 0, GameFacts.screenWidth, GameFacts.screenHeight);
+        hudG.setComposite(AlphaComposite.SrcOver);
+        ui.setTarget(hudG);
+        if (u[1].enter) {
+            // Player 2's controller's Start pauses (and goes on) for both, as Enter does
+            u[1].enter = false;
+            u[0].enter = true;
+        }
+        ui.splitFlow(racers, raceCheckpoints, u[0]);
+        int canvasW = GameFacts.screenWidth;
+        int canvasH = GameFacts.screenHeight;
+        int cars = GameFacts.numberOfPlayers;
+        boolean side = SplitRace.pictureSide;
+        System.arraycopy(raceCheckpoints.onscreen, 0, lookOnscreen, 0, cars);
+        // both panes found first: each HUD sets the menus' picture to its own size while it draws
+        java.awt.geom.Rectangle2D[] panes = {paneOnCanvas(0, side), paneOnCanvas(1, side)};
+        try {
+            for (int p = 0; p < 2; p++) {
+                java.awt.geom.Rectangle2D pane = panes[p];
+                Dimension hud = SplitRace.hudShape(pane.getWidth(), pane.getHeight());
+                Graphics2D g = (Graphics2D) hudG.create();
+                g.translate(pane.getX(), pane.getY());
+                g.scale(pane.getWidth() / hud.width, pane.getHeight() / hud.height);
+                g.clipRect(0, 0, hud.width, hud.height);
+                GameFacts.screenWidth = hud.width;
+                GameFacts.screenHeight = hud.height;
+                System.arraycopy(p == 0 ? split.onscreen1 : split.onscreen2, 0, raceCheckpoints.onscreen, 0, cars);
+                ui.setTarget(g);
+                int me = p;
+                boolean chase = (p == 0 ? view : view2) == 0;
+                if (p == 1) {
+                    Medium.swap(split.cam2);
+                }
+                try {
+                    ui.asPlayer(me, () -> ui.statPlayer(me, racers, raceCheckpoints, u[me], sceneObjects, chase));
+                } finally {
+                    if (p == 1) {
+                        Medium.swap(split.cam2);
+                    }
+                    g.dispose();
+                }
+            }
+        } finally {
+            GameFacts.screenWidth = canvasW;
+            GameFacts.screenHeight = canvasH;
+            System.arraycopy(lookOnscreen, 0, raceCheckpoints.onscreen, 0, cars);
+            ui.setTarget(previous);
+        }
+        ui.statLightning(raceCheckpoints);
+        drawPaneDivider(side);
+    }
+
+    /** Player {@code player}'s pane of the race's picture, where the menus' picture (and HUD) has it. */
+    private java.awt.geom.Rectangle2D paneOnCanvas(int player, boolean side) {
+        Rectangle pane = SplitRace.pane(player, GameFacts.sceneWidth, GameFacts.sceneHeight, side);
+        AffineTransform toCanvas = sceneToCanvas();
+        return toCanvas == null ? pane : toCanvas.createTransformedShape(pane).getBounds2D();
+    }
+
+    /** The line between the panes, on the HUD layer: dark, with the menus' orange down its middle. */
+    private void drawPaneDivider(boolean side) {
+        java.awt.geom.Rectangle2D first = paneOnCanvas(0, side);
+        int thick = Math.max(3, (int) Math.round(GameFacts.screenHeight / 360D));
+        hudG.setColor(new Color(0, 0, 0));
+        if (side) {
+            int x = (int) Math.round(first.getMaxX());
+            hudG.fillRect(x - thick / 2 - 1, (int) first.getY(), thick + 2, (int) Math.ceil(first.getHeight()));
+            hudG.setColor(new Color(0xde, 0x84, 0x39));
+            hudG.fillRect(x - thick / 2 + thick / 3, (int) first.getY(), Math.max(1, thick / 3),
+                    (int) Math.ceil(first.getHeight()));
+        } else {
+            int y = (int) Math.round(first.getMaxY());
+            hudG.fillRect((int) first.getX(), y - thick / 2 - 1, (int) Math.ceil(first.getWidth()), thick + 2);
+            hudG.setColor(new Color(0xde, 0x84, 0x39));
+            hudG.fillRect((int) first.getX(), y - thick / 2 + thick / 3, (int) Math.ceil(first.getWidth()),
+                    Math.max(1, thick / 3));
+        }
+    }
+
+    /**
+     * Draws a split-screen race's frame in software: each player's pane from
+     * their camera, the cars and both cameras {@code alpha} of the way from
+     * the last tick to this one, into the menus' picture as the window shows
+     * the race's.
+     */
+    private void renderSplitScene(SplitRace split, float alpha) {
+        boolean side = SplitRace.pictureSide;
+        AffineTransform toCanvas = sceneToCanvas();
+        AffineTransform before = rd.getTransform();
+        Shape clipBefore = rd.getClip();
+        try {
+            for (int p = 0; p < 2; p++) {
+                Rectangle pane = SplitRace.pane(p, GameFacts.sceneWidth, GameFacts.sceneHeight, side);
+                rd.setTransform(before);
+                if (toCanvas != null) {
+                    rd.transform(toCanvas);
+                }
+                rd.translate(pane.x, pane.y);
+                rd.setClip(0, 0, pane.width, pane.height);
+                if (p == 1) {
+                    Medium.swap(split.cam2);
+                }
+                try {
+                    renderPane(p, pane.width, pane.height, alpha);
+                } finally {
+                    if (p == 1) {
+                        Medium.swap(split.cam2);
+                    }
+                }
+            }
+        } finally {
+            rd.setTransform(before);
+            rd.setClip(clipBefore);
+        }
+    }
+
+    /** One split-screen pane, {@code width} x {@code height}, from the camera in place (see renderSplitScene). */
+    private void renderPane(int player, int width, int height, float alpha) {
+        int np = Math.min(GameFacts.numberOfPlayers, savedCarX.length);
+        for (int i = 0; i < np; i++) {
+            ContO conto = sceneObjects[i];
+            savedCarX[i] = conto.x;
+            savedCarY[i] = conto.y;
+            savedCarZ[i] = conto.z;
+            savedCarXZ[i] = conto.xz;
+            savedCarXY[i] = conto.xy;
+            savedCarZY[i] = conto.zy;
+            savedCarWXZ[i] = conto.wxz;
+            savedCarWZY[i] = conto.wzy;
+        }
+        int camX = Medium.x;
+        int camY = Medium.y;
+        int camZ = Medium.z;
+        int camXZ = Medium.xz;
+        int camZY = Medium.zy;
+        if (prevFrameValid && alpha < 1F) {
+            for (int i = 0; i < np; i++) {
+                ContO conto = sceneObjects[i];
+                if (conto != prevCarRef[i] || teleported(savedCarX[i] - prevCarX[i], savedCarY[i] - prevCarY[i],
+                        savedCarZ[i] - prevCarZ[i])) {
+                    continue;
+                }
+                conto.x = mix(prevCarX[i], savedCarX[i], alpha);
+                conto.y = mix(prevCarY[i], savedCarY[i], alpha);
+                conto.z = mix(prevCarZ[i], savedCarZ[i], alpha);
+                conto.xz = mixAngle(prevCarXZ[i], savedCarXZ[i], alpha);
+                conto.xy = mixAngle(prevCarXY[i], savedCarXY[i], alpha);
+                conto.zy = mixAngle(prevCarZY[i], savedCarZY[i], alpha);
+                conto.wxz = mix(prevCarWXZ[i], savedCarWXZ[i], alpha);
+                conto.wzy = mixPeriodic(prevCarWZY[i], savedCarWZY[i], alpha, 45);
+            }
+            int fromX = player == 0 ? prevCamX : prevCam2X;
+            int fromY = player == 0 ? prevCamY : prevCam2Y;
+            int fromZ = player == 0 ? prevCamZ : prevCam2Z;
+            if (!teleported(camX - fromX, camY - fromY, camZ - fromZ)) {
+                Medium.x = mix(fromX, camX, alpha);
+                Medium.y = mix(fromY, camY, alpha);
+                Medium.z = mix(fromZ, camZ, alpha);
+                Medium.xz = mixAngle(player == 0 ? prevCamXZ : prevCam2XZ, camXZ, alpha);
+                Medium.zy = mixAngle(player == 0 ? prevCamZY : prevCam2ZY, camZY, alpha);
+            }
+        }
+        saveSceneDrawState();
+        EffectTrails.begin(smoothEffects, prevFrameValid ? alpha : 1F);
+        try (var _ = Medium.paneView(width, height)) {
+            Medium.d(rd);
+            drawWorldObjects(rd);
+        } finally {
+            EffectTrails.end();
+            restoreSceneDrawState();
+        }
+        for (int i = 0; i < np; i++) {
+            ContO conto = sceneObjects[i];
+            conto.x = savedCarX[i];
+            conto.y = savedCarY[i];
+            conto.z = savedCarZ[i];
+            conto.xz = savedCarXZ[i];
+            conto.xy = savedCarXY[i];
+            conto.zy = savedCarZY[i];
+            conto.wxz = savedCarWXZ[i];
+            conto.wzy = savedCarWZY[i];
+        }
+        Medium.x = camX;
+        Medium.y = camY;
+        Medium.z = camZ;
+        Medium.xz = camXZ;
+        Medium.zy = camZY;
+    }
+
+    /**
+     * Back at the main menu: split screen is over. One player, car 0's
+     * keys, every controller driving the game, and the sound as it was.
+     */
+    private void endSplit() {
+        SplitRace.on = false;
+        SplitRace.active = null;
+        GameFacts.humans = 1;
+        GameFacts.paceCar = 0;
+        splitSelecting = false;
+        nfm.lit.audio.Sound3D.setSplitSound(nfm.lit.audio.Sound3D.SPLIT_OFF);
+        ui.stopIntertrack();
+        u[1].falseo();
     }
 
     /**
@@ -2157,11 +2563,15 @@ public class GameSparker extends Panel implements Runnable {
             while (++car < GameFacts.numberOfPlayers);
             raceCheckpoints.checkstat(racers, sceneObjects, raceRecord, GameFacts.numberOfPlayers);
 
-            // This starts the AI code for all the cars.
-            car = 1;
-            do
-                u[car].preform(racers[car], sceneObjects[car], raceCheckpoints, raceTrackers, GameFacts.numberOfPlayers);
-            while (++car < GameFacts.numberOfPlayers);
+            // This starts the AI code for all the cars (in split screen, from car 2: car 1 is Player 2's).
+            GameFacts.paceCar = paceCar();
+            car = GameFacts.humans;
+            if (car == 1 || car < GameFacts.numberOfPlayers) {
+                do
+                    u[car].preform(racers[car], sceneObjects[car], raceCheckpoints, raceTrackers,
+                            GameFacts.numberOfPlayers);
+                while (++car < GameFacts.numberOfPlayers);
+            }
         } else {
             if (ui.starcnt == 130) {
                 Medium.adv = 1900;
@@ -2173,19 +2583,24 @@ public class GameSparker extends Panel implements Runnable {
                 ui.starcnt--;
         }
         if (ui.starcnt < 38) {
-            if (view == 0) {
-                Medium.follow(sceneObjects[ui.spectate], racers[ui.spectate].cxz,
-                        u[ui.spectate].lookback);
-                renderHud(u[ui.spectate], true);
-                initMoto(racers, 2, 5);
-            }
-            if (view == 1) {
-                Medium.around(sceneObjects[ui.spectate], false);
-                renderHud(u[ui.spectate], false);
-            }
-            if (view == 2) {
-                Medium.watch(sceneObjects[ui.spectate], racers[0].mxz);
-                renderHud(u[ui.spectate], false);
+            SplitRace split = SplitRace.active;
+            if (split != null) {
+                splitCameras(split);
+            } else {
+                if (view == 0) {
+                    Medium.follow(sceneObjects[ui.spectate], racers[ui.spectate].cxz,
+                            u[ui.spectate].lookback);
+                    renderHud(u[ui.spectate], true);
+                    initMoto(racers, 2, 5);
+                }
+                if (view == 1) {
+                    Medium.around(sceneObjects[ui.spectate], false);
+                    renderHud(u[ui.spectate], false);
+                }
+                if (view == 2) {
+                    Medium.watch(sceneObjects[ui.spectate], racers[0].mxz);
+                    renderHud(u[ui.spectate], false);
+                }
             }
             if (mouses == 1) {
                 u[0].enter = true;
@@ -2207,10 +2622,16 @@ public class GameSparker extends Panel implements Runnable {
                 Medium.around(sceneObjects[0], true);
             else
                 Medium.around(sceneObjects[3], true);
-            if (u[0].enter || u[0].handb) {
+            SplitRace split = SplitRace.active;
+            if (split != null) {
+                split.cam2.followStatics(); // both panes watch the fly-by
+            }
+            if (u[0].enter || u[0].handb || split != null && (u[1].enter || u[1].handb)) {
                 ui.starcnt = 38;
                 u[0].enter = false;
                 u[0].handb = false;
+                u[1].enter = false;
+                u[1].handb = false;
             }
             if (ui.starcnt == 38) {
                 if (session != null) {
@@ -2223,7 +2644,17 @@ public class GameSparker extends Panel implements Runnable {
                 Medium.vxz = 180;
                 raceCheckpoints.checkstat(racers, sceneObjects, raceRecord, GameFacts.numberOfPlayers);
                 Medium.follow(sceneObjects[0], racers[0].cxz, 0);
-                renderHud(u[0], true);
+                if (split != null) {
+                    Medium.swap(split.cam2);
+                    try {
+                        Medium.follow(sceneObjects[1], racers[1].cxz, 0);
+                    } finally {
+                        Medium.swap(split.cam2);
+                    }
+                    renderSplitHud(split);
+                } else {
+                    renderHud(u[0], true);
+                }
                 pendingWhiteFlash = true;
             }
         }
@@ -2377,6 +2808,7 @@ public class GameSparker extends Panel implements Runnable {
     /** True if the presenter can draw this race's frames on its own thread now. */
     private boolean presenterDraws(boolean scene, boolean unpaced) {
         return scene && presenter != null && !unpaced && !keptBlocked && GPU_SCENE && RETAINED && gpuActive
+                && SplitRace.active == null
                 && gpuRenderer && !ui.debugmode && !captureRequested && MOTION_TEST == null
                 && !presenter.failed();
     }
@@ -2902,13 +3334,14 @@ public class GameSparker extends Panel implements Runnable {
 
     /** Run-ahead applies while the player is racing: not in the intro, countdown, replays or menus. */
     private boolean aheadPossible() {
-        return runAhead && prevFrameValid && ui.fase == Phase.INGAME && ui.starcnt == 0;
+        return runAhead && prevFrameValid && ui.fase == Phase.INGAME && ui.starcnt == 0 && SplitRace.active == null;
     }
 
     /** The driving keys held right now and the chosen camera, as one number; call under {@link #inputLock}. */
     private int heldKeys() {
-        return (liveUp ? 1 : 0) | (liveDown ? 2 : 0) | (liveLeft ? 4 : 0) | (liveRight ? 8 : 0)
-                | (liveHandb ? 16 : 0) | ((liveLookback + 1) << 5) | (liveView << 7);
+        LiveKeys k = live[0];
+        return (k.up ? 1 : 0) | (k.down ? 2 : 0) | (k.left ? 4 : 0) | (k.right ? 8 : 0)
+                | (k.handb ? 16 : 0) | ((k.lookback + 1) << 5) | (k.view << 7);
     }
 
     /**
@@ -2944,7 +3377,7 @@ public class GameSparker extends Panel implements Runnable {
             hudG = blind;
             try {
                 applyHeldKeys();
-                view = liveView;
+                view = live[0].view;
                 advanceRace();
                 aheadPoses.takeLive(np);
             } finally {
@@ -3770,9 +4203,23 @@ public class GameSparker extends Panel implements Runnable {
             }
 
             @Override
+            public void keyFor(int player, int code, boolean down) {
+                if (down) {
+                    pressKeyFor(player, code, 0L);
+                } else {
+                    releaseKeyFor(player, code, 0L);
+                }
+            }
+
+            @Override
+            public int playerOf(int index, java.util.List<String> names) {
+                return GameFacts.humans > 1 ? SplitRace.padOwner(index, names.size()) : -1;
+            }
+
+            @Override
             public boolean racing() {
                 GameUi x = ui;
-                return x != null && x.fase == Phase.INGAME;
+                return x != null && (x.fase == Phase.INGAME || x.fase == Phase.SPLITCARSELECT);
             }
 
             @Override
@@ -4112,6 +4559,73 @@ public class GameSparker extends Panel implements Runnable {
             saved[a] = runsHidden() ? -1 : readcookie(keyCookie(a));
         }
         KeyBindings.load(saved);
+    }
+
+    /*
+     * Split screen's choices and keys. Cookies are found by part of their
+     * name, so none of these is part of another's, nor holds one ("sound",
+     * "vol"): hence "splitaudio" and "splitkey01" on.
+     */
+    private static final String[] SPLIT_COOKIES = {"splitview", "splitrivals", "splitaudio", "splitpadone",
+        "splitpadtwo", "splitcarone", "splitcartwo"};
+
+    private static String splitKeyCookie(int i) {
+        return String.format("splitkey%02d", i + 1);
+    }
+
+    /** Split screen's saved choices and keys, or the game's own in hidden runs. A controller is saved 2 up. */
+    private void loadSplit() {
+        int[] keys = new int[SplitKeys.count()];
+        java.util.Arrays.fill(keys, -1);
+        if (!runsHidden()) {
+            int[] v = new int[SPLIT_COOKIES.length];
+            for (int i = 0; i < v.length; i++) {
+                v[i] = readcookie(SPLIT_COOKIES[i]);
+            }
+            if (v[0] >= SplitRace.VIEW_AUTO && v[0] <= SplitRace.VIEW_STACKED) {
+                SplitRace.view = v[0];
+            }
+            if (v[1] >= 0 && v[1] <= SplitRace.MAX_RIVALS) {
+                SplitRace.rivals = v[1];
+            }
+            if (v[2] >= SplitRace.SOUND_ONE && v[2] <= SplitRace.SOUND_EACH) {
+                SplitRace.sound = v[2];
+            }
+            for (int p = 0; p < 2; p++) {
+                if (v[3 + p] >= 0) {
+                    SplitRace.pads[p] = v[3 + p] - 2;
+                }
+                if (v[5 + p] >= 0 && v[5 + p] < GameFacts.numberOfCars) {
+                    SplitRace.cars[p] = v[5 + p];
+                }
+            }
+            for (int i = 0; i < keys.length; i++) {
+                keys[i] = readcookie(splitKeyCookie(i));
+            }
+        }
+        SplitKeys.load(keys);
+        SplitRace.changed = false;
+    }
+
+    private void saveSplitIfChanged() {
+        boolean keys = SplitKeys.takeChanged();
+        boolean choices = SplitRace.changed;
+        SplitRace.changed = false;
+        if (runsHidden()) {
+            return;
+        }
+        if (choices) {
+            int[] v = {SplitRace.view, SplitRace.rivals, SplitRace.sound, SplitRace.pads[0] + 2,
+                SplitRace.pads[1] + 2, SplitRace.cars[0], SplitRace.cars[1]};
+            for (int i = 0; i < v.length; i++) {
+                savecookie(SPLIT_COOKIES[i], String.valueOf(v[i]));
+            }
+        }
+        if (keys) {
+            for (int i = 0; i < SplitKeys.count(); i++) {
+                savecookie(splitKeyCookie(i), String.valueOf(SplitKeys.saved(i)));
+            }
+        }
     }
 
     private void saveKeysIfChanged() {
@@ -5147,7 +5661,13 @@ public class GameSparker extends Panel implements Runnable {
             System.out.println("[autotest] cannot create " + directory);
             return;
         }
-        Thread thread = new Thread(() -> runAutoTest(directory), "nfm-autotest");
+        Thread thread = new Thread(() -> {
+            if (SPLIT_TEST != null) {
+                runSplitTest(directory);
+            } else {
+                runAutoTest(directory);
+            }
+        }, "nfm-autotest");
         thread.setDaemon(true);
         thread.start();
     }
@@ -5159,11 +5679,173 @@ public class GameSparker extends Panel implements Runnable {
      */
     private void pressEnter() {
         synchronized (inputLock) {
-            liveEnter = true;
+            live[0].enter = true;
             if (!latching) {
                 applyLiveKeys();
             }
         }
+    }
+
+    /**
+     * The hidden test run plays split screen instead:
+     * -Dnfm.autotest.split=auto|side|stacked[,computer cars]. Main menu,
+     * split screen's car select and its settings tab, the stage select, a
+     * race driven by both players with screenshots (and the window resized
+     * by -Dnfm.autotest.resize), the results, then Race Again.
+     */
+    private static final String SPLIT_TEST = System.getProperty("nfm.autotest.split");
+
+    private void runSplitTest(File directory) {
+        String[] parts = SPLIT_TEST.split(",");
+        SplitRace.view = switch (parts[0].trim()) {
+            case "side" -> SplitRace.VIEW_SIDE;
+            case "stacked" -> SplitRace.VIEW_STACKED;
+            default -> SplitRace.VIEW_AUTO;
+        };
+        if (parts.length > 1) {
+            SplitRace.rivals = Integer.parseInt(parts[1].trim());
+        }
+        System.out.println("[autotest] split screen (" + SPLIT_TEST + ") -> " + directory.getAbsolutePath());
+        long start = System.currentTimeMillis();
+        Phase lastPhase = null;
+        Phase pendingShot = null;
+        long settledAt = start;
+        long lastPress = 0L;
+        long lastShot = 0L;
+        long inGameMillis = 0L;
+        int shots = 0;
+        int step = 0;
+        int races = 0;
+        int resizeStep = 0;
+        while (System.currentTimeMillis() - start < 200_000L + MENU_HOLD_MILLIS) {
+            try {
+                Thread.sleep(100L);
+            } catch (InterruptedException ex) {
+                return;
+            }
+            Phase phase = ui.fase;
+            long now = System.currentTimeMillis();
+            if (phase != lastPhase) {
+                System.out.println("[autotest] phase " + lastPhase + " -> " + phase + " at " + java.time.LocalTime.now());
+                if (phase == Phase.INGAME) {
+                    races++;
+                    inGameMillis = 0L;
+                }
+                lastPhase = phase;
+                settledAt = now;
+                pendingShot = phase;
+            }
+            if (pendingShot != null && now - settledAt >= 300L) {
+                saveFrame(directory, String.format("%02d-%s.png", shots++, phase.name().toLowerCase()));
+                pendingShot = null;
+            }
+            long held = now - settledAt;
+            switch (phase) {
+                case MAINMENU -> {
+                    if (races > 0) {
+                        System.out.println("[autotest] split test done");
+                        System.exit(0);
+                    }
+                    if (step == 0 && held >= 600L + MENU_HOLD_MILLIS) {
+                        ui.opselect = GameUi.MENU_SPLIT;
+                        pressEnter();
+                        step = 1;
+                        System.out.println("[autotest] split screen from the main menu");
+                    }
+                }
+                case SPLITCARSELECT -> {
+                    if (step == 1 && held >= 900L) {
+                        ui.openSettings(Phase.SPLITCARSELECT, SettingsScreen.TAB_SPLIT);
+                        step = 2;
+                    } else if (step == 3 && held >= 800L || step == 4 && held >= 1100L) {
+                        pressEnter(); // ready Player 1, then Player 2
+                        step++;
+                    }
+                }
+                case SETTINGS -> {
+                    if (step == 2 && held >= 700L) {
+                        ui.selectSetting("Computer cars");
+                        step = 20;
+                    } else if (step == 20 && held >= 1200L) {
+                        saveFrame(directory, String.format("%02d-split-settings.png", shots++));
+                        SettingsScreen.noteEscape();
+                        pressEnter();
+                        step = 3;
+                    }
+                }
+                case STAGESELECT, PREGAME -> {
+                    if (now - lastPress > 700L && held >= 500L) {
+                        pressEnter();
+                        lastPress = now;
+                    }
+                }
+                case INGAME -> {
+                    inGameMillis += 100L;
+                    long cycle = inGameMillis % 4000L;
+                    for (int p = 0; p < 2; p++) {
+                        u[p].up = true;
+                        u[p].right = cycle > 2200L + p * 300L && cycle < 2500L + p * 300L;
+                        u[p].left = cycle > 3400L - p * 300L && cycle < 3700L - p * 300L;
+                    }
+                    if (now - lastShot >= 2000L) {
+                        saveFrame(directory, String.format("%02d-race%d-%05dms.png", shots++, races, inGameMillis));
+                        lastShot = now;
+                    }
+                    resizeStep = resizeHiddenWindowAt(inGameMillis, resizeStep);
+                    if (races == 1 && step < 40 && inGameMillis >= 26_000L) {
+                        // pause, for the instant replay
+                        for (int p = 0; p < 2; p++) {
+                            u[p].up = false;
+                            u[p].left = false;
+                            u[p].right = false;
+                        }
+                        pressEnter();
+                        step = 40;
+                        break;
+                    }
+                    SplitRace split = SplitRace.active;
+                    long length = races == 1 ? 32_000L : 12_000L;
+                    if (split != null && inGameMillis >= length && !split.over) {
+                        split.endNow(races == 1 ? 0 : -1);
+                        System.out.println("[autotest] ending the race");
+                    }
+                }
+                case PAUSEMENU -> {
+                    if ((step == 40 || step == 42) && held >= 800L) {
+                        ui.opselect = step == 40 ? 1 : 0; // Instant Replay, then Continue
+                        pressEnter();
+                        step++;
+                    }
+                }
+                case INSTANTREPLAY -> {
+                    if (step == 41) {
+                        step = 42; // the pause menu is back after it
+                    }
+                    if (now - lastShot >= 1000L) {
+                        saveFrame(directory, String.format("%02d-replay.png", shots++));
+                        lastShot = now;
+                    }
+                }
+                case SPLITRESULTS -> {
+                    for (int p = 0; p < 2; p++) {
+                        u[p].up = false;
+                        u[p].left = false;
+                        u[p].right = false;
+                    }
+                    if (races > 1 && step < 30 && held >= 1500L) {
+                        SettingsScreen.noteEscape(); // goes to Main Menu, which Enter takes
+                        step = 30;
+                    } else if (held >= 2500L && now - lastPress > 3000L) {
+                        pressEnter(); // Race Again after the first race, Main Menu after the second
+                        lastPress = now;
+                    }
+                }
+                default -> {
+                }
+            }
+        }
+        System.out.println("[autotest] split test ran out of time in " + ui.fase);
+        System.exit(0);
     }
 
     private void runAutoTest(File directory) {
@@ -5224,7 +5906,7 @@ public class GameSparker extends Panel implements Runnable {
              * with Escape. Nothing is changed, so nothing is saved.
              */
             if (phase == Phase.MAINMENU && settingsStep == 0 && now - phaseSettledAt >= 600L + MENU_HOLD_MILLIS) {
-                ui.opselect = 3;
+                ui.opselect = GameUi.MENU_SETTINGS;
                 pressEnter();
                 settingsStep = 1;
                 System.out.println("[autotest] opening the settings from the main menu");
@@ -5258,7 +5940,7 @@ public class GameSparker extends Panel implements Runnable {
                 settingsStep++;
                 System.out.println("[autotest] back from the settings");
             }
-            if (phase == Phase.MAINMENU && settingsStep == 3 && ui.opselect == 3) {
+            if (phase == Phase.MAINMENU && settingsStep == 3 && ui.opselect == GameUi.MENU_SETTINGS) {
                 ui.opselect = 0; // Play Game
             }
 
@@ -5496,6 +6178,7 @@ public class GameSparker extends Panel implements Runnable {
         loadVsync();
         loadAudioEffects();
         loadKeys();
+        loadSplit();
         loadRunAhead();
         loadFullscreenResolution();
         loadRenderer();
@@ -5587,6 +6270,7 @@ public class GameSparker extends Panel implements Runnable {
                 saveBatteryFpsIfChanged();
                 saveVsyncIfChanged();
                 saveKeysIfChanged();
+                saveSplitIfChanged();
                 saveAudioEffectsIfChanged();
                 fitPicture(now);
                 ticksRun++;
@@ -5735,6 +6419,9 @@ public class GameSparker extends Panel implements Runnable {
             //     }
             // }
             if (gameUi.fase == Phase.MAINMENU) {
+                if (SplitRace.on) {
+                    endSplit();
+                }
                 gameUi.maini(u[0], checkpoints, drivers, models, scene);
                 gameUi.ctachm(xm, ym, mouses, u[0]);
                 if (mouses == 2)
@@ -5798,6 +6485,32 @@ public class GameSparker extends Panel implements Runnable {
                 if (mouses == 1)
                     mouses = 2;
             }
+            splitSelecting = gameUi.fase == Phase.SPLITCARSELECT; // each player's keys choose their own car
+            if (gameUi.fase == Phase.SPLITCARSELECT) {
+                gameUi.splitScreens.carSelect(u, models, xm, ym, mouses);
+                if (mouses == 2)
+                    mouses = 0;
+                if (mouses == 1)
+                    mouses = 2;
+            }
+            if (gameUi.fase == Phase.SPLITRESULTS) {
+                SplitRace ended = SplitRace.active;
+                if (ended != null) {
+                    // the race as it ended, greyed behind the results, and its sound stopped
+                    repaint();
+                    syncBackBuffer();
+                    gameUi.pauseimage(pictureAtGameSize());
+                    gameUi.splitScreens.beginResults(ended, checkpoints, drivers);
+                    gameUi.stopallnow();
+                    SplitRace.active = null;
+                    mouses = 0;
+                }
+                gameUi.splitScreens.results(u[0], xm, ym, mouses);
+                if (mouses == 2)
+                    mouses = 0;
+                if (mouses == 1)
+                    mouses = 2;
+            }
             if (gameUi.fase == Phase.PREGAME) {
                 gameUi.musicomp(checkpoints.stage, u[0]);
                 gameUi.ctachm(xm, ym, mouses, u[0]);
@@ -5807,7 +6520,9 @@ public class GameSparker extends Panel implements Runnable {
                     mouses = 2;
             }
             if (gameUi.fase == Phase.SELECTEDCARSAVE) {
-                savecookie("usercar", "" + gameUi.sc[0]);
+                if (!SplitRace.on) {
+                    savecookie("usercar", "" + gameUi.sc[0]);
+                }
 
                 for (int x = 0; x < GameFacts.numberOfPlayers; x++) {
                     drivers[x].stat = new Stat(gameUi.sc[x]);
@@ -5850,6 +6565,13 @@ public class GameSparker extends Panel implements Runnable {
                 repaint();
                 loadstage(scene, models, trackers, checkpoints, gameUi, drivers, record, true);
                 gameUi.loadmusic(checkpoints.stage, previewFrames);
+            }
+            if (gameUi.fase == Phase.STAGESELECT && SplitRace.on && SettingsScreen.takeEscape()) {
+                // in split screen Escape goes back to the cars (it is Enter to the classic stage select)
+                u[0].enter = false;
+                u[0].handb = false;
+                gameUi.splitScreens.openCarSelect();
+                gameUi.fase = Phase.SPLITCARSELECT;
             }
             if (gameUi.fase == Phase.STAGESELECT) {
                 rd.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
@@ -6019,6 +6741,17 @@ public class GameSparker extends Panel implements Runnable {
                     gameUi.replyn();
                 }
                 Medium.around(scene[0], false);
+                SplitRace replaying = SplitRace.active;
+                if (replaying != null) {
+                    // Player 2's pane replays round their own car
+                    Medium.swap(replaying.cam2);
+                    try {
+                        Medium.around(scene[1], false);
+                    } finally {
+                        Medium.swap(replaying.cam2);
+                    }
+                    drawPaneDivider(SplitRace.pictureSide);
+                }
                 endOverlayTick();
             }
             if (gameUi.fase == Phase.CAUGHTHIGHLIGHT) {
@@ -6252,6 +6985,10 @@ public class GameSparker extends Panel implements Runnable {
                     lostfcs = false;
             }
             gameUi.playsounds(drivers[0], u[0], checkpoints.stage);
+            if (SplitRace.active != null) {
+                int stage = checkpoints.stage;
+                gameUi.asPlayer(1, () -> gameUi.playsounds(drivers[1], u[1], stage));
+            }
             publishSound();
             /*
              * The original loop passed the adaptive sleep target here. Feeding a
@@ -6352,7 +7089,9 @@ public class GameSparker extends Panel implements Runnable {
                     }
                 }
 
-                gpuSceneFrame = scenePhase && GPU_SCENE && gpuActive && !gameUi.debugmode;
+                SplitRace splitFrame = SplitRace.active;
+                // split screen is drawn in software, each pane from its own camera
+                gpuSceneFrame = scenePhase && GPU_SCENE && gpuActive && !gameUi.debugmode && splitFrame == null;
                 if (scenePhase) {
                     double elapsed = (double) (frameNow - tickStartNanos) / (double) currentTickNanos;
                     if (!prevFrameValid || elapsed >= 1D) {
@@ -6367,7 +7106,10 @@ public class GameSparker extends Panel implements Runnable {
                         motionTest();
                     }
                     shownRecorder = sceneRecorder;
-                    if (aheadPossible()) {
+                    if (splitFrame != null && SplitRace.pictureSplit) {
+                        aheadValid = false;
+                        renderSplitScene(splitFrame, renderAlpha);
+                    } else if (aheadPossible()) {
                         long aheadStart = System.nanoTime();
                         if (runAheadTick()) {
                             profileAheadNanos += System.nanoTime() - aheadStart;

@@ -235,6 +235,147 @@ public class Medium {
         h = height;
     }
 
+    /**
+     * As {@link #shownView()}, for one split-screen player's pane: a picture
+     * {@code width} x {@code height} in the game's units, from the same place.
+     */
+    public static ShownView paneView(int width, int height) {
+        setView(width, height);
+        return SHOWN;
+    }
+
+    /**
+     * What {@link #d} does to the camera before it draws: the clamp, no
+     * spots yet, and the ground's height under it. For a look at the world
+     * from a second camera that draws the objects but not the ground.
+     */
+    public static void prepareLook() {
+        nsp = 0;
+        clampView();
+        ground = 250 - y;
+    }
+
+    /**
+     * A race camera of its own: where it is, how it turns and moves, which
+     * checkpoint it highlights and its random stream. Split screen's Player 2
+     * keeps one, and {@link #swap swaps} it in to place, move and draw from
+     * it; Player 1's camera is the statics, as in the classic game.
+     */
+    public static final class Camera {
+        int x;
+        int y;
+        int z;
+        int xz;
+        int zy;
+        int bcxz;
+        int vxz = 180;
+        int adv = 500;
+        boolean vert;
+        int trns = 1;
+        boolean td;
+        int flex;
+        int checkpoint = -1;
+        boolean lastcheck;
+        final int[] random = new int[RaceRandom.STATE_SIZE];
+
+        public Camera() {
+            new RaceRandom().exportState(random);
+        }
+
+        /** Starts this camera as the statics' camera is now, with its random stream from {@code seed}. */
+        public void copyFromStatics(long seed) {
+            x = Medium.x;
+            y = Medium.y;
+            z = Medium.z;
+            xz = Medium.xz;
+            zy = Medium.zy;
+            bcxz = Medium.bcxz;
+            vxz = Medium.vxz;
+            adv = Medium.adv;
+            vert = Medium.vert;
+            trns = Medium.trns;
+            td = Medium.td;
+            flex = Medium.flex;
+            checkpoint = Medium.checkpoint;
+            lastcheck = Medium.lastcheck;
+            RaceRandom r = new RaceRandom();
+            r.reseed(seed);
+            r.exportState(random);
+        }
+
+        public int x() {
+            return x;
+        }
+
+        public int y() {
+            return y;
+        }
+
+        public int z() {
+            return z;
+        }
+
+        public int xz() {
+            return xz;
+        }
+
+        public int zy() {
+            return zy;
+        }
+
+        /** Puts this camera where the statics' camera is, as it moves (its random stream stays its own). */
+        public void followStatics() {
+            x = Medium.x;
+            y = Medium.y;
+            z = Medium.z;
+            xz = Medium.xz;
+            zy = Medium.zy;
+            bcxz = Medium.bcxz;
+            vxz = Medium.vxz;
+            adv = Medium.adv;
+            vert = Medium.vert;
+            trns = Medium.trns;
+            td = Medium.td;
+            flex = Medium.flex;
+        }
+
+        /** The checkpoint this camera's player is heading for. */
+        public void showCheckpoint(int next) {
+            checkpoint = next;
+        }
+
+        public void showLastCheckpoint(boolean last) {
+            lastcheck = last;
+        }
+    }
+
+    private static final int[] swapRandom = new int[RaceRandom.STATE_SIZE];
+
+    /**
+     * Exchanges the camera in the statics with {@code c}: called once puts
+     * {@code c}'s camera in place (and the statics' in {@code c}), called
+     * again puts both back. Always in pairs, in a try/finally.
+     */
+    public static void swap(Camera c) {
+        int i = x; x = c.x; c.x = i;
+        i = y; y = c.y; c.y = i;
+        i = z; z = c.z; c.z = i;
+        i = xz; xz = c.xz; c.xz = i;
+        i = zy; zy = c.zy; c.zy = i;
+        i = bcxz; bcxz = c.bcxz; c.bcxz = i;
+        i = vxz; vxz = c.vxz; c.vxz = i;
+        i = adv; adv = c.adv; c.adv = i;
+        i = trns; trns = c.trns; c.trns = i;
+        i = flex; flex = c.flex; c.flex = i;
+        i = checkpoint; checkpoint = c.checkpoint; c.checkpoint = i;
+        boolean b = vert; vert = c.vert; c.vert = b;
+        b = td; td = c.td; c.td = b;
+        b = lastcheck; lastcheck = c.lastcheck; c.lastcheck = b;
+        cameraRandom.exportState(swapRandom);
+        cameraRandom.importState(c.random);
+        System.arraycopy(swapRandom, 0, c.random, 0, swapRandom.length);
+    }
+
     /** The shown view while open, see {@link #shownView()}; closing it goes back to the game's own. */
     public interface ShownView extends AutoCloseable {
         @Override

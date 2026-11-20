@@ -36,6 +36,9 @@ import static org.lwjgl.sdl.SDLJoystick.SDL_SetJoystickVirtualAxis;
  * <p>
  * The pads are read on a thread of their own, 250 times a second, and only
  * while the game's window has the focus.
+ * <p>
+ * In split screen each pad belongs to a player (see {@link Keys#playerOf}):
+ * its keys drive that player's car, and only that player's hits shake it.
  */
 final class Gamepads {
 
@@ -43,6 +46,20 @@ final class Gamepads {
     interface Keys {
         /** Presses or releases a key, as the keyboard would. */
         void key(int code, boolean down);
+
+        /** Presses or releases a key for a split-screen player (0 or 1). */
+        default void keyFor(int player, int code, boolean down) {
+            key(code, down);
+        }
+
+        /**
+         * Whose the pad at {@code index} of those connected ({@code names},
+         * in order) is: -1 outside split screen (every pad drives the game),
+         * 0 or 1 for a split-screen player, or -2 for no one.
+         */
+        default int playerOf(int index, List<String> names) {
+            return -1;
+        }
 
         /** True while a race is being driven (not its menus or replays). */
         boolean racing();
@@ -80,11 +97,14 @@ final class Gamepads {
     private final Keys keys;
     private final List<Long> pads = new ArrayList<>();
     private final List<String> names = new ArrayList<>();
-    private int held;
-    private int repeatKey;
-    private long repeatAtNanos;
-    /* the next shake, set by any thread, played by the pads' own */
-    private volatile float rumbleStrength;
+    /** The keys held, the arrow repeating and when it repeats next: for all pads, then for each split-screen player. */
+    private final int[] held = new int[3];
+    private final int[] repeatKey = new int[3];
+    private final long[] repeatAtNanos = new long[3];
+    /** Each pad's player as it was last read (see {@link Keys#playerOf}), for the shakes. */
+    private volatile int[] padPlayers = new int[0];
+    /* the next shake for all pads and for each split-screen player, set by any thread, played by the pads' own */
+    private final float[] rumbleStrength = new float[3];
     private volatile boolean rumbleWanted;
 
     private Gamepads(Keys keys) {
@@ -138,11 +158,18 @@ final class Gamepads {
      * {@link RaceEvents#crash}): the pads shake, harder for harder hits.
      */
     static void hit(float force) {
+        hit(-1, force);
+    }
+
+    /** A split-screen player's car was hit (see {@link #hit(float)}): that player's pads shake; -1 for every pad. */
+    static void hit(int player, float force) {
         Gamepads g = running;
         if (g == null || !rumbleOn || !on) {
             return;
         }
-        g.rumbleStrength = Math.min(1F, Math.abs(force) / 250F);
+        synchronized (g.rumbleStrength) {
+            g.rumbleStrength[player + 1] = Math.max(g.rumbleStrength[player + 1], Math.min(1F, Math.abs(force) / 250F));
+        }
         g.rumbleWanted = true;
     }
 
@@ -174,7 +201,7 @@ final class Gamepads {
                     driveTestPad(testPad);
                 }
                 SDL_UpdateGamepads();
-                press(on && keys.focused() ? wanted() : 0);
+                readPads(on && keys.focused());
                 shake();
                 Thread.sleep(POLL_MILLIS);
             }
@@ -259,36 +286,58 @@ final class Gamepads {
         }
     }
 
-    /** The keys the pads hold down now, one bit per entry of {@link #KEYS}; every pad counts. */
-    private int wanted() {
+    /**
+     * Presses and releases what the pads hold now: every pad's keys together
+     * outside split screen, each player's pads' keys for that player in it.
+     */
+    private void readPads(boolean focused) {
+        int[] want = new int[3];
+        int[] players = new int[pads.size()];
         boolean racing = keys.racing();
-        int want = 0;
-        for (long pad : pads) {
-            int x = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTX);
-            int y = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTY);
-            boolean left = x < -STICK_DEAD_ZONE || button(pad, SDL_GAMEPAD_BUTTON_DPAD_LEFT);
-            boolean right = x > STICK_DEAD_ZONE || button(pad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT);
-            boolean dpadUp = button(pad, SDL_GAMEPAD_BUTTON_DPAD_UP);
-            boolean dpadDown = button(pad, SDL_GAMEPAD_BUTTON_DPAD_DOWN);
-            boolean a = button(pad, SDL_GAMEPAD_BUTTON_SOUTH);
-            boolean start = button(pad, SDL_GAMEPAD_BUTTON_START);
-            want |= bit(LEFT, left) | bit(RIGHT, right);
-            if (racing) {
-                boolean gas = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > TRIGGER_DEAD_ZONE;
-                boolean brake = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > TRIGGER_DEAD_ZONE;
-                want |= bit(UP, gas || a || dpadUp)
-                        | bit(DOWN, brake || button(pad, SDL_GAMEPAD_BUTTON_WEST) || dpadDown)
-                        | bit(SPACE, button(pad, SDL_GAMEPAD_BUTTON_EAST))
-                        | bit(LOOK_Z, button(pad, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER))
-                        | bit(LOOK_X, button(pad, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER))
-                        | bit(VIEW, button(pad, SDL_GAMEPAD_BUTTON_NORTH))
-                        | bit(ENTER, start)
-                        | bit(ESCAPE, button(pad, SDL_GAMEPAD_BUTTON_BACK));
-            } else {
-                want |= bit(UP, y < -STICK_DEAD_ZONE || dpadUp)
-                        | bit(DOWN, y > STICK_DEAD_ZONE || dpadDown)
-                        | bit(ENTER, a || start);
+        List<String> connected;
+        synchronized (names) {
+            connected = List.copyOf(names);
+        }
+        for (int i = 0; i < pads.size(); i++) {
+            int player = i < connected.size() ? keys.playerOf(i, connected) : -1;
+            players[i] = player;
+            if (focused && player >= -1 && player <= 1) {
+                want[player + 1] |= wanted(pads.get(i), racing);
             }
+        }
+        padPlayers = players;
+        for (int slot = 0; slot < want.length; slot++) {
+            press(slot, want[slot]);
+        }
+    }
+
+    /** The keys a pad holds down now, one bit per entry of {@link #KEYS}. */
+    private int wanted(long pad, boolean racing) {
+        int want = 0;
+        int x = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTX);
+        int y = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTY);
+        boolean left = x < -STICK_DEAD_ZONE || button(pad, SDL_GAMEPAD_BUTTON_DPAD_LEFT);
+        boolean right = x > STICK_DEAD_ZONE || button(pad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT);
+        boolean dpadUp = button(pad, SDL_GAMEPAD_BUTTON_DPAD_UP);
+        boolean dpadDown = button(pad, SDL_GAMEPAD_BUTTON_DPAD_DOWN);
+        boolean a = button(pad, SDL_GAMEPAD_BUTTON_SOUTH);
+        boolean start = button(pad, SDL_GAMEPAD_BUTTON_START);
+        want |= bit(LEFT, left) | bit(RIGHT, right);
+        if (racing) {
+            boolean gas = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > TRIGGER_DEAD_ZONE;
+            boolean brake = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > TRIGGER_DEAD_ZONE;
+            want |= bit(UP, gas || a || dpadUp)
+                    | bit(DOWN, brake || button(pad, SDL_GAMEPAD_BUTTON_WEST) || dpadDown)
+                    | bit(SPACE, button(pad, SDL_GAMEPAD_BUTTON_EAST))
+                    | bit(LOOK_Z, button(pad, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER))
+                    | bit(LOOK_X, button(pad, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER))
+                    | bit(VIEW, button(pad, SDL_GAMEPAD_BUTTON_NORTH))
+                    | bit(ENTER, start)
+                    | bit(ESCAPE, button(pad, SDL_GAMEPAD_BUTTON_BACK));
+        } else {
+            want |= bit(UP, y < -STICK_DEAD_ZONE || dpadUp)
+                    | bit(DOWN, y > STICK_DEAD_ZONE || dpadDown)
+                    | bit(ENTER, a || start);
         }
         return want;
     }
@@ -309,33 +358,42 @@ final class Gamepads {
         throw new IllegalArgumentException("key " + key);
     }
 
+    /** A key for all pads (slot 0) or a split-screen player's (slot 1 or 2). */
+    private void key(int slot, int code, boolean down) {
+        if (slot == 0) {
+            keys.key(code, down);
+        } else {
+            keys.keyFor(slot - 1, code, down);
+        }
+    }
+
     /** Releases the keys no longer held and presses the new ones; repeats a held menu arrow. */
-    private void press(int want) {
-        int changed = held ^ want;
+    private void press(int slot, int want) {
+        int changed = held[slot] ^ want;
         for (int i = 0; i < KEYS.length; i++) {
             int b = 1 << i;
             if ((changed & b) != 0 && (want & b) == 0) {
-                keys.key(KEYS[i], false);
+                key(slot, KEYS[i], false);
             }
         }
         long now = System.nanoTime();
         for (int i = 0; i < KEYS.length; i++) {
             int b = 1 << i;
             if ((changed & b) != 0 && (want & b) != 0) {
-                keys.key(KEYS[i], true);
+                key(slot, KEYS[i], true);
                 if (KEYS[i] >= UP && KEYS[i] <= RIGHT) {
-                    repeatKey = KEYS[i];
-                    repeatAtNanos = now + REPEAT_DELAY_MILLIS * 1_000_000L;
+                    repeatKey[slot] = KEYS[i];
+                    repeatAtNanos[slot] = now + REPEAT_DELAY_MILLIS * 1_000_000L;
                 }
             }
         }
-        held = want;
-        if (repeatKey != 0 && (want & bit(repeatKey, true)) == 0) {
-            repeatKey = 0;
+        held[slot] = want;
+        if (repeatKey[slot] != 0 && (want & bit(repeatKey[slot], true)) == 0) {
+            repeatKey[slot] = 0;
         }
-        if (repeatKey != 0 && !keys.racing() && now - repeatAtNanos >= 0) {
-            keys.key(repeatKey, true);
-            repeatAtNanos = now + REPEAT_MILLIS * 1_000_000L;
+        if (repeatKey[slot] != 0 && !keys.racing() && now - repeatAtNanos[slot] >= 0) {
+            key(slot, repeatKey[slot], true);
+            repeatAtNanos[slot] = now + REPEAT_MILLIS * 1_000_000L;
         }
     }
 
@@ -344,12 +402,25 @@ final class Gamepads {
             return;
         }
         rumbleWanted = false;
-        float s = rumbleStrength;
-        short low = (short) Math.round(0xffff * s);
-        short high = (short) Math.round(0xffff * s * 0.6F);
-        int millis = 90 + Math.round(160 * s);
-        for (long pad : pads) {
-            SDL_RumbleGamepad(pad, low, high, millis);
+        float[] strength = new float[3];
+        synchronized (rumbleStrength) {
+            System.arraycopy(rumbleStrength, 0, strength, 0, 3);
+            java.util.Arrays.fill(rumbleStrength, 0F);
+        }
+        int[] players = padPlayers;
+        for (int i = 0; i < pads.size(); i++) {
+            int player = i < players.length ? players[i] : -1;
+            float s = strength[0];
+            if (player == 0 || player == 1) {
+                s = Math.max(s, strength[player + 1]);
+            }
+            if (s <= 0F) {
+                continue;
+            }
+            short low = (short) Math.round(0xffff * s);
+            short high = (short) Math.round(0xffff * s * 0.6F);
+            int millis = 90 + Math.round(160 * s);
+            SDL_RumbleGamepad(pads.get(i), low, high, millis);
         }
     }
 }

@@ -498,10 +498,41 @@ public final class Sound3D implements Runnable {
      * @param click a menu click, which the second speaker may be set to leave out
      */
     public static void event(String clip, boolean click) {
+        event(clip, click, 0);
+    }
+
+    /** {@link #event(String, boolean)} for a split-screen player, 0 or 1: on that player's speaker when each has one. */
+    public static void event(String clip, boolean click, int player) {
         Sound3D sound = instance;
-        if (sound != null && secondSpeaker != null && !SoundManager.isDiscarding() && (!click || secondClicks)) {
-            sound.post(new Command(EVENT, clip, -1, 0F, 0F));
+        if (sound != null && secondSpeaker != null && splitSound != SPLIT_ONE && !SoundManager.isDiscarding()
+                && (!click || secondClicks)) {
+            sound.post(new Command(EVENT, clip, player > 0 ? player : -1, 0F, 0F));
         }
+    }
+
+    /** Not in split screen: the second speaker does as Audio's settings say. */
+    public static final int SPLIT_OFF = -1;
+    /** Split screen on one speaker: the second one rests, its announcements on the main one. */
+    public static final int SPLIT_ONE = 0;
+    /** Split screen with the race events on the second speaker, as outside it. */
+    public static final int SPLIT_EVENTS = 1;
+    /**
+     * Split screen with a speaker each: Player 2's car and announcements play
+     * on the second speaker, flat, as a controller's speaker would, and Player
+     * 1's stay on the main one.
+     */
+    public static final int SPLIT_EACH = 2;
+
+    private static volatile int splitSound = SPLIT_OFF;
+
+    /** How split screen shares the speakers: one of the SPLIT_ values. */
+    public static void setSplitSound(int how) {
+        splitSound = how;
+    }
+
+    /** True while Player 2 has the second speaker to themselves. */
+    public static boolean splitEach() {
+        return splitSound == SPLIT_EACH && secondPlaying();
     }
 
     /**
@@ -555,6 +586,11 @@ public final class Sound3D implements Runnable {
 
     /** A clip command from the game ("play", "loop" or "stop"); false if the new sound is not running. */
     static boolean command(String op, String clip) {
+        return command(op, clip, 0);
+    }
+
+    /** {@link #command(String, String)} for a split-screen player, 0 or 1. */
+    static boolean command(String op, String clip, int player) {
         Sound3D sound = instance;
         if (sound == null) {
             return false;
@@ -564,7 +600,7 @@ public final class Sound3D implements Runnable {
             case "loop" -> LOOP;
             default -> STOP;
         };
-        sound.post(new Command(kind, clip, -1, 0F, 0F));
+        sound.post(new Command(kind, clip, player > 0 ? player : -1, 0F, 0F));
         return true;
     }
 
@@ -941,8 +977,9 @@ public final class Sound3D implements Runnable {
     }
 
     /* a clip played by name: at the player's car as an effect, the wind as an effect, the rest as interface */
-    private void namedGain(String name, int source) {
-        boolean atCar = namedAtPlayer.containsKey(name);
+    private void namedGain(String key, int source) {
+        boolean atCar = namedAtPlayer.containsKey(key);
+        String name = key.startsWith(PLAYER_TWO) ? key.substring(PLAYER_TWO.length()) : key;
         int b = atCar || name.startsWith("air") ? BUS_EFFECTS : BUS_INTERFACE;
         alSourcef(source, AL_GAIN, (atCar ? 1F : flatGain) * bus[b] * (loud(name) ? 1F : everyday));
     }
@@ -1128,7 +1165,8 @@ public final class Sound3D implements Runnable {
      * plays race events only.
      */
     private boolean toSecond(String name) {
-        return second != null && (ANNOUNCEMENTS.contains(name) || secondClicks && name.equals(CLICK));
+        return second != null && splitSound != SPLIT_ONE
+                && (ANNOUNCEMENTS.contains(name) || secondClicks && name.equals(CLICK));
     }
 
     /**
@@ -1207,15 +1245,15 @@ public final class Sound3D implements Runnable {
             return out != null || alcGetInteger(dev, EXTDisconnect.ALC_CONNECTED) != ALC_FALSE;
         }
 
-        /** Plays, loops or stops a clip here, centred. */
-        void clip(int kind, String clip) {
+        /** Plays, loops or stops a clip here, centred, with the voice kept as {@code key}. */
+        void clip(int kind, String clip, String key) {
             use();
             try {
                 int buffer = buffer(clip, clipBuffers);
                 if (buffer == 0) {
                     return;
                 }
-                int source = sources.computeIfAbsent(clip, n -> {
+                int source = sources.computeIfAbsent(key, n -> {
                     int s = alGenSources();
                     alSourcei(s, AL_BUFFER, buffer);
                     alSourcei(s, AL_SOURCE_RELATIVE, AL_TRUE);
@@ -1244,8 +1282,10 @@ public final class Sound3D implements Runnable {
         }
 
         /* the interface bus and the master volume, the loud moments above HDR audio's everyday level */
-        private float gain(String clip) {
-            return bus[BUS_MASTER] * bus[BUS_INTERFACE] * (loud(clip) ? 1F : everyday);
+        private float gain(String key) {
+            String clip = key.startsWith(PLAYER_TWO) ? key.substring(PLAYER_TWO.length()) : key;
+            int b = ownSound(clip) || clip.startsWith("air") ? BUS_EFFECTS : BUS_INTERFACE;
+            return bus[BUS_MASTER] * bus[b] * (loud(clip) ? 1F : everyday);
         }
 
         void applyGains() {
@@ -1411,10 +1451,16 @@ public final class Sound3D implements Runnable {
 
     private void handle(Command c) {
         switch (c.kind) {
-            case PLAY, LOOP, STOP -> clip(c.kind, c.clip);
+            case PLAY, LOOP, STOP -> {
+                if (c.car == 1) {
+                    secondPlayerClip(c.kind, c.clip);
+                } else {
+                    clip(c.kind, c.clip);
+                }
+            }
             case EVENT -> {
                 if (second != null) {
-                    second.clip(PLAY, c.clip);
+                    second.clip(PLAY, c.clip, c.car == 1 ? PLAYER_TWO + c.clip : c.clip);
                 }
             }
             case CRASH -> crash(c.car, c.a, (int) c.b);
@@ -1571,20 +1617,53 @@ public final class Sound3D implements Runnable {
      * (wind, countdown, menus) centred.
      */
     private void clip(int kind, String name) {
-        if (name.startsWith("engs") || name.startsWith("crash") || name.startsWith("lowcrash")
-                || name.startsWith("skid") || name.startsWith("dustskid") || name.equals("tires")) {
+        if (ownSound(name)) {
             return;
         }
         if (toSecond(name)) {
-            second.clip(kind, name);
+            second.clip(kind, name, name);
             return;
         }
+        namedClip(kind, name, name, name.equals("wasted") || name.equals("firewasted") || name.equals("carfixed"));
+    }
+
+    /** The engine, crashes and skids: the new sound makes them at each car, whatever the game plays by name. */
+    private static boolean ownSound(String name) {
+        return name.startsWith("engs") || name.startsWith("crash") || name.startsWith("lowcrash")
+                || name.startsWith("skid") || name.startsWith("dustskid") || name.equals("tires");
+    }
+
+    /** Split screen's Player 2's clips have voices of their own, kept by this prefix and the clip's name. */
+    private static final String PLAYER_TWO = "2/";
+
+    /**
+     * A clip split screen's Player 2 plays by name: with a speaker of their
+     * own, all of it there, the car's engine, crashes and skids too (the
+     * world's 3D sound is Player 1's); otherwise as Player 1's clips are,
+     * with voices of its own so the two players never cut each other off.
+     */
+    private void secondPlayerClip(int kind, String name) {
+        if (splitSound == SPLIT_EACH && second != null) {
+            second.clip(kind, name, PLAYER_TWO + name);
+            return;
+        }
+        if (ownSound(name)) {
+            return;
+        }
+        if (toSecond(name)) {
+            second.clip(kind, name, PLAYER_TWO + name);
+            return;
+        }
+        namedClip(kind, name, PLAYER_TWO + name, false);
+    }
+
+    /** Plays, loops or stops a clip by name on the main speaker, with the voice kept as {@code key}. */
+    private void namedClip(int kind, String name, String key, boolean atCar) {
         int buffer = buffer(name);
         if (buffer == 0) {
             return;
         }
-        boolean atCar = name.equals("wasted") || name.equals("firewasted") || name.equals("carfixed");
-        int source = named.computeIfAbsent(name, n -> {
+        int source = named.computeIfAbsent(key, n -> {
             int s = alGenSources();
             alSourcei(s, AL_BUFFER, buffer);
             if (!atCar) {
@@ -1597,7 +1676,7 @@ public final class Sound3D implements Runnable {
         if (atCar) {
             namedAtPlayer.put(name, source);
         }
-        namedGain(name, source);
+        namedGain(key, source);
         switch (kind) {
             case PLAY -> {
                 alSourcei(source, AL_LOOPING, AL_FALSE);

@@ -14,6 +14,20 @@ public class GameFacts
      public static int numberOfPlayers = 7;
 
      /**
+      * The cars people drive: 1, car 0, or 2 in split screen, cars 0 and 1.
+      * Set by the game thread as split screen starts and ends, never during
+      * a race; the classic game always has 1.
+      */
+     public static volatile int humans = 1;
+
+     /**
+      * The car the computer cars pace themselves on: car 0 in the classic
+      * game; in split screen the human further ahead, set once a tick
+      * before the computer cars drive.
+      */
+     public static int paceCar = 0;
+
+     /**
       * The game's own view, 16:9: the race camera is placed in it, and what is
       * on screen in it is what the race reads back (a car out of view finishes
       * a repair hoop at once). Races play out the same in any window.

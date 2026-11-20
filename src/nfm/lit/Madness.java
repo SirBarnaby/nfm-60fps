@@ -75,6 +75,11 @@ class Madness {
     public boolean nofocus;
     private int rpdcatch;
     private boolean colidim;
+    /**
+     * The human whose car just hit this one, while {@link #colidim}: the
+     * hit is that player's to hear. Car 0 in the classic game.
+     */
+    private static int colider;
     public int cn;
     public int im;
     public int mxz;
@@ -117,8 +122,7 @@ class Madness {
             if (pitchSide * rollSide == 0)
                 shakedam = (int) ((Math.abs(force) + shakedam) / 2.0F);
             nfm.lit.audio.Sound3D.carCrash(im, force, rollSide * pitchSide);
-            if (im == 0 || colidim)
-                events.crash(force, rollSide * pitchSide);
+            crashEvent(force, rollSide * pitchSide);
             if (rollSide * pitchSide == 0 || mtouch) {
                 for (int poly = 0; poly < car.npl; poly++) {
                     float dent = 0.0F;
@@ -293,8 +297,7 @@ class Madness {
                 force += 100F;
             shakedam = (int) ((Math.abs(force) + shakedam) / 2.0F);
             nfm.lit.audio.Sound3D.carCrash(im, force, 0); // heard from every car with the 3D sound
-            if (im == 0 || colidim)
-                events.crash(force, 0);
+            crashEvent(force, 0);
             for (int poly = 0; poly < car.npl; poly++) {
                 float dent = 0.0F;
                 for (int corner = 0; corner < car.p[poly].n; corner++)
@@ -412,16 +415,20 @@ class Madness {
                             if (other.cn == 13)
                                 heavyX = stat.moment;
                             other.scx[otherWheel] += pushX;
-                            if (im == 0)
+                            if (human()) {
                                 other.colidim = true;
+                                colider = im;
+                            }
                             other.regx(otherWheel, pushX * stat.moment * heavyX, otherCar);
                             if (other.colidim)
                                 other.colidim = false;
                             scx[myWheel] -= pushBackX;
                             regx(myWheel, -pushBackX * StatList.moment[cn], car);
                             scy[myWheel] -= stat.revlift;
-                            if (im == 0)
+                            if (human()) {
                                 other.colidim = true;
+                                colider = im;
+                            }
                             other.regy(otherWheel, stat.revlift * 7, otherCar);
                             if (other.colidim)
                                 other.colidim = false;
@@ -441,30 +448,51 @@ class Madness {
                             if (other.cn == 13)
                                 heavyZ = stat.moment;
                             other.scz[otherWheel] += pushZ;
-                            if (im == 0)
+                            if (human()) {
                                 other.colidim = true;
+                                colider = im;
+                            }
                             other.regz(otherWheel, pushZ * stat.moment * heavyZ, otherCar);
                             if (other.colidim)
                                 other.colidim = false;
                             scz[myWheel] -= pushBackZ;
                             regz(myWheel, -pushBackZ * StatList.moment[cn], car);
                             scy[myWheel] -= stat.revlift;
-                            if (im == 0)
+                            if (human()) {
                                 other.colidim = true;
+                                colider = im;
+                            }
                             other.regy(otherWheel, stat.revlift * 7, otherCar);
                             if (other.colidim)
                                 other.colidim = false;
                         }
-                        if (im == 0)
+                        if (human()) {
                             other.lastcolido = 70;
-                        if (other.im == 0)
+                            SplitRace.hit(other.im, im);
+                        }
+                        if (other.human()) {
                             lastcolido = 70;
+                            SplitRace.hit(im, other.im);
+                        }
                         other.scy[otherWheel] -= stat.lift;
                     }
                 while (++otherWheel < 4);
             } while (++myWheel < 4);
 
         }
+    }
+
+    /** A car people drive: car 0, or car 1 too in split screen. */
+    boolean human() {
+        return im < GameFacts.humans;
+    }
+
+    /** A crash the players hear: their own car's, or that of a car a player hit. */
+    private void crashEvent(float force, int kind) {
+        if (human())
+            events.crash(im, force, kind);
+        if (colidim && colider != im)
+            events.crash(colider, force, kind);
     }
 
     private void distruct(ContO car) {
@@ -481,12 +509,12 @@ class Madness {
             dominate[slot] = false;
             caught[slot] = false;
         } while (++slot < 51);
-        if (cn == 11 && im == 0)
+        if (cn == 11 && human())
             if (checkpoints.stage == 10)
                 stat.moment = 2.5F;
             else
                 stat.moment = 2.0F;
-        if (cn == 9 && im != 0)
+        if (cn == 9 && !human())
             if (checkpoints.stage == 4)
                 stat.maxmag = 8000;
             else
@@ -553,9 +581,9 @@ class Madness {
         cntdest = 0;
         dest = false;
         newcar = false;
-        if (im == 0) {
-            events.showCheckpoint(-1);
-            events.showLastCheckpoint(false);
+        if (human()) {
+            events.showCheckpoint(im, -1);
+            events.showLastCheckpoint(im, false);
         }
         rpdcatch = 0;
     }
@@ -570,8 +598,7 @@ class Madness {
                 force += 100F;
             shakedam = (int) ((Math.abs(force) + shakedam) / 2.0F);
             nfm.lit.audio.Sound3D.carCrash(im, force, 0); // heard from every car with the 3D sound
-            if (im == 0 || colidim)
-                events.crash(force, 0);
+            crashEvent(force, 0);
             for (int poly = 0; poly < car.npl; poly++) {
                 float dent = 0.0F;
                 for (int corner = 0; corner < car.p[poly].n; corner++)
@@ -754,7 +781,7 @@ class Madness {
                 float boost = power;
                 if (boost < 40F)
                     boost = 40F;
-                if (im == 0 && power != 98F)
+                if (human() && power != 98F)
                     if (checkpoints.stage != 6 && checkpoints.stage != 8)
                         boost = (float) (boost * 0.76000000000000001D);
                     else if (checkpoints.stage != 6)
@@ -1044,8 +1071,8 @@ class Madness {
                                     (int) tilt);
                             if (!capsized)
                                 nfm.lit.audio.Sound3D.carSkid(im, surface, (float) Math.sqrt(scx[wheel] * scx[wheel] + scz[wheel] * scz[wheel]));
-                            if (im == 0 && !capsized)
-                                events.skid(surface, (float) Math.sqrt(scx[wheel] * scx[wheel] + scz[wheel] * scz[wheel]));
+                            if (human() && !capsized)
+                                events.skid(im, surface, (float) Math.sqrt(scx[wheel] * scx[wheel] + scz[wheel] * scz[wheel]));
                         }
                     } else {
                         if (surface == 1 && world.random() > 0.84999999999999998D)
@@ -1618,18 +1645,18 @@ class Madness {
 
         if (clear == checkCount + nlaps * checkpoints.nsp)
             nlaps++;
-        if (im == 0) {
+        if (human()) {
             int next = clear;
             while (next >= checkpoints.nsp)
                 next -= checkpoints.nsp;
-            events.showCheckpoint(next);
+            events.showCheckpoint(im, next);
             if (clear == checkpoints.nlaps * checkpoints.nsp - 1)
-                events.showLastCheckpoint(true);
+                events.showLastCheckpoint(im, true);
             if (checkpoints.haltall)
-                events.showLastCheckpoint(false);
+                events.showLastCheckpoint(im, false);
         }
         if (focus == -1) {
-            if (im == 0)
+            if (human())
                 nearest += 2;
             else
                 nearest++;
@@ -1648,14 +1675,14 @@ class Madness {
                 nearest -= checkpoints.n;
             if (checkpoints.typ[nearest] == -3)
                 nearest = 0;
-            if (im == 0) {
+            if (human()) {
                 if (missedcp != -1)
                     missedcp = -1;
             } else if (missedcp != 0)
                 missedcp = 0;
         } else {
             nearest = focus;
-            if (im == 0) {
+            if (human()) {
                 if (missedcp == 0 && mtouch && Math.sqrt(
                         Utility.py(car.x / 10, checkpoints.x[focus] / 10, car.z / 10, checkpoints.z[focus] / 10)) > 800D)
                     missedcp = 1;
@@ -1683,8 +1710,8 @@ class Madness {
                     if (car.dist == 0) {
                         car.fcnt = 8;
                     } else {
-                        if (im == 0 && !car.fix) {
-                            events.carFixed();
+                        if (human() && !car.fix) {
+                            events.carFixed(im);
                         }
                         car.fix = true;
                     }
@@ -1695,8 +1722,8 @@ class Madness {
                 if (car.dist == 0) {
                     car.fcnt = 8;
                 } else {
-                    if (im == 0 && !car.fix) {
-                        events.carFixed();
+                    if (human() && !car.fix) {
+                        events.carFixed(im);
                     }
                     car.fix = true;
                 }
@@ -1829,9 +1856,12 @@ class Madness {
                     xtpower--;
                 }
         }
-        if (im == 0) {
+        if (human()) {
             if (control.wall != -1)
                 control.wall = -1;
+            // in split screen the other player can waste a human too: the credit wears off as for the rest
+            if (GameFacts.humans > 1 && lastcolido != 0 && !dest)
+                lastcolido--;
         } else if (lastcolido != 0 && !dest)
             lastcolido--;
         if (dest) {

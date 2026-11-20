@@ -659,6 +659,9 @@ public class DevTool {
                     print(GameSparker.describeGamepads() + "\nUsage: gamepad <on|off>, gamepad rumble <on|off>");
                 }
                 break;
+            case "split":
+                print(split(args));
+                break;
             case "clear":
                 textArea.setText("");
                 break;
@@ -685,6 +688,113 @@ public class DevTool {
         }
     }
     
+    /** The split command: shows split screen's choices, or changes one (saved as the settings save them). */
+    private static String split(String[] args) {
+        String usage = "Usage: split view <auto|side|stacked>, split cars <0-" + SplitRace.MAX_RIVALS
+                + ">, split sound <one|events|each>, split pad <1|2> <auto|none|1-4>,"
+                + " split keys <1|2> <action> <key> [second key], split keys reset";
+        String what = args.length > 0 ? args[0].toLowerCase(java.util.Locale.ROOT) : "";
+        String to = args.length > 1 ? args[1].toLowerCase(java.util.Locale.ROOT) : "";
+        String said = null;
+        switch (what) {
+            case "view" -> {
+                int v = switch (to) {
+                    case "auto" -> SplitRace.VIEW_AUTO;
+                    case "side" -> SplitRace.VIEW_SIDE;
+                    case "stacked" -> SplitRace.VIEW_STACKED;
+                    default -> -1;
+                };
+                if (v >= 0) {
+                    SplitRace.view = v;
+                    said = "Screen: " + SplitScreens.screenText(v);
+                }
+            }
+            case "cars" -> {
+                int n = parse(to);
+                if (n >= 0 && n <= SplitRace.MAX_RIVALS) {
+                    SplitRace.rivals = n;
+                    said = "Computer cars: " + SplitScreens.rivalsText(n);
+                }
+            }
+            case "sound" -> {
+                int s = switch (to) {
+                    case "one" -> SplitRace.SOUND_ONE;
+                    case "events" -> SplitRace.SOUND_EVENTS;
+                    case "each" -> SplitRace.SOUND_EACH;
+                    default -> -1;
+                };
+                if (s >= 0) {
+                    SplitRace.sound = s;
+                    said = "Sound: " + SplitScreens.soundText(s);
+                }
+            }
+            case "pad" -> {
+                int player = parse(to) - 1;
+                String pad = args.length > 2 ? args[2].toLowerCase(java.util.Locale.ROOT) : "";
+                int p = pad.equals("auto") ? SplitRace.PAD_AUTO : pad.equals("none") ? SplitRace.PAD_NONE : parse(pad) - 1;
+                if ((player == 0 || player == 1) && p >= SplitRace.PAD_NONE && p < 4) {
+                    SplitRace.pads[player] = p;
+                    said = "Player " + (player + 1) + "'s controller: " + SplitScreens.padName(p);
+                }
+            }
+            case "keys" -> {
+                return splitKeys(args, usage);
+            }
+            default -> {
+                return describeSplit() + "\n" + usage;
+            }
+        }
+        if (said == null) {
+            return usage;
+        }
+        SplitRace.changed = true;
+        return said + " (saved).";
+    }
+
+    private static String splitKeys(String[] args, String usage) {
+        if (args.length == 2 && args[1].equalsIgnoreCase("reset")) {
+            SplitKeys.reset();
+            return "Split-screen keys back to the game's own (saved).\n" + SplitKeys.describe();
+        }
+        int player = args.length >= 4 ? parse(args[1]) - 1 : -1;
+        int action = player == 0 || player == 1 ? SplitKeys.parseAction(args[2]) : -1;
+        if (action < 0 || args.length > 5) {
+            return SplitKeys.describe() + "\n" + usage;
+        }
+        StringBuilder said = new StringBuilder();
+        for (int slot = 0; slot < args.length - 3; slot++) {
+            int key = SplitKeys.parse(args[slot + 3]);
+            if (key < 0 || key != 0 && SplitKeys.reserved(key)) {
+                said.append("Not a key that can be given: ").append(args[slot + 3]).append(".\n");
+                continue;
+            }
+            int from = SplitKeys.bind(player, action, slot, key);
+            if (from >= 0) {
+                said.append(SplitKeys.name(key)).append(" taken from Player ").append((from >> 8) + 1).append("'s ")
+                        .append(SplitKeys.label(from & 0xFF)).append(".\n");
+            }
+        }
+        return said + "Player " + (player + 1) + "'s " + SplitKeys.label(action) + ": "
+                + SplitKeys.name(SplitKeys.key(player, action, 0)) + ", "
+                + SplitKeys.name(SplitKeys.key(player, action, 1)) + " (saved).";
+    }
+
+    private static String describeSplit() {
+        return "Split screen: " + SplitScreens.screenText(SplitRace.view) + "; computer cars: "
+                + SplitScreens.rivalsText(SplitRace.rivals) + "; sound: " + SplitScreens.soundText(SplitRace.sound)
+                + "; controllers: " + SplitScreens.padName(SplitRace.pads[0]) + ", "
+                + SplitScreens.padName(SplitRace.pads[1]) + ".\n" + SplitKeys.describe();
+    }
+
+    /** A whole number, or -1. */
+    private static int parse(String word) {
+        try {
+            return Integer.parseInt(word);
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
     private void populateCommandDescriptions() {
         commandDescriptions.put("nplayers", "Sets the number of players. Usage: nplayers <1-51>");
         commandDescriptions.put("fix", "Fixes a specified car. Usage: fix <n>");
@@ -697,6 +807,10 @@ public class DevTool {
         commandDescriptions.put("stagesubdir", "Sets the stage subdirectory. Usage: stagesubdir <subdir>");
         commandDescriptions.put("status", "Displays the current game state.");
         commandDescriptions.put("hdr", "HDR output on a monitor that has HDR turned on in Windows: the game looks as it does in SDR, at the brightness Windows shows SDR white at, and flames, lamps, sparks, stars and lightning shine brighter than white, rolling off smoothly into the display's peak. hdr white sets how bright the game's white is in nits (auto: Windows' SDR content brightness); hdr peak sets the display's peak in nits (auto: what the monitor tells Windows). Needs the gpu renderer. Usage: hdr <auto|off>, hdr white <auto|80-500>, hdr peak <auto|200-10000>");
+        commandDescriptions.put("split", "Split screen's choices, as on its Settings tab: how the window is shared,"
+                + " the computer cars, where the players are heard, each player's controller and keys. Usage: split,"
+                + " split view <auto|side|stacked>, split cars <0-5>, split sound <one|events|each>,"
+                + " split pad <1|2> <auto|none|1-4>, split keys <1|2> <action> <key> [second key], split keys reset");
         commandDescriptions.put("gamepad", "Game controllers (Xbox, PlayStation, Switch and others): RT or A accelerates, LT or X brakes, the left stick or d-pad steers, B is the handbrake, LB/RB look back, Y changes the view, Start pauses; in menus the stick moves and A selects. Hard hits shake the pad. Usage: gamepad <on|off>, gamepad rumble <on|off>");
         commandDescriptions.put("msaa", "Smooths the edges of the polygons in races drawn on the graphics card by taking 2, 4, 8 or 16 samples per pixel (multisampling, MSAA); off keeps the game's own hard edges. A card that cannot do as many does the most it can. Usage: msaa <off|2|4|8|16>");
         commandDescriptions.put("volume", "The 3D sound's volumes, in percent: master, engines, effects (crashes, skids, the wreck, the repair, the wind), music and interface (countdown, checkpoints, menus). Classic plays at its own levels. Usage: volume <bus> <0-100>");

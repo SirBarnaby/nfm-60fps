@@ -9,10 +9,32 @@ import java.util.concurrent.Executors;
 
 public class SoundManager {
 
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final ExecutorService executor;
 
     /* the game loads clips on its loading thread while the 3D sound may already read them */
-    private final Map<String, SoundClip> clips = new ConcurrentHashMap<>();
+    private final Map<String, SoundClip> clips;
+
+    /** Whose sounds these are: 0, or 1 for split screen's Player 2 (see {@link #forPlayer}). */
+    private final int player;
+
+    public SoundManager() {
+        this(Executors.newSingleThreadExecutor(), new ConcurrentHashMap<>(), 0);
+    }
+
+    private SoundManager(ExecutorService executor, Map<String, SoundClip> clips, int player) {
+        this.executor = executor;
+        this.clips = clips;
+        this.player = player;
+    }
+
+    /**
+     * The same clips played for split screen's Player 2: the new sound plays
+     * them with voices of their own, or on Player 2's speaker (see
+     * {@link Sound3D#setSplitSpeakers}). Classic plays them as Player 1's.
+     */
+    public SoundManager forPlayer(int player) {
+        return new SoundManager(executor, clips, player);
+    }
 
     /**
      * Set for the hidden developer runs (race recording and verification), which
@@ -87,7 +109,7 @@ public class SoundManager {
     }
 
     public void play(String name) {
-        if (!pass("play", name) || Sound3D.command("play", name) || silenced) {
+        if (!pass("play", name) || Sound3D.command("play", name, player) || silenced) {
             return;
         }
         SoundClip soundClip = clips.get(name);
@@ -104,7 +126,7 @@ public class SoundManager {
     }
 
     public void stop(String name) {
-        if (!pass("stop", name) || Sound3D.command("stop", name)) {
+        if (!pass("stop", name) || Sound3D.command("stop", name, player)) {
             return;
         }
         SoundClip soundClip = clips.get(name);
@@ -120,7 +142,7 @@ public class SoundManager {
     }
 
     public void loop(String name) {
-        if (!pass("loop", name) || Sound3D.command("loop", name) || silenced) {
+        if (!pass("loop", name) || Sound3D.command("loop", name, player) || silenced) {
             return;
         }
         SoundClip soundClip = clips.get(name);

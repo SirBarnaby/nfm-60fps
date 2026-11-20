@@ -132,7 +132,14 @@ public enum Phase {
      * 9001 - for loading a sage (custom)
      */
     LOADSTAGE(9001),
-    LOADSTAGE2(9004);
+    LOADSTAGE2(9004),
+    /**
+     * 9100 - split screen's car select: both players choose a car, and the
+     * computer cars, the screen and the sound, then the stage select
+     */
+    SPLITCARSELECT(9100),
+    /** 9101 - after a split-screen race: who won, and race again, another stage, other cars or the main menu */
+    SPLITRESULTS(9101);
 
     public final int value;
     

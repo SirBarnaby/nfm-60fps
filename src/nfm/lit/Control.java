@@ -100,7 +100,7 @@ public class Control {
         if (!madness.dest) {
             if (madness.mtouch) {
                 if (stcnt > statusque) {
-                    acuracy = (GameFacts.numberOfPlayers - checkpoints.pos[madness.im]) * checkpoints.pos[0] * (6 - checkpoints.stage * 2);
+                    acuracy = (GameFacts.numberOfPlayers - checkpoints.pos[madness.im]) * checkpoints.pos[GameFacts.paceCar] * (6 - checkpoints.stage * 2);
                     if (acuracy < 0) {
                         acuracy = 0;
                     }
@@ -127,9 +127,9 @@ public class Control {
                     if (checkpoints.stage == 4) {
                         waitScale = 0.5F;
                     }
-                    upwait = (int) ((checkpoints.pos[0] - checkpoints.pos[madness.im])
-                            * (checkpoints.pos[0] - checkpoints.pos[madness.im])
-                            * (checkpoints.pos[0] - checkpoints.pos[madness.im]) * waitScale);
+                    upwait = (int) ((checkpoints.pos[GameFacts.paceCar] - checkpoints.pos[madness.im])
+                            * (checkpoints.pos[GameFacts.paceCar] - checkpoints.pos[madness.im])
+                            * (checkpoints.pos[GameFacts.paceCar] - checkpoints.pos[madness.im]) * waitScale);
                     if (upwait > 80) {
                         upwait = 80;
                     }
@@ -149,7 +149,7 @@ public class Control {
                     if (checkpoints.stage == 5) {
                         waitScale = 0.2F;
                     }
-                    if (checkpoints.pos[madness.im] - checkpoints.pos[0] >= -1) {
+                    if (checkpoints.pos[madness.im] - checkpoints.pos[GameFacts.paceCar] >= -1) {
                         skiplev -= 0.10000000000000001D;
                         if (skiplev < 0.0F) {
                             skiplev = 0.0F;
@@ -213,7 +213,7 @@ public class Control {
                                 agressed = true;
                             }
                         }
-                        if (checkpoints.pos[0] - checkpoints.pos[madness.im] < 0) {
+                        if (checkpoints.pos[GameFacts.paceCar] - checkpoints.pos[madness.im] < 0) {
                             turntyp = (int) (world.random() * 2.0F);
                         }
                         if (checkpoints.stage == 8) {
@@ -234,7 +234,7 @@ public class Control {
                                     || checkpoints.stage == 17) {
                                 turntyp = (int) (world.random() * 3F);
                             }
-                            if (checkpoints.stage == 16 && checkpoints.clear[madness.im] - checkpoints.clear[0] >= 5) {
+                            if (checkpoints.stage == 16 && checkpoints.clear[madness.im] - checkpoints.clear[GameFacts.paceCar] >= 5) {
                                 turntyp = 0;
                             }
                         }
@@ -273,7 +273,7 @@ public class Control {
                         waitScale = 1.5F;
                     }
                     if (madness.power > 50F) {
-                        if (checkpoints.pos[0] - checkpoints.pos[madness.im] > 0) {
+                        if (checkpoints.pos[GameFacts.paceCar] - checkpoints.pos[madness.im] > 0) {
                             saftey *= waitScale;
                         } else {
                             mustland = 0.0F;
@@ -293,8 +293,8 @@ public class Control {
                         stuntf = 2;
                     }
                     if (checkpoints.stage == 10) {
-                        if (checkpoints.pos[0] < checkpoints.pos[madness.im]
-                                || Math.abs(checkpoints.clear[0] - madness.clear) >= 2 || madness.clear < 2) {
+                        if (checkpoints.pos[GameFacts.paceCar] < checkpoints.pos[madness.im]
+                                || Math.abs(checkpoints.clear[GameFacts.paceCar] - madness.clear) >= 2 || madness.clear < 2) {
                             stuntf = 4;
                             saftey = 10;
                         } else {
@@ -400,7 +400,7 @@ public class Control {
                         if (checkpoints.stage == 8 && madness.cn == 11) {
                             aggressive = true;
                         }
-                        if (checkpoints.stage == 9 && checkpoints.clear[0] >= 20) {
+                        if (checkpoints.stage == 9 && checkpoints.clear[GameFacts.paceCar] >= 20) {
                             aggressive = true;
                         }
                         if (checkpoints.stage == 11 || checkpoints.stage == 12 || checkpoints.stage == 13
@@ -440,7 +440,7 @@ public class Control {
                             minPower = 40;
                         }
                         if (checkpoints.stage == 16) {
-                            if (madness.cn == 11 && checkpoints.clear[0] == 27) {
+                            if (madness.cn == 11 && checkpoints.clear[GameFacts.paceCar] == 27) {
                                 minPower = 0;
                             }
                             if (madness.cn == 15 || madness.cn == 9) {
@@ -449,7 +449,7 @@ public class Control {
                             if (madness.cn == 11) {
                                 minPower = 40;
                             }
-                            if (checkpoints.pos[0] > checkpoints.pos[madness.im]) {
+                            if (checkpoints.pos[GameFacts.paceCar] > checkpoints.pos[madness.im]) {
                                 minPower = 80;
                             }
                         }
@@ -531,7 +531,7 @@ public class Control {
                                         if (oupnt == 51) {
                                             reach = 30000;
                                         }
-                                        if (oupnt == 15 && checkpoints.clear[0] >= 14) {
+                                        if (oupnt == 15 && checkpoints.clear[GameFacts.paceCar] >= 14) {
                                             reach = 60000;
                                         }
                                         angleOff = 10;
@@ -562,7 +562,7 @@ public class Control {
                                     if (checkpoints.stage != 17 && chance > 0.69999999999999996D) {
                                         chance = 0.7F;
                                     }
-                                    if (rival != 0 && checkpoints.pos[0] < checkpoints.pos[madness.im]) {
+                                    if (rival != 0 && checkpoints.pos[GameFacts.paceCar] < checkpoints.pos[madness.im]) {
                                         chance = 0.0F;
                                     }
                                     if (rival != 0 && aggressive) {
@@ -620,7 +620,7 @@ public class Control {
                                         if (checkpoints.pos[madness.im] == 0) {
                                             chance = (float) (chance * 0.5D);
                                         }
-                                        if (checkpoints.pos[0] < checkpoints.pos[madness.im]) {
+                                        if (checkpoints.pos[GameFacts.paceCar] < checkpoints.pos[madness.im]) {
                                             chance *= 2.0F;
                                         }
                                         if (bulistc && rival == 0) {
@@ -629,8 +629,8 @@ public class Control {
                                     }
                                     if (checkpoints.stage == 16) {
                                         if (madness.cn != 14) {
-                                            if (checkpoints.pos[0] < checkpoints.pos[madness.im]
-                                                    && checkpoints.clear[0] - checkpoints.clear[madness.im] != 1) {
+                                            if (checkpoints.pos[GameFacts.paceCar] < checkpoints.pos[madness.im]
+                                                    && checkpoints.clear[GameFacts.paceCar] - checkpoints.clear[madness.im] != 1) {
                                                 chance *= 2.0F;
                                             }
                                         } else {
@@ -640,10 +640,10 @@ public class Control {
                                             chance = 1.0F;
                                         }
                                         if (checkpoints.pos[madness.im] == 0
-                                                || checkpoints.pos[madness.im] == 1 && checkpoints.pos[0] == 0) {
+                                                || checkpoints.pos[madness.im] == 1 && checkpoints.pos[GameFacts.paceCar] == 0) {
                                             chance = 0.0F;
                                         }
-                                        if (checkpoints.clear[madness.im] - checkpoints.clear[0] >= 5 && rival == 0) {
+                                        if (checkpoints.clear[madness.im] - checkpoints.clear[GameFacts.paceCar] >= 5 && rival == 0) {
                                             chance = 1.0F;
                                         }
                                         if (madness.cn == 10 || madness.cn == 12) {
@@ -660,7 +660,7 @@ public class Control {
                                             aim = 1.0F;
                                         }
                                         if (checkpoints.stage == 4) {
-                                            if (rival == 0 && checkpoints.pos[0] < checkpoints.pos[madness.im]) {
+                                            if (rival == 0 && checkpoints.pos[GameFacts.paceCar] < checkpoints.pos[madness.im]) {
                                                 aim = 1.5F;
                                             } else {
                                                 aim = world.random();
@@ -670,7 +670,7 @@ public class Control {
                                             aim = world.random() * 1.5F;
                                         }
                                         if (checkpoints.stage == 7 && madness.im != 6 && (world.random() > world.random()
-                                                || checkpoints.pos[0] < checkpoints.pos[madness.im])) {
+                                                || checkpoints.pos[GameFacts.paceCar] < checkpoints.pos[madness.im])) {
                                             aim = 1.0F;
                                         }
                                         if (checkpoints.stage == 8 && madness.cn == 11 && world.random() > world.random()) {
@@ -761,7 +761,7 @@ public class Control {
                             if (checkpoints.stage == 15 && madness.pcleared == 91) {
                                 bigDamage = 50;
                             }
-                            if (checkpoints.stage == 16 && checkpoints.clear[madness.im] - checkpoints.clear[0] >= 5
+                            if (checkpoints.stage == 16 && checkpoints.clear[madness.im] - checkpoints.clear[GameFacts.paceCar] >= 5
                                     && madness.cn != 10 && madness.cn != 12) {
                                 bigDamage = 50;
                             }
@@ -788,7 +788,7 @@ public class Control {
                         if (checkpoints.stage == 12 && madness.cn == 13) {
                             bulistc = true;
                         }
-                        if (checkpoints.stage == 15 && checkpoints.clear[0] - madness.clear >= 3 && trfix == 0) {
+                        if (checkpoints.stage == 15 && checkpoints.clear[GameFacts.paceCar] - madness.clear >= 3 && trfix == 0) {
                             bulistc = true;
                             oupnt = -1;
                         }
@@ -797,7 +797,7 @@ public class Control {
                                 bulistc = true;
                                 attack = 0;
                             }
-                            if (madness.cn == 11 && checkpoints.clear[0] - madness.clear >= 2 && trfix == 0) {
+                            if (madness.cn == 11 && checkpoints.clear[GameFacts.paceCar] - madness.clear >= 2 && trfix == 0) {
                                 bulistc = true;
                                 oupnt = -1;
                             }
@@ -805,7 +805,7 @@ public class Control {
                         if ((checkpoints.stage == 2 || checkpoints.stage == 3 || checkpoints.stage == 4
                                 || checkpoints.stage == 5 || checkpoints.stage == 8 || checkpoints.stage == 10
                                 || checkpoints.stage == 13) && madness.cn == 13
-                                && Math.abs(checkpoints.clear[0] - madness.clear) >= 2) {
+                                && Math.abs(checkpoints.clear[GameFacts.paceCar] - madness.clear) >= 2) {
                             bulistc = true;
                         }
                     } else if (checkpoints.stage == 8) {
@@ -965,7 +965,7 @@ public class Control {
                             }
                         }
                         if (checkpoints.stage == 15) {
-                            if (madness.pcleared != 91 && checkpoints.pos[0] < checkpoints.pos[madness.im]
+                            if (madness.pcleared != 91 && checkpoints.pos[GameFacts.paceCar] < checkpoints.pos[madness.im]
                                     && madness.cn != 13
                                     || checkpoints.pos[madness.im] == 0
                                     && (madness.clear == 12 || madness.clear == 20)) {
@@ -1088,9 +1088,9 @@ public class Control {
                                     target = 43;
                                 }
                             }
-                            if (checkpoints.clear[madness.im] - checkpoints.clear[0] >= 2
-                                    && Utility.py(car.x / 100, checkpoints.opx[0] / 100, car.z / 100,
-                                    checkpoints.opz[0] / 100) < 1000 + avoidnlev) {
+                            if (checkpoints.clear[madness.im] - checkpoints.clear[GameFacts.paceCar] >= 2
+                                    && Utility.py(car.x / 100, checkpoints.opx[GameFacts.paceCar] / 100, car.z / 100,
+                                    checkpoints.opz[GameFacts.paceCar] / 100) < 1000 + avoidnlev) {
                                 int heading = car.xz;
                                 if (zyinv) {
                                     heading += 180;
@@ -1100,13 +1100,13 @@ public class Control {
                                 for (; heading > 180; heading -= 360) {
                                 }
                                 char offset = '\0';
-                                if (checkpoints.opx[0] - car.x >= 0) {
+                                if (checkpoints.opx[GameFacts.paceCar] - car.x >= 0) {
                                     offset = '\264';
                                 }
                                 int bearing;
                                 for (bearing = (int) (90 + offset + Math
-                                        .atan((double) (checkpoints.opz[0] - car.z)
-                                                / (double) (checkpoints.opx[0] - car.x))
+                                        .atan((double) (checkpoints.opz[GameFacts.paceCar] - car.z)
+                                                / (double) (checkpoints.opx[GameFacts.paceCar] - car.x))
                                         / 0.017453292519943295D); bearing < 0; bearing += 360) {
                                 }
                                 for (; bearing > 180; bearing -= 360) {
@@ -1162,7 +1162,7 @@ public class Control {
                         }
                         if (checkpoints.stage == 12) {
                             if (!gowait) {
-                                if (checkpoints.clear[0] == 0) {
+                                if (checkpoints.clear[GameFacts.paceCar] == 0) {
                                     wtx = -3500;
                                     wtz = 19000;
                                     frx = -3500;
@@ -1172,7 +1172,7 @@ public class Control {
                                     gowait = true;
                                     afta = false;
                                 }
-                                if (checkpoints.clear[0] == 7) {
+                                if (checkpoints.clear[GameFacts.paceCar] == 7) {
                                     wtx = -44800;
                                     wtz = 40320;
                                     frx = -44800;
@@ -1182,7 +1182,7 @@ public class Control {
                                     gowait = true;
                                     afta = false;
                                 }
-                                if (checkpoints.clear[0] == 10) {
+                                if (checkpoints.clear[GameFacts.paceCar] == 10) {
                                     wtx = 0;
                                     wtz = 48739;
                                     frx = 0;
@@ -1192,7 +1192,7 @@ public class Control {
                                     gowait = true;
                                     afta = false;
                                 }
-                                if (checkpoints.clear[0] == 14) {
+                                if (checkpoints.clear[GameFacts.paceCar] == 14) {
                                     wtx = -3500;
                                     wtz = 19000;
                                     frx = -14700;
@@ -1202,7 +1202,7 @@ public class Control {
                                     gowait = true;
                                     afta = false;
                                 }
-                                if (checkpoints.clear[0] == 18) {
+                                if (checkpoints.clear[GameFacts.paceCar] == 18) {
                                     wtx = -48300;
                                     wtz = -4550;
                                     frx = -48300;
@@ -1222,13 +1222,13 @@ public class Control {
                                     up = false;
                                     handb = true;
                                 }
-                                if (checkpoints.pcleared == oupnt && Utility.py(checkpoints.opx[0] / 100, frx / 100,
-                                        checkpoints.opz[0] / 100, frz / 100) < frad) {
+                                if (checkpoints.pcleared == oupnt && Utility.py(checkpoints.opx[GameFacts.paceCar] / 100, frx / 100,
+                                        checkpoints.opz[GameFacts.paceCar] / 100, frz / 100) < frad) {
                                     afta = true;
                                     gowait = false;
                                 }
-                                if (Utility.py(car.x / 100, checkpoints.opx[0] / 100, car.z / 100,
-                                        checkpoints.opz[0] / 100) < 25) {
+                                if (Utility.py(car.x / 100, checkpoints.opx[GameFacts.paceCar] / 100, car.z / 100,
+                                        checkpoints.opz[GameFacts.paceCar] / 100) < 25) {
                                     afta = true;
                                     gowait = false;
                                     attack = 200;
@@ -1273,7 +1273,7 @@ public class Control {
                             boolean roam = false;
                             if (madness.cn == 13) {
                                 if (!gowait) {
-                                    if (checkpoints.clear[0] == 1) {
+                                    if (checkpoints.clear[GameFacts.paceCar] == 1) {
                                         if (world.random() > 0.5D) {
                                             wtx = -14000;
                                             wtz = 48000;
@@ -1292,7 +1292,7 @@ public class Control {
                                         gowait = true;
                                         afta = false;
                                     }
-                                    if (checkpoints.clear[0] == 4) {
+                                    if (checkpoints.clear[GameFacts.paceCar] == 4) {
                                         wtx = -12700;
                                         wtz = 14000;
                                         frx = -31000;
@@ -1302,7 +1302,7 @@ public class Control {
                                         gowait = true;
                                         afta = false;
                                     }
-                                    if (checkpoints.clear[0] == 14) {
+                                    if (checkpoints.clear[GameFacts.paceCar] == 14) {
                                         wtx = -35350;
                                         wtz = 6650;
                                         frx = -48300;
@@ -1312,7 +1312,7 @@ public class Control {
                                         gowait = true;
                                         afta = false;
                                     }
-                                    if (checkpoints.clear[0] == 17) {
+                                    if (checkpoints.clear[GameFacts.paceCar] == 17) {
                                         wtx = -42700;
                                         wtz = 41000;
                                         frx = -40950;
@@ -1322,7 +1322,7 @@ public class Control {
                                         gowait = true;
                                         afta = false;
                                     }
-                                    if (checkpoints.clear[0] == 21) {
+                                    if (checkpoints.clear[GameFacts.paceCar] == 21) {
                                         wtx = -1750;
                                         wtz = -15750;
                                         frx = -25900;
@@ -1342,25 +1342,25 @@ public class Control {
                                         up = false;
                                         handb = true;
                                     }
-                                    if (checkpoints.pcleared == oupnt && Utility.py(checkpoints.opx[0] / 100, frx / 100,
-                                            checkpoints.opz[0] / 100, frz / 100) < frad) {
+                                    if (checkpoints.pcleared == oupnt && Utility.py(checkpoints.opx[GameFacts.paceCar] / 100, frx / 100,
+                                            checkpoints.opz[GameFacts.paceCar] / 100, frz / 100) < frad) {
                                         runbul = 0;
                                         afta = true;
                                         gowait = false;
                                     }
-                                    if (Utility.py(car.x / 100, checkpoints.opx[0] / 100, car.z / 100,
-                                            checkpoints.opz[0] / 100) < 25) {
+                                    if (Utility.py(car.x / 100, checkpoints.opx[GameFacts.paceCar] / 100, car.z / 100,
+                                            checkpoints.opz[GameFacts.paceCar] / 100) < 25) {
                                         afta = true;
                                         gowait = false;
                                         attack = 200;
                                         acr = 0;
                                     }
-                                    if (checkpoints.clear[0] == 21 && oupnt != 125) {
+                                    if (checkpoints.clear[GameFacts.paceCar] == 21 && oupnt != 125) {
                                         gowait = false;
                                     }
                                 }
-                                if (checkpoints.clear[0] >= 11 && !gowait
-                                        || madness.power < 60F && checkpoints.clear[0] < 21) {
+                                if (checkpoints.clear[GameFacts.paceCar] >= 11 && !gowait
+                                        || madness.power < 60F && checkpoints.clear[GameFacts.paceCar] < 21) {
                                     roam = true;
                                     if (!exitattack) {
                                         oupnt = -1;
@@ -1498,15 +1498,15 @@ public class Control {
                     if (checkpoints.stage == 15 && exitattack && !bulistc && madness.missedcp != 0) {
                         attack = 0;
                     }
-                    if (checkpoints.stage == 16 && madness.cn == 13 && (checkpoints.clear[0] == 4
-                            || checkpoints.clear[0] == 13 || checkpoints.clear[0] == 21)) {
+                    if (checkpoints.stage == 16 && madness.cn == 13 && (checkpoints.clear[GameFacts.paceCar] == 4
+                            || checkpoints.clear[GameFacts.paceCar] == 13 || checkpoints.clear[GameFacts.paceCar] == 21)) {
                         attack = 0;
                     }
                     if (checkpoints.stage == 16 && madness.missedcp != 0 && (checkpoints.pos[madness.im] == 0
-                            || checkpoints.pos[madness.im] == 1 && checkpoints.pos[0] == 0)) {
+                            || checkpoints.pos[madness.im] == 1 && checkpoints.pos[GameFacts.paceCar] == 0)) {
                         attack = 0;
                     }
-                    if (checkpoints.stage == 16 && checkpoints.pos[0] > checkpoints.pos[madness.im]
+                    if (checkpoints.stage == 16 && checkpoints.pos[GameFacts.paceCar] > checkpoints.pos[madness.im]
                             && madness.power < 80F) {
                         attack = 0;
                     }

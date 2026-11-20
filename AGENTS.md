@@ -74,6 +74,15 @@ Before a release or a large change, also run:
    `JAVA_TOOL_OPTIONS=-Dnfm.window=1720x720` and `verify-races.ps1 -NoGolden`,
    and look at hidden autotest screenshots at 1920x1080 and 2560x1080.
 
+10. **Split screen leaves one player's race alone.** Player 1 is the
+   statics (`Medium`, `GameUi`'s HUD fields, car 0); Player 2's camera is
+   `SplitRace.cam2`, swapped in with `Medium.swap`, and their HUD state
+   `hud2`, swapped in with `GameUi.asPlayer`. Every split path is behind
+   `SplitRace.active != null` (the race) or `SplitRace.on` (its screens), and
+   `GameFacts.humans` is 1 outside it, so the computer cars, `paceCar` and
+   every recorded race are as before. Check a change to the race or the HUD
+   with `-Dnfm.autotest.split=auto,3` as well as the gates.
+
 v1.0 (tag `v1.0`) is the last version whose races are the original's. A
 higher tick rate, a new handling model or deformable stages go in as a new
 ruleset beside the classic one, never in place of it: see `AFTER-1.0.md`.

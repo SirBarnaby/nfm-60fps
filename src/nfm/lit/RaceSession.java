@@ -311,8 +311,8 @@ final class RaceSession {
             verifier.stageLoaded(Arrays.copyOf(ui.sc, players));
             return;
         }
-        if (customStage) {
-            log = null;
+        if (customStage || SplitRace.on) {
+            log = null; // a replay keeps one player's keys: split screen's races are not kept
             return;
         }
         log = new RaceLog();

@@ -34,4 +34,34 @@ public interface RaceEvents {
 
     /** Whether the player is heading for the finish, which flickers. */
     void showLastCheckpoint(boolean last);
+
+    /*
+     * The same for a given car: a human player's own (car 0, or car 1 in
+     * split screen), or the car a human hit. Car 0's are the calls above.
+     */
+
+    /** {@link #crash(float, int)} for {@code car}. */
+    default void crash(int car, float force, int kind) {
+        crash(force, kind);
+    }
+
+    /** {@link #skid(int, float)} for {@code car}. */
+    default void skid(int car, int surface, float speed) {
+        skid(surface, speed);
+    }
+
+    /** {@link #carFixed()} for {@code car}. */
+    default void carFixed(int car) {
+        carFixed();
+    }
+
+    /** {@link #showCheckpoint(int)} for {@code car}. */
+    default void showCheckpoint(int car, int next) {
+        showCheckpoint(next);
+    }
+
+    /** {@link #showLastCheckpoint(boolean)} for {@code car}. */
+    default void showLastCheckpoint(int car, boolean last) {
+        showLastCheckpoint(last);
+    }
 }
