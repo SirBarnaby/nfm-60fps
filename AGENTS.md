@@ -92,7 +92,8 @@ Before a release or a large change, also run:
    are joined into one scene for the card, each after a `SceneList.PANE` (its
    rectangle, clipped). The game sorts objects and their polygons by the
    depths the last drawing measured, so each pane keeps its own
-   (`PaneDepths`). Check
+   (`PaneDepths`), and `Medium.crs` (the car select's showroom shadows) is
+   cleared when the split car select ends, as one player's does. Check
    a change to the race or the HUD with `-Dnfm.autotest.split=auto,3`, with
    and without `-Dnfm.renderer=gpu`, as well as the gates.
 
