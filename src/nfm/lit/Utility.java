@@ -183,13 +183,14 @@ public class Utility {
         return (GameFacts.screenWidth / 2) - (image.getWidth(null) / 2);
     }
 
-    /** The pixels of art {@code width} x {@code height}, a row after another. */
+    /** The pixels of art {@code width} x {@code height}, a row after another, as 0xRRGGBB. */
     private static int[] pixelsOf(Image art, int width, int height) {
         BufferedImage copy = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
         java.awt.Graphics2D g = copy.createGraphics();
         g.drawImage(art, 0, 0, null);
         g.dispose();
-        return copy.getRGB(0, 0, width, height, null, 0, width);
+        // the raster's own ints in one copy: getRGB converts every pixel through the colour model
+        return (int[]) copy.getRaster().getDataElements(0, 0, width, height, null);
     }
 
     /**
@@ -198,7 +199,8 @@ public class Utility {
      * go on outward, softer the further they go, and darken into the colour
      * of its darkest corner by the picture's edge: however wide the picture,
      * the art seems to go on into the dark, with no bar and no copies of what
-     * is in it.
+     * is in it. Made when the picture takes a new shape, while the screen
+     * waits, so the rows are made on every core.
      */
     public static BufferedImage extendArt(Image art, int width, int height) {
         int w = art.getWidth(null);
@@ -213,31 +215,39 @@ public class Utility {
         EdgeSums rightEdge = new EdgeSums(px, w - 1, w, h);
         EdgeSums topEdge = new EdgeSums(px, 0, 1, w);
         EdgeSums bottomEdge = new EdgeSums(px, (h - 1) * w, 1, w);
-        int[] out = new int[width * height];
-        for (int y = 0; y < height; y++) {
-            int ay = y - top;
+        // the columns the art itself covers
+        int artFrom = Math.max(0, left);
+        int artTo = Math.min(width, left + w);
+        // a pixel beyond the art, {@code ax, ay} from its corner
+        java.util.function.IntBinaryOperator beyond = (ax, ay) -> {
+            int beside = ax < 0 ? -ax : Math.max(0, ax - w + 1);
             int below = ay < 0 ? -ay : Math.max(0, ay - h + 1);
-            int cy = Math.clamp(ay, 0, h - 1);
-            for (int x = 0; x < width; x++) {
-                int ax = x - left;
-                int beside = ax < 0 ? -ax : Math.max(0, ax - w + 1);
-                int colour;
-                if (beside == 0 && below == 0) {
-                    colour = px[ay * w + ax];
-                } else {
-                    int cx = Math.clamp(ax, 0, w - 1);
-                    colour = beside >= below
-                            ? (ax < 0 ? leftEdge : rightEdge).around(cy, 2 + beside / 3)
-                            : (ay < 0 ? topEdge : bottomEdge).around(cx, 2 + below / 3);
-                    float t = Math.min(1F, Math.max(beside / reachX, below / reachY));
-                    // eased, so neither end shows an edge
-                    colour = FrameScaler.mix(colour, base, Math.round(256F * t * t * (3F - 2F * t)));
-                }
-                out[y * width + x] = colour;
+            int colour = beside >= below
+                    ? (ax < 0 ? leftEdge : rightEdge).around(Math.clamp(ay, 0, h - 1), 2 + beside / 3)
+                    : (ay < 0 ? topEdge : bottomEdge).around(Math.clamp(ax, 0, w - 1), 2 + below / 3);
+            float t = Math.min(1F, Math.max(beside / reachX, below / reachY));
+            // eased, so neither end shows an edge
+            return FrameScaler.mix(colour, base, Math.round(256F * t * t * (3F - 2F * t)));
+        };
+        int[] out = new int[width * height];
+        java.util.stream.IntStream.range(0, height).parallel().forEach(y -> {
+            int ay = y - top;
+            int row = y * width;
+            boolean artRow = ay >= 0 && ay < h && artFrom < artTo;
+            // a row through the art: the art as it is, and beyond it on either side
+            int firstEnd = artRow ? artFrom : width;
+            for (int x = 0; x < firstEnd; x++) {
+                out[row + x] = beyond.applyAsInt(x - left, ay);
             }
-        }
+            if (artRow) {
+                System.arraycopy(px, ay * w + artFrom - left, out, row + artFrom, artTo - artFrom);
+                for (int x = artTo; x < width; x++) {
+                    out[row + x] = beyond.applyAsInt(x - left, ay);
+                }
+            }
+        });
         BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-        image.setRGB(0, 0, width, height, out, 0, width);
+        image.getRaster().setDataElements(0, 0, width, height, out);
         return image;
     }
 
