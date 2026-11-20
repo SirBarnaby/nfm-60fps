@@ -148,7 +148,7 @@ thread pinning, large pages, GraalVM) are left out.
 | Saved replays | ✅ | edd0da3, `replays\` |
 | Ghost cars, time trial | ❌ | you said not yet |
 | Online play | ❌ | |
-| Split-screen | ❌ | |
+| Split-screen | ✅ | 836c8b7: two players, each with a camera, HUD, keys, pad and sound; both panes recorded into one scene for the graphics card (about 130 fps at 1080p), `-Dnfm.autotest.split=auto,3` |
 | Widescreen, 4K, MSAA, HDR | ✅ | true widescreen: the race takes the window's shape from 5:4 to 32:9 with no bars, races unchanged (77b1adb, AGENTS.md invariant 9); menus and HUD at native size with UI scale Auto/1x/2x/4x (v1.0 feedback) |
 | Shadows, bloom, motion blur | ❌ | |
 | Weather and time of day | ❌ | |
@@ -156,7 +156,7 @@ thread pinning, large pages, GraalVM) are left out.
 | Debris and breakable props | ❌ | |
 | Photo mode, TV cameras | ❌ | |
 | Gamepad and rumble | ✅ | 3af9371 |
-| Key rebinding | ❌ | |
+| Key rebinding | ✅ | 38aa629: two keys per action on the Controls tab, split screen's on its own tab |
 | Analog steering | ❌ | |
 | Settings screen in the game | ✅ | main menu and pause menu, every console setting; smooth effects added |
 | Bot chat | ❌ | |

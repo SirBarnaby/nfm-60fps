@@ -2,7 +2,9 @@
 
 Instructions for AI coding agents (and people) changing Need For Madness: LIT.
 The README explains every system in depth; this file is the short list of what
-must never break and how to prove it did not.
+must never break and how to prove it did not. `DECISIONS.md` lists the choices
+already made (the GPU draws every race frame, no black bars, native-pixel UI,
+how tests behave); read it before changing a system.
 
 ## The one command
 
@@ -26,6 +28,7 @@ Before a release or a large change, also run:
 | Rollback | `test\verify-races.ps1 -Rollback 50` | as above |
 | Sound | `test\verify-sound.ps1` | every race `same` (the baseline is per machine) |
 | Speed | `test\perf.ps1` | no regression against this machine's baseline |
+| Your settings | `test\live.ps1`, then `-Split` | no flag on a race part; read `report.md` |
 
 ## Invariants
 
@@ -57,6 +60,9 @@ Before a release or a large change, also run:
    sound and ignore saved settings and mods, so they test the game itself and
    never disturb whoever is at the PC. Keep it that way for every new setting:
    its hidden-run default must be the one the golden frames were made with.
+   The live test (`nfm.live`, `test\live.ps1`) is the one run that reads the
+   saved settings and mods, as the player's game does; it is still silent, off
+   screen, never focused, a controller cannot drive it, and it saves nothing.
 8. **Never take over the user's mouse, keyboard or screen** to test. Use the
    hidden runs above; `nfm.autotest` saves screenshots of every phase.
 9. **The race is placed in the game's own 1280x720 view.** The race's
@@ -80,8 +86,10 @@ Before a release or a large change, also run:
    `hud2`, swapped in with `GameUi.asPlayer`. Every split path is behind
    `SplitRace.active != null` (the race) or `SplitRace.on` (its screens), and
    `GameFacts.humans` is 1 outside it, so the computer cars, `paceCar` and
-   every recorded race are as before. Check a change to the race or the HUD
-   with `-Dnfm.autotest.split=auto,3` as well as the gates.
+   every recorded race are as before. Both panes are recorded into one scene
+   for the card, each after a `SceneList.PANE` (its rectangle, clipped). Check
+   a change to the race or the HUD with `-Dnfm.autotest.split=auto,3`, with
+   and without `-Dnfm.renderer=gpu`, as well as the gates.
 
 v1.0 (tag `v1.0`) is the last version whose races are the original's. A
 higher tick rate, a new handling model or deformable stages go in as a new
@@ -107,6 +115,9 @@ ruleset beside the classic one, never in place of it: see `AFTER-1.0.md`.
   `project`. A change to how a point kind is placed goes into both, and
   `-Dnfm.projectiontest=40` proves they still agree (well under 0.1% of
   pixels).
+- **Every frame shown goes through `FrameLog.shown`**, which sums up each
+  part of a session (the race, a menu) in the game's log and feeds the live
+  test. A new way of putting frames on screen must call it too.
 - **Natives** (bgfx, OpenAL Soft, SDL, libopenmpt, Steam Audio) are called
   through LWJGL or Java's foreign function interface; no JNI of our own.
 - **Commits** go to `staging`, one change per commit, with a message that says
