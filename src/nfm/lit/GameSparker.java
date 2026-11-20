@@ -6004,13 +6004,14 @@ public class GameSparker extends Panel implements Runnable {
                 settingsStep++;
                 System.out.println("[autotest] back from the settings");
             }
-            if (phase == Phase.MAINMENU && settingsStep == 3 && ui.opselect == GameUi.MENU_SETTINGS) {
-                ui.opselect = 0; // Play Game
-            }
-
-            boolean menu = phase == Phase.MAINMENU && settingsStep == 3 || phase == Phase.CARSELECT
-                    || phase == Phase.STAGESELECT || phase == Phase.PREGAME;
-            if (menu && now - lastMenuPress > 700L) {
+            // a test run plays as a new player (no progress read), so Play Game shows the instructions first
+            boolean menu = phase == Phase.MAINMENU && settingsStep == 3 || phase == Phase.INSTRUCTIONS
+                    || phase == Phase.CARSELECT || phase == Phase.STAGESELECT || phase == Phase.PREGAME;
+            if (menu && now - lastMenuPress > 700L && now - phaseSettledAt >= 300L) {
+                if (phase == Phase.MAINMENU) {
+                    // Play Game, wherever the menu came back to from the settings (not Split Screen)
+                    ui.opselect = GameUi.MENU_PLAY;
+                }
                 pressEnter();
                 lastMenuPress = now;
             }
