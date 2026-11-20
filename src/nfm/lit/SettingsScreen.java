@@ -15,6 +15,7 @@ import java.awt.event.KeyEvent;
 import java.awt.font.TextAttribute;
 import java.awt.geom.AffineTransform;
 import java.awt.geom.Rectangle2D;
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -138,7 +139,7 @@ final class SettingsScreen {
     /** The tab shown. */
     private int tab;
     /** Lettering already turned into shapes; game thread only. */
-    private static final Map<String, Shape> SHAPES = new HashMap<>();
+    private static final Map<Text, Outline> SHAPES = new HashMap<>();
     private final Font font;
     private final Font smallFont;
     private final Font titleFont;
@@ -1051,7 +1052,8 @@ final class SettingsScreen {
         for (int t = 0; t < tabNames.size(); t++) {
             String name = tabNames.get(t);
             float cx = tabCentre(t);
-            Rectangle2D b = place(shape(titleFont, name), cx, TABS_Y, null).getBounds2D();
+            Outline base = shape(titleFont, name);
+            Rectangle2D b = placedBounds(base, offset(base, cx, null), TABS_Y);
             if (t == tab) {
                 pauseLetters(rd, titleFont, name, cx, TABS_Y, true);
                 rd.setColor(ARROWS);
@@ -1102,7 +1104,7 @@ final class SettingsScreen {
             menuLetters(rd, smallFont, row.value(), left - 6, y + 17, letters, true);
         } else {
             String value = row.value();
-            Font f = shape(font, value).getBounds2D().getWidth() > VALUE_W - 40 ? smallFont : font;
+            Font f = shape(font, value).bounds().getWidth() > VALUE_W - 40 ? smallFont : font;
             if (row == windowSize && windowSize.typing()) {
                 rd.setColor(new Color(0, 0, 0, 120));
                 rd.fillRect(left + 18, y + 2, VALUE_W - 36, ROW_H - 7);
@@ -1133,7 +1135,7 @@ final class SettingsScreen {
             int code = key.key(slot);
             String text = asking ? (System.currentTimeMillis() / 400L % 2L == 0L ? "Press a key" : "")
                     : key.name(code);
-            Font f = shape(smallFont, text).getBounds2D().getWidth() > w - 8 ? smallFont.deriveFont(12F) : smallFont;
+            Font f = shape(smallFont, text).bounds().getWidth() > w - 8 ? smallFont.deriveFont(12F) : smallFont;
             Color color = asking ? Color.WHITE : code == 0 ? DIMMED : LETTERS;
             menuLetters(rd, f, text, x + w / 2F, y + 16, color, null);
         }
@@ -1315,20 +1317,106 @@ final class SettingsScreen {
      */
     private static void menuLetters(Graphics2D rd, Font f, String text, float x, float y, Color color,
             Boolean alignRight) {
-        Shape s = place(shape(f, text), x, y, alignRight);
-        rd.setColor(color);
-        rd.fill(s);
-        rd.setStroke(new BasicStroke(0.5F));
-        rd.draw(s);
+        Outline base = shape(f, text);
+        lettering(rd, color, base, offset(base, x, alignRight), y, (g, s) -> {
+            g.setColor(color);
+            g.fill(s);
+            g.setStroke(MENU_EDGE);
+            g.draw(s);
+        });
+        rd.setColor(color); // as drawing the letters here left it
+        rd.setStroke(MENU_EDGE);
     }
 
     /** The pause menu's lettering: white running into blue, with a black edge. */
     private static void pauseLetters(Graphics2D rd, Font f, String text, float x, float y, boolean centred) {
-        Shape s = place(shape(f, text), x, y, centred ? null : Boolean.FALSE);
-        rd.setStroke(new BasicStroke(1.3F, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-        rd.setColor(PAUSE_EDGE);
-        rd.draw(s);
-        fillDown(rd, s, PAUSE_LETTERS);
+        Outline base = shape(f, text);
+        double dx = offset(base, x, centred ? null : Boolean.FALSE);
+        lettering(rd, "pause", base, dx, y, (g, s) -> {
+            g.setStroke(PAUSE_OUTER_EDGE);
+            g.setColor(PAUSE_EDGE);
+            g.draw(s);
+            fillDown(g, s, PAUSE_LETTERS);
+        });
+        rd.setPaint(downPaint(placedBounds(base, dx, y), PAUSE_LETTERS)); // as drawing the letters here left it
+        rd.setStroke(FINE_EDGE);
+    }
+
+    /* the edges drawn round lettering: the main menu's, the pause menu's black one, and the fine one in its colour */
+    private static final BasicStroke MENU_EDGE = new BasicStroke(0.5F);
+    private static final BasicStroke PAUSE_OUTER_EDGE = new BasicStroke(1.3F, BasicStroke.CAP_ROUND,
+            BasicStroke.JOIN_ROUND);
+    private static final BasicStroke FINE_EDGE = new BasicStroke(0.4F);
+
+    /** Draws lettering on a picture of its own: {@code s} is the letters, placed on it. */
+    private interface LetterPainter {
+        void paint(Graphics2D g, Shape s);
+    }
+
+    /** Lettering drawn once and then copied: its picture, and where its corner is from the letters' origin. */
+    private record Letters(BufferedImage image, int x, int y) {
+    }
+
+    /** What tells lettering apart: its style, text, fraction of a pixel and the smoothing it is drawn with. */
+    private record LetteringKey(Object style, Text text, double fx, double fy, Object antialias, Object strokeControl) {
+    }
+
+    /**
+     * Lettering already drawn, by style, text and where it falls between two
+     * pixels: filling and edging every letter's outline again for each frame
+     * took most of a settings frame (Java2D does it on the processor). The
+     * most recently used 256 are kept. Game thread only.
+     */
+    private static final Map<LetteringKey, Letters> LETTERING = new java.util.LinkedHashMap<>(64, 0.75F, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<LetteringKey, Letters> eldest) {
+            return size() > 256;
+        }
+    };
+    /** Room around the letters for their edge and its smoothing. */
+    private static final int LETTERING_PAD = 3;
+
+    /**
+     * Draws {@code base} (the text's outline, from {@link #shape}) moved by
+     * {@code dx, dy} as {@code painter} does, from a picture drawn once for
+     * this {@code style} (whatever tells its painter apart), text and
+     * fraction of a pixel, so a copy is the same as drawing the letters
+     * there. Where a copy would not be the same (the picture turned or
+     * scaled, a translucent composite) they are drawn as before.
+     */
+    private static void lettering(Graphics2D rd, Object style, Outline base, double dx, double dy,
+            LetterPainter painter) {
+        AffineTransform t = rd.getTransform();
+        boolean wholePixels = (t.getType() & ~AffineTransform.TYPE_TRANSLATION) == 0
+                && t.getTranslateX() == Math.rint(t.getTranslateX()) && t.getTranslateY() == Math.rint(t.getTranslateY());
+        if (!wholePixels || !(rd.getComposite() instanceof java.awt.AlphaComposite c)
+                || c.getRule() != java.awt.AlphaComposite.SRC_OVER || c.getAlpha() != 1F) {
+            painter.paint(rd, AffineTransform.getTranslateInstance(dx, dy).createTransformedShape(base.shape()));
+            return;
+        }
+        double px = Math.floor(dx);
+        double py = Math.floor(dy);
+        double fx = dx - px;
+        double fy = dy - py;
+        LetteringKey key = new LetteringKey(style, base.text(), fx, fy,
+                rd.getRenderingHint(RenderingHints.KEY_ANTIALIASING),
+                rd.getRenderingHint(RenderingHints.KEY_STROKE_CONTROL));
+        Letters letters = LETTERING.get(key);
+        if (letters == null) {
+            Rectangle2D b = base.bounds();
+            int x0 = (int) Math.floor(b.getMinX()) - LETTERING_PAD;
+            int y0 = (int) Math.floor(b.getMinY()) - LETTERING_PAD;
+            int w = (int) Math.ceil(b.getMaxX()) + 1 + LETTERING_PAD - x0;
+            int h = (int) Math.ceil(b.getMaxY()) + 1 + LETTERING_PAD - y0;
+            BufferedImage image = new BufferedImage(Math.max(1, w), Math.max(1, h), BufferedImage.TYPE_INT_ARGB_PRE);
+            Graphics2D g = image.createGraphics();
+            g.setRenderingHints(rd.getRenderingHints());
+            painter.paint(g, AffineTransform.getTranslateInstance(fx - x0, fy - y0).createTransformedShape(base.shape()));
+            g.dispose();
+            letters = new Letters(image, x0, y0);
+            LETTERING.put(key, letters);
+        }
+        rd.drawImage(letters.image(), (int) px + letters.x(), (int) py + letters.y(), null);
     }
 
     private static Font menuItemFont;
@@ -1367,9 +1455,10 @@ final class SettingsScreen {
 
     /** The pause box's "— Paused —" heading, here "— Settings —". */
     private void drawTitle(Graphics2D rd, String text, float cx, float y) {
-        Shape s = place(shape(titleFont, text), cx, y, null);
-        Rectangle2D b = s.getBounds2D();
-        fillDown(rd, s, PAUSE_TITLE);
+        Outline base = shape(titleFont, text);
+        double dx = offset(base, cx, null);
+        lettering(rd, "title", base, dx, y, (g, s) -> fillDown(g, s, PAUSE_TITLE));
+        Rectangle2D b = placedBounds(base, dx, y);
         rd.setColor(PAUSE_TITLE[1]);
         int dashY = (int) Math.round(b.getCenterY());
         rd.fillRect((int) b.getMinX() - 34, dashY, 16, 2);
@@ -1377,25 +1466,38 @@ final class SettingsScreen {
     }
 
     private static void fillDown(Graphics2D rd, Shape s, Color[] colors) {
-        Rectangle2D b = s.getBounds2D();
-        rd.setPaint(new LinearGradientPaint((float) b.getX(), (float) b.getY(), (float) b.getX(),
-                (float) b.getMaxY() + 0.01F, GRADIENT_STOPS, colors));
+        rd.setPaint(downPaint(s.getBounds2D(), colors));
         rd.fill(s);
-        rd.setStroke(new BasicStroke(0.4F));
+        rd.setStroke(FINE_EDGE);
         rd.draw(s);
     }
 
-    private static Shape shape(Font f, String text) {
-        String key = f.getSize2D() + "|" + f.getAttributes().get(TextAttribute.TRACKING) + "|" + text;
-        Shape s = SHAPES.get(key);
-        if (s == null) {
+    /** The colours running down lettering whose bounds are {@code b}. */
+    private static LinearGradientPaint downPaint(Rectangle2D b, Color[] colors) {
+        return new LinearGradientPaint((float) b.getX(), (float) b.getY(), (float) b.getX(),
+                (float) b.getMaxY() + 0.01F, GRADIENT_STOPS, colors);
+    }
+
+    /** Text in a font: what lettering is shaped from. */
+    private record Text(Font font, String text) {
+    }
+
+    /** Text's outline and its bounds, worked out once: {@code text} says what it is the outline of. */
+    private record Outline(Text text, Shape shape, Rectangle2D bounds) {
+    }
+
+    private static Outline shape(Font f, String text) {
+        Text key = new Text(f, text);
+        Outline o = SHAPES.get(key);
+        if (o == null) {
             if (SHAPES.size() > 256) {
                 SHAPES.clear(); // values like "Now: ..." change; keep the cache small
             }
-            s = f.createGlyphVector(new java.awt.font.FontRenderContext(null, true, true), text).getOutline();
-            SHAPES.put(key, s);
+            Shape s = outline(f, text);
+            o = new Outline(key, s, s.getBounds2D());
+            SHAPES.put(key, o);
         }
-        return s;
+        return o;
     }
 
     /** The text's outline, not kept: for measuring. */
@@ -1403,10 +1505,16 @@ final class SettingsScreen {
         return f.createGlyphVector(new java.awt.font.FontRenderContext(null, true, true), text).getOutline();
     }
 
-    private static Shape place(Shape s, float x, float y, Boolean alignRight) {
-        Rectangle2D b = s.getBounds2D();
-        double dx = alignRight == null ? x - b.getCenterX() : alignRight ? x - b.getMaxX() : x - b.getMinX();
-        return AffineTransform.getTranslateInstance(dx, y).createTransformedShape(s);
+    /** The bounds of lettering {@code base} moved by {@code dx, dy}. */
+    private static Rectangle2D placedBounds(Outline base, double dx, double dy) {
+        Rectangle2D b = base.bounds();
+        return new Rectangle2D.Double(b.getX() + dx, b.getY() + dy, b.getWidth(), b.getHeight());
+    }
+
+    /** How far across lettering is moved to start at, end at or be centred on {@code x}. */
+    private static double offset(Outline s, float x, Boolean alignRight) {
+        Rectangle2D b = s.bounds();
+        return alignRight == null ? x - b.getCenterX() : alignRight ? x - b.getMaxX() : x - b.getMinX();
     }
 
     /* ---------------------------------------------------------------- model */
