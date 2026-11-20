@@ -65,12 +65,15 @@ class RunApp extends Panel {
          * render into their own back buffer and never need the window on screen. Keep it undecorated, off-screen and
          * unfocusable so it cannot steal the mouse or keyboard from the user.
          */
-        boolean autoTest = System.getProperty("nfm.autotest") != null || RaceSession.runsHidden();
+        boolean autoTest = RaceSession.hiddenRun();
         RaceSession.prepareProcess();
 
         frame = new Frame("Need For Madness: LIT");// Change this to the name of your preference
         if (autoTest) {
             frame.setUndecorated(true);
+        }
+        if (GameSparker.LIVE) {
+            frame.setType(Window.Type.UTILITY); // no taskbar button and not in Alt+Tab
         }
         frame.setBackground(new Color(0, 0, 0));
         frame.setIgnoreRepaint(true);
@@ -83,7 +86,7 @@ class RunApp extends Panel {
                 exitSequence();
             }
         });
-        applet.setPreferredSize(startSize(autoTest));
+        applet.setPreferredSize(startSize(autoTest && !GameSparker.LIVE));
         frame.add("Center", applet);
         applet.addComponentListener(new ComponentAdapter() {
             @Override
@@ -107,7 +110,17 @@ class RunApp extends Panel {
              */
             frame.setFocusableWindowState(false);
             frame.setAutoRequestFocus(false);
-            frame.setLocation(-20000, -20000);
+            frame.setLocation(OFF_SCREEN, OFF_SCREEN);
+            if (GameSparker.LIVE) {
+                /*
+                 * The live test shows its window, so the graphics card presents
+                 * to it as it does to the player's, but off every monitor, and
+                 * it never takes the keyboard. (Off screen the card still holds
+                 * a menu frame up for about half a second now and then; the
+                 * log names each one, see FrameLog.cardTook.)
+                 */
+                frame.setVisible(true);
+            }
         } else {
             frame.setLocationRelativeTo(null);
             frame.setVisible(true);
@@ -151,6 +164,9 @@ class RunApp extends Panel {
         return new Dimension(GameFacts.screenWidth, GameFacts.screenHeight);
     }
 
+    /** Where the window of a hidden or live test run is: off every monitor. */
+    private static final int OFF_SCREEN = -20000;
+
     /** The window's place and size before fullscreen, to go back to. */
     private static Rectangle windowedBounds;
 
@@ -191,19 +207,23 @@ class RunApp extends Panel {
             if (toFullscreen == (windowedBounds != null)) {
                 return; // already so
             }
-            GraphicsConfiguration screen = frame.getGraphicsConfiguration();
+            Rectangle monitor = frame.getGraphicsConfiguration().getBounds();
             frame.dispose(); // decorations can only change while the window is not displayable
             if (toFullscreen) {
                 windowedBounds = frame.getBounds();
                 frame.setUndecorated(true);
-                frame.setBounds(screen.getBounds());
+                // the live test goes fullscreen the player's way, new window and all, but off every monitor
+                frame.setBounds(GameSparker.LIVE ? new Rectangle(OFF_SCREEN, OFF_SCREEN, monitor.width, monitor.height)
+                        : monitor);
             } else {
-                frame.setUndecorated(false);
+                frame.setUndecorated(GameSparker.LIVE); // the live test's window never has a frame
                 frame.setBounds(windowedBounds);
                 windowedBounds = null;
             }
             frame.setVisible(true);
-            applet.requestFocus();
+            if (!GameSparker.LIVE) {
+                applet.requestFocus();
+            }
         });
     }
 
@@ -337,6 +357,11 @@ class RunApp extends Panel {
             Insets insets = frame.getInsets();
             int w = (int) Math.round(width / s) + insets.left + insets.right;
             int h = (int) Math.round(height / s) + insets.top + insets.bottom;
+            if (GameSparker.LIVE) {
+                frame.setSize(w, h); // the live test's window stays where it is, off screen
+                frame.validate();
+                return;
+            }
             Rectangle old = frame.getBounds();
             Rectangle area = frame.getGraphicsConfiguration().getBounds();
             int x = old.x + (old.width - w) / 2;

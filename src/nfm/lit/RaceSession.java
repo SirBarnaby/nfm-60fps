@@ -165,9 +165,18 @@ final class RaceSession {
                 || System.getProperty("nfm.record") != null && System.getProperty("nfm.autopilot") != null;
     }
 
-    /** Process-wide set-up, before the game loads its sounds. */
+    /** These and the smoke and live tests ({@code -Dnfm.autotest}): every run with no window shown to anyone. */
+    static boolean hiddenRun() {
+        return runsHidden() || System.getProperty("nfm.autotest") != null;
+    }
+
+    /**
+     * Process-wide set-up, before the game loads its sounds: every hidden
+     * run, the smoke and live tests too, is silent (the new sound still runs
+     * when -Dnfm.sound.render gives it a file to play into).
+     */
     static void prepareProcess() {
-        if (runsHidden()) {
+        if (hiddenRun()) {
             SoundManager.silenceAll();
         }
     }

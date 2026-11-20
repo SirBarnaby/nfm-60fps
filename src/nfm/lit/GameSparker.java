@@ -107,7 +107,7 @@ public class GameSparker extends Panel implements Runnable {
     private Image offImage;
     private Thread gamer;
     private final Control[] u;
-    private int mouses;
+    private volatile int mouses; // also clicked by the mouse's thread and the test runs'
     private int xm;
     private int ym;
     private boolean lostfcs;
@@ -786,6 +786,7 @@ public class GameSparker extends Panel implements Runnable {
     }
 
     public void stop() {
+        FrameLog.end(); // the part the player quit from is summed up too
         if (exwist && gamer != null) {
             System.gc();
             // the game loop exits on its own once it sees exwist; just wake it
@@ -819,8 +820,8 @@ public class GameSparker extends Panel implements Runnable {
     }
 
     private void savecookie(String filename, String num) {
-        if (session != null && session.keepsCookies()) {
-            return; // recording and verifying must not touch the player's progress
+        if (HIDDEN_RUN || session != null && session.keepsCookies()) {
+            return; // test runs, recording and verifying must not touch the player's settings or progress
         }
         try {
             /**
@@ -880,9 +881,14 @@ public class GameSparker extends Panel implements Runnable {
      * attempts to read a cookie
      *
      * @param string name to match
-     * @return value
+     * @return value, or -1 if there is none, as for every saved setting in a
+     *         hidden test run other than the live one ({@link #pinned}), so
+     *         those keep the game's own settings and progress
      */
     private static int readcookie(String name) {
+        if (pinned()) {
+            return -1;
+        }
         try {
             ZipFile zipFile = new ZipFile(cookieDirZip);
             Enumeration<? extends ZipEntry> entries = zipFile.entries();
@@ -911,9 +917,13 @@ public class GameSparker extends Panel implements Runnable {
 
     /**
      * Reads a cookie that holds words (a device's name): the text, trimmed,
-     * or null when it was never saved or is empty.
+     * or null when it was never saved or is empty (and, as {@link #readcookie},
+     * in a hidden test run other than the live one).
      */
     private static String readcookieText(String name) {
+        if (pinned()) {
+            return null;
+        }
         try (ZipFile zipFile = new ZipFile(cookieDirZip)) {
             String found = null;
             Enumeration<? extends ZipEntry> entries = zipFile.entries();
@@ -1151,7 +1161,7 @@ public class GameSparker extends Panel implements Runnable {
         if (property != null) {
             String t = property.trim().toLowerCase(java.util.Locale.ROOT).replace("x", "");
             setUiZoom("1".equals(t) || "2".equals(t) || "4".equals(t) ? Integer.parseInt(t) : UI_ZOOM_AUTO);
-        } else if (!runsHidden()) {
+        } else {
             int saved = readcookie(UI_ZOOM_COOKIE);
             setUiZoom(saved == 1 || saved == 2 || saved == 4 ? saved : UI_ZOOM_AUTO);
         }
@@ -3020,7 +3030,7 @@ public class GameSparker extends Panel implements Runnable {
 
         @Override
         public void run() {
-            if (!runsHidden()) {
+            if (!HIDDEN_RUN) {
                 WindowsScheduling.joinGamesTask(false);
             }
             while (!exwist) {
@@ -3245,13 +3255,8 @@ public class GameSparker extends Panel implements Runnable {
                 long[] gaps = Arrays.copyOf(statGaps, statGapCount);
                 Arrays.sort(gaps);
                 long median = gaps[gaps.length / 2];
-                int late = 0;
-                for (long gap : gaps) {
-                    if (gap > median * 3 / 2 + 2_000_000L) {
-                        late++;
-                    }
-                }
-                pace = String.format("; frame gaps: median %.1f ms, 99%% %.1f ms, longest %.1f ms; %d of %d frames came late",
+                int late = FrameLog.late(gaps);
+                pace =String.format("; frame gaps: median %.1f ms, 99%% %.1f ms, longest %.1f ms; %d of %d frames came late",
                         median / 1e6D, gaps[Math.min(gaps.length - 1, gaps.length * 99 / 100)] / 1e6D,
                         gaps[gaps.length - 1] / 1e6D, late, gaps.length);
             }
@@ -3598,8 +3603,15 @@ public class GameSparker extends Panel implements Runnable {
             }
         }
         Toolkit.getDefaultToolkit().sync();
-        PerfOverlay.frameShown(System.nanoTime(), 0L);
+        frameShown(0L, FrameLog.SOFTWARE, capture);
         PerfOverlay.drawingOnCard(false);
+    }
+
+    /** A frame went on screen, drawn {@code path}, the card taking {@code gpuNanos} (0 if unknown): the overlay and the frame log count it. */
+    private static void frameShown(long gpuNanos, String path, boolean capture) {
+        long shownAt = System.nanoTime();
+        PerfOverlay.frameShown(shownAt, gpuNanos);
+        FrameLog.shown(shownAt, gpuNanos, path, capture);
     }
 
     /**
@@ -3758,7 +3770,9 @@ public class GameSparker extends Panel implements Runnable {
                 if (shown) {
                     long gpuNanos = gpu.gpuFrameNanos();
                     gpuFrameNanos = gpuNanos;
-                    PerfOverlay.frameShown(System.nanoTime(), gpuNanos);
+                    frameShown(gpuNanos, picture != null ? FrameLog.PICTURE
+                            : presenterFrame ? FrameLog.KEPT : FrameLog.CARD, capture);
+                    FrameLog.cardTook(gpu.lastFrameNanos(), gpu.lastFrameChanges());
                     PerfOverlay.drawingOnCard(true);
                     if (PerfOverlay.wantsVideoMemory()) {
                         long[] memory = gpu.videoMemory();
@@ -4088,9 +4102,9 @@ public class GameSparker extends Panel implements Runnable {
             lowest = parseDynamicResolution(property);
             if (lowest < 0) {
                 HLogger.warn("Ignoring invalid nfm.dynres value: " + property);
-                lowest = runsHidden() ? 0 : DYNAMIC_RESOLUTION_DEFAULT;
+                lowest = pinned() ? 0 : DYNAMIC_RESOLUTION_DEFAULT;
             }
-        } else if (runsHidden()) {
+        } else if (pinned()) {
             lowest = 0;
         } else {
             int saved = readcookie(DYNAMIC_RESOLUTION_COOKIE);
@@ -4138,18 +4152,19 @@ public class GameSparker extends Panel implements Runnable {
     /**
      * Starts reading game controllers: -Dnfm.gamepad=on|off, else never in
      * hidden test runs (a pad on the desk must not drive them), else as saved.
+     * The live test reads them as the player's game does, but a pad neither
+     * presses anything nor shakes.
      */
     private void startGamepads() {
         String property = System.getProperty("nfm.gamepad");
-        boolean hidden = runsHidden();
         if (property != null ? property.trim().equalsIgnoreCase("off") || property.trim().equalsIgnoreCase("false")
-                : hidden) {
+                : pinned()) {
             Gamepads.setOn(false);
             return;
         }
         if (property == null) {
             Gamepads.setOn(readcookie(GAMEPAD_COOKIE) != 0);
-            Gamepads.setRumble(readcookie(RUMBLE_COOKIE) != 0);
+            Gamepads.setRumble(!LIVE && readcookie(RUMBLE_COOKIE) != 0);
         }
         gamepadChanged = false;
         Gamepads.start(new Gamepads.Keys() {
@@ -4184,7 +4199,7 @@ public class GameSparker extends Panel implements Runnable {
 
             @Override
             public boolean focused() {
-                return !lostfcs && !exwist;
+                return !LIVE && !lostfcs && !exwist;
             }
         });
     }
@@ -4251,7 +4266,7 @@ public class GameSparker extends Panel implements Runnable {
                 HLogger.warn("Ignoring invalid nfm.hdr value: " + property);
                 mode = nfm.lit.gpu.GpuDisplay.HDR_AUTO;
             }
-        } else if (runsHidden()) {
+        } else if (pinned()) {
             mode = nfm.lit.gpu.GpuDisplay.HDR_OFF;
         } else if (readcookie(HDR_COOKIE) == 0) {
             mode = nfm.lit.gpu.GpuDisplay.HDR_OFF;
@@ -4315,14 +4330,10 @@ public class GameSparker extends Panel implements Runnable {
 
     /** -Dnfm.hdr.white and -Dnfm.hdr.peak, else the saved values (hidden runs: Windows' and the monitor's). */
     private void loadHdrBrightness() {
-        int white = 0;
-        int peak = 0;
-        if (!runsHidden()) {
-            white = nitsOrAuto(readcookie(PAPER_WHITE_COOKIE), nfm.lit.gpu.GpuDisplay.PAPER_WHITE_MIN,
-                    nfm.lit.gpu.GpuDisplay.PAPER_WHITE_MAX);
-            peak = nitsOrAuto(readcookie(PEAK_COOKIE), nfm.lit.gpu.GpuDisplay.PEAK_MIN,
-                    nfm.lit.gpu.GpuDisplay.PEAK_MAX);
-        }
+        int white = nitsOrAuto(readcookie(PAPER_WHITE_COOKIE), nfm.lit.gpu.GpuDisplay.PAPER_WHITE_MIN,
+                nfm.lit.gpu.GpuDisplay.PAPER_WHITE_MAX);
+        int peak = nitsOrAuto(readcookie(PEAK_COOKIE), nfm.lit.gpu.GpuDisplay.PEAK_MIN,
+                nfm.lit.gpu.GpuDisplay.PEAK_MAX);
         String property = System.getProperty("nfm.hdr.white");
         if (property != null) {
             int nits = parseNits(property, nfm.lit.gpu.GpuDisplay.PAPER_WHITE_MIN, nfm.lit.gpu.GpuDisplay.PAPER_WHITE_MAX);
@@ -4436,7 +4447,7 @@ public class GameSparker extends Panel implements Runnable {
      * second speaker unless its properties ask for one (render, for tests).
      */
     private void loadSpeakers() {
-        boolean hidden = runsHidden();
+        boolean hidden = HIDDEN_RUN;
         String main = System.getProperty("nfm.sound.speaker");
         if (main == null && !hidden) {
             main = readcookieText(SPEAKER_COOKIE);
@@ -4516,7 +4527,7 @@ public class GameSparker extends Panel implements Runnable {
     private void loadKeys() {
         int[] saved = new int[KeyBindings.COUNT];
         for (int a = 0; a < saved.length; a++) {
-            saved[a] = runsHidden() ? -1 : readcookie(keyCookie(a));
+            saved[a] = readcookie(keyCookie(a));
         }
         KeyBindings.load(saved);
     }
@@ -4535,33 +4546,30 @@ public class GameSparker extends Panel implements Runnable {
 
     /** Split screen's saved choices and keys, or the game's own in hidden runs. A controller is saved 2 up. */
     private void loadSplit() {
+        int[] v = new int[SPLIT_COOKIES.length];
+        for (int i = 0; i < v.length; i++) {
+            v[i] = readcookie(SPLIT_COOKIES[i]);
+        }
+        if (v[0] >= SplitRace.VIEW_AUTO && v[0] <= SplitRace.VIEW_STACKED) {
+            SplitRace.view = v[0];
+        }
+        if (v[1] >= 0 && v[1] <= SplitRace.MAX_RIVALS) {
+            SplitRace.rivals = v[1];
+        }
+        if (v[2] >= SplitRace.SOUND_ONE && v[2] <= SplitRace.SOUND_EACH) {
+            SplitRace.sound = v[2];
+        }
+        for (int p = 0; p < 2; p++) {
+            if (v[3 + p] >= 0) {
+                SplitRace.pads[p] = v[3 + p] - 2;
+            }
+            if (v[5 + p] >= 0 && v[5 + p] < GameFacts.numberOfCars) {
+                SplitRace.cars[p] = v[5 + p];
+            }
+        }
         int[] keys = new int[SplitKeys.count()];
-        java.util.Arrays.fill(keys, -1);
-        if (!runsHidden()) {
-            int[] v = new int[SPLIT_COOKIES.length];
-            for (int i = 0; i < v.length; i++) {
-                v[i] = readcookie(SPLIT_COOKIES[i]);
-            }
-            if (v[0] >= SplitRace.VIEW_AUTO && v[0] <= SplitRace.VIEW_STACKED) {
-                SplitRace.view = v[0];
-            }
-            if (v[1] >= 0 && v[1] <= SplitRace.MAX_RIVALS) {
-                SplitRace.rivals = v[1];
-            }
-            if (v[2] >= SplitRace.SOUND_ONE && v[2] <= SplitRace.SOUND_EACH) {
-                SplitRace.sound = v[2];
-            }
-            for (int p = 0; p < 2; p++) {
-                if (v[3 + p] >= 0) {
-                    SplitRace.pads[p] = v[3 + p] - 2;
-                }
-                if (v[5 + p] >= 0 && v[5 + p] < GameFacts.numberOfCars) {
-                    SplitRace.cars[p] = v[5 + p];
-                }
-            }
-            for (int i = 0; i < keys.length; i++) {
-                keys[i] = readcookie(splitKeyCookie(i));
-            }
+        for (int i = 0; i < keys.length; i++) {
+            keys[i] = readcookie(splitKeyCookie(i));
         }
         SplitKeys.load(keys);
         SplitRace.changed = false;
@@ -4571,9 +4579,6 @@ public class GameSparker extends Panel implements Runnable {
         boolean keys = SplitKeys.takeChanged();
         boolean choices = SplitRace.changed;
         SplitRace.changed = false;
-        if (runsHidden()) {
-            return;
-        }
         if (choices) {
             int[] v = {SplitRace.view, SplitRace.rivals, SplitRace.sound, SplitRace.pads[0] + 2,
                 SplitRace.pads[1] + 2, SplitRace.cars[0], SplitRace.cars[1]};
@@ -4598,11 +4603,10 @@ public class GameSparker extends Panel implements Runnable {
 
     /** The saved switches (each saved as 1 on, 2 off), or all on in hidden runs; HDR audio off unless saved. */
     private void loadAudioEffects() {
-        boolean hidden = runsHidden();
-        nfm.lit.audio.Sound3D.setOcclusion(hidden || readcookie(OCCLUSION_COOKIE) != 2);
-        nfm.lit.audio.Sound3D.setPaths(hidden || readcookie(PATHS_COOKIE) != 2);
-        nfm.lit.audio.Sound3D.setReverb(hidden || readcookie(REVERB_COOKIE) != 2);
-        int range = hidden ? -1 : readcookie(HDR_AUDIO_COOKIE);
+        nfm.lit.audio.Sound3D.setOcclusion(readcookie(OCCLUSION_COOKIE) != 2);
+        nfm.lit.audio.Sound3D.setPaths(readcookie(PATHS_COOKIE) != 2);
+        nfm.lit.audio.Sound3D.setReverb(readcookie(REVERB_COOKIE) != 2);
+        int range = readcookie(HDR_AUDIO_COOKIE);
         nfm.lit.audio.Sound3D.setHdrRange(range > 0 && range <= 24 ? range : 0);
         audioEffectsChanged = false;
     }
@@ -4619,13 +4623,12 @@ public class GameSparker extends Panel implements Runnable {
 
     /** The volumes and mono as saved; hidden runs keep everything at full and in stereo. */
     private void loadVolumes() {
-        boolean hidden = runsHidden();
         for (int i = 0; i < nfm.lit.audio.Sound3D.BUS_NAMES.length; i++) {
-            int saved = hidden ? -1 : readcookie(VOLUME_COOKIE + nfm.lit.audio.Sound3D.BUS_NAMES[i]);
+            int saved = readcookie(VOLUME_COOKIE + nfm.lit.audio.Sound3D.BUS_NAMES[i]);
             nfm.lit.audio.Sound3D.setBusLevel(i, saved >= 0 && saved <= 100 ? saved / 100F : 1F);
             volumeChanged[i] = false;
         }
-        nfm.lit.audio.Sound3D.setMono(!hidden && readcookie(MONO_COOKIE) == 1);
+        nfm.lit.audio.Sound3D.setMono(readcookie(MONO_COOKIE) == 1);
         monoChanged = false;
     }
 
@@ -4673,7 +4676,7 @@ public class GameSparker extends Panel implements Runnable {
             } catch (NumberFormatException ex) {
                 HLogger.warn("Ignoring invalid nfm.music.separation value: " + property);
             }
-        } else if (!runsHidden()) {
+        } else {
             int saved = readcookie(MUSIC_SEPARATION_COOKIE);
             if (saved >= 0) {
                 percent = saved;
@@ -4969,11 +4972,6 @@ public class GameSparker extends Panel implements Runnable {
         return Math.abs(wheels[0] - (wheels[1] + wheels[0] + wheels[2] + wheels[3]) / 4F) > 1.0F;
     }
 
-    /** A smoke test, a race check or another run with no window to show. */
-    private static boolean runsHidden() {
-        return HIDDEN_RUN;
-    }
-
     /** How long a hidden test run stays in the main menu before going on, for watching it: -Dnfm.autotest.menuhold=<ms>. */
     private static final long MENU_HOLD_MILLIS = Long.getLong("nfm.autotest.menuhold", 0L);
 
@@ -5000,7 +4998,27 @@ public class GameSparker extends Panel implements Runnable {
         return step + 1;
     }
 
-    private static final boolean HIDDEN_RUN = System.getProperty("nfm.autotest") != null || RaceSession.runsHidden();
+    /** A smoke or live test, a race check or another run that must stay off the player's screen and speakers. */
+    private static final boolean HIDDEN_RUN = RaceSession.hiddenRun();
+
+    /**
+     * The live test (-Dnfm.live=true with -Dnfm.autotest, see test\live.ps1):
+     * the hidden test run with the game as the player has it, their saved
+     * settings, progress, mods and window or fullscreen size, in a window
+     * shown off every monitor so the card presents as it does for them. It
+     * still plays nothing, takes no input, and saves nothing.
+     */
+    static final boolean LIVE = HIDDEN_RUN && Boolean.getBoolean("nfm.live");
+
+    /**
+     * The saved settings are not read: a hidden test run, other than the live
+     * one, keeps the game's own. {@link #readcookie} answers "none saved" in
+     * it, so a setting needs its own check only where the test's value is not
+     * the one with nothing saved (the software renderer, say).
+     */
+    private static boolean pinned() {
+        return HIDDEN_RUN && !LIVE;
+    }
 
     private void saveGamepadIfChanged() {
         if (gamepadChanged) {
@@ -5020,7 +5038,7 @@ public class GameSparker extends Panel implements Runnable {
                 HLogger.warn("Ignoring invalid nfm.msaa value: " + property);
                 samples = 1;
             }
-        } else if (!runsHidden()) {
+        } else {
             int saved = readcookie(MSAA_COOKIE);
             samples = saved == 2 || saved == 4 || saved == 8 || saved == 16 ? saved : 1;
         }
@@ -5038,7 +5056,7 @@ public class GameSparker extends Panel implements Runnable {
                 HLogger.warn("Ignoring invalid nfm.ssaa value: " + property);
                 factor = 1;
             }
-        } else if (!runsHidden()) {
+        } else {
             int saved = readcookie(SUPERSAMPLE_COOKIE);
             if (saved == 2 || saved == 4 || saved == 8) {
                 factor = saved;
@@ -5079,7 +5097,7 @@ public class GameSparker extends Panel implements Runnable {
         String property = System.getProperty("nfm.renderer");
         if (property != null) {
             gpuRenderer = !property.trim().equalsIgnoreCase("software");
-        } else if (runsHidden()) {
+        } else if (pinned()) {
             gpuRenderer = false;
         } else {
             gpuRenderer = readcookie(RENDERER_COOKIE) != 0;
@@ -5129,7 +5147,7 @@ public class GameSparker extends Panel implements Runnable {
      */
     private static int batteryCap(long now) {
         int cap = batteryFps;
-        if (cap <= 0 || runsHidden()) {
+        if (cap <= 0 || HIDDEN_RUN) {
             return 0;
         }
         if (powerCheckedAt == 0L || now - powerCheckedAt > 3_000_000_000L) {
@@ -5165,7 +5183,7 @@ public class GameSparker extends Panel implements Runnable {
         if (cap <= 0) {
             return "off";
         }
-        return cap + " fps" + (onBattery && !runsHidden() ? " (on battery now)" : " (plugged in now)");
+        return cap + " fps" + (onBattery && !HIDDEN_RUN ? " (on battery now)" : " (plugged in now)");
     }
 
     /** -Dnfm.batteryfps, else the saved choice, else 60. */
@@ -5225,7 +5243,7 @@ public class GameSparker extends Panel implements Runnable {
         Integer property = System.getProperty("nfm.vsync") == null ? null : parseVsync(System.getProperty("nfm.vsync"));
         if (property != null) {
             vsyncMode = property;
-        } else if (!runsHidden()) {
+        } else {
             int saved = readcookie(VSYNC_COOKIE);
             vsyncMode = saved == VSYNC_ON || saved == VSYNC_OFF ? saved : VSYNC_AUTO;
         }
@@ -5395,7 +5413,7 @@ public class GameSparker extends Panel implements Runnable {
         String property = System.getProperty("nfm.smootheffects");
         if (property != null) {
             smoothEffects = !property.trim().equalsIgnoreCase("false") && !property.trim().equalsIgnoreCase("off");
-        } else if (runsHidden()) {
+        } else if (pinned()) {
             smoothEffects = false;
         } else {
             smoothEffects = readcookie(SMOOTH_EFFECTS_COOKIE) != 0;
@@ -5423,16 +5441,16 @@ public class GameSparker extends Panel implements Runnable {
             PerfOverlay.setCorner(p.equals("off") || p.equals("false") ? PerfOverlay.OFF : PerfOverlay.TOP_LEFT);
             PerfOverlay.setReadouts(p.equals("all") ? PerfOverlay.ALL : PerfOverlay.DEFAULT_READOUTS);
             PerfOverlay.takeChanged(); // a test's choice is not saved
-        } else if (!runsHidden()) {
+        } else {
             PerfOverlay.restore(readcookie(PERF_OVERLAY_COOKIE));
         }
     }
 
     private static final String FULLSCREEN_COOKIE = "fullscreen";
 
-    /** Fullscreen as last chosen (not in hidden runs, whose window stays off screen). */
+    /** Fullscreen as last chosen (not in hidden runs; the live test's stays off screen, the monitor's size). */
     private void loadFullscreen() {
-        if (!runsHidden() && readcookie(FULLSCREEN_COOKIE) == 1) {
+        if (readcookie(FULLSCREEN_COOKIE) == 1) {
             RunApp.setFullscreen(true);
         }
         RunApp.takeFullscreenChanged();
@@ -5450,18 +5468,16 @@ public class GameSparker extends Panel implements Runnable {
 
     /** The fullscreen resolution as last chosen (not in hidden runs). */
     private void loadFullscreenResolution() {
-        if (!runsHidden()) {
-            int w = readcookie(FULLSCREEN_WIDTH_COOKIE);
-            int h = readcookie(FULLSCREEN_HEIGHT_COOKIE);
-            if (w > 0 && h > 0) {
-                RunApp.setFullscreenResolution(w, h);
-            }
+        int w = readcookie(FULLSCREEN_WIDTH_COOKIE);
+        int h = readcookie(FULLSCREEN_HEIGHT_COOKIE);
+        if (w > 0 && h > 0) {
+            RunApp.setFullscreenResolution(w, h);
         }
         RunApp.takeFullscreenResolutionChanged();
     }
 
     private void saveFullscreenResolutionIfChanged() {
-        if (RunApp.takeFullscreenResolutionChanged() && !runsHidden()) {
+        if (RunApp.takeFullscreenResolutionChanged()) {
             Dimension size = RunApp.fullscreenResolution();
             savecookie(FULLSCREEN_WIDTH_COOKIE, String.valueOf(size == null ? 0 : size.width));
             savecookie(FULLSCREEN_HEIGHT_COOKIE, String.valueOf(size == null ? 0 : size.height));
@@ -5474,16 +5490,13 @@ public class GameSparker extends Panel implements Runnable {
 
     /** The window's size as last left, in the monitor's pixels; null if none was saved (or in hidden runs). */
     static Dimension savedWindowSize() {
-        if (runsHidden()) {
-            return null;
-        }
         int w = readcookie(WINDOW_WIDTH_COOKIE);
         int h = readcookie(WINDOW_HEIGHT_COOKIE);
         return w >= GameFacts.screenWidth / 2 && h >= GameFacts.screenHeight / 2 ? new Dimension(w, h) : null;
     }
 
     private void saveWindowSizeIfChanged() {
-        if (RunApp.takeWindowSizeChanged() && !runsHidden() && !RunApp.isFullscreen()) {
+        if (RunApp.takeWindowSizeChanged() && !RunApp.isFullscreen()) {
             Dimension size = RunApp.windowPixels();
             savecookie(WINDOW_WIDTH_COOKIE, String.valueOf(size.width));
             savecookie(WINDOW_HEIGHT_COOKIE, String.valueOf(size.height));
@@ -5556,7 +5569,13 @@ public class GameSparker extends Panel implements Runnable {
         return image;
     }
 
+    /** -Dnfm.autotest.shots=false: a test run takes no screenshots, so every frame is the game's own. */
+    private static final boolean SHOTS = !"false".equalsIgnoreCase(System.getProperty("nfm.autotest.shots"));
+
     private void saveFrame(File directory, String name) {
+        if (!SHOTS) {
+            return;
+        }
         capturedFrame = null;
         capturedWindow = null;
         capturedGpu = null;
@@ -5632,6 +5651,73 @@ public class GameSparker extends Panel implements Runnable {
         thread.start();
     }
 
+    /* what the frame log's part was named for, game thread only (see followFrameLog) */
+    private Phase framePhase;
+    private boolean frameCountdown;
+    private boolean frameSplit;
+    private String framePart = "start";
+
+    /**
+     * Keeps the frame log's part with the game, every frame: one for each
+     * phase, a race's countdown apart from the race, and split screen's
+     * races apart from the others. Game thread.
+     */
+    private void followFrameLog() {
+        Phase phase = ui.fase;
+        boolean countdown = phase == Phase.INGAME && ui.starcnt > 0;
+        boolean split = SplitRace.active != null;
+        if (phase != framePhase || countdown != frameCountdown || split != frameSplit) {
+            framePhase = phase;
+            frameCountdown = countdown;
+            frameSplit = split;
+            String name = phase == Phase.INGAME ? countdown ? "countdown" : "race"
+                    : phase.name().toLowerCase(java.util.Locale.ROOT);
+            framePart = split && phase == Phase.INGAME ? "split " + name : name;
+        }
+        if (FrameLog.follow(framePart)) {
+            FrameLog.note("picture", describePicture());
+        }
+    }
+
+    /** The end of a test run: the frame log and the settings it ran with, next to its screenshots. */
+    private void finishAutoTest(File directory) {
+        if (!FrameLog.on()) {
+            return;
+        }
+        FrameLog.write(new File(directory, "frames.json"));
+        Dimension drawn = RunApp.drawingPixels();
+        String settings = String.join(System.lineSeparator(),
+                "renderer: " + describeRenderer(),
+                "window: " + (RunApp.isFullscreen() ? "fullscreen " : "window ") + drawn.width + "x" + drawn.height,
+                "picture: " + describePicture(),
+                "fps limit: " + describeFpsLimit(),
+                "refresh: " + queryRefreshRate() + " Hz",
+                "vsync: " + describeVsync(),
+                "multisampling: " + describeMultisample(),
+                "supersampling: " + describeSupersample(),
+                "dynamic resolution: " + describeDynamicResolution(),
+                "hdr: " + describeHdr(),
+                "smooth effects: " + (smoothEffects ? "on" : "off"),
+                "run-ahead: " + (runAhead ? "on" : "off"),
+                "overlay: " + PerfOverlay.describe(),
+                "sound: " + describeSound(),
+                "sound effects: " + describeAudioEffects(),
+                "mods: " + describeMods(),
+                "");
+        try {
+            java.nio.file.Files.writeString(new File(directory, "settings.txt").toPath(), settings);
+        } catch (IOException ex) {
+            System.out.println("[autotest] cannot write the settings: " + ex);
+        }
+    }
+
+    /** The loading screen waits for a click (or 32 seconds): a test run clicks once it has its screenshot. */
+    private void clickPastLoading(Phase phase, long held) {
+        if (phase == Phase.LOADING && held >= 1_000L && mouses == 0) {
+            mouses = 1;
+        }
+    }
+
     /**
      * Enter, pressed the way the keyboard presses it: in a race it is read at
      * the start of the next tick, so a run-ahead tick in between cannot take
@@ -5660,6 +5746,7 @@ public class GameSparker extends Panel implements Runnable {
         SplitRace.view = switch (parts[0].trim()) {
             case "side" -> SplitRace.VIEW_SIDE;
             case "stacked" -> SplitRace.VIEW_STACKED;
+            case "saved" -> SplitRace.view; // the live test plays it as the player set it up
             default -> SplitRace.VIEW_AUTO;
         };
         if (parts.length > 1) {
@@ -5700,10 +5787,12 @@ public class GameSparker extends Panel implements Runnable {
                 pendingShot = null;
             }
             long held = now - settledAt;
+            clickPastLoading(phase, held);
             switch (phase) {
                 case MAINMENU -> {
                     if (races > 0) {
                         System.out.println("[autotest] split test done");
+                        finishAutoTest(directory);
                         System.exit(0);
                     }
                     if (step == 0 && held >= 600L + MENU_HOLD_MILLIS) {
@@ -5805,6 +5894,7 @@ public class GameSparker extends Panel implements Runnable {
             }
         }
         System.out.println("[autotest] split test ran out of time in " + ui.fase);
+        finishAutoTest(directory);
         System.exit(0);
     }
 
@@ -5835,6 +5925,9 @@ public class GameSparker extends Panel implements Runnable {
         int settingsStep = 0;
         int settingsDowns = 0;
         int resizeStep = 0;
+        /* the live test switches fullscreen twice first, as a player does: a new window and the card started again */
+        int fullscreenSwitches = LIVE ? 0 : 2;
+        long lastSwitch = 0L;
 
         while (System.currentTimeMillis() - startMillis < budgetMillis) {
             try {
@@ -5859,13 +5952,24 @@ public class GameSparker extends Panel implements Runnable {
                 pendingPhaseShot = null;
                 lastShot = now;
             }
+            boolean switching = phase == Phase.MAINMENU && (fullscreenSwitches < 2 || now - lastSwitch < 2_000L);
+            if (switching && fullscreenSwitches < 2 && now - phaseSettledAt >= 600L + MENU_HOLD_MILLIS
+                    && now - lastSwitch >= 2_000L) {
+                RunApp.toggleFullscreen();
+                fullscreenSwitches++;
+                lastSwitch = now;
+                System.out.println("[autotest] fullscreen " + (RunApp.isFullscreen() ? "on" : "off"));
+            }
+            FrameLog.label(switching && lastSwitch != 0L ? "fullscreen switch" : null);
+            clickPastLoading(phase, now - phaseSettledAt);
 
             /*
              * Look at the settings screen from the main menu, then from the
              * pause menu: open it, walk down to the sound settings, go back
              * with Escape. Nothing is changed, so nothing is saved.
              */
-            if (phase == Phase.MAINMENU && settingsStep == 0 && now - phaseSettledAt >= 600L + MENU_HOLD_MILLIS) {
+            if (phase == Phase.MAINMENU && settingsStep == 0 && !switching
+                    && now - phaseSettledAt >= 600L + MENU_HOLD_MILLIS) {
                 ui.opselect = GameUi.MENU_SETTINGS;
                 pressEnter();
                 settingsStep = 1;
@@ -6025,6 +6129,7 @@ public class GameSparker extends Panel implements Runnable {
         }
 
         System.out.println("[autotest] finishing");
+        finishAutoTest(directory);
         try {
             Thread.sleep(500L);
         } catch (InterruptedException ignored) {
@@ -6034,7 +6139,7 @@ public class GameSparker extends Panel implements Runnable {
 
     @Override
     public void run() {
-        if (!runsHidden()) {
+        if (!HIDDEN_RUN) {
             // a test run hidden in the background should stay out of the way of what the machine is doing
             WindowsScheduling.noPowerThrottling();
             WindowsScheduling.joinGamesTask(true);
@@ -6100,7 +6205,8 @@ public class GameSparker extends Panel implements Runnable {
          */
         Utility.stopTimer();
         /**
-         * this bit in here reads cookies and set values
+         * this bit in here reads cookies and set values (a hidden test run
+         * keeps the game's own: the first stage and car)
          */
         value = readcookie("unlocked");
         if (value >= 1 && value <= GameFacts.numberOfStages) {
@@ -6153,6 +6259,8 @@ public class GameSparker extends Panel implements Runnable {
         loadSpeakers();
         loadSmoothEffects();
         loadPerfOverlay();
+        // every session sums up how its frames went in the log; test runs keep every part for their report
+        FrameLog.start(System.getProperty("nfm.autotest") != null);
         startAutoTest();
         session = RaceSession.fromCommandLine(new SessionHost());
         startGamepads();
@@ -7033,6 +7141,7 @@ public class GameSparker extends Panel implements Runnable {
              * this thread only keeps it up to date, so a tick never holds a
              * frame back.
              */
+            followFrameLog();
             boolean presented = presenterDraws(scenePhase, unpaced) && handOverKept();
             if (presenter != null) {
                 presenter.drawRaces(presented);
@@ -7152,12 +7261,7 @@ public class GameSparker extends Panel implements Runnable {
                     long[] gaps = Arrays.copyOf(profileGaps, profileGapCount);
                     Arrays.sort(gaps);
                     long median = gaps[gaps.length / 2];
-                    int hitches = 0;
-                    for (long gap : gaps) {
-                        if (gap > median * 3 / 2 + 2_000_000L) {
-                            hitches++;
-                        }
-                    }
+                    int hitches = FrameLog.late(gaps);
                     if (profileRecords > 0) {
                         System.out.printf("[kept] scene recorded %d times (%.1f ms each); placed on this thread for %d"
                                 + " frames (%.2f ms each)%n",
@@ -7220,7 +7324,7 @@ public class GameSparker extends Panel implements Runnable {
 
     public void init() {
         GameInput.attach(this);
-        GameFiles.setUp(runsHidden());
+        GameFiles.setUp(pinned()); // the live test plays with the player's mods
         /*
          * load some fonts
          */

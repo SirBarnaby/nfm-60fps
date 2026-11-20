@@ -124,6 +124,13 @@ public final class GpuDisplay {
     private int resetFlags = BGFX_RESET_NONE;
     private boolean vsync;
 
+    /* how long the card took over the last frame, and what changed on it just before, for the frame log */
+    private final StringBuilder changes = new StringBuilder();
+    private boolean anyShown;
+    private long lastFrameNanos;
+    private String lastFrameChanges = "";
+    private boolean lastShownPicture;
+
     /* HDR: what was asked for, what the monitor does, and whether the swap chain is scRGB */
     private int hdrMode = HDR_OFF;
     private boolean hdrBackBuffer;
@@ -805,6 +812,7 @@ public final class GpuDisplay {
             }
             return BGFX_INVALID_HANDLE;
         }
+        noteChange("a new scene target " + targetWidth + "x" + targetHeight + (n > 1 ? " with " + n + " samples" : ""));
         return bgfx_create_frame_buffer_from_handles(new short[] {sceneColor, stencil}, true);
     }
 
@@ -954,6 +962,11 @@ public final class GpuDisplay {
             }
             source = picture;
         }
+        boolean pictureFrame = frame != null;
+        if (anyShown && pictureFrame != lastShownPicture) {
+            noteChange(pictureFrame ? "a picture after the scene" : "the scene after a picture");
+        }
+        lastShownPicture = pictureFrame;
         fitSwapChain(windowSize);
         if (source == sceneColor) {
             // drawn at the size it is shown, or larger or smaller and filtered
@@ -975,7 +988,9 @@ public final class GpuDisplay {
         if (windowRead != null) {
             ready = Math.max(ready, windowRead.request());
         }
+        long frameStart = System.nanoTime();
         int done = bgfx_frame(BGFX_FRAME_NONE);
+        noteFrameShown(System.nanoTime() - frameStart, windowRead != null);
         for (int i = 0; done < ready && i < READ_BACK_FRAMES; i++) {
             // keep the window showing the frame meanwhile
             drawFrame(SCREEN_VIEW, place, smooth, glowBoost);
@@ -989,6 +1004,36 @@ public final class GpuDisplay {
             windowRead.finish(done);
         }
         return true;
+    }
+
+    /** How long handing the last frame to the card took on this thread (0 for a test's screenshot). */
+    public long lastFrameNanos() {
+        return lastFrameNanos;
+    }
+
+    /** What changed on the card just before the last frame (a new swap chain, say), or empty for nothing. */
+    public String lastFrameChanges() {
+        return lastFrameChanges;
+    }
+
+    /** Something changed on the card since the last frame, to name if the next one is slow to show. */
+    private void noteChange(String what) {
+        if (!changes.isEmpty()) {
+            changes.append(", ");
+        }
+        changes.append(what);
+    }
+
+    /**
+     * A frame has gone to the card, which took {@code nanos} over it; the
+     * frame log names a slow one with what changed before it (a
+     * screenshot's read-back is a test's own, so it counts as none).
+     */
+    private void noteFrameShown(long nanos, boolean screenshot) {
+        anyShown = true;
+        lastFrameNanos = screenshot ? 0L : nanos;
+        lastFrameChanges = changes.isEmpty() ? "" : changes.toString();
+        changes.setLength(0);
     }
 
     /** Draws the frame into a view as it goes to the screen: as it is, or in HDR brightened by its glow. */
@@ -1188,6 +1233,7 @@ public final class GpuDisplay {
         }
         pictureTextureWidth = width;
         pictureTextureHeight = height;
+        noteChange("a new picture texture " + width + "x" + height);
         upload = free(upload);
         upload = MemoryUtil.memAllocInt(width * height);
     }
@@ -1205,6 +1251,7 @@ public final class GpuDisplay {
         hud = made;
         hudTextureWidth = width;
         hudTextureHeight = height;
+        noteChange("a new HUD texture " + width + "x" + height);
         hudUpload = free(hudUpload);
         hudUpload = MemoryUtil.memAllocInt(width * height);
         invalidateHud();
@@ -1227,6 +1274,8 @@ public final class GpuDisplay {
             resetFlags = newFlags;
             swapFormat = newFormat;
             bgfx_reset(width, height, resetFlags, swapFormat);
+            noteChange("the swap chain made " + width + "x" + height + (vsync ? " with vsync" : "")
+                    + (hdr ? " in HDR" : ""));
         }
     }
 
