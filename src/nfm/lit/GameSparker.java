@@ -483,6 +483,8 @@ public class GameSparker extends Panel implements Runnable {
     private boolean retainedRecording;
     /** The recording the last frame drawn on the graphics card came from. */
     private SceneRecorder shownRecorder = sceneRecorder;
+    /** Each split-screen pane's own drawing depths, see PaneDepths. */
+    private final PaneDepths[] paneDepths = {new PaneDepths(), new PaneDepths()};
     /** Split screen kept for the tick on the game thread, when the presenter does not draw it. */
     private final KeptPanes keptPanes = new KeptPanes();
     /** The kept panes still hold for the frames to come: no tick since they were recorded. */
@@ -2503,6 +2505,12 @@ public class GameSparker extends Panel implements Runnable {
         }
 
         saveSceneDrawState();
+        // a split-screen pane sorts by its own last depths, not the other player's; Player 1's distances
+        // are the race's own, measured from their camera this tick
+        PaneDepths depths = pane != null ? paneDepths[player] : null;
+        if (depths != null) {
+            depths.putIn(sceneObjects, nob, player == 1);
+        }
         // smooth effects: where dust and debris are drawn between the ticks (the kept scene moves them itself)
         EffectTrails.begin(smoothEffects, retainedRecording ? Float.NaN : prevFrameValid ? alpha : 1F);
         // drawn in software straight into the menus' picture: placed as the window shows the race
@@ -2530,6 +2538,9 @@ public class GameSparker extends Panel implements Runnable {
                 rd.setTransform(canvasBefore);
             }
             EffectTrails.end();
+            if (depths != null) {
+                depths.takeBack(sceneObjects, nob);
+            }
             restoreSceneDrawState();
             Precise.end();
         }

@@ -90,7 +90,9 @@ Before a release or a large change, also run:
    own camera (`GameSparker.KeptPanes`, a `RetainedScene` each) and placed for
    every frame like one player's race, on the presenter thread too; the two
    are joined into one scene for the card, each after a `SceneList.PANE` (its
-   rectangle, clipped). Check
+   rectangle, clipped). The game sorts objects and their polygons by the
+   depths the last drawing measured, so each pane keeps its own
+   (`PaneDepths`). Check
    a change to the race or the HUD with `-Dnfm.autotest.split=auto,3`, with
    and without `-Dnfm.renderer=gpu`, as well as the gates.
 
