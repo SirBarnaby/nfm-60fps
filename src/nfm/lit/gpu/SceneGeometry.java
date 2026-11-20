@@ -9,12 +9,14 @@ import java.util.Arrays;
  * Turns a {@link SceneList} into triangles for the graphics card, keeping the
  * game's painter's order.
  * <p>
- * Convex polygons, rectangles and outlines are plain triangles and are
- * gathered into as few draw calls as possible: the card draws the triangles
- * of one call in order, so later ones still cover earlier ones. Any other
- * polygon (concave or crossing itself) is filled like Java2D's even-odd rule
- * with the stencil buffer: its fan of triangles flips the stencil, and a
- * second pass colours where it ended up odd.
+ * Polygons, rectangles and outlines are plain triangles and are gathered
+ * into as few draw calls as possible: the card draws the triangles of one
+ * call in order, so later ones still cover earlier ones. A concave polygon is
+ * cut into triangles that fill what Java2D's even-odd rule does, one crossing
+ * itself in bands between its corners and crossings. Only a kept scene placed
+ * on the card (whose corners move after it is cut) or a polygon with very
+ * many corners uses the stencil buffer: its fan of triangles flips the
+ * stencil, and a second pass colours where it ended up odd.
  * <p>
  * Outlines are drawn as parallelograms one pixel thick across their major
  * axis, which lights one pixel per column (or row), as a one-pixel line does.
@@ -275,8 +277,8 @@ final class SceneGeometry {
             }
             return;
         }
-        if (!convex && (reuseCut(which, n) || earClip(which, n))) {
-            return; // concave but not crossing itself: plain triangles cover what even-odd would
+        if (!convex && (reuseCut(which, n) || earClip(which, n) || bandFill(n))) {
+            return; // plain triangles cover what even-odd would
         }
         if (!convex) {
             evenOddPolygons++;
@@ -453,6 +455,136 @@ final class SceneGeometry {
         keepCut(which, n);
         triangles(cut, 0, made);
         return true;
+    }
+
+    /** Polygons with more corners keep the stencil: cutting one in bands takes a pass over every pair of its edges. */
+    private static final int MOST_BAND_CORNERS = 64;
+
+    /* the heights a polygon crossing itself is cut at, and the edges across one band in order from the left */
+    private double[] levels = new double[64];
+    private int[] spans = new int[16];
+    private double[] spanX = new double[16];
+
+    /**
+     * Fills a polygon that crosses itself with plain triangles, exactly what
+     * the even-odd rule fills: cut across at the height of every corner and
+     * every crossing, no two edges cross inside a band, so its inside there
+     * lies between the first and second edge from the left, the third and
+     * fourth and so on, two triangles each. With the stencil each such
+     * polygon was two draw calls of its own, and the few hundred a split-screen
+     * frame has cost the card several times the rest of the scene.
+     *
+     * @return false if it has too many corners; nothing has been drawn then
+     */
+    private boolean bandFill(int n) {
+        if (n > MOST_BAND_CORNERS) {
+            return false;
+        }
+        int most = n + n * (n - 3) / 2;
+        if (levels.length < most) {
+            levels = new double[most];
+        }
+        if (spans.length < n) {
+            spans = new int[n];
+            spanX = new double[n];
+        }
+        int count = 0;
+        for (int k = 0; k < n; k++) {
+            levels[count++] = py[k];
+        }
+        for (int i = 0; i < n; i++) {
+            int i1 = i + 1 < n ? i + 1 : 0;
+            for (int j = i + 2; j < n; j++) {
+                int j1 = j + 1 < n ? j + 1 : 0;
+                if (j1 != i) {
+                    count = addCrossing(i, i1, j, j1, count);
+                }
+            }
+        }
+        Arrays.sort(levels, 0, count);
+        begin(PLAIN);
+        double top = levels[0];
+        for (int l = 1; l < count; l++) {
+            double bottom = levels[l];
+            if ((float) bottom != (float) top) { // a thinner band rounds to nothing
+                band(n, top, bottom);
+                top = bottom;
+            }
+        }
+        return true;
+    }
+
+    /** Adds the height where edges a-b and c-d cross (not just touch) to {@link #levels}; returns how many it holds. */
+    private int addCrossing(int a, int b, int c, int d, int count) {
+        double sa = side(px[c], py[c], px[d], py[d], px[a], py[a]);
+        double sb = side(px[c], py[c], px[d], py[d], px[b], py[b]);
+        double sc = side(px[a], py[a], px[b], py[b], px[c], py[c]);
+        double sd = side(px[a], py[a], px[b], py[b], px[d], py[d]);
+        if (sa == 0D || sb == 0D || sc == 0D || sd == 0D || sa > 0D == sb > 0D || sc > 0D == sd > 0D) {
+            return count; // apart, or meeting at a corner, whose height is a cut anyway
+        }
+        levels[count] = py[a] + sa / (sa - sb) * ((double) py[b] - py[a]);
+        return count + 1;
+    }
+
+    /**
+     * Fills the band of the polygon between heights {@code top} and
+     * {@code bottom}. An edge is across it if it reaches both: no corner lies
+     * between them, so every other edge stays out of it, and a line across
+     * the band meets an even number of edges, as it meets any closed outline.
+     */
+    private void band(int n, double top, double bottom) {
+        double middle = (top + bottom) / 2D;
+        int m = 0;
+        for (int k = 0; k < n; k++) {
+            int next = k + 1 < n ? k + 1 : 0;
+            if (Math.min(py[k], py[next]) <= top && Math.max(py[k], py[next]) >= bottom) {
+                double x = edgeX(k, next, middle);
+                int at = m++;
+                for (; at > 0 && spanX[at - 1] > x; at--) {
+                    spanX[at] = spanX[at - 1];
+                    spans[at] = spans[at - 1];
+                }
+                spanX[at] = x;
+                spans[at] = k;
+            }
+        }
+        float topY = (float) top + FILL_SHIFT;
+        float bottomY = (float) bottom + FILL_SHIFT;
+        for (int e = 0; e + 1 < m; e += 2) {
+            int left = spans[e];
+            int right = spans[e + 1];
+            int leftNext = left + 1 < n ? left + 1 : 0;
+            int rightNext = right + 1 < n ? right + 1 : 0;
+            float leftTop = (float) edgeX(left, leftNext, top) + FILL_SHIFT;
+            float rightTop = (float) edgeX(right, rightNext, top) + FILL_SHIFT;
+            float leftBottom = (float) edgeX(left, leftNext, bottom) + FILL_SHIFT;
+            float rightBottom = (float) edgeX(right, rightNext, bottom) + FILL_SHIFT;
+            if (leftTop != rightTop) {
+                vertex(leftTop, topY);
+                vertex(rightTop, topY);
+                vertex(rightBottom, bottomY);
+            }
+            if (leftBottom != rightBottom) {
+                vertex(leftTop, topY);
+                vertex(rightBottom, bottomY);
+                vertex(leftBottom, bottomY);
+            }
+        }
+    }
+
+    /**
+     * Where edge a-b is at height y, which it reaches: its corner at a
+     * corner's height, so the bands either side of a cut share their corners.
+     */
+    private double edgeX(int a, int b, double y) {
+        if (y == py[a]) {
+            return px[a];
+        }
+        if (y == py[b]) {
+            return px[b];
+        }
+        return px[a] + (y - py[a]) * ((double) px[b] - px[a]) / ((double) py[b] - py[a]);
     }
 
     /** Which way the path a, b, c turns at b: positive, negative or 0 for straight on. */
