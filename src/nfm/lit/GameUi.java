@@ -5161,6 +5161,25 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         rd.drawImage(statbo, bar_x, y, null);
     }
 
+    /**
+     * The car select's car {@code model}, where it stands, from the car
+     * select's camera, with its shadow on the floor: in the menus' picture,
+     * at its own size in the middle of it (Medium.menuView). The verifier
+     * checks it at several sizes (RaceSession.Verifier.checkCarSelect).
+     */
+    static void drawSelectCar(Graphics2D g, ContO model) {
+        Medium.crs = true;
+        Medium.x = -GameFacts.GAME_WIDTH / 2;
+        Medium.y = -(int) (GameFacts.GAME_HEIGHT * 0.83);
+        Medium.z = 200;
+        Medium.xz = 0;
+        Medium.zy = 10;
+        Medium.ground = 570;
+        try (var _ = Medium.menuView()) {
+            model.d(g);
+        }
+    }
+
     public void carselect(Control control, ContO models[], Madness car) {
         /* this is a mess... */
 
@@ -5174,16 +5193,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         }
         intertrack.play();
         rd.drawImage(selectcar, Utility.centeredImageX(selectcar), 12, null);
-        Medium.crs = true;
-        Medium.x = -GameFacts.GAME_WIDTH / 2;
-        Medium.y = -(int) (GameFacts.GAME_HEIGHT * 0.83);
-        Medium.z = 200;
-        Medium.xz = 0;
-        Medium.zy = 10;
-        Medium.ground = 570;
-        try (var _ = Medium.menuView()) {
-            models[sc[0]].d(rd);
-        }
+        drawSelectCar(rd, models[sc[0]]);
 
         if (GameSparker.DEBUG) {
             if (debugmode) {

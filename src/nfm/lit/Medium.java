@@ -227,8 +227,12 @@ public class Medium {
     private static void setView(int width, int height) {
         int centreX = width / 2;
         int centreY = height / 2;
+        int down = cy - centreY;
         x += cx - centreX;
-        y += cy - centreY;
+        y += down;
+        // the ground is measured from the camera, as the picture is: it moves with it, or the 3D drawn in a menu
+        // (the car select's car) would have its shadow drawn on a floor that stayed behind
+        ground -= down;
         cx = centreX;
         cy = centreY;
         w = width;

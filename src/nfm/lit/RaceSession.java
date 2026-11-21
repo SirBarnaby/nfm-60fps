@@ -73,6 +73,13 @@ final class RaceSession {
 
         /** How many of {@link RaceState.View#cars()} are on the track now: the cars, then the stage. */
         int sceneCount();
+
+        /**
+         * The car select's car {@code car} as the car select draws it, its
+         * shadow on the floor, alone on the floor's grey in a menus' picture
+         * {@code width} x {@code height}; nothing else changes.
+         */
+        BufferedImage carSelect(int car, int width, int height);
     }
 
     private static final String TAG_RECORD = "[record] ";
@@ -1127,9 +1134,40 @@ final class RaceSession {
             finishing = true;
         }
 
+        /*
+         * The car select's cars checked, and the menu sizes besides 1280x720
+         * (wider, taller, larger): the native-size menus draw the car at its
+         * own size in the middle of any of them, its shadow under it.
+         */
+        private static final int[] CAR_SELECT_CARS = {0, 6, 12};
+        private static final int[][] CAR_SELECT_SIZES = {{1920, 1080}, {2560, 1080}, {2560, 1440}, {1280, 960}};
+
+        /**
+         * The car select's car and its shadow: each checked car's golden
+         * picture at 1280x720, and the same picture, kept centred, at each
+         * other menu size. After the races: drawing it moves the car select's
+         * camera, which a race reads.
+         */
+        private void checkCarSelect() {
+            for (int car : CAR_SELECT_CARS) {
+                BufferedImage base = host.carSelect(car, GameFacts.GAME_WIDTH, GameFacts.GAME_HEIGHT);
+                String name = "car-" + car;
+                System.out.println(TAG_VERIFY + "car select " + golden.check("carselect", name, base));
+                for (int[] size : CAR_SELECT_SIZES) {
+                    BufferedImage frame = host.carSelect(car, size[0], size[1]);
+                    System.out.println(TAG_VERIFY + "car select " + golden.sameAs("carselect",
+                            name + "-" + size[0] + "x" + size[1] + " as at 1280x720", base, frame,
+                            (size[0] - base.getWidth()) / 2, (size[1] - base.getHeight()) / 2));
+                }
+            }
+        }
+
         private void summary() {
             System.out.println(TAG_VERIFY + passed + " matched, " + failed + " differed, " + errors
                     + " could not be run");
+            if (golden != null) {
+                checkCarSelect();
+            }
             boolean framesChanged = golden != null && golden.anyChanged();
             if (golden != null) {
                 System.out.println(TAG_VERIFY + golden.summary());

@@ -7943,5 +7943,65 @@ public class GameSparker extends Panel implements Runnable {
         public int sceneCount() {
             return nob;
         }
+
+        @Override
+        public BufferedImage carSelect(int car, int width, int height) {
+            ContO model = modelObjects[car];
+            int[] pose = {model.x, model.y, model.z, model.xz, model.xy, model.zy, model.wxz, model.wzy, model.dist};
+            boolean blackout = model.blackout;
+            int[] camera = {Medium.x, Medium.y, Medium.z, Medium.xz, Medium.zy, Medium.ground};
+            boolean crs = Medium.crs;
+            int menusWidth = GameFacts.screenWidth;
+            int menusHeight = GameFacts.screenHeight;
+            BufferedImage picture = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+            Graphics2D g = picture.createGraphics();
+            try {
+                g.setColor(CAR_SELECT_FLOOR);
+                g.fillRect(0, 0, width, height);
+                GameFacts.screenWidth = width;
+                GameFacts.screenHeight = height;
+                // where the car select puts the car (GameUi.carselect), turned a fixed way and its wheels still
+                model.x = 0;
+                model.y = -34 - model.grat;
+                model.z = 950;
+                model.xz = 30;
+                model.xy = 0;
+                model.zy = 0;
+                model.wxz = 0;
+                model.wzy = 0;
+                model.blackout = false;
+                // a car's faces are put in order by how far each was the last time it was drawn (ContO.polygonOrder),
+                // which on the car select is a moment before, as it turns: drawn once to put them in order for here
+                GameUi.drawSelectCar(g, model);
+                g.setColor(CAR_SELECT_FLOOR);
+                g.fillRect(0, 0, width, height);
+                GameUi.drawSelectCar(g, model);
+            } finally {
+                g.dispose();
+                GameFacts.screenWidth = menusWidth;
+                GameFacts.screenHeight = menusHeight;
+                model.x = pose[0];
+                model.y = pose[1];
+                model.z = pose[2];
+                model.xz = pose[3];
+                model.xy = pose[4];
+                model.zy = pose[5];
+                model.wxz = pose[6];
+                model.wzy = pose[7];
+                model.dist = pose[8];
+                model.blackout = blackout;
+                Medium.x = camera[0];
+                Medium.y = camera[1];
+                Medium.z = camera[2];
+                Medium.xz = camera[3];
+                Medium.zy = camera[4];
+                Medium.ground = camera[5];
+                Medium.crs = crs;
+            }
+            return picture;
+        }
     }
+
+    /** The car select's floor under the car, as the backdrop has it, for the verifier's pictures of the car. */
+    private static final Color CAR_SELECT_FLOOR = new Color(190, 190, 190);
 }
