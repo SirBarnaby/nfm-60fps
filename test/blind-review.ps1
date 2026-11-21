@@ -11,7 +11,9 @@
 # Needs Node.js 18.18 or later, the Codex CLI signed in (`codex login`), and the plugin:
 #   claude plugin marketplace add openai/codex-plugin-cc
 #   claude plugin install codex@openai-codex
-# Codex runs read only and changes nothing. Only committed work is reviewed.
+# Codex runs read only and changes nothing. Only committed work is reviewed: Codex reads a clean checkout
+# of the head commit (a detached git worktree under %TEMP%, removed afterwards), so uncommitted edits here
+# cannot sway it.
 # Writes docs\reviews\<date>-<commit>.md with the verdict and every finding, and prints it.
 #
 # Exit code 0: Codex approves. 1: findings to read. 2: the review could not run.
@@ -59,7 +61,7 @@ if (-not $companion -or -not (Test-Path $companion)) {
 # caller's output pipe open, so anything capturing this script's output would wait forever.
 # 'peek' gives the pid of the broker serving the repo now; 'stop' stops the broker unless it is the one
 # given to keep, with the plugin's own teardown (the same steps as its SessionEnd hook).
-function Invoke-Broker([string]$action, [string]$keepPid = '') {
+function Invoke-Broker([string]$repo, [string]$action, [string]$keepPid = '') {
     $lib = ([Uri](Join-Path (Split-Path $companion -Parent) 'lib\')).AbsoluteUri
     $js = @"
 import { loadBrokerSession, sendBrokerShutdown, teardownBrokerSession, clearBrokerSession } from '${lib}broker-lifecycle.mjs';
@@ -75,30 +77,51 @@ if (process.env.BLIND_REVIEW_BROKER === 'peek') {
   clearBrokerSession(root);
 }
 "@
-    $env:BLIND_REVIEW_ROOT = $root
+    $env:BLIND_REVIEW_ROOT = $repo
     $env:BLIND_REVIEW_BROKER = $action
     $env:BLIND_REVIEW_KEEP = "pid:$keepPid"   # never empty: PowerShell drops an empty variable
     try { ($js | & $node.Source --no-deprecation --input-type=module -) -join '' }
     finally { Remove-Item Env:BLIND_REVIEW_ROOT, Env:BLIND_REVIEW_BROKER, Env:BLIND_REVIEW_KEEP -ErrorAction SilentlyContinue }
 }
 
+# Removes the checkout made for the review; one that cannot go (a file still held) is named, never left silently.
+function Remove-ReviewTree([string]$path) {
+    & git -C $root worktree remove --force $path
+    if (Test-Path $path) { Remove-Item -Recurse -Force $path -ErrorAction SilentlyContinue }
+    & git -C $root worktree prune
+    if (Test-Path $path) { Write-Host "note: the review checkout $path is still there; delete it and run git worktree prune." }
+}
+
 $brokerBefore = $null
+$tree = $null
+$inTree = $false
 Push-Location $root
 try {
     $baseSha = (& git rev-parse --verify --quiet "$Base^{commit}")
     if ($LASTEXITCODE -ne 0 -or -not $baseSha) { Fail "No commit called $Base." }
-    $headSha = (& git rev-parse --short HEAD).Trim()
+    $headFull = (& git rev-parse HEAD).Trim()
+    $headSha = (& git rev-parse --short $headFull).Trim()
     $baseShort = (& git rev-parse --short $baseSha).Trim()
-    if (& git status --porcelain --untracked-files=no) {
-        Write-Host 'note: there are uncommitted changes; only committed work is reviewed.'
+    if (& git status --porcelain) {
+        Write-Host 'note: there are uncommitted changes; they are not reviewed.'
     }
+
+    # a clean checkout of the head commit for Codex to read, made for this review alone
+    $tree = Join-Path ([IO.Path]::GetTempPath()) ('nfm-review-' + [guid]::NewGuid().ToString('N').Substring(0, 12))
+    & git worktree add --detach --quiet $tree $headFull
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $tree)) {
+        $tree = $null
+        Fail 'Could not make a clean checkout of HEAD to review (git worktree add).'
+    }
+    Push-Location $tree
+    $inTree = $true
 
     # --no-deprecation: Node 24 warns about the runner's own Windows spawn (DEP0190), noise for this report
     $arguments = @('--no-deprecation', $companion, 'adversarial-review', '--wait', '--json', '--base', $baseSha)
     if ($Model) { $arguments += @('--model', $Model) }
     $arguments += $focus
     Write-Host ('Codex is reviewing {0}..{1} (a few minutes)...' -f $baseShort, $headSha)
-    $brokerBefore = Invoke-Broker 'peek'
+    $brokerBefore = Invoke-Broker $tree 'peek'
     $raw = (& $node.Source @arguments) -join "`n"
     $exit = $LASTEXITCODE
 
@@ -115,6 +138,7 @@ try {
         ('# Blind review of {0}..{1}' -f $baseShort, $headSha),
         '',
         ('{0:yyyy-MM-dd HH:mm}, Codex adversarial review against openspec\specs, run by test\blind-review.ps1.' -f (Get-Date)),
+        ('Commits after {0} up to {1}, read from a clean checkout of {1}.' -f $baseSha, $headFull),
         '',
         ('**Verdict: {0}**' -f $result.verdict),
         '',
@@ -151,10 +175,13 @@ try {
     [IO.File]::WriteAllText($file, $text, (New-Object Text.UTF8Encoding $false))
 
     Write-Host $text
-    Write-Host ('blind review: {0}, {1} findings ({2})' -f $result.verdict, $findings.Count, (Resolve-Path -Relative $file))
+    Write-Host ('blind review: {0}, {1} findings (docs\reviews\{2})' -f $result.verdict, $findings.Count, (Split-Path $file -Leaf))
     if ($result.verdict -eq 'approve') { exit 0 }
     exit 1
 } finally {
-    if ($null -ne $brokerBefore) { Invoke-Broker 'stop' $brokerBefore | Out-Null }
+    # the broker's processes work in the checkout, so they go before it does
+    if ($null -ne $brokerBefore) { Invoke-Broker $tree 'stop' $brokerBefore | Out-Null }
+    if ($inTree) { Pop-Location }
+    if ($tree) { Remove-ReviewTree $tree }
     Pop-Location
 }
