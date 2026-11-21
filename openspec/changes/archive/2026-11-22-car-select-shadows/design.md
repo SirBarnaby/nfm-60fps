@@ -11,7 +11,7 @@ Races never showed it. `Medium.d` sets `ground = 250 - y` every frame, after the
 
 **Before and after**, hidden runs on the owner's PC (2560x1440 window), cropped around the car:
 
-![before, after and before v1.0](../../../docs/reviews/2026-11-21-car-select-shadow.png)
+![before, after and before v1.0](../../../../docs/reviews/2026-11-21-car-select-shadow.png)
 
 - `docs\reviews\2026-11-21-car-select-shadow-before.png`: a5ab851, the shadow above the car.
 - `docs\reviews\2026-11-21-car-select-shadow-after.png`: this change, the shadow on the floor under the car.
