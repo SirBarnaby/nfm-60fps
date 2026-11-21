@@ -15,6 +15,7 @@
 *.log
 /runtime/
 /madness.jar
+/build-info.json
 /madness.aot
 /replays/
 /test/perf-baseline.json

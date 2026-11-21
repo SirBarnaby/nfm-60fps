@@ -147,8 +147,9 @@ function Invoke-Run([string]$name, [string]$extra) {
 
 # What a run is made from, written to manifest.json in its folder before the game starts, so its evidence can be
 # matched to a build (test\blind-review.ps1 does): the commit checked out, whether the tree had changes and which
-# (git status --porcelain lines), madness.jar's SHA-256 and when it was built, and the newest source file (src\,
-# lib\) if one is newer than the jar, which is then an earlier build than the files. commit is null outside git.
+# (git status --porcelain lines), madness.jar's SHA-256 and when it was built, the newest source file (src\,
+# lib\) if one is newer than the jar, and build.ps1's build-info.json (what the jar was built from) as buildInfo.
+# commit is null outside git.
 function Write-Manifest([string]$dir, [string]$extra) {
     $ErrorActionPreference = 'Continue'   # git's own messages, if any, are not the test's
     $commit = [string](& git -C $root rev-parse --verify --quiet HEAD 2>$null)
@@ -158,6 +159,9 @@ function Write-Manifest([string]$dir, [string]$extra) {
     $newest = @(Get-ChildItem (Join-Path $root 'src') -Recurse -File -Filter '*.java') +
     @(Get-ChildItem (Join-Path $root 'lib') -File -Filter '*.jar' -ErrorAction SilentlyContinue) |
         Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    # build.ps1's own record of what it built madness.jar from (null when there is none: an older build)
+    $infoFile = Join-Path $root 'build-info.json'
+    $buildInfo = if (Test-Path $infoFile) { Get-Content $infoFile -Raw | ConvertFrom-Json } else { $null }
     $manifest = [ordered]@{
         time = (Get-Date).ToString('o')
         repo = $root
@@ -169,10 +173,11 @@ function Write-Manifest([string]$dir, [string]$extra) {
         jarOlderThan = if ($newest -and $newest.LastWriteTime -gt $jarFile.LastWriteTime) {
             $newest.FullName.Substring($root.Length + 1)
         } else { $null }
+        buildInfo = $buildInfo
         split = [bool]$Split
         set = $extra
     }
-    [IO.File]::WriteAllText((Join-Path $dir 'manifest.json'), ($manifest | ConvertTo-Json -Depth 3),
+    [IO.File]::WriteAllText((Join-Path $dir 'manifest.json'), ($manifest | ConvertTo-Json -Depth 4),
         (New-Object Text.UTF8Encoding $false))
     return [pscustomobject]$manifest
 }
@@ -184,6 +189,15 @@ function Get-BuildText($manifest) {
     $text += ', madness.jar sha256 {0} built {1:yyyy-MM-dd HH:mm}' -f $manifest.jarSha256.Substring(0, 12),
     [datetime]$manifest.jarBuilt
     if ($manifest.jarOlderThan) { $text += ", older than $($manifest.jarOlderThan) (an earlier build than the files)" }
+    $info = $manifest.buildInfo
+    if (-not $info) {
+        $text += ', no build-info.json (build.ps1 writes one)'
+    } elseif ($info.jarSha256 -ne $manifest.jarSha256) {
+        $text += ', not the jar build-info.json describes'
+    } else {
+        $text += ', built from {0}{1}' -f $(if ($info.commit) { ([string]$info.commit).Substring(0, 10) } else { 'no commit' }),
+        $(if ($info.dirty) { " with $(@($info.changed).Count) uncommitted changes" } else { '' })
+    }
     return $text
 }
 

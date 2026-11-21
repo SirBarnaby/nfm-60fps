@@ -1,6 +1,7 @@
 # Builds Need For Madness: LIT for Windows.
 #
 #   madness.jar  - the game, launched by madness64.exe (see madness64.ini)
+#   build-info.json - what madness.jar was built from (the commit, uncommitted changes, its SHA-256)
 #   runtime\     - a private Java runtime made with jlink, so no Java install is needed to play
 #   madness.aot  - the runtime's ahead-of-time cache for the game, from a training run (see below)
 #
@@ -60,6 +61,24 @@ if ($LASTEXITCODE -ne 0) { Write-Warning 'Baking the shaders failed: the game wi
 ) | Set-Content "$build\manifest.txt" -Encoding ascii
 & "$jdkHome\bin\jar.exe" --create --file madness.jar --manifest "$build\manifest.txt" -C $classes .
 if ($LASTEXITCODE -ne 0) { throw 'Packaging madness.jar failed.' }
+
+# What madness.jar was built from, in build-info.json next to it, so a test can tie what it ran to a commit
+# (test\live.ps1 copies it into each run's manifest.json, test\blind-review.ps1 matches on it): the commit checked
+# out, whether the tree had uncommitted changes and which (git status --porcelain lines), the jar's SHA-256 and
+# when it was built. commit is null outside git; git's own messages are not the build's.
+$ErrorActionPreference = 'Continue'
+$commit = [string](& git rev-parse --verify --quiet HEAD 2>$null)
+$changed = @(& git status --porcelain 2>$null)
+$ErrorActionPreference = 'Stop'
+$buildInfo = [ordered]@{
+    commit = if ($commit) { $commit.Trim() } else { $null }
+    dirty = $changed.Count -gt 0
+    changed = $changed
+    jarSha256 = (Get-FileHash madness.jar -Algorithm SHA256).Hash.ToLowerInvariant()
+    time = (Get-Date).ToString('o')
+}
+[IO.File]::WriteAllText((Join-Path $PSScriptRoot 'build-info.json'), ($buildInfo | ConvertTo-Json -Depth 3),
+    (New-Object Text.UTF8Encoding $false))
 
 # The private runtime. Madness.drive and Control.preform (the car physics and
 # the AI) are over HotSpot's 8000-byte limit for compiling a method, so without
