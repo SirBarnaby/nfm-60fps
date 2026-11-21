@@ -426,6 +426,20 @@ public class GameSparker extends Panel implements Runnable {
      * destroyed under it; guards windowShown and windowGeneration.
      */
     private final Object presentLock = new Object();
+    /*
+     * The threads other than the presenter waiting to take presentLock. Java's
+     * locks are not fair: with no frame limit the presenter holds presentLock
+     * for nearly all of every frame and takes it again at once, and kept the
+     * game thread out for up to 300 ms at a time, so the race stood still and
+     * then jumped several ticks. A thread counts itself here just before it
+     * takes the lock and stops the moment it has it (wantPresentLock,
+     * gotPresentLock); the presenter lets it in before its next frame
+     * (letPresentLockWaitersIn).
+     */
+    private final java.util.concurrent.atomic.AtomicInteger presentLockWanted =
+            new java.util.concurrent.atomic.AtomicInteger();
+    /** The longest the presenter waits for others to take presentLock before it draws its frame anyway. */
+    private static final long PRESENT_LOCK_COURTESY_NANOS = 20_000_000L;
     private boolean windowShown;
     /** Counts native windows: changes whenever the window is made or destroyed. */
     private int windowGeneration;
@@ -1258,7 +1272,15 @@ public class GameSparker extends Panel implements Runnable {
         boolean same = want.canvasWidth() == GameFacts.screenWidth && want.canvasHeight() == GameFacts.screenHeight
                 && want.sceneWidth() == GameFacts.sceneWidth && want.sceneHeight() == GameFacts.sceneHeight
                 && want.zoom() == uiZoomNow;
+        // only this thread writes what the lock guards here, so it can tell without the lock that nothing changes:
+        // then it does not wait for the presenter, which holds the lock for nearly all of every frame
+        if (same && drawWidthNow == Math.max(1, draw.width) && drawHeightNow == Math.max(1, draw.height)
+                && SplitRace.pictureSplit == split && SplitRace.pictureSide == side) {
+            return;
+        }
+        wantPresentLock();
         synchronized (presentLock) {
+            gotPresentLock();
             drawWidthNow = Math.max(1, draw.width);
             drawHeightNow = Math.max(1, draw.height);
             SplitRace.pictureSplit = split;
@@ -4012,6 +4034,9 @@ public class GameSparker extends Panel implements Runnable {
                 return false;
             }
         }
+        if (presenterFrame) {
+            letPresentLockWaitersIn();
+        }
         synchronized (presentLock) {
             if (!gpuRenderer || gpuWindowGeneration != windowGeneration) {
                 boolean stillSameWindow = gpuWindowGeneration == windowGeneration;
@@ -4157,14 +4182,18 @@ public class GameSparker extends Panel implements Runnable {
             return;
         }
         int generation;
+        wantPresentLock();
         synchronized (presentLock) {
+            gotPresentLock();
             if (!windowShown) {
                 return;
             }
             generation = windowGeneration;
         }
         long window = windowHandle(); // outside the lock: AWT takes its own locks here
+        wantPresentLock();
         synchronized (presentLock) {
+            gotPresentLock();
             if (!windowShown || generation != windowGeneration) {
                 return; // the window changed meanwhile; try again next frame
             }
@@ -4180,6 +4209,31 @@ public class GameSparker extends Panel implements Runnable {
             }
             gpuWindowGeneration = generation;
             gpuActive = true;
+        }
+    }
+
+    /** A thread other than the presenter is about to take presentLock: right before {@code synchronized}. */
+    private void wantPresentLock() {
+        presentLockWanted.incrementAndGet();
+    }
+
+    /** That thread has presentLock: the first thing inside {@code synchronized}. */
+    private void gotPresentLock() {
+        presentLockWanted.decrementAndGet();
+    }
+
+    /**
+     * The presenter, before it takes presentLock for a frame: lets any other
+     * thread waiting for the lock have it first (they take it for moments),
+     * waiting at most {@link #PRESENT_LOCK_COURTESY_NANOS}.
+     */
+    private void letPresentLockWaitersIn() {
+        if (presentLockWanted.get() == 0) {
+            return;
+        }
+        long until = System.nanoTime() + PRESENT_LOCK_COURTESY_NANOS;
+        while (presentLockWanted.get() > 0 && System.nanoTime() - until < 0L) {
+            Thread.yield();
         }
     }
 
@@ -4206,7 +4260,9 @@ public class GameSparker extends Panel implements Runnable {
     @Override
     public void addNotify() {
         super.addNotify();
+        wantPresentLock();
         synchronized (presentLock) {
+            gotPresentLock();
             windowShown = true;
             windowGeneration++;
         }
@@ -4219,7 +4275,9 @@ public class GameSparker extends Panel implements Runnable {
      */
     @Override
     public void removeNotify() {
+        wantPresentLock();
         synchronized (presentLock) {
+            gotPresentLock();
             windowShown = false;
             windowGeneration++;
             long deadline = System.nanoTime() + WINDOW_RELEASE_WAIT_NANOS;
