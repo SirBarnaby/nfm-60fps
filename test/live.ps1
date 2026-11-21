@@ -33,8 +33,8 @@
 # frames, the card's time, how frames were drawn), settings.txt (what it ran
 # with) and screenshots: <name>-gpu.png is read back from the card, so it is
 # what your screen shows. report.md and the console list each part and flag
-# what is wrong: a race drawn in software, or drawn by the processor and only
-# put on screen by the card, frames a second under the frame
+# what is wrong: a race or a menu drawn in software, or drawn by the processor
+# and only put on screen by the card, frames a second under the frame
 # limit (or the monitor's refresh rate), uneven or late frames, hitches and
 # stalls (told apart from frames the card held up: the game was ready, the
 # card or Windows took that long to take the frame), the card near its time
@@ -45,8 +45,7 @@
 # vsync its frames can wait for Windows' own clock, not your monitor's refresh (then half of them
 # come quicker than the refresh allows, which no screen could show), and Windows sometimes holds
 # one of its frames up for half a second. Notes also name what the specs ask
-# that this test does not judge: menus drawn by the processor, a frame cap
-# under the floor, a run on battery.
+# that this test does not judge: a frame cap under the floor, a run on battery.
 # Build first with build.ps1: this uses madness.jar and the runtime it makes.
 
 param(
@@ -142,14 +141,19 @@ function Get-RunFlags($run) {
     }
     $rule = Get-FloorRule $run
     if ($rule.why) { $flags += "note: $($rule.why)" }
-    # openspec\specs\performance has the card draw menus too, but its check covers race parts: menus the processor
-    # drew are named, not flagged
+    # openspec\specs\performance: the card draws the game, menus and every race view. With the GPU renderer a menu
+    # the processor drew ('picture': the card only put it on screen; 'software': Windows did) is a flag, as a race
+    # part is (Get-Flags); its frames are counted over every time the menu came up, however short
     if ($run.settings['renderer'] -like 'gpu*') {
-        $menus = @($run.parts | Where-Object { $raceParts -notcontains $_.name -and
-                @($_.drawn.PSObject.Properties.Name | Where-Object { $_ -in 'picture', 'software' }).Count -gt 0 } |
-            ForEach-Object { $_.name } | Select-Object -Unique)
+        $menus = [ordered]@{}
+        foreach ($part in $run.parts | Where-Object { $raceParts -notcontains $_.name }) {
+            $cpu = 0
+            foreach ($way in 'picture', 'software') { if ($part.drawn.$way) { $cpu += [int]$part.drawn.$way } }
+            if ($cpu -gt 0) { $menus[$part.name] = [int]$menus[$part.name] + $cpu }
+        }
         if ($menus.Count -gt 0) {
-            $flags += "note: menus drawn by the processor, not the card (the specs ask for the card): $($menus -join ', ')"
+            $flags += 'menus drawn by the processor, not the card: ' + (($menus.GetEnumerator() | ForEach-Object {
+                        '{0} ({1} frames)' -f $_.Key, $_.Value }) -join ', ')
         }
     }
     return $flags
