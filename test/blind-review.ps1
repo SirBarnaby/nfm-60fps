@@ -282,8 +282,16 @@ try {
     $arguments += $reviewFocus
     Write-Host ('Codex is reviewing {0}..{1} (a few minutes)...' -f $baseShort, $headSha)
     $brokerBefore = Invoke-Broker $tree 'peek'
-    $raw = (& $node.Source @arguments) -join "`n"
-    $exit = $LASTEXITCODE
+    # Node writes UTF-8, which PowerShell reads in the console's code page (850 here) unless told otherwise,
+    # garbling every character of the review outside ASCII; a console that cannot be switched is left as it is
+    $consoleEncoding = [Console]::OutputEncoding
+    try { [Console]::OutputEncoding = New-Object Text.UTF8Encoding $false } catch { }
+    try {
+        $raw = (& $node.Source @arguments) -join "`n"
+        $exit = $LASTEXITCODE
+    } finally {
+        try { [Console]::OutputEncoding = $consoleEncoding } catch { }
+    }
 
     try { $payload = $raw | ConvertFrom-Json } catch { $payload = $null }
     if (-not $payload -or -not $payload.result) {
