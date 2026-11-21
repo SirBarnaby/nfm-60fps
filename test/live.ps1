@@ -33,8 +33,10 @@
 # limit (or the monitor's refresh rate), uneven or late frames, hitches and
 # stalls (told apart from frames the card held up: the game was ready, the
 # card or Windows took that long to take the frame), the card near its time
-# per frame. Exit code 0 means nothing was flagged, 1 something was, 2 the
-# game could not be run. What a window off every monitor cannot show is a note, not a flag: with
+# per frame. A run is flagged as a whole when the game's test did not go the
+# whole way, a race part it plays is missing or too short to judge, or it
+# wrote no frames at all. Exit code 0 means nothing was flagged, 1 something
+# was, 2 the game could not be run. What a window off every monitor cannot show is a note, not a flag: with
 # vsync its frames can wait for Windows' own clock, not your monitor's refresh (then half of them
 # come quicker than the refresh allows, which no screen could show), and Windows sometimes holds
 # one of its frames up for half a second.
@@ -66,6 +68,12 @@ $launcher = @(Get-Content (Join-Path $root 'madness64.ini') | Where-Object { $_ 
 
 # parts of a race, which should go at the frame limit; the rest are menus, drawn once a tick
 $raceParts = @('countdown', 'race', 'split countdown', 'split race', 'instantreplay', 'gamehighlight')
+# the race parts the test plays (GameSparker.runAutoTest, runSplitAutoTest): a run missing one, or with one too
+# short to judge (the 100 frames over 2 seconds that unevenness needs), did not show what it was meant to
+$expectedParts = if ($Split) { @('split countdown', 'split race', 'instantreplay') }
+else { @('countdown', 'race', 'instantreplay', 'gamehighlight') }
+$enoughFrames = 100
+$enoughSeconds = 2
 
 function Invoke-Run([string]$name, [string]$extra) {
     $dir = Join-Path $Out $name
@@ -90,13 +98,38 @@ function Invoke-Run([string]$name, [string]$extra) {
         $i = $_.IndexOf(': ')
         if ($i -gt 0) { $settings[$_.Substring(0, $i)] = $_.Substring($i + 2) }
     }
+    # the game says when its test went the whole way; one that ran out of time writes frames.json all the same
+    $log = @(Get-Content "$dir\out.log" -ErrorAction SilentlyContinue)
+    $finished = @($log | Where-Object { $_ -match '^\[autotest\] (split test )?done' }).Count -gt 0
+    $ending = @($log | Where-Object { $_ -match '^\[autotest\] .*ran out of time' } | Select-Object -Last 1)
     [pscustomobject]@{
         name = $name
         extra = $extra
         dir = $dir
         parts = @((Get-Content $frames -Raw | ConvertFrom-Json).parts)
         settings = $settings
+        finished = $finished
+        ending = if ($ending) { $ending[0] -replace '^\[autotest\] ', '' } else { 'out.log has no "[autotest] done" line' }
     }
+}
+
+# Flags for a run as a whole: the test did not go the whole way, or a race part it plays is missing or too short
+# to judge, so its numbers cannot say the game is fine.
+function Get-RunFlags($run) {
+    $flags = @()
+    if (-not $run.finished) { $flags += "the test did not finish: $($run.ending)" }
+    foreach ($name in $expectedParts) {
+        $parts = @($run.parts | Where-Object { $_.name -eq $name })
+        $frames = [double](($parts | Measure-Object frames -Sum).Sum)
+        $seconds = [double](($parts | Measure-Object seconds -Sum).Sum)
+        if ($parts.Count -eq 0) {
+            $flags += "no $name"
+        } elseif ($frames -lt $enoughFrames -or $seconds -lt $enoughSeconds) {
+            $flags += ('{0}: {1:N0} frames over {2:N1} s, too few to judge (needs {3} over {4} s)' -f $name, $frames,
+                $seconds, $enoughFrames, $enoughSeconds)
+        }
+    }
+    return $flags
 }
 
 # The monitor's refresh rate the run read, 0 if it could not.
@@ -183,27 +216,40 @@ function Get-Flags($run, $part) {
 }
 
 $runs = @()
+$lost = @()
 $plan = @(@{ name = 'yours'; extra = '' })
 $n = 1
 foreach ($s in $Set) { $plan += @{ name = "set$n"; extra = $s }; $n++ }
 foreach ($r in $plan) {
     Write-Host "[live] $($r.name)$(if ($r.extra) { ": $($r.extra)" })..."
     $run = Invoke-Run $r.name $r.extra
-    if ($null -eq $run) { Write-Host "[live] $($r.name) did not finish: see $(Join-Path $Out $r.name)\out.log"; continue }
+    if ($null -eq $run) {
+        $lost += "$($r.name) wrote no frames.json: see $(Join-Path $Out $r.name)\out.log"
+        Write-Host "[live] $($lost[-1])"
+        continue
+    }
     $runs += $run
 }
 if ($runs.Count -eq 0) { exit 2 }
 
-$flagged = $false
+# a run that never wrote its frames is a flag, not a run left out
+$flagged = $lost.Count -gt 0
 $md = @('# Live test', '', "$(Get-Date -Format 'yyyy-MM-dd HH:mm'), $env:COMPUTERNAME", '')
+if ($lost.Count -gt 0) { $md += @($lost | ForEach-Object { "**Flagged:** $_  " }) + '' }
 foreach ($run in $runs) {
     $title = if ($run.extra) { "$($run.name): $($run.extra)" } else { 'Your settings' }
     $md += @("## $title", '')
     $md += @($run.settings.GetEnumerator() | Sort-Object Name | ForEach-Object { "- $($_.Name): $($_.Value)" })
+    $runFlags = @(Get-RunFlags $run)
+    if ($runFlags.Count -gt 0) {
+        $flagged = $true
+        $md += @('', "**Flagged for the whole run:** $($runFlags -join '; ')")
+    }
     $md += @('', '| Part | Seconds | Frames/s | Median ms | 99% ms | Longest ms | Late | Card ms | Drawn | Flags |',
         '|---|---:|---:|---:|---:|---:|---:|---:|---|---|')
     Write-Host ''
     Write-Host "== $title"
+    if ($runFlags.Count -gt 0) { Write-Host "whole run: $($runFlags -join '; ')" }
     Write-Host ('{0,-18} {1,6} {2,8} {3,7} {4,7} {5,8} {6,5} {7,6}  {8}' -f 'part', 's', 'fps', 'median', '99%',
         'longest', 'late', 'card', 'flags')
     foreach ($part in $run.parts) {
