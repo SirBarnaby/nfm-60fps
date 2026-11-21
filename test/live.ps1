@@ -57,7 +57,9 @@
 # told apart from frames the card held up: the game was ready, the
 # card or Windows took that long to take the frame), the card near its time
 # per frame. A run is flagged as a whole when the game's test did not go the
-# whole way, a race part it plays is missing or too short to judge (each time
+# whole way, Java did not load the startup cache madness64.ini names (build.ps1's
+# madness.aot: a -Quick build has none; Java's log of it goes to aot.log in the
+# run's folder), a race part it plays is missing or too short to judge (each time
 # it comes up is graded on its own: 'race (2nd time)' is the race resumed after
 # the instant replay, never added to the first), or it
 # wrote no frames at all. A run during which the PC was on battery or had
@@ -107,6 +109,8 @@ $override = [ordered]@{ 'fullscreen.dat' = 1; 'fullresw.dat' = 1920; 'fullresh.d
 $cookies = Join-Path $root 'data\cookies.radq'
 $gameReads = @('data', 'mods', 'replays', 'lib\dlls', 'madness.aot')
 $gameWrites = @('cache')
+# the startup cache Java is told to load (madness64.ini's -XX:AOTCache, build.ps1's madness.aot), '' for none
+$aotCache = [string]($launcher | Where-Object { $_ -like '-XX:AOTCache=*' } | Select-Object -First 1) -replace '^-XX:AOTCache=', ''
 Add-Type -AssemblyName System.IO.Compression
 
 # parts of a race, which should go at the frame limit; the rest are menus, drawn once a tick
@@ -143,13 +147,18 @@ function Invoke-Run([string]$name, [string]$extra) {
     New-Item -ItemType Directory -Force $dir | Out-Null
     $arguments = @($launcher) + @('-Dnfm.debug=false', '-Dnfm.live=true', "-Dnfm.autotest=$dir",
         "-Dnfm.sound.render=$dir\sound.wav")
+    # Java's own account of the startup cache, as it starts (Get-StartupCacheProblem)
+    if ($aotCache) { $arguments += "-Xlog:aot=info,cds=info:file=$dir\aot.log" }
     if ($Split) { $arguments += '-Dnfm.autotest.split=saved' }
     if ($NoShots) { $arguments += '-Dnfm.autotest.shots=false' }
     $arguments += @($extra -split ' ' | Where-Object { $_ } | ForEach-Object { "-D$_" })
     $arguments += @('-jar', $jar)
     $manifest = Write-Manifest $dir $extra
     if ($manifest.jarOlderThan) {
-        Write-Host "[live] note: madness.jar is older than $($manifest.jarOlderThan): this tests the last build, not the files as they are (run build.ps1 -Quick first)"
+        Write-Host "[live] note: madness.jar is older than $($manifest.jarOlderThan): this tests the last build, not the files as they are (run build.ps1 first)"
+    }
+    if ($aotCache -and -not (Test-Path (Join-Path $root $aotCache))) {
+        Write-Host "[live] note: there is no $aotCache, so Java starts without its startup cache and the run is flagged (build.ps1 without -Quick makes it)"
     }
     # the game plays in its own folder with -AsSaved, otherwise in one at 1920x1080 fullscreen (New-GameFolder)
     $game = if ($AsSaved) { $root } else { New-GameFolder $name }
@@ -185,6 +194,9 @@ function Invoke-Run([string]$name, [string]$extra) {
     if ($plan) { $settings['power'] += ", power plan $plan" }
     $settings['build'] = Get-BuildText $manifest
     $settings['resolution'] = $manifest.resolution
+    $noCache = Get-StartupCacheProblem $dir
+    $settings['startup cache'] = if (-not $aotCache) { 'none named in madness64.ini' }
+    elseif ($noCache) { "$aotCache, not loaded" } else { "$aotCache, loaded" }
     # the game says when its test went the whole way; one that ran out of time writes frames.json all the same
     $log = @(Get-Content "$dir\out.log" -ErrorAction SilentlyContinue)
     $finished = @($log | Where-Object { $_ -match '^\[autotest\] (split test )?done' }).Count -gt 0
@@ -198,7 +210,28 @@ function Invoke-Run([string]$name, [string]$extra) {
         power = $power
         finished = $finished
         ending = if ($ending) { $ending[0] -replace '^\[autotest\] ', '' } else { 'out.log has no "[autotest] done" line' }
+        noCache = $noCache
     }
+}
+
+# Why Java did not load the startup cache madness64.ini names (-XX:AOTCache: build.ps1's madness.aot), '' when it
+# did or none is named. A run without it starts and warms up slower than the game does with it, so it does not show
+# the game as it ships. From Java's own log of the cache (aot.log, -Xlog:aot) and what it printed (out.log): an
+# error or warning about it, or the cache not found, says why; with neither, a log that never says the cache's
+# classes are in use ("Using AOT-linked classes") means it was not loaded.
+function Get-StartupCacheProblem([string]$dir) {
+    if (-not $aotCache) { return '' }
+    $lines = @(foreach ($file in 'aot.log', 'out.log', 'err.log') {
+            $path = Join-Path $dir $file
+            if (Test-Path $path) { Get-Content $path | Where-Object { $_ -match '\]\[(aot|cds)\b' } }
+        })
+    $why = @($lines | Where-Object { $_ -match '\]\[(error|warning) *\]\[(aot|cds)|cache not found' } |
+        ForEach-Object { ($_ -replace '^(\[[^\]]*\])+\s*', '').Trim() } | Select-Object -Unique)
+    if ($why.Count -gt 0) { return ($why | Select-Object -First 3) -join '; ' }
+    if (@($lines | Where-Object { $_ -match 'Using AOT-linked classes:' }).Count -eq 0) {
+        return "Java's log of it (aot.log) never says the cache is in use"
+    }
+    return ''
 }
 
 # What a run is made from, written to manifest.json in its folder before the game starts, so its evidence can be
@@ -374,6 +407,7 @@ function Remove-GameFolder([string]$game, [string]$dir) {
 function Get-RunFlags($run) {
     $flags = @()
     if (-not $run.finished) { $flags += "the test did not finish: $($run.ending)" }
+    if ($run.noCache) { $flags += "no startup cache: Java did not load $aotCache ($($run.noCache)), rebuild with build.ps1" }
     $wanted = @{}
     foreach ($name in $expectedParts) {
         # the nth time this part should come up, matched with the nth time it did
