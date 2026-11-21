@@ -3405,6 +3405,8 @@ public class GameSparker extends Panel implements Runnable {
 
         /** Places the kept scene for now, shows it and waits for the next frame. */
         private void drawFrame(Kept k) {
+            // before the frame's moment is chosen: letting a waiter in after it would show an older moment
+            letPresentLockWaitersIn();
             long start = System.nanoTime();
             float alpha = span.alphaAt(start, true);
             if (alpha > 1F) {
@@ -4034,9 +4036,6 @@ public class GameSparker extends Panel implements Runnable {
                 return false;
             }
         }
-        if (presenterFrame) {
-            letPresentLockWaitersIn();
-        }
         synchronized (presentLock) {
             if (!gpuRenderer || gpuWindowGeneration != windowGeneration) {
                 boolean stillSameWindow = gpuWindowGeneration == windowGeneration;
@@ -4223,9 +4222,11 @@ public class GameSparker extends Panel implements Runnable {
     }
 
     /**
-     * The presenter, before it takes presentLock for a frame: lets any other
+     * The presenter, at the start of a frame (Presenter.drawFrame), before it
+     * chooses the moment the frame shows and takes presentLock: lets any other
      * thread waiting for the lock have it first (they take it for moments),
-     * waiting at most {@link #PRESENT_LOCK_COURTESY_NANOS}.
+     * waiting at most {@link #PRESENT_LOCK_COURTESY_NANOS}. Waiting after the
+     * moment was chosen would show an older one, up to that long.
      */
     private void letPresentLockWaitersIn() {
         if (presentLockWanted.get() == 0) {
