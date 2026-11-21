@@ -1,0 +1,37 @@
+schema: spec-driven
+
+# NFM:LIT. Read by every OpenSpec skill before it plans or builds.
+# The specs in openspec/specs come only from the owner's own answers
+# (interview of 21 Nov 2026); never add a requirement inferred from the code.
+
+context: |
+  NFM:LIT is Need for Madness 2 ported to today's standards (Java 25+, Windows,
+  GPU renderer). Until 1.0 it must play and look exactly like the original;
+  1.0 = the port plus split screen for up to 4 players, then a `classic` branch.
+  The owner works hands-off: one prompt, results in the morning.
+  AGENTS.md has how to build and test; openspec/specs has what the owner wants.
+  Commits go to the staging branch only.
+
+rules:
+  proposal:
+    - List every existing spec this change touches (openspec list --specs).
+    - If a requirement would be MODIFIED or REMOVED, or the change adds a feature the owner did not ask for, say so in the first line of Why; that part waits for the owner, the rest goes ahead.
+    - Before a new subsystem, list existing libraries or tools found and why one is or is not used.
+  specs:
+    - Only write what the owner asked for or decided; tag it "(Owner, YYYY-MM-DD.)".
+    - Every requirement needs a scenario whose name starts with "Check:" saying how it is checked.
+    - Plain language a reviewer with no context can judge.
+  design:
+    - Say how the change keeps 250+ fps at 1080p fullscreen with no stutter, and that the graphics card draws anything new.
+    - Before 1.0, say how races stay identical to the original (test\verify-races.ps1).
+  tasks:
+    - End with the gates in AGENTS.md, test\live.ps1 (and -Split for anything in a race) on the owner's PC, and test\spec-check.ps1.
+    - For a bigger feature, add a cleanup pass before the final gates, and write lessons into docs\solutions\.
+
+operations:
+  apply:
+    guidance:
+      - Work to the end without stopping for questions. If a requirement cannot be met, finish anyway, leave the requirement and its failing check as they are, and open the report with the gap and its numbers. Never call it a limit.
+  archive:
+    guidance:
+      - Run test\spec-check.ps1 first, then refresh the copy of openspec\specs in the project files.

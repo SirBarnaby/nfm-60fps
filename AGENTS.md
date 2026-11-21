@@ -2,9 +2,9 @@
 
 Instructions for AI coding agents (and people) changing Need For Madness: LIT.
 The README explains every system in depth; this file is the short list of what
-must never break and how to prove it did not. `DECISIONS.md` lists the choices
-already made (the GPU draws every race frame, no black bars, native-pixel UI,
-how tests behave); read it before changing a system.
+must never break and how to prove it did not. What the owner wants the game to
+be lives in `openspec\specs`, written only from the owner's own answers; read
+the specs that cover a system before changing it (see **Specs** below).
 
 ## The one command
 
@@ -13,10 +13,12 @@ Build, then prove gameplay is unchanged:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1 -Quick
 powershell -NoProfile -ExecutionPolicy Bypass -File test\verify-races.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File test\spec-check.ps1
 ```
 
 Expected last lines: `20 matched, 0 differed, 0 could not be run` and
-`golden frames: 80 same, 0 changed, 0 saved`. Exit code 0 is a pass; anything
+`golden frames: 80 same, 0 changed, 0 saved`, then `spec check: ... every one
+checked`. Exit code 0 is a pass; anything
 else is a failure to fix, never a baseline to update.
 
 Before a release or a large change, also run:
@@ -28,7 +30,7 @@ Before a release or a large change, also run:
 | Rollback | `test\verify-races.ps1 -Rollback 50` | as above |
 | Sound | `test\verify-sound.ps1` | every race `same` (the baseline is per machine) |
 | Speed | `test\perf.ps1` | no regression against this machine's baseline |
-| Your settings | `test\live.ps1`, then `-Split` | no flag on a race part; read `report.md` |
+| Your settings | `test\live.ps1`, then `-Split` (on the owner's PC) | no flag on a race part, 250 fps or more (`-MinFps`); read `report.md` |
 
 ## Invariants
 
@@ -98,9 +100,30 @@ Before a release or a large change, also run:
    a change to the race or the HUD with `-Dnfm.autotest.split=auto,3`, with
    and without `-Dnfm.renderer=gpu`, as well as the gates.
 
-v1.0 (tag `v1.0`) is the last version whose races are the original's. A
-higher tick rate, a new handling model or deformable stages go in as a new
-ruleset beside the classic one, never in place of it: see `AFTER-1.0.md`.
+1.0, the `classic` branch and what may change after 1.0 are in
+`openspec\specs\release-1-0`. Until 1.0 the invariants above hold as written.
+
+## Specs
+
+`openspec\specs\<area>\spec.md` holds the owner's requirements (OpenSpec
+format, https://openspec.dev). They come only from the owner's answers
+(interview of 21 Nov 2026); never add a requirement inferred from the code.
+
+- Start a change with `/openspec-propose <name>` (Codex: `$openspec-propose`);
+  it writes `openspec\changes\<name>\` with the proposal, the spec edits, the
+  design and the tasks. `/openspec-apply-change` builds it and
+  `/openspec-archive-change` merges the spec edits into `openspec\specs`.
+  `openspec\config.yaml` holds the rules every step follows.
+- Only the owner changes or removes a requirement, or adds a feature nobody
+  asked for. Everything else goes ahead without stopping: the owner works
+  hands-off.
+- A requirement that cannot be met is never quietly dropped or called a limit:
+  finish the work, leave the requirement and its failing check as they are, and
+  open the report with the gap and its numbers.
+- Every requirement has a scenario named `Check: ...`; `test\spec-check.ps1`
+  fails when one is missing. A new owner decision goes into the specs in the
+  same commit, tagged "(Owner, YYYY-MM-DD.)", and the copy in the project
+  files is refreshed.
 
 ## How things are done here
 

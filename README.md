@@ -195,7 +195,7 @@ Every race you play is kept in the `replays` folder next to the game, as the sam
 
 ## Mods
 
-v1.0 races exactly as the original. How the tick rate, the handling and deformable stages are meant to change after it, without losing that proof, is in [AFTER-1.0.md](AFTER-1.0.md).
+Until 1.0 races play exactly as the original. What 1.0 is, the `classic` branch and what may change after it are in `openspec\specs\release-1-0\spec.md`.
 
 The `mods` folder holds mods: each is a folder that mirrors `data`, its files replacing the game's files of the same name. The archives become folders (`models`, `images` and `sounds` for `models.radq`, `images.radq` and `sounds.radq`), and stages and music keep their paths, a mod's stage music replacing the game's whatever format either is in. Mods apply in the order `mods\load-order.txt` lists them, a later one winning where two replace the same file; `-name` turns one off, and folders it does not list come after, alphabetically. A file the game does not have is reported in the log, not added. `mods` in the developer console lists what applies; `mods reload` reads the folder again while the game runs: models the next time it is at the main menu, stages and music with the next race (they are read for every race), images and sounds at the next start. A replay notes the mods it was recorded with. Test runs (`nfm.verify`, `nfm.record`, `nfm.autotest`) leave mods out, so the checks always test the game itself, unless `-Dnfm.mods=on`; `-Dnfm.mods=off` leaves them out of any run. `mods\README.txt` explains it for mod makers.
 
