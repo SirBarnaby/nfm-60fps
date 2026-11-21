@@ -166,13 +166,20 @@ function Get-Flags($run, $part) {
         $flags += 'drawn in software'
     }
     $pacing = @()
-    # frames the card held up are the card's (see below), so frames a second are counted without them
+    # frames the card held up are the card's (see below), so against a frame limit frames a second are counted
+    # without them
     $heldMs = 0
     foreach ($h in @($part.cardHeld.holds)) { if ($null -ne $h) { $heldMs += [double]$h.ms } }
     $fps = $part.fps
     if ($heldMs -gt 0 -and $part.seconds * 1000 -gt $heldMs + 100) { $fps = $part.frames / ($part.seconds - $heldMs / 1000) }
-    # 10% under the target is allowed, but never under the owner's floor
-    if ($race -and $target -gt 0 -and ($fps -lt $target * 0.9 -or $fps -lt $floor)) {
+    if ($race -and $floor -gt 0 -and $part.fps -lt $floor) {
+        # the owner's floor, with no allowance, on the frames a second the report shows: a frame the card held up
+        # kept the player waiting all the same
+        $text = '{0:N0} fps, under {1}' -f $part.fps, $floor
+        if ($heldMs -gt 0) { $text += ' ({0:N0} without the {1:N0} ms the card held frames up)' -f $fps, $heldMs }
+        $pacing += $text
+    } elseif ($race -and $target -gt 0 -and $fps -lt $target * 0.9) {
+        # 10% under a frame limit is allowed
         $pacing += ('{0:N0} fps, under {1}' -f $fps, $target)
     }
     # unevenness needs enough frames to tell: 100 over two seconds the card did not hold up (a menu's second
