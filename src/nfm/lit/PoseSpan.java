@@ -36,6 +36,11 @@ final class PoseSpan {
     long lengthNanos = 1L;
     /** False until there are two poses to move between: every frame then shows the end. */
     boolean moving;
+    /**
+     * True if the end is the run-ahead tick's: the stretch then shows the
+     * race one tick on from the ticks it is due with (see {@link #motionAt}).
+     */
+    boolean ahead;
     /** For the profile: how long after the tick was due the span was handed over. */
     long handedLate;
     /** For the profile: when the keys this span's tick read last changed, as System.nanoTime. */
@@ -78,6 +83,7 @@ final class PoseSpan {
         startNanos = o.startNanos;
         lengthNanos = o.lengthNanos;
         moving = o.moving;
+        ahead = o.ahead;
         handedLate = o.handedLate;
         keysNanos = o.keysNanos;
     }
@@ -94,6 +100,20 @@ final class PoseSpan {
         double elapsed = (double) (now - startNanos) / (double) lengthNanos;
         double max = carryOn ? 1D + MAX_CARRY_ON : 1D;
         return (float) Math.max(0D, Math.min(max, elapsed));
+    }
+
+    /**
+     * The moment of the race a frame placed at {@code alpha} shows, on the
+     * clock the ticks are due by, for the frame log's motion figures
+     * ({@link FrameLog#shown(long, long, long, long, String, boolean)}): the
+     * start's tick and as far on as {@code alpha} is, one tick later with the
+     * run-ahead tick at the end; {@link FrameLog#NO_MOTION} while nothing moves.
+     */
+    long motionAt(float alpha) {
+        if (!moving) {
+            return FrameLog.NO_MOTION;
+        }
+        return startNanos + Math.round(alpha * (double) lengthNanos) + (ahead ? lengthNanos : 0L);
     }
 
     /** The cars and the camera at {@code alpha} (0 = start, 1 = end, more carries the motion on). */

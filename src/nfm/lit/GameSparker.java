@@ -3007,6 +3007,7 @@ public class GameSparker extends Panel implements Runnable {
         int np = Math.min(GameFacts.numberOfPlayers, Math.min(prevCarX.length, FramePose.SLOTS));
         out.slots = np;
         out.moving = prevFrameValid;
+        out.ahead = ahead;
         out.startNanos = tickStartNanos;
         out.lengthNanos = currentTickNanos;
         for (int i = 0; i < np; i++) {
@@ -3421,7 +3422,7 @@ public class GameSparker extends Panel implements Runnable {
             boolean shown;
             try {
                 shown = showOnGpu(false, k.shown().list(), onCard ? k.cardScenes() : null, k.hud, k.version, k.version,
-                        flash, true);
+                        flash, true, span.motionAt(alpha), start);
             } catch (RuntimeException | LinkageError ex) {
                 HLogger.warn("The graphics card stopped drawing a race: " + ex);
                 shown = false;
@@ -3460,11 +3461,11 @@ public class GameSparker extends Panel implements Runnable {
          */
         private void testProjection(Kept k) {
             nfm.lit.gpu.SceneList list = k.shown().list();
-            if (!showOnGpu(true, list, null, k.hud, -1L, -1L, false, true)) {
+            if (!showOnGpu(true, list, null, k.hud, -1L, -1L, false, true, FrameLog.NO_MOTION, 0L)) {
                 return;
             }
             BufferedImage here = capturedGpuScene;
-            if (!showOnGpu(true, list, k.cardScenes(), k.hud, k.version, -1L, false, true)) {
+            if (!showOnGpu(true, list, k.cardScenes(), k.hud, k.version, -1L, false, true, FrameLog.NO_MOTION, 0L)) {
                 return;
             }
             BufferedImage onCard = capturedGpuScene;
@@ -3895,16 +3896,29 @@ public class GameSparker extends Panel implements Runnable {
             }
         }
         Toolkit.getDefaultToolkit().sync();
-        frameShown(0L, FrameLog.SOFTWARE, capture);
+        frameShown(0L, FrameLog.SOFTWARE, capture, frameMotionNanos, frameChosenNanos);
         PerfOverlay.drawingOnCard(false);
     }
 
-    /** A frame went on screen, drawn {@code path}, the card taking {@code gpuNanos} (0 if unknown): the overlay and the frame log count it. */
-    private static void frameShown(long gpuNanos, String path, boolean capture) {
+    /**
+     * A frame went on screen, drawn {@code path}, the card taking
+     * {@code gpuNanos} (0 if unknown), showing the race as it was at
+     * {@code motionNanos} (FrameLog.NO_MOTION for none), chosen at
+     * {@code chosenNanos}: the overlay and the frame log count it.
+     */
+    private static void frameShown(long gpuNanos, String path, boolean capture, long motionNanos, long chosenNanos) {
         long shownAt = System.nanoTime();
         PerfOverlay.frameShown(shownAt, gpuNanos);
-        FrameLog.shown(shownAt, gpuNanos, path, capture);
+        FrameLog.shown(shownAt, motionNanos, chosenNanos, gpuNanos, path, capture);
     }
+
+    /*
+     * The moment of the race the game thread's next frame shows, and when it
+     * was chosen (see FrameLog.shown); NO_MOTION for a menu's. Written by the
+     * game thread before it shows the frame, read where it is shown.
+     */
+    private long frameMotionNanos = FrameLog.NO_MOTION;
+    private long frameChosenNanos;
 
     /**
      * Ends a frame whose scene was recorded for the graphics card: keeps the
@@ -3970,7 +3984,8 @@ public class GameSparker extends Panel implements Runnable {
      */
     private boolean presentOnGpu(boolean capture) {
         return showOnGpu(capture, gpuSceneFrame ? shownRecorder.list() : null, null, gpuSceneHud,
-                gpuSceneFrame ? gpuSceneVersion : -1L, gpuSceneHudVersion, gpuSceneFlash, false);
+                gpuSceneFrame ? gpuSceneVersion : -1L, gpuSceneHudVersion, gpuSceneFlash, false, frameMotionNanos,
+                frameChosenNanos);
     }
 
     /**
@@ -3979,11 +3994,12 @@ public class GameSparker extends Panel implements Runnable {
      * HUD is not uploaded again and its polygons are cut as before; -1 for
      * a frame drawn anew) and the white {@code flash}, or with no scene the
      * game thread's picture. A frame the {@code presenter} draws on its own
-     * never falls back to the picture.
+     * never falls back to the picture. The frame shows the race as it was at
+     * {@code motionNanos}, chosen at {@code chosenNanos} (see FrameLog.shown).
      */
     private boolean showOnGpu(boolean capture, nfm.lit.gpu.SceneList scene, nfm.lit.gpu.ProjectedScene[] projected,
             BufferedImage hud, long version,
-            long hudVersion, boolean flash, boolean presenterFrame) {
+            long hudVersion, boolean flash, boolean presenterFrame, long motionNanos, long chosenNanos) {
         if (gpu == null && presenterFrame) {
             return false;
         }
@@ -4063,7 +4079,8 @@ public class GameSparker extends Panel implements Runnable {
                     gpuFrameNanos = gpuNanos;
                     // a version names a kept scene, the presenter's or the game thread's
                     frameShown(gpuNanos, picture != null ? FrameLog.PICTURE
-                            : presenterFrame || version >= 0L ? FrameLog.KEPT : FrameLog.CARD, capture);
+                            : presenterFrame || version >= 0L ? FrameLog.KEPT : FrameLog.CARD, capture,
+                            picture != null ? FrameLog.NO_MOTION : motionNanos, chosenNanos);
                     FrameLog.cardTook(gpu.lastFrameNanos(), gpu.lastFrameChanges());
                     PerfOverlay.drawingOnCard(true);
                     if (PerfOverlay.wantsVideoMemory()) {
@@ -7461,6 +7478,8 @@ public class GameSparker extends Panel implements Runnable {
                 SplitRace splitFrame = SplitRace.active;
                 // split screen too: each pane from its own camera, both in one recording for the card
                 gpuSceneFrame = scenePhase && GPU_SCENE && gpuActive && !gameUi.debugmode;
+                frameMotionNanos = FrameLog.NO_MOTION; // a menu's frame, unless a race's below
+                frameChosenNanos = frameNow;
                 if (scenePhase) {
                     double elapsed = (double) (frameNow - tickStartNanos) / (double) currentTickNanos;
                     if (!prevFrameValid || elapsed >= 1D) {
@@ -7470,6 +7489,7 @@ public class GameSparker extends Panel implements Runnable {
                     } else {
                         renderAlpha = (float) elapsed;
                     }
+                    boolean aheadFrame = false;
 
                     if (MOTION_TEST != null) {
                         motionTest();
@@ -7491,6 +7511,7 @@ public class GameSparker extends Panel implements Runnable {
                         if (!drawRetained(null, true, renderAlpha)) {
                             renderAheadScene(renderAlpha);
                         }
+                        aheadFrame = true;
                     } else {
                         aheadValid = false;
                         if (!drawRetained(null, false, renderAlpha)) {
@@ -7498,6 +7519,11 @@ public class GameSparker extends Panel implements Runnable {
                         }
                     }
 
+                    if (prevFrameValid) {
+                        // as PoseSpan.motionAt: this tick's moment and as far on as the frame is placed
+                        frameMotionNanos = tickStartNanos + Math.round(renderAlpha * (double) currentTickNanos)
+                                + (aheadFrame ? currentTickNanos : 0L);
+                    }
                     if (gpuSceneFrame && shownRecorder.unsupported()) {
                         replayScene(shownRecorder); // drawing the card does not do: this frame in software
                         gpuSceneFrame = false;

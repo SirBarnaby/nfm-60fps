@@ -11,6 +11,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Every frame the game puts on screen, in named parts (the main menu, the
@@ -39,6 +44,34 @@ final class FrameLog {
     private static final long CARD_HELD_NANOS = 100_000_000L;
     /** The most holds a part keeps the details of. */
     private static final int KEPT_HOLDS = 20;
+    /** {@link #shown}'s motion for a frame that shows no race moving: a menu, or a race's first frame. */
+    static final long NO_MOTION = Long.MIN_VALUE;
+    /**
+     * Even progress around a frame is taken from the frames shown this long
+     * before and after it: the motion's own pace, which a moment's stutter
+     * does not move.
+     */
+    private static final long MOTION_WINDOW_NANOS = 500_000_000L;
+    /**
+     * A frame whose motion is this far off even progress shows a jump or a
+     * stop: a quarter of a 60 Hz frame of the race's movement.
+     */
+    static final long MOTION_STRAY_NANOS = 4_000_000L;
+    /** Frames this close to a part's first or last motion frame are not judged (see {@link Motion}). */
+    private static final long MOTION_EDGE_NANOS = 100_000_000L;
+    /*
+     * Sums parts up off the game thread, one after another so the log keeps
+     * their order: a long part's sums (its frame times and motion sorted) take
+     * a while, which the game thread must not spend as one part becomes the
+     * next.
+     */
+    private static final ExecutorService SUMMING = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "nfm-framelog");
+        t.setDaemon(true);
+        return t;
+    });
+    /** -Dnfm.framelog.csv=true: every race part's frames, one line each, next to frames.json (for a closer look). */
+    private static final boolean CSV = Boolean.getBoolean("nfm.framelog.csv");
 
     private static volatile boolean on;
     private static boolean keepParts;
@@ -75,6 +108,16 @@ final class FrameLog {
         final List<Hold> holds = new ArrayList<>();
         final Map<String, Integer> paths = new LinkedHashMap<>();
         final Map<String, String> notes = new LinkedHashMap<>();
+        /*
+         * Frames that showed the race moving: when each went on screen, the
+         * moment of the race it showed and when that moment was chosen, the
+         * latest KEPT_GAPS of them, as a ring once full
+         */
+        long[] motionShown = new long[1024];
+        long[] motionAt = new long[1024];
+        long[] motionChosen = new long[1024];
+        int motionKept;
+        long motionFrames;
 
         Part(String name, long startedAt) {
             this.name = name;
@@ -91,6 +134,24 @@ final class FrameLog {
             ends[i] = end;
             frames++;
             sum += gap;
+        }
+
+        void addMotion(long shown, long motion, long chosen) {
+            if (motionKept == motionShown.length && motionKept < KEPT_GAPS) {
+                motionShown = Arrays.copyOf(motionShown, motionKept * 2);
+                motionAt = Arrays.copyOf(motionAt, motionKept * 2);
+                motionChosen = Arrays.copyOf(motionChosen, motionKept * 2);
+            }
+            int i = motionKept < motionShown.length ? motionKept++ : (int) (motionFrames % motionShown.length);
+            motionShown[i] = shown;
+            motionAt[i] = motion;
+            motionChosen[i] = chosen;
+            motionFrames++;
+        }
+
+        /** Index {@code k} (0 = the oldest kept) of the motion ring. */
+        int motionIndex(int k) {
+            return motionFrames <= motionShown.length ? k : (int) ((motionFrames + k) % motionShown.length);
         }
     }
 
@@ -136,13 +197,21 @@ final class FrameLog {
     /** The game is closing: the part being noted is summed up in the log, and no more frames are noted. */
     static void end() {
         if (on) {
-            part(null);
+            part(null, true);
             on = false;
         }
     }
 
-    /** Ends the part being noted, summing it up in the log, and starts one named {@code name} (none for null). */
     private static void part(String name) {
+        part(name, false);
+    }
+
+    /**
+     * Ends the part being noted, summing it up in the log ({@code waited}:
+     * before this returns, otherwise on {@link #SUMMING}), and starts one
+     * named {@code name} (none for null).
+     */
+    private static void part(String name, boolean waited) {
         Part ended;
         synchronized (LOCK) {
             long now = System.nanoTime();
@@ -158,9 +227,26 @@ final class FrameLog {
             afterScreenshot = false;
         }
         // summed up outside the lock, so frames go on being shown meanwhile: nothing notes into it any more
-        String summary = ended != null ? summary(ended) : null;
-        if (summary != null) {
-            HLogger.info(summary);
+        if (ended == null) {
+            return;
+        }
+        Runnable sum = () -> {
+            String summary = summary(ended);
+            if (summary != null) {
+                HLogger.info(summary);
+            }
+        };
+        if (!waited) {
+            SUMMING.execute(sum);
+            return;
+        }
+        // after any still being summed, so the log keeps its order, and before the game closes
+        try {
+            SUMMING.submit(sum).get(5L, TimeUnit.SECONDS);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        } catch (ExecutionException | TimeoutException ex) {
+            System.out.println("[framelog] the last part was not summed up: " + ex);
         }
     }
 
@@ -184,6 +270,19 @@ final class FrameLog {
      * gets going again, are counted apart rather than as the game's.
      */
     static void shown(long nanos, long gpuNanos, String path, boolean screenshot) {
+        shown(nanos, NO_MOTION, 0L, gpuNanos, path, screenshot);
+    }
+
+    /**
+     * As {@link #shown(long, long, String, boolean)}, for a frame of a race:
+     * it shows the race as it was at {@code motionNanos} (on the
+     * System.nanoTime clock the race's ticks are due by: a tick's moment,
+     * and as far between it and the next as the frame is placed; NO_MOTION
+     * for none), a moment the drawing chose at {@code chosenNanos}. Frames
+     * that show the race moving evenly show moments as far apart as the
+     * frames themselves are (see {@link Motion}).
+     */
+    static void shown(long nanos, long motionNanos, long chosenNanos, long gpuNanos, String path, boolean screenshot) {
         if (!on) {
             return;
         }
@@ -198,6 +297,9 @@ final class FrameLog {
                 } else {
                     p.add(nanos - lastShown, nanos);
                 }
+            }
+            if (motionNanos != NO_MOTION && !screenshot && !afterScreenshot) {
+                p.addMotion(nanos, motionNanos, chosenNanos);
             }
             afterScreenshot = screenshot;
             lastShown = nanos;
@@ -252,7 +354,14 @@ final class FrameLog {
             }
             StringBuilder out = new StringBuilder("{\n  \"parts\": [");
             for (int i = 0; i < parts.size(); i++) {
-                out.append(i == 0 ? "\n" : ",\n").append(describe(new Times(parts.get(i))));
+                Part p = parts.get(i);
+                Motion motion = new Motion(p);
+                out.append(i == 0 ? "\n" : ",\n").append(describe(new Times(p), motion));
+                if (CSV && motion.frames > 0) {
+                    writeCsv(new File(file.getAbsoluteFile().getParentFile(),
+                            String.format(Locale.ROOT, "frames-%02d-%s.csv", i, p.name.replaceAll("[^A-Za-z0-9]+", "-"))),
+                            p, motion);
+                }
             }
             json = out.append("\n  ]\n}\n").toString();
         }
@@ -260,6 +369,132 @@ final class FrameLog {
             Files.writeString(file.toPath(), json, StandardCharsets.UTF_8);
         } catch (IOException ex) {
             System.out.println("[framelog] cannot write " + file + ": " + ex);
+        }
+    }
+
+    /** A part's race frames, one line each: when shown, the race's moment, how far off even progress. */
+    private static void writeCsv(File file, Part p, Motion m) {
+        StringBuilder s = new StringBuilder("shown_ms,motion_ms,chosen_ms,lag_ms,off_ms\n");
+        for (int k = 0; k < m.frames; k++) {
+            int i = p.motionIndex(k);
+            s.append(String.format(Locale.ROOT, "%.3f,%.3f,%.3f,%.3f,%.3f%n", (p.motionShown[i] - p.startedAt) / 1e6D,
+                    (p.motionAt[i] - p.startedAt) / 1e6D, (p.motionChosen[i] - p.startedAt) / 1e6D,
+                    (p.motionShown[i] - p.motionAt[i]) / 1e6D, m.off[k] / 1e6D));
+        }
+        try {
+            Files.writeString(file.toPath(), s.toString(), StandardCharsets.UTF_8);
+        } catch (IOException ex) {
+            System.out.println("[framelog] cannot write " + file + ": " + ex);
+        }
+    }
+
+    /**
+     * How evenly a part's frames showed the race moving: what the player
+     * sees, which frame times alone cannot tell (frames can come evenly while
+     * what they show jumps or stops).
+     * <p>
+     * Each frame shows the race as it was at some moment and goes on screen
+     * a little later: its lag. Moving evenly, the lag stays the same from one
+     * frame to the next, the race moving on by as much as the time between
+     * the two. A frame whose lag is off the lag around it (the median over
+     * the frames shown {@link #MOTION_WINDOW_NANOS} before and after it)
+     * shows the race that much ahead (a jump) or behind (a stop).
+     * <p>
+     * What it comes to is judged on the frames more than
+     * {@link #MOTION_EDGE_NANOS} from the part's first and last motion frame:
+     * at its edges the race pauses, resumes or cuts to the replay, which
+     * shows as one frame far off the lag after it, or the last tick held
+     * still before the cut, and is not a stutter. All of them go in the CSV.
+     */
+    private static final class Motion {
+        final int frames;
+        /** How far each frame was off even progress, in time order; positive is behind. */
+        final long[] off;
+        final double lagMs;
+        /** The frames judged: those away from the part's edges. */
+        final int judged;
+        final double p99Ms;
+        final double maxMs;
+        final double maxAt;
+        final int strays;
+        /** The longest time frames in a row were off even progress: the race stood still or jumped about. */
+        final double stretchMs;
+        final double stretchAt;
+
+        Motion(Part p) {
+            int n = p.motionKept;
+            frames = n;
+            off = new long[n];
+            long[] shown = new long[n];
+            long[] lag = new long[n];
+            for (int k = 0; k < n; k++) {
+                int i = p.motionIndex(k);
+                shown[k] = p.motionShown[i];
+                lag[k] = p.motionShown[i] - p.motionAt[i];
+            }
+            // the window's lags, kept sorted as it slides
+            long[] window = new long[Math.max(1, n)];
+            int size = 0;
+            int lo = 0;
+            int hi = 0;
+            for (int k = 0; k < n; k++) {
+                while (hi < n && shown[hi] - shown[k] <= MOTION_WINDOW_NANOS) {
+                    int at = Arrays.binarySearch(window, 0, size, lag[hi]);
+                    at = at < 0 ? -at - 1 : at;
+                    System.arraycopy(window, at, window, at + 1, size - at);
+                    window[at] = lag[hi++];
+                    size++;
+                }
+                while (shown[k] - shown[lo] > MOTION_WINDOW_NANOS) {
+                    int at = Arrays.binarySearch(window, 0, size, lag[lo++]);
+                    System.arraycopy(window, at + 1, window, at, size - at - 1);
+                    size--;
+                }
+                off[k] = lag[k] - window[size / 2];
+            }
+            long[] sorted = Arrays.copyOf(lag, n);
+            Arrays.sort(sorted);
+            lagMs = n == 0 ? 0D : sorted[n / 2] / 1e6D;
+            long[] sizes = new long[n];
+            int count = 0;
+            int worst = -1;
+            int over = 0;
+            long stretch = 0L;
+            long stretchFrom = 0L;
+            long from = -1L; // when the frames off in a row began (the frame before the first one off), -1 for none
+            for (int k = 0; k < n; k++) {
+                long away = Math.abs(off[k]);
+                boolean inside = n > 0 && shown[k] - shown[0] >= MOTION_EDGE_NANOS
+                        && shown[n - 1] - shown[k] >= MOTION_EDGE_NANOS;
+                if (!inside || away <= MOTION_STRAY_NANOS) {
+                    from = -1L;
+                    if (!inside) {
+                        continue;
+                    }
+                } else {
+                    over++;
+                    if (from < 0L) {
+                        from = shown[k > 0 ? k - 1 : k];
+                    }
+                    if (shown[k] - from > stretch) {
+                        stretch = shown[k] - from;
+                        stretchFrom = from;
+                    }
+                }
+                sizes[count++] = away;
+                if (worst < 0 || away > Math.abs(off[worst])) {
+                    worst = k;
+                }
+            }
+            judged = count;
+            strays = over;
+            maxMs = worst < 0 ? 0D : Math.abs(off[worst]) / 1e6D;
+            maxAt = worst < 0 ? 0D : (shown[worst] - p.startedAt) / 1e9D;
+            stretchMs = stretch / 1e6D;
+            stretchAt = stretch == 0L ? 0D : (stretchFrom - p.startedAt) / 1e9D;
+            Arrays.sort(sizes, 0, count);
+            p99Ms = count == 0 ? 0D
+                    : sizes[Math.min(count - 1, Math.max(0, (int) Math.ceil(0.99D * count) - 1))] / 1e6D;
         }
     }
 
@@ -335,6 +570,13 @@ final class FrameLog {
         if (p.screenshotFrames > 0) {
             s.append(", ").append(p.screenshotFrames).append(" screenshot frames left out");
         }
+        Motion m = new Motion(p);
+        if (m.frames > 0) {
+            // what the player sees move: even frames can still show the race jump or stop
+            s.append(String.format(Locale.ROOT, ", motion: 99%% within %.1f ms of even, %d frames off by over %d ms"
+                    + " (worst %.1f ms, longest %.0f ms in a row)", m.p99Ms, m.strays, MOTION_STRAY_NANOS / 1_000_000L,
+                    m.maxMs, m.stretchMs));
+        }
         int total = p.paths.values().stream().mapToInt(Integer::intValue).sum();
         for (Map.Entry<String, Integer> e : p.paths.entrySet()) {
             double share = 100D * e.getValue() / total;
@@ -343,7 +585,7 @@ final class FrameLog {
         return s.toString();
     }
 
-    private static String describe(Times t) {
+    private static String describe(Times t, Motion m) {
         Part p = t.part;
         StringBuilder s = new StringBuilder("    {");
         s.append("\"name\": ").append(quote(p.name));
@@ -365,6 +607,10 @@ final class FrameLog {
         s.append("]}");
         s.append(", \"slowest\": [").append(slowest(p)).append(']');
         s.append(String.format(Locale.ROOT, ", \"gpuMs\": %.2f", t.gpuMs()));
+        s.append(String.format(Locale.ROOT, ", \"motion\": {\"frames\": %d, \"judged\": %d, \"lagMs\": %.2f,"
+                + " \"p99Ms\": %.2f, \"maxMs\": %.2f, \"maxAt\": %.2f, \"strays\": %d, \"strayMs\": %d,"
+                + " \"stretchMs\": %.1f, \"stretchAt\": %.2f}", m.frames, m.judged, m.lagMs, m.p99Ms, m.maxMs,
+                m.maxAt, m.strays, MOTION_STRAY_NANOS / 1_000_000L, m.stretchMs, m.stretchAt));
         s.append(", \"drawn\": {");
         int k = 0;
         for (Map.Entry<String, Integer> e : p.paths.entrySet()) {

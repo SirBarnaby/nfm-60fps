@@ -32,7 +32,7 @@ Before a release or a large change, also run:
 | AOT cache valid | `runtime\bin\java --enable-native-access=ALL-UNNAMED -XX:AOTCache=madness.aot -XX:+PrintSharedArchiveAndExit -jar madness.jar` | no line starting `[` and containing `error` |
 | Rollback | `test\verify-races.ps1 -Rollback 50` | as above |
 | Sound | `test\verify-sound.ps1` | every race `same` (the baseline is per machine) |
-| Your settings | `test\live.ps1`, then `-Split` (on the owner's PC) | no flag: race parts at 250 fps or more (`-MinFps`), races and menus drawn by the card; read `report.md`. Runs at 1920x1080 fullscreen on top of the saved settings (`-AsSaved` for the saved resolution). Exit 3 is inconclusive (on battery or Battery saver, or not at 1920x1080 fullscreen): plug in, or drop `-AsSaved`, and run again |
+| Your settings | `test\live.ps1`, then `-Split` (on the owner's PC) | no flag: race parts at 250 fps or more (`-MinFps`), races and menus drawn by the card, the race moving evenly (`motion uneven`, `motion hitch`: what the frames show, not only when they came); read `report.md`. Plays your settings with no frame limit and at 120 fps (`-Limits`, one run more) and flags a race part that stutters only with no limit. Runs at 1920x1080 fullscreen on top of the saved settings (`-AsSaved` for the saved resolution). Exit 3 is inconclusive (on battery or Battery saver, or not at 1920x1080 fullscreen): plug in, or drop `-AsSaved`, and run again |
 | Blind review (last, before reporting) | `test\blind-review.ps1 -Base <commit before the work>` | `approve`; the review is saved in `docs\reviews\` |
 
 ## Invariants

@@ -9,6 +9,9 @@
 #                                                    each entry's -D settings on top of yours
 #   .\test\live.ps1 -Out C:\somewhere                where the runs go (default: %TEMP%\nfm-live\<time>)
 #   .\test\live.ps1 -NoShots                         no screenshots: each one stops the frames for a moment
+#   .\test\live.ps1 -Limits 'unlimited','120'        the frame limits played too, each on top of your settings
+#                                                    (the default; your run counts for its own limit), and
+#                                                    compared; -Limits none plays your settings alone
 #   .\test\live.ps1 -MinFps 300                      the frame rate a race part must reach, with no allowance
 #                                                    under it (default 250, the owner's target:
 #                                                    openspec\specs\performance); 0 turns it off. Not
@@ -56,7 +59,14 @@
 # as the owner allows; elsewhere
 # told apart from frames the card held up: the game was ready, the
 # card or Windows took that long to take the frame), the card near its time
-# per frame. A run is flagged as a whole when the game's test did not go the
+# per frame, and the race moving unevenly as the player sees it, however evenly the frames come: each frame
+# shows the race at a moment (frames.json's motion), and a race part whose frames stand the race still and then
+# jump it on is flagged 'motion uneven' or 'motion hitch' (Get-MotionFlags). The owner found the game smooth at
+# a 120 fps limit and stuttering with none, which frame times did not show: so it plays your settings with no
+# frame limit and at 120 fps too (-Limits), and flags a race part that stutters with no limit but not at 120
+# (openspec\specs\done-and-testing). What reaches the monitor (Windows' own record of when each frame was shown,
+# PresentMon) needs a window on screen and admin rights: not measured here (docs\live-test.md).
+# A run is flagged as a whole when the game's test did not go the
 # whole way, Java did not load the startup cache madness64.ini names (build.ps1's
 # madness.aot: a -Quick build has none; Java's log of it goes to aot.log in the
 # run's folder), a race part it plays is missing or too short to judge (each time
@@ -80,7 +90,8 @@ param(
     [switch]$NoShots,
     [string[]]$Set = @(),
     [string]$Out,
-    [int]$MinFps = 250
+    [int]$MinFps = 250,
+    [string[]]$Limits = @('unlimited', '120')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -124,6 +135,21 @@ $expectedParts = if ($Split) { @('split countdown', 'split race', 'instantreplay
 else { @('countdown', 'race', 'instantreplay', 'race', 'gamehighlight') }
 $enoughFrames = 100
 $enoughSeconds = 2
+# the race standing still or jumping about for longer than this is a hitch, as a frame this long is (Get-Stall)
+$motionHitchMs = 100
+
+# The frame limits to compare (-Limits): 'unlimited' or a number of frames a second; 'none' for none.
+$limitWanted = @($Limits | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim().ToLowerInvariant() } |
+    Where-Object { $_ -and $_ -ne 'none' } | Select-Object -Unique)
+foreach ($limit in $limitWanted) {
+    if ($limit -notmatch '^(unlimited|[1-9]\d*)$') { throw "-Limits takes 'unlimited', a number or 'none', not '$limit'" }
+}
+
+# A frame limit as the game's settings.txt words it (GameSparker.describeFpsLimit).
+function Get-LimitWords([string]$limit) {
+    if ($limit -eq 'unlimited') { return 'unlimited' }
+    return "$limit fps"
+}
 
 # A race part's name the nth time it comes up in a run: 'race', then 'race (2nd time)', and so on. Menus keep theirs.
 function Get-PartLabel([string]$name, [int]$nth) {
@@ -631,11 +657,34 @@ function Get-Flags($run, $part) {
     } else {
         $flags += $pacing
     }
+    if ($race) { $flags += @(Get-MotionFlags $part) }
     $flags += @(Get-Stall $part $race)
     if ($target -gt 0 -and $part.gpuMs -gt 900 / $target) {
         $flags += ('card takes {0:N1} ms of {1:N1}' -f $part.gpuMs, (1000 / $target))
     }
     return $flags
+}
+
+# Whether a race part showed the race moving evenly, as the player sees it (frames.json's motion, FrameLog.Motion):
+# frames can come evenly while what they show stands still and then jumps, which frame times cannot tell. Each
+# frame shows the race at a moment; moving evenly, that moment keeps the same distance behind the time the frame
+# went on screen. A frame off that distance (the median around it) by over 4 ms shows the race stopped or jumped.
+# 'motion uneven': over 1% of the frames are (99% are not within 4 ms of even). 'motion hitch': frames in a row are
+# for over 100 ms, the race standing still or jumping about that long, the race hitch limit (Get-Stall). Frames near
+# a part's start and end are not judged (FrameLog.Motion); a part with too few judged frames is a note.
+function Get-MotionFlags($part) {
+    $m = $part.motion
+    if (-not $m) { return 'note: no motion in frames.json (a build from before it was measured)' }
+    if ([int]$m.judged -lt $enoughFrames) {
+        return 'note: the motion was measured on {0} frames, too few to judge' -f [int]$m.judged
+    }
+    if ([double]$m.p99Ms -gt [double]$m.strayMs) {
+        'motion uneven: 99% of frames within {0:N1} ms of even, {1} of {2} off by over {3} ms' -f $m.p99Ms, $m.strays,
+        $m.judged, $m.strayMs
+    }
+    if ([double]$m.stretchMs -gt $motionHitchMs) {
+        'motion hitch: the race stood still or jumped for {0:N0} ms at {1:N1} s' -f $m.stretchMs, $m.stretchAt
+    }
 }
 
 # A part's longest frame as a hitch (race) or a stall (menu), or nothing: over 100 ms in a race, 250 in a menu, and
@@ -659,18 +708,34 @@ function Get-Stall($part, [bool]$race) {
 
 $runs = @()
 $lost = @()
-$plan = @(@{ name = 'yours'; extra = '' })
-$n = 1
-foreach ($s in $Set) { $plan += @{ name = "set$n"; extra = $s }; $n++ }
-foreach ($r in $plan) {
+# Plays one run of the plan and keeps it ($runs), or says it wrote no frames ($lost).
+function Invoke-Planned($r) {
     Write-Host "[live] $($r.name)$(if ($r.extra) { ": $($r.extra)" })..."
     $run = Invoke-Run $r.name $r.extra
     if ($null -eq $run) {
-        $lost += "$($r.name) wrote no frames.json: see $(Join-Path $Out $r.name)\out.log"
-        Write-Host "[live] $($lost[-1])"
+        $script:lost += "$($r.name) wrote no frames.json: see $(Join-Path $Out $r.name)\out.log"
+        Write-Host "[live] $($script:lost[-1])"
+        return
+    }
+    $run | Add-Member title $r.title
+    $script:runs += $run
+}
+Invoke-Planned @{ name = 'yours'; extra = ''; title = 'Your settings' }
+$n = 1
+foreach ($s in $Set) { Invoke-Planned @{ name = "set$n"; extra = $s; title = "set${n}: $s" }; $n++ }
+# each frame limit to compare (-Limits) on top of your settings, unless your own run already had it
+$yours = $runs | Where-Object { $_.name -eq 'yours' } | Select-Object -First 1
+$limitRuns = @()
+foreach ($limit in $limitWanted) {
+    $words = Get-LimitWords $limit
+    if ($yours -and $yours.settings['fps limit'] -eq $words) {
+        $limitRuns += [pscustomobject]@{ words = $words; run = $yours }
         continue
     }
-    $runs += $run
+    $name = "limit-$limit"
+    Invoke-Planned @{ name = $name; extra = "nfm.fps=$limit"; title = "Your settings at the frame limit: $words" }
+    $run = $runs | Where-Object { $_.name -eq $name } | Select-Object -First 1
+    if ($run) { $limitRuns += [pscustomobject]@{ words = $words; run = $run } }
 }
 if ($runs.Count -eq 0) { exit 2 }
 
@@ -680,7 +745,7 @@ $inconclusive = @()
 $md = @('# Live test', '', "$(Get-Date -Format 'yyyy-MM-dd HH:mm'), $env:COMPUTERNAME", '')
 if ($lost.Count -gt 0) { $md += @($lost | ForEach-Object { "**Flagged:** $_  " }) + '' }
 foreach ($run in $runs) {
-    $title = if ($run.extra) { "$($run.name): $($run.extra)" } else { 'Your settings' }
+    $title = $run.title
     $md += @("## $title", '')
     $md += @($run.settings.GetEnumerator() | Sort-Object Name | ForEach-Object { "- $($_.Name): $($_.Value)" })
     $runFlags = @(Get-RunFlags $run)
@@ -689,15 +754,15 @@ foreach ($run in $runs) {
     $why = @(Get-Inconclusive $run)
     if ($why.Count -gt 0) { $inconclusive += $why; $md += @($why | ForEach-Object { '', "**Inconclusive:** $_." }) }
     if ($runFlags.Count -gt 0) { $md += @('', "**Whole run:** $($runFlags -join '; ')") }
-    $md += @('', '| Part | Seconds | Frames/s | Median ms | 99% ms | Longest ms | Late | Card ms | Drawn | Flags |',
-        '|---|---:|---:|---:|---:|---:|---:|---:|---|---|')
+    $md += @('', ('| Part | Seconds | Frames/s | Median ms | 99% ms | Longest ms | Late | Card ms | Motion 99% ms |' +
+            ' Motion off in a row ms | Drawn | Flags |'), '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|')
     Write-Host ''
     Write-Host "== $title"
     Write-Host "resolution: $($run.settings['resolution'])"
     foreach ($line in $why) { Write-Host "inconclusive: $line" }
     if ($runFlags.Count -gt 0) { Write-Host "whole run: $($runFlags -join '; ')" }
-    Write-Host ('{0,-26} {1,6} {2,8} {3,7} {4,7} {5,8} {6,5} {7,6}  {8}' -f 'part', 's', 'fps', 'median', '99%',
-        'longest', 'late', 'card', 'flags')
+    Write-Host ('{0,-26} {1,6} {2,8} {3,7} {4,7} {5,8} {6,5} {7,6} {8,7} {9,6}  {10}' -f 'part', 's', 'fps',
+        'median', '99%', 'longest', 'late', 'card', 'motion', 'in row', 'flags')
     # a race part that comes up again is named for the time it is (Get-PartLabel), in the table and the lists below
     $labels = @(Get-PartLabels $run.parts)
     for ($i = 0; $i -lt $run.parts.Count; $i++) {
@@ -706,12 +771,16 @@ foreach ($run in $runs) {
         if (@($flags | Where-Object { $_ -notlike 'note: *' }).Count -gt 0) { $flagged = $true }
         $drawn = ($part.drawn.PSObject.Properties | ForEach-Object { "$($_.Name) $($_.Value)" }) -join ', '
         if ($part.screenshotFrames) { $drawn += "; $($part.screenshotFrames) screenshot frames left out" }
-        $md += ('| {0} | {1:N1} | {2:N1} | {3:N2} | {4:N2} | {5:N1} | {6} | {7:N2} | {8} | {9} |' -f $labels[$i],
-            $part.seconds, $part.fps, $part.ms.median, $part.ms.p99, $part.ms.max, $part.late, $part.gpuMs, $drawn,
-            ($flags -join '; '))
-        Write-Host ('{0,-26} {1,6:N1} {2,8:N1} {3,7:N2} {4,7:N2} {5,8:N1} {6,5} {7,6:N2}  {8}' -f $labels[$i],
-            $part.seconds, $part.fps, $part.ms.median, $part.ms.p99, $part.ms.max, $part.late, $part.gpuMs,
-            ($flags -join '; '))
+        # the motion's columns are blank for a part that showed no race moving
+        $moved = $part.motion -and [int]$part.motion.judged -gt 0
+        $motionP99 = if ($moved) { '{0:N1}' -f $part.motion.p99Ms } else { '' }
+        $motionRow = if ($moved) { '{0:N0}' -f $part.motion.stretchMs } else { '' }
+        $md += ('| {0} | {1:N1} | {2:N1} | {3:N2} | {4:N2} | {5:N1} | {6} | {7:N2} | {8} | {9} | {10} | {11} |' -f
+            $labels[$i], $part.seconds, $part.fps, $part.ms.median, $part.ms.p99, $part.ms.max, $part.late,
+            $part.gpuMs, $motionP99, $motionRow, $drawn, ($flags -join '; '))
+        Write-Host ('{0,-26} {1,6:N1} {2,8:N1} {3,7:N2} {4,7:N2} {5,8:N1} {6,5} {7,6:N2} {8,7} {9,6}  {10}' -f
+            $labels[$i], $part.seconds, $part.fps, $part.ms.median, $part.ms.p99, $part.ms.max, $part.late,
+            $part.gpuMs, $motionP99, $motionRow, ($flags -join '; '))
     }
     $md += ''
     for ($i = 0; $i -lt $run.parts.Count; $i++) {
@@ -736,14 +805,52 @@ foreach ($run in $runs) {
     $md += ''
 }
 if ($runs.Count -gt 1) {
-    $md += @('## Races compared', '', '| Run | Frames/s | Median ms | 99% ms | Longest ms |', '|---|---:|---:|---:|---:|')
+    $md += @('## Races compared', '',
+        '| Run | Frames/s | Median ms | 99% ms | Longest ms | Motion 99% ms | Motion off in a row ms |',
+        '|---|---:|---:|---:|---:|---:|---:|')
     foreach ($run in $runs) {
         $race = $run.parts | Where-Object { $_.name -eq 'race' } | Sort-Object frames -Descending | Select-Object -First 1
         if ($race) {
-            $md += ('| {0} | {1:N1} | {2:N2} | {3:N2} | {4:N1} |' -f $(if ($run.extra) { $run.extra } else { 'yours' }),
-                $race.fps, $race.ms.median, $race.ms.p99, $race.ms.max)
+            $md += ('| {0} | {1:N1} | {2:N2} | {3:N2} | {4:N1} | {5} | {6} |' -f $run.title, $race.fps, $race.ms.median,
+                $race.ms.p99, $race.ms.max, $(if ($race.motion) { '{0:N1}' -f $race.motion.p99Ms }),
+                $(if ($race.motion) { '{0:N0}' -f $race.motion.stretchMs }))
         }
     }
+    $md += ''
+}
+# The owner found the game smooth at a 120 fps limit and stuttering with none (openspec\specs\done-and-testing,
+# "Stutter with no frame limit is caught"): each race part with no limit next to the same part at each limit
+# (-Limits), flagged where it showed the race moving unevenly with no limit but evenly at the limit.
+$open = $limitRuns | Where-Object { $_.words -eq 'unlimited' } | Select-Object -First 1
+foreach ($capped in @($limitRuns | Where-Object { $_.words -ne 'unlimited' })) {
+    if (-not $open) { break }
+    $md += @("## No frame limit and $($capped.words) compared", '',
+        ('| Part | Frames/s, none | Frames/s, {0} | Motion 99% ms, none | Motion 99% ms, {0} |' +
+            ' Off in a row ms, none | Off in a row ms, {0} | Flags |') -f $capped.words,
+        '|---|---:|---:|---:|---:|---:|---:|---|')
+    Write-Host ''
+    Write-Host "== No frame limit and $($capped.words) compared (motion 99% ms / off in a row ms)"
+    $theirs = @{}
+    $cappedLabels = @(Get-PartLabels $capped.run.parts)
+    for ($i = 0; $i -lt $capped.run.parts.Count; $i++) { $theirs[$cappedLabels[$i]] = $capped.run.parts[$i] }
+    $openLabels = @(Get-PartLabels $open.run.parts)
+    for ($i = 0; $i -lt $open.run.parts.Count; $i++) {
+        $part = $open.run.parts[$i]
+        $other = $theirs[$openLabels[$i]]
+        if ($raceParts -notcontains $part.name -or -not $other -or -not $part.motion -or -not $other.motion) { continue }
+        $openUneven = @(Get-MotionFlags $part | Where-Object { $_ -notlike 'note: *' }).Count -gt 0
+        $cappedUneven = @(Get-MotionFlags $other | Where-Object { $_ -notlike 'note: *' }).Count -gt 0
+        $flag = ''
+        if ($openUneven -and -not $cappedUneven) {
+            $flag = "stutters with no frame limit, not at $($capped.words)"
+            $flagged = $true
+        }
+        $md += ('| {0} | {1:N1} | {2:N1} | {3:N1} | {4:N1} | {5:N0} | {6:N0} | {7} |' -f $openLabels[$i], $part.fps,
+            $other.fps, $part.motion.p99Ms, $other.motion.p99Ms, $part.motion.stretchMs, $other.motion.stretchMs, $flag)
+        Write-Host ('{0,-26} none {1,7:N1} / {2,5:N0}   {3} {4,7:N1} / {5,5:N0}  {6}' -f $openLabels[$i],
+            $part.motion.p99Ms, $part.motion.stretchMs, $capped.words, $other.motion.p99Ms, $other.motion.stretchMs, $flag)
+    }
+    $md += ''
 }
 $report = Join-Path $Out 'report.md'
 $md | Set-Content $report -Encoding utf8
