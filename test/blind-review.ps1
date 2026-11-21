@@ -12,9 +12,12 @@
 #                                             split screen run in %TEMP%\nfm-live)
 #
 # Codex gets the live test's evidence in review-evidence\ inside its checkout: each run's report.md,
-# frames.json, settings.txt and the *-gpu.png screenshots read back from the graphics card, to judge the
-# frame rate, stutter and what is on screen against the specs. The review file names the runs it got,
-# or says there were none.
+# manifest.json, frames.json, settings.txt and the *-gpu.png screenshots read back from the graphics card,
+# to judge the frame rate, stutter and what is on screen against the specs. From each run's manifest.json
+# (the commit, uncommitted changes and madness.jar it ran with) Codex is told whether the run came from the
+# build under review: the reviewed commit, or one with the same game files (src, lib, data, build.ps1,
+# madness64.ini, test\live.ps1), nothing of those uncommitted, and the jar built after its sources. The
+# review file names the runs it got and says plainly which do not match, or that there were none.
 #
 # Needs Node.js 18.18 or later, the Codex CLI signed in (`codex login`), and the plugin:
 #   claude plugin marketplace add openai/codex-plugin-cc
@@ -39,8 +42,15 @@ $focus = @'
 Blind review for the game's owner, who alone decides what the game should be. You get no explanation from whoever made this change, on purpose. Judge it only against the owner's requirements in openspec/specs (read every spec.md the change touches, and openspec/config.yaml for the rules agents must follow) and against the repository itself. For each requirement the change touches, decide whether it is met, not met, or cannot be judged from what you can see, and make every unmet requirement a finding. Treat each of these as blocking: a requirement or its Check scenario changed, removed or weakened without the owner; a test, check or baseline loosened, skipped, deleted or updated so that it passes; a claim in docs, specs or commit messages that no test output backs; until 1.0, anything that could make a race play differently from the original (physics, AI, timing, random streams, race state); drawing moved from the graphics card to the processor; anything likely to drop the frame rate under 250 fps at 1080p fullscreen, or to add stutter or input lag.
 '@.Trim()
 # one of these follows the focus, as there is live test evidence or not
-$withLive = 'The latest live test results are in review-evidence\ (a folder per live test, named by when it ran: its report.md, and for each run its frames.json, settings.txt and the *-gpu.png screenshots read back from the graphics card, which are what the screen showed). Judge frame rate and stutter from report.md and frames.json, and open the screenshots to judge whether what is on screen meets the specs.'
+$withLive = 'The latest live test results are in review-evidence\ (a folder per live test, named by when it ran: its report.md, and for each run its manifest.json, frames.json, settings.txt and the *-gpu.png screenshots read back from the graphics card, which are what the screen showed). Judge frame rate and stutter from report.md and frames.json, and open the screenshots to judge whether what is on screen meets the specs.'
 $withoutLive = 'There are no live test results for this review, so frame rate, stutter and what is on screen cannot be judged from a live run.'
+# then, after $withLive, whether each run came from the build under review (Get-BuildMatch), and when one did not:
+$buildIntro = 'Whether each live test run came from the build under review, from the manifest.json test\live.ps1 wrote in its folder when it started:'
+$buildWarning = 'Evidence that does not match may not show the build under review: say so wherever you rely on it.'
+
+# What the reviewed build is made from, and what a live test's figures depend on: the game's sources and libraries,
+# its data, how it is built and started, and the live test that judged it
+$buildPaths = @('src', 'lib', 'data', 'build.ps1', 'madness64.ini', 'test/live.ps1')
 
 function Fail($message) {
     Write-Host $message
@@ -146,8 +156,60 @@ function Find-LiveTests {
     return @(@($onePlayer, $splitScreen) | Where-Object { $_ })
 }
 
-# Copies a live test's evidence into the review's checkout: report.md, and each run's frames.json, settings.txt
-# and the screenshots read back from the card.
+# Whether a live test run came from the reviewed build ($headFull), from the manifest.json test\live.ps1 wrote in
+# the run's folder when it started: made at the reviewed commit or at one whose $buildPaths are the same, with
+# none of them changed and not committed, and madness.jar built after its sources. text says which, plainly.
+function Get-BuildMatch($run) {
+    $file = Join-Path $run.FullName 'manifest.json'
+    if (-not (Test-Path $file)) {
+        return [pscustomobject]@{ matches = $false
+            text = 'does not match the build under review: it has no manifest.json, so which build it came from is unknown' }
+    }
+    $manifest = Get-Content $file -Raw | ConvertFrom-Json
+    $commit = [string]$manifest.commit
+    $short = if ($commit.Length -gt 7) { $commit.Substring(0, 7) } else { $commit }
+    $why = @()
+    $same = ''
+    if (-not $commit) {
+        $why += 'its manifest names no commit (not run from a git checkout)'
+    } elseif (-not (& git rev-parse --verify --quiet "$commit^{commit}")) {
+        $why += "it was made at $short, a commit this repository does not have"
+    } elseif ($commit -ne $headFull) {
+        $differ = @(& git diff --name-only $commit $headFull -- $buildPaths)
+        if ($differ.Count -gt 0) {
+            $list = (($differ | Select-Object -First 5) -join ', ') + $(if ($differ.Count -gt 5) { ', ...' })
+            $why += ('it was made at {0}, and {1} of the files the build and the live test come from differ from {2}: {3}' -f
+                $short, $differ.Count, $headSha, $list)
+        } else {
+            $same = " (its $($buildPaths -join ', ') are the same as $headSha's)"
+        }
+    }
+    # git status --porcelain lines: 'XY path', or 'XY old -> new' for a rename
+    $changed = @(foreach ($line in @($manifest.changed)) {
+            if (-not $line) { continue }
+            $path = ([string]$line).Substring(3)
+            if ($path -match ' -> (.+)$') { $path = $Matches[1] }
+            $path = $path.Trim('"')
+            if (@($buildPaths | Where-Object { $path -eq $_ -or $path.StartsWith("$_/") }).Count -gt 0) { $path }
+        })
+    if ($changed.Count -gt 0) {
+        $why += 'it was made with uncommitted changes to ' + (($changed | Select-Object -First 5) -join ', ') +
+        $(if ($changed.Count -gt 5) { ', ...' })
+    }
+    if ($manifest.jarOlderThan) {
+        $why += "madness.jar was older than $($manifest.jarOlderThan), so it was an earlier build than the files"
+    }
+    $jarHash = if ($manifest.jarSha256) { ([string]$manifest.jarSha256).Substring(0, 12) } else { 'unknown' }
+    if ($why.Count -gt 0) {
+        return [pscustomobject]@{ matches = $false; text = 'does not match the build under review: ' + ($why -join '; ') }
+    }
+    return [pscustomobject]@{ matches = $true
+        text = ("matches the build under review: made at $short$same, with no uncommitted changes to the files the build and the live test " +
+            "come from, and madness.jar (sha256 $jarHash) built after its sources") }
+}
+
+# Copies a live test's evidence into the review's checkout: report.md, and each run's manifest.json, frames.json,
+# settings.txt and the screenshots read back from the card.
 function Copy-LiveEvidence($test, [string]$to) {
     New-Item -ItemType Directory -Force $to | Out-Null
     $report = Join-Path $test.folder 'report.md'
@@ -155,7 +217,7 @@ function Copy-LiveEvidence($test, [string]$to) {
     foreach ($run in $test.runs) {
         $runTo = Join-Path $to $run.Name
         New-Item -ItemType Directory -Force $runTo | Out-Null
-        foreach ($name in 'frames.json', 'settings.txt') {
+        foreach ($name in 'manifest.json', 'frames.json', 'settings.txt') {
             $file = Join-Path $run.FullName $name
             if (Test-Path $file) { Copy-Item $file $runTo }
         }
@@ -196,13 +258,23 @@ try {
     Push-Location $tree
     $inTree = $true
     $liveLines = @()
+    $buildLines = @()
+    $mismatch = $false
     foreach ($test in $liveTests) {
         $name = (Split-Path $test.folder -Leaf) + $(if ($test.split) { '-split' })
         Copy-LiveEvidence $test (Join-Path $tree "review-evidence\$name")
         $liveLines += ('- `{0}`: {1}, run {2:yyyy-MM-dd HH:mm} ({3}), in review-evidence\{4}' -f $test.folder,
             $(if ($test.split) { 'split screen' } else { 'one player' }), $test.ranAt, ($test.runs.Name -join ', '), $name)
+        foreach ($run in $test.runs) {
+            $match = Get-BuildMatch $run
+            if (-not $match.matches) { $mismatch = $true }
+            $liveLines += "  - $($run.Name): $($match.text)"
+            $buildLines += "review-evidence\$name\$($run.Name) $($match.text)."
+        }
     }
-    $reviewFocus = $focus + ' ' + $(if ($liveTests.Count -gt 0) { $withLive } else { $withoutLive })
+    $reviewFocus = $focus + ' ' + $(if ($liveTests.Count -gt 0) {
+            (@($withLive, $buildIntro) + $buildLines + @($(if ($mismatch) { $buildWarning }))) -join ' '
+        } else { $withoutLive })
 
     # --no-deprecation: Node 24 warns about the runner's own Windows spawn (DEP0190), noise for this report
     $arguments = @('--no-deprecation', $companion, 'adversarial-review', '--wait', '--json', '--base', $baseSha)
@@ -231,6 +303,9 @@ try {
     )
     if ($liveLines.Count -gt 0) {
         $lines += @('Live test evidence given to Codex:', '') + $liveLines + ''
+        if ($mismatch) {
+            $lines += @("**Some of this evidence is not from the build under review** (above), so what it shows may not be $headSha's. Run test\live.ps1 on $headSha and review again.", '')
+        }
     } else {
         $lines += @('No live test run was found (test\live.ps1 writes them to %TEMP%\nfm-live), so Codex had no live test evidence.', '')
     }
