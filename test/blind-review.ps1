@@ -7,6 +7,14 @@
 #   .\test\blind-review.ps1                   reviews the last commit
 #   .\test\blind-review.ps1 -Base 1ccfa7f     reviews every commit after 1ccfa7f (a whole night's work)
 #   .\test\blind-review.ps1 -Model gpt-5.5    another Codex model than its default
+#   .\test\blind-review.ps1 -Live C:\runs\a   the live test runs to give Codex (folders test\live.ps1
+#                                             wrote; default: the newest one-player and the newest
+#                                             split screen run in %TEMP%\nfm-live)
+#
+# Codex gets the live test's evidence in review-evidence\ inside its checkout: each run's report.md,
+# frames.json, settings.txt and the *-gpu.png screenshots read back from the graphics card, to judge the
+# frame rate, stutter and what is on screen against the specs. The review file names the runs it got,
+# or says there were none.
 #
 # Needs Node.js 18.18 or later, the Codex CLI signed in (`codex login`), and the plugin:
 #   claude plugin marketplace add openai/codex-plugin-cc
@@ -20,7 +28,8 @@
 
 param(
     [string]$Base = 'HEAD~1',
-    [string]$Model
+    [string]$Model,
+    [string[]]$Live
 )
 
 $ErrorActionPreference = 'Stop'
@@ -29,6 +38,9 @@ $root = Split-Path $PSScriptRoot -Parent
 $focus = @'
 Blind review for the game's owner, who alone decides what the game should be. You get no explanation from whoever made this change, on purpose. Judge it only against the owner's requirements in openspec/specs (read every spec.md the change touches, and openspec/config.yaml for the rules agents must follow) and against the repository itself. For each requirement the change touches, decide whether it is met, not met, or cannot be judged from what you can see, and make every unmet requirement a finding. Treat each of these as blocking: a requirement or its Check scenario changed, removed or weakened without the owner; a test, check or baseline loosened, skipped, deleted or updated so that it passes; a claim in docs, specs or commit messages that no test output backs; until 1.0, anything that could make a race play differently from the original (physics, AI, timing, random streams, race state); drawing moved from the graphics card to the processor; anything likely to drop the frame rate under 250 fps at 1080p fullscreen, or to add stutter or input lag.
 '@.Trim()
+# one of these follows the focus, as there is live test evidence or not
+$withLive = 'The latest live test results are in review-evidence\ (a folder per live test, named by when it ran: its report.md, and for each run its frames.json, settings.txt and the *-gpu.png screenshots read back from the graphics card, which are what the screen showed). Judge frame rate and stutter from report.md and frames.json, and open the screenshots to judge whether what is on screen meets the specs.'
+$withoutLive = 'There are no live test results for this review, so frame rate, stutter and what is on screen cannot be judged from a live run.'
 
 function Fail($message) {
     Write-Host $message
@@ -90,6 +102,67 @@ if (process.env.BLIND_REVIEW_BROKER === 'peek') {
     finally { Remove-Item Env:BLIND_REVIEW_ROOT, Env:BLIND_REVIEW_BROKER, Env:BLIND_REVIEW_PID -ErrorAction SilentlyContinue }
 }
 
+# A live test's folder (test\live.ps1 -Out, by default %TEMP%\nfm-live\<time>): its runs (each a folder with
+# frames.json) and whether they raced split screen; a run folder given on its own counts as its live test with
+# that one run. Null if there is no run in it.
+function Get-LiveTest([string]$folder) {
+    if (-not (Test-Path $folder -PathType Container)) { return $null }
+    $folder = (Resolve-Path $folder).Path
+    $runs = @(Get-ChildItem $folder -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'frames.json') })
+    if ($runs.Count -eq 0 -and (Test-Path (Join-Path $folder 'frames.json'))) {
+        $runs = @(Get-Item $folder)
+        $folder = Split-Path $folder -Parent
+    }
+    if ($runs.Count -eq 0) { return $null }
+    $split = @($runs | Where-Object { (Get-Content (Join-Path $_.FullName 'frames.json') -Raw) -match '"name":\s*"split ' }).Count -gt 0
+    [pscustomobject]@{
+        folder = $folder
+        runs = $runs
+        split = $split
+        ranAt = (Get-Item (Join-Path $runs[0].FullName 'frames.json')).LastWriteTime
+    }
+}
+
+# The live tests to give Codex: those named with -Live, else the newest one-player and the newest split screen
+# test in %TEMP%\nfm-live (none when there are none).
+function Find-LiveTests {
+    if ($Live) {
+        return @(foreach ($folder in $Live) {
+                $test = Get-LiveTest $folder
+                if (-not $test) { Fail "No live test run in $folder (a folder test\live.ps1 wrote, with frames.json)." }
+                $test
+            })
+    }
+    $onePlayer = $null
+    $splitScreen = $null
+    $folders = Get-ChildItem (Join-Path ([IO.Path]::GetTempPath()) 'nfm-live') -Directory -ErrorAction SilentlyContinue |
+        Sort-Object Name -Descending
+    foreach ($folder in $folders) {
+        $test = Get-LiveTest $folder.FullName
+        if (-not $test) { continue }
+        if ($test.split) { if (-not $splitScreen) { $splitScreen = $test } } elseif (-not $onePlayer) { $onePlayer = $test }
+        if ($onePlayer -and $splitScreen) { break }
+    }
+    return @(@($onePlayer, $splitScreen) | Where-Object { $_ })
+}
+
+# Copies a live test's evidence into the review's checkout: report.md, and each run's frames.json, settings.txt
+# and the screenshots read back from the card.
+function Copy-LiveEvidence($test, [string]$to) {
+    New-Item -ItemType Directory -Force $to | Out-Null
+    $report = Join-Path $test.folder 'report.md'
+    if (Test-Path $report) { Copy-Item $report $to }
+    foreach ($run in $test.runs) {
+        $runTo = Join-Path $to $run.Name
+        New-Item -ItemType Directory -Force $runTo | Out-Null
+        foreach ($name in 'frames.json', 'settings.txt') {
+            $file = Join-Path $run.FullName $name
+            if (Test-Path $file) { Copy-Item $file $runTo }
+        }
+        Get-ChildItem $run.FullName -Filter '*-gpu.png' | Copy-Item -Destination $runTo
+    }
+}
+
 # Removes the checkout made for the review; one that cannot go (a file still held) is named, never left silently.
 function Remove-ReviewTree([string]$path) {
     & git -C $root worktree remove --force $path
@@ -111,6 +184,7 @@ try {
     if (& git status --porcelain) {
         Write-Host 'note: there are uncommitted changes; they are not reviewed.'
     }
+    $liveTests = @(Find-LiveTests)
 
     # a clean checkout of the head commit for Codex to read, made for this review alone
     $tree = Join-Path ([IO.Path]::GetTempPath()) ('nfm-review-' + [guid]::NewGuid().ToString('N').Substring(0, 12))
@@ -121,11 +195,19 @@ try {
     }
     Push-Location $tree
     $inTree = $true
+    $liveLines = @()
+    foreach ($test in $liveTests) {
+        $name = (Split-Path $test.folder -Leaf) + $(if ($test.split) { '-split' })
+        Copy-LiveEvidence $test (Join-Path $tree "review-evidence\$name")
+        $liveLines += ('- `{0}`: {1}, run {2:yyyy-MM-dd HH:mm} ({3}), in review-evidence\{4}' -f $test.folder,
+            $(if ($test.split) { 'split screen' } else { 'one player' }), $test.ranAt, ($test.runs.Name -join ', '), $name)
+    }
+    $reviewFocus = $focus + ' ' + $(if ($liveTests.Count -gt 0) { $withLive } else { $withoutLive })
 
     # --no-deprecation: Node 24 warns about the runner's own Windows spawn (DEP0190), noise for this report
     $arguments = @('--no-deprecation', $companion, 'adversarial-review', '--wait', '--json', '--base', $baseSha)
     if ($Model) { $arguments += @('--model', $Model) }
-    $arguments += $focus
+    $arguments += $reviewFocus
     Write-Host ('Codex is reviewing {0}..{1} (a few minutes)...' -f $baseShort, $headSha)
     $brokerBefore = Invoke-Broker $tree 'peek'
     $raw = (& $node.Source @arguments) -join "`n"
@@ -145,7 +227,14 @@ try {
         '',
         ('{0:yyyy-MM-dd HH:mm}, Codex adversarial review against openspec\specs, run by test\blind-review.ps1.' -f (Get-Date)),
         ('Commits after {0} up to {1}, read from a clean checkout of {1}.' -f $baseSha, $headFull),
-        '',
+        ''
+    )
+    if ($liveLines.Count -gt 0) {
+        $lines += @('Live test evidence given to Codex:', '') + $liveLines + ''
+    } else {
+        $lines += @('No live test run was found (test\live.ps1 writes them to %TEMP%\nfm-live), so Codex had no live test evidence.', '')
+    }
+    $lines += @(
         ('**Verdict: {0}**' -f $result.verdict),
         '',
         $result.summary,
