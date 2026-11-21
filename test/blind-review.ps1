@@ -273,6 +273,10 @@ try {
     Write-Host ('blind review: {0}, {1} findings (docs\reviews\{2})' -f $result.verdict, $findings.Count, (Split-Path $file -Leaf))
     if ($result.verdict -eq 'approve') { exit 0 }
     exit 1
+} catch {
+    # anything unexpected (a copy that failed, a finding Codex shaped oddly) is "could not run", never exit 1,
+    # which means findings to read
+    Fail "The review stopped: $($_.Exception.Message)"
 } finally {
     # the broker this review started (its processes work in the checkout, so they go before it does); one
     # that was there before the review is not this review's
