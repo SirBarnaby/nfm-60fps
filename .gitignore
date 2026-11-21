@@ -21,3 +21,20 @@
 /test/sound-baseline.json
 /test/sound-renders/
 /cache/
+# Personal, editor and OS files
+/nfm-lit-master.iml
+Thumbs.db
+desktop.ini
+
+# Build output and release downloads
+*.class
+/out/
+/build/
+/dist/
+/*.zip
+
+# Mods are personal; only the folder's README is part of the game
+/mods/*
+!/mods/README.txt
+
+# openspec/ (the owner's specs) and .agents/, .claude/ (the OpenSpec skills) stay tracked
