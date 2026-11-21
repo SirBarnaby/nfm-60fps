@@ -13,8 +13,8 @@
 #                                                    openspec\specs\performance); 0 turns it off. Not
 #                                                    judged when your settings hold frames under it (a
 #                                                    lower frame limit, Match display, Variable refresh,
-#                                                    vsync on: then the limit is the target), and only a
-#                                                    note when the PC ran on battery
+#                                                    vsync on: then the limit is the target). On battery
+#                                                    or with Battery saver on, the run is inconclusive
 #
 # What it plays: the main menu, fullscreen switched off and on again (a new
 # window and the graphics card started again, as F11 does), the settings
@@ -40,12 +40,16 @@
 # card or Windows took that long to take the frame), the card near its time
 # per frame. A run is flagged as a whole when the game's test did not go the
 # whole way, a race part it plays is missing or too short to judge, or it
-# wrote no frames at all. Exit code 0 means nothing was flagged, 1 something
-# was, 2 the game could not be run. What a window off every monitor cannot show is a note, not a flag: with
+# wrote no frames at all. A run during which the PC was on battery or had
+# Battery saver on (Windows slows the processor and the card then, which the
+# owner did not choose) cannot prove a frame rate: it is inconclusive, its
+# frame rates are notes, and anything else it flags still fails it. Exit code 0
+# means nothing was flagged, 1 something was, 2 the game could not be run, 3
+# inconclusive (plug in and run again). What a window off every monitor cannot show is a note, not a flag: with
 # vsync its frames can wait for Windows' own clock, not your monitor's refresh (then half of them
 # come quicker than the refresh allows, which no screen could show), and Windows sometimes holds
 # one of its frames up for half a second. Notes also name what the specs ask
-# that this test does not judge: a frame cap under the floor, a run on battery.
+# that this test does not judge: a frame cap under the floor.
 # Build first with build.ps1: this uses madness.jar and the runtime it makes.
 
 param(
@@ -91,14 +95,21 @@ function Invoke-Run([string]$name, [string]$extra) {
     if ($NoShots) { $arguments += '-Dnfm.autotest.shots=false' }
     $arguments += @($extra -split ' ' | Where-Object { $_ } | ForEach-Object { "-D$_" })
     $arguments += @('-jar', $jar)
-    $battery = Test-OnBattery
+    # Windows is asked about power before, every 2 seconds during and after the run, so a plug pulled for a
+    # moment counts
+    $power = @(Get-PowerSaving)
     $p = Start-Process $java -ArgumentList $arguments -WorkingDirectory $root -WindowStyle Hidden -PassThru `
         -RedirectStandardOutput "$dir\out.log" -RedirectStandardError "$dir\err.log"
-    if (-not $p.WaitForExit(420000)) {
-        $p.Kill()
-        Write-Host "[live] $name ran for 7 minutes and was stopped"
+    $stopAt = (Get-Date).AddMinutes(7)
+    while (-not $p.WaitForExit(2000)) {
+        $power += @(Get-PowerSaving)
+        if ((Get-Date) -gt $stopAt) {
+            $p.Kill()
+            Write-Host "[live] $name ran for 7 minutes and was stopped"
+            break
+        }
     }
-    $battery = $battery -or (Test-OnBattery)
+    $power = @($power + @(Get-PowerSaving) | Select-Object -Unique)
     $frames = Join-Path $dir 'frames.json'
     if (-not (Test-Path $frames)) { return $null }
     $settings = @{}
@@ -106,7 +117,9 @@ function Invoke-Run([string]$name, [string]$extra) {
         $i = $_.IndexOf(': ')
         if ($i -gt 0) { $settings[$_.Substring(0, $i)] = $_.Substring($i + 2) }
     }
-    $settings['power'] = if ($battery) { 'on battery (at the start or the end of the run)' } else { 'plugged in' }
+    $settings['power'] = if ($power.Count -gt 0) { "$($power -join ' and ') during the run" } else { 'plugged in' }
+    $plan = Get-PowerPlan
+    if ($plan) { $settings['power'] += ", power plan $plan" }
     # the game says when its test went the whole way; one that ran out of time writes frames.json all the same
     $log = @(Get-Content "$dir\out.log" -ErrorAction SilentlyContinue)
     $finished = @($log | Where-Object { $_ -match '^\[autotest\] (split test )?done' }).Count -gt 0
@@ -117,7 +130,7 @@ function Invoke-Run([string]$name, [string]$extra) {
         dir = $dir
         parts = @((Get-Content $frames -Raw | ConvertFrom-Json).parts)
         settings = $settings
-        battery = $battery
+        power = $power
         finished = $finished
         ending = if ($ending) { $ending[0] -replace '^\[autotest\] ', '' } else { 'out.log has no "[autotest] done" line' }
     }
@@ -199,31 +212,57 @@ function Get-Target($run) {
 }
 
 # Whether race parts are held to the owner's floor (-MinFps, openspec\specs\performance): not when the settings
-# hold frames under it, and on battery only as a note, as perf.ps1 does (the PC is slower; the game does not cap
-# test runs there). why: the note saying so, once a run.
+# hold frames under it. why: the note saying so, once a run. (On battery see Get-Inconclusive.)
 function Get-FloorRule($run) {
     $cap = Get-Cap $run
-    if ($MinFps -le 0) { return [pscustomobject]@{ judged = $false; noted = $false; why = '' } }
+    if ($MinFps -le 0) { return [pscustomobject]@{ judged = $false; why = '' } }
     if (-not $cap.known) {
-        return [pscustomobject]@{ judged = $false; noted = $false
+        return [pscustomobject]@{ judged = $false
             why = "the frame limit follows the monitor's refresh rate, which the run could not read: the $MinFps fps floor is not judged" }
     }
     if ($cap.fps -gt 0 -and $cap.fps -lt $MinFps) {
-        return [pscustomobject]@{ judged = $false; noted = $false
+        return [pscustomobject]@{ judged = $false
             why = ('frames are held to {0:N0} a second by {1}, under the {2} fps floor: race parts are judged against {0:N0}' -f
                 $cap.fps, $cap.why, $MinFps) }
     }
-    if ($run.battery) {
-        return [pscustomobject]@{ judged = $true; noted = $true
-            why = "the PC ran on battery: race parts under $MinFps fps are noted, not flagged (plug in and run again)" }
-    }
-    return [pscustomobject]@{ judged = $true; noted = $false; why = '' }
+    return [pscustomobject]@{ judged = $true; why = '' }
 }
 
-# Windows says the PC runs on battery.
-function Test-OnBattery {
-    Add-Type -AssemblyName System.Windows.Forms
-    [System.Windows.Forms.SystemInformation]::PowerStatus.PowerLineStatus -eq 'Offline'
+# Why a run cannot prove a frame rate, '' when it can: Windows saved power during it in a way the owner did not
+# choose (on battery it slows the processor and the card; Battery saver too). The game itself never holds a test
+# run to its battery cap, so the slowing is Windows' alone, and its frame rates are notes, not passes or flags.
+function Get-Inconclusive($run) {
+    if (@($run.power).Count -eq 0) { return '' }
+    return ('Windows was saving power during the run ({0}), when it slows the processor and the graphics card, so ' +
+        'the run cannot prove {1} fps or any frame rate: plug in, turn Battery saver off and run again') -f
+    ($run.power -join ' and '), $MinFps
+}
+
+# What Windows does to save power now that the owner did not choose: 'on battery', 'with Battery saver on', or nothing
+# (GetSystemPowerStatus, as the game asks it).
+function Get-PowerSaving {
+    if (-not ('NfmLive.Power' -as [type])) {
+        Add-Type -Namespace NfmLive -Name Power -MemberDefinition @'
+[StructLayout(LayoutKind.Sequential)]
+public struct Status {
+    public byte ACLineStatus; public byte BatteryFlag; public byte BatteryLifePercent; public byte SystemStatusFlag;
+    public int BatteryLifeTime; public int BatteryFullLifeTime;
+}
+[DllImport("kernel32.dll")]
+public static extern bool GetSystemPowerStatus(out Status status);
+'@
+    }
+    $status = New-Object NfmLive.Power+Status
+    if (-not [NfmLive.Power]::GetSystemPowerStatus([ref]$status)) { return }
+    if ($status.ACLineStatus -eq 0) { 'on battery' }
+    if ($status.SystemStatusFlag -eq 1) { 'with Battery saver on' }
+}
+
+# The Windows power plan in use, by name ('' if powercfg cannot tell): the owner's own choice, so it is only shown.
+function Get-PowerPlan {
+    $line = [string](& powercfg /getactivescheme 2>$null)
+    if ($line -match '\(([^)]+)\)\s*$') { return $Matches[1] }
+    return ''
 }
 
 # Flags, and notes (starting "note: ") for what this window, off every monitor, cannot show.
@@ -249,16 +288,19 @@ function Get-Flags($run, $part) {
     foreach ($h in @($part.cardHeld.holds)) { if ($null -ne $h) { $heldMs += [double]$h.ms } }
     $fps = $part.fps
     if ($heldMs -gt 0 -and $part.seconds * 1000 -gt $heldMs + 100) { $fps = $part.frames / ($part.seconds - $heldMs / 1000) }
+    $slow = ''
     if ($race -and $floor -gt 0 -and $part.fps -lt $floor) {
         # the owner's floor, with no allowance, on the frames a second the report shows: a frame the card held up
         # kept the player waiting all the same
-        $text = '{0:N0} fps, under {1}' -f $part.fps, $floor
-        if ($heldMs -gt 0) { $text += ' ({0:N0} without the {1:N0} ms the card held frames up)' -f $fps, $heldMs }
-        if ($rule.noted) { $flags += "note: $text, on battery" } else { $pacing += $text }
+        $slow = '{0:N0} fps, under {1}' -f $part.fps, $floor
+        if ($heldMs -gt 0) { $slow += ' ({0:N0} without the {1:N0} ms the card held frames up)' -f $fps, $heldMs }
     } elseif ($race -and $target -gt 0 -and $fps -lt $target * 0.9) {
         # 10% under a frame limit is allowed
-        $pacing += ('{0:N0} fps, under {1}' -f $fps, $target)
+        $slow = '{0:N0} fps, under {1}' -f $fps, $target
     }
+    # a run Windows slowed to save power cannot prove a frame rate (Get-Inconclusive): too slow is only noted
+    if ($slow -and (Get-Inconclusive $run)) { $flags += "note: $slow, not judged: $($run.power -join ' and ')" }
+    elseif ($slow) { $pacing += $slow }
     # unevenness needs enough frames to tell: 100 over two seconds the card did not hold up (a menu's second
     # of 25 frames has one 99th-percentile frame); and frames that all come within the display's frame time
     # look even on it, however much quicker the rest are
@@ -318,6 +360,7 @@ if ($runs.Count -eq 0) { exit 2 }
 
 # a run that never wrote its frames is a flag, not a run left out
 $flagged = $lost.Count -gt 0
+$inconclusive = $false
 $md = @('# Live test', '', "$(Get-Date -Format 'yyyy-MM-dd HH:mm'), $env:COMPUTERNAME", '')
 if ($lost.Count -gt 0) { $md += @($lost | ForEach-Object { "**Flagged:** $_  " }) + '' }
 foreach ($run in $runs) {
@@ -326,11 +369,14 @@ foreach ($run in $runs) {
     $md += @($run.settings.GetEnumerator() | Sort-Object Name | ForEach-Object { "- $($_.Name): $($_.Value)" })
     $runFlags = @(Get-RunFlags $run)
     if (@($runFlags | Where-Object { $_ -notlike 'note: *' }).Count -gt 0) { $flagged = $true }
+    $why = Get-Inconclusive $run
+    if ($why) { $inconclusive = $true; $md += @('', "**Inconclusive:** $why.") }
     if ($runFlags.Count -gt 0) { $md += @('', "**Whole run:** $($runFlags -join '; ')") }
     $md += @('', '| Part | Seconds | Frames/s | Median ms | 99% ms | Longest ms | Late | Card ms | Drawn | Flags |',
         '|---|---:|---:|---:|---:|---:|---:|---:|---|---|')
     Write-Host ''
     Write-Host "== $title"
+    if ($why) { Write-Host "inconclusive: $why" }
     if ($runFlags.Count -gt 0) { Write-Host "whole run: $($runFlags -join '; ')" }
     Write-Host ('{0,-18} {1,6} {2,8} {3,7} {4,7} {5,8} {6,5} {7,6}  {8}' -f 'part', 's', 'fps', 'median', '99%',
         'longest', 'late', 'card', 'flags')
@@ -380,5 +426,8 @@ $report = Join-Path $Out 'report.md'
 $md | Set-Content $report -Encoding utf8
 Write-Host ''
 Write-Host "[live] report: $report"
+# a flag fails the run even when it is inconclusive: a stutter, a missing part or a menu the processor drew is
+# one on any power
 if ($flagged) { exit 1 }
+if ($inconclusive) { Write-Host '[live] inconclusive: Windows saved power during the run; plug in and run again'; exit 3 }
 exit 0
