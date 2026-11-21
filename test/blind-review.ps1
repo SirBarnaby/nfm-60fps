@@ -56,32 +56,38 @@ if (-not $companion -or -not (Test-Path $companion)) {
         'then claude plugin install codex@openai-codex.')
 }
 
-# The plugin's runner leaves a shared Codex broker running for the repo; inside Claude Code the plugin's
-# SessionEnd hook stops it. Started from here it would outlive the review and, on Windows, keep the
-# caller's output pipe open, so anything capturing this script's output would wait forever.
-# 'peek' gives the pid of the broker serving the repo now; 'stop' stops the broker unless it is the one
-# given to keep, with the plugin's own teardown (the same steps as its SessionEnd hook).
-function Invoke-Broker([string]$repo, [string]$action, [string]$keepPid = '') {
+# The plugin's runner leaves a shared Codex broker running for the checkout it reviews; inside Claude Code
+# the plugin's SessionEnd hook stops it. Started from here it would outlive the review and, on Windows, keep
+# the caller's output pipe open, so anything capturing this script's output would wait forever.
+# The plugin keeps a broker's state per checkout path (its resolveStateDir), and this review's checkout is its
+# own, so no other review's broker can be found there. Even so only the broker that appeared during this review
+# is stopped: 'peek' gives the pid the state names now (before the review: the pid to leave alone); 'stop'
+# stops the broker only if the state still names $brokerPid, with the plugin's own teardown (the same steps as
+# its SessionEnd hook), and removes the state folder with it.
+function Invoke-Broker([string]$repo, [string]$action, [string]$brokerPid = '') {
     $lib = ([Uri](Join-Path (Split-Path $companion -Parent) 'lib\')).AbsoluteUri
     $js = @"
+import fs from 'node:fs';
 import { loadBrokerSession, sendBrokerShutdown, teardownBrokerSession, clearBrokerSession } from '${lib}broker-lifecycle.mjs';
 import { terminateProcessTree } from '${lib}process.mjs';
+import { resolveStateDir } from '${lib}state.mjs';
 const root = process.env.BLIND_REVIEW_ROOT;
 const session = loadBrokerSession(root);
 const pid = String(session?.pid ?? '');
 if (process.env.BLIND_REVIEW_BROKER === 'peek') {
   process.stdout.write(pid);
-} else if (session && pid !== process.env.BLIND_REVIEW_KEEP.slice(4)) {
+} else if (session && pid !== '' && pid === process.env.BLIND_REVIEW_PID.slice(4)) {
   if (session.endpoint) await sendBrokerShutdown(session.endpoint);
   teardownBrokerSession({ ...session, killProcess: terminateProcessTree });
   clearBrokerSession(root);
+  fs.rmSync(resolveStateDir(root), { recursive: true, force: true });
 }
 "@
     $env:BLIND_REVIEW_ROOT = $repo
     $env:BLIND_REVIEW_BROKER = $action
-    $env:BLIND_REVIEW_KEEP = "pid:$keepPid"   # never empty: PowerShell drops an empty variable
+    $env:BLIND_REVIEW_PID = "pid:$brokerPid"   # never empty: PowerShell drops an empty variable
     try { ($js | & $node.Source --no-deprecation --input-type=module -) -join '' }
-    finally { Remove-Item Env:BLIND_REVIEW_ROOT, Env:BLIND_REVIEW_BROKER, Env:BLIND_REVIEW_KEEP -ErrorAction SilentlyContinue }
+    finally { Remove-Item Env:BLIND_REVIEW_ROOT, Env:BLIND_REVIEW_BROKER, Env:BLIND_REVIEW_PID -ErrorAction SilentlyContinue }
 }
 
 # Removes the checkout made for the review; one that cannot go (a file still held) is named, never left silently.
@@ -179,8 +185,12 @@ try {
     if ($result.verdict -eq 'approve') { exit 0 }
     exit 1
 } finally {
-    # the broker's processes work in the checkout, so they go before it does
-    if ($null -ne $brokerBefore) { Invoke-Broker $tree 'stop' $brokerBefore | Out-Null }
+    # the broker this review started (its processes work in the checkout, so they go before it does); one
+    # that was there before the review is not this review's
+    if ($null -ne $brokerBefore) {
+        $brokerOurs = Invoke-Broker $tree 'peek'
+        if ($brokerOurs -and $brokerOurs -ne $brokerBefore) { Invoke-Broker $tree 'stop' $brokerOurs | Out-Null }
+    }
     if ($inTree) { Pop-Location }
     if ($tree) { Remove-ReviewTree $tree }
     Pop-Location
