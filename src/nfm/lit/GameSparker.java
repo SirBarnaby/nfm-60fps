@@ -476,7 +476,7 @@ public class GameSparker extends Panel implements Runnable {
     private boolean keptBlocked;
     /** The HUD as the last frame drawn on the game thread showed it. */
     private BufferedImage ownSceneHud;
-    /** The kept scene still holds for the frames to come: no tick nor run-ahead since it was recorded. */
+    /** The kept scene (or split screen's panes) still holds for the frames to come: no tick nor run-ahead since. */
     private boolean retainedValid;
     private boolean retainedAhead;
     /** True while the kept scene is being recorded. */
@@ -485,14 +485,12 @@ public class GameSparker extends Panel implements Runnable {
     private SceneRecorder shownRecorder = sceneRecorder;
     /** Each split-screen pane's own drawing depths, see PaneDepths. */
     private final PaneDepths[] paneDepths = {new PaneDepths(), new PaneDepths()};
-    /** Split screen kept for the tick on the game thread, when the presenter does not draw it. */
-    private final KeptPanes keptPanes = new KeptPanes();
-    /** The kept panes still hold for the frames to come: no tick since they were recorded. */
-    private boolean panesValid;
-    /* where the second split-screen player's camera is, as framePose and spanScratch are the first's */
+    /** Split screen kept for the tick on the game thread, when the presenter does not draw it; made when needed. */
+    private KeptPanes keptPanes;
+    /** Where the second split-screen player's camera is, as framePose is the first's. */
     private final FramePose framePose2 = new FramePose();
-    private final PoseSpan spanScratch2 = new PoseSpan();
-    private final Rectangle[] panesNow = new Rectangle[2];
+    /** Where a player's camera was at the last tick: x, y, z, xz, zy. */
+    private final int[] cameraFrom = new int[5];
 
     /**
      * Split screen's two panes kept for a tick (see RetainedScene): each
@@ -503,7 +501,9 @@ public class GameSparker extends Panel implements Runnable {
     private static final class KeptPanes {
         final SceneRecorder[] recorders = {new SceneRecorder(), new SceneRecorder()};
         final RetainedScene[] scenes = {new RetainedScene(), new RetainedScene()};
+        /** Where each pane is in the race's picture, and the poses its player's is drawn between. */
         final Rectangle[] areas = new Rectangle[2];
+        final PoseSpan[] spans = {new PoseSpan(), new PoseSpan()};
         /** Where each pane's commands start in {@link #joined}. */
         private final int[] starts = new int[2];
         final SceneRecorder joined = new SceneRecorder();
@@ -519,13 +519,21 @@ public class GameSparker extends Panel implements Runnable {
             scenes[0].realize(first, data, starts[0]);
             scenes[1].realize(second, data, starts[1]);
         }
+
+        /** Places both panes {@code alpha} of the way between their {@link #spans}, the poses put in {@code first}, {@code second}. */
+        void place(float alpha, FramePose first, FramePose second) {
+            spans[0].at(alpha, first);
+            spans[1].at(alpha, second);
+            place(first, second);
+        }
     }
     /**
-     * Names the scene kept on the game thread for the card (see
-     * GpuDisplay#drawScene), so its polygons are cut as before while it
-     * holds; counted far above the presenter's own, which share the card.
+     * Names each kept scene for the card (see GpuDisplay#drawScene), so its
+     * polygons are cut and its points sent once while it holds: the
+     * presenter's and the game thread's from this one count, so the card
+     * never takes one for the other. Game thread only.
      */
-    private long keptVersion = 1L << 40;
+    private long keptVersion;
     /** The kept scene's version the frame being drawn shows, -1 for a scene recorded for this frame alone. */
     private long gpuSceneVersion = -1L;
     private long profileRecordNanos;
@@ -2011,7 +2019,7 @@ public class GameSparker extends Panel implements Runnable {
             return;
         }
         boolean wasScene = gpuSceneFrame;
-        SplitRace split = SplitRace.pictureSplit ? SplitRace.active : null;
+        SplitRace split = SplitRace.inPicture();
         java.io.File file = new java.io.File(MOTION_TEST, "motion-" + raceTicks + ".bin");
         file.getParentFile().mkdirs();
         try (java.io.DataOutputStream out = new java.io.DataOutputStream(
@@ -2048,16 +2056,8 @@ public class GameSparker extends Panel implements Runnable {
      */
     private void writeKeptMotion(int steps, SplitRace split) throws java.io.IOException {
         java.io.File file = new java.io.File(MOTION_TEST, "kept-" + raceTicks + ".bin");
-        boolean recorded;
-        if (split != null) {
-            currentPanes(panesNow);
-            recorded = recordPanes(split, panesNow, keptPanes);
-            panesValid = false;
-        } else {
-            recordRetained(false);
-            retainedValid = false;
-            recorded = !retainedRecorder.unsupported();
-        }
+        boolean recorded = recordRetained(split, false);
+        retainedValid = false; // the frames record their own
         if (!recorded) {
             HLogger.warn("[motiontest] the kept scene could not be recorded");
             return;
@@ -2067,7 +2067,7 @@ public class GameSparker extends Panel implements Runnable {
             for (int k = 0; k <= steps; k++) {
                 float t = k / (float) steps;
                 if (split != null) {
-                    placeKeptPanes(split, t);
+                    keptPanes.place(t, framePose, framePose2);
                     writeList(out, keptPanes.joined.list());
                 } else {
                     framePose(t, false, framePose);
@@ -2482,12 +2482,12 @@ public class GameSparker extends Panel implements Runnable {
                             periodicFraction(prevCarWZY[i], savedCarWZY[i], alpha, 45));
                 }
             }
-            // Player 2's camera came from its own last tick
-            int fromX = player == 0 ? prevCamX : prevCam2X;
-            int fromY = player == 0 ? prevCamY : prevCam2Y;
-            int fromZ = player == 0 ? prevCamZ : prevCam2Z;
-            int fromXZ = player == 0 ? prevCamXZ : prevCam2XZ;
-            int fromZY = player == 0 ? prevCamZY : prevCam2ZY;
+            lastCamera(player, cameraFrom); // Player 2's camera came from its own last tick
+            int fromX = cameraFrom[0];
+            int fromY = cameraFrom[1];
+            int fromZ = cameraFrom[2];
+            int fromXZ = cameraFrom[3];
+            int fromZY = cameraFrom[4];
             if (!teleported(camX - fromX, camY - fromY, camZ - fromZ)) {
                 Medium.x = mix(fromX, camX, alpha);
                 Medium.y = mix(fromY, camY, alpha);
@@ -2711,138 +2711,115 @@ public class GameSparker extends Panel implements Runnable {
      * if a tick or a new run-ahead came since: the cars and the camera
      * {@code alpha} of the way between the two poses that
      * {@link #renderIngameScene} (or, with {@code ahead},
-     * {@link #renderAheadScene}) draws between.
+     * {@link #renderAheadScene}) draws between; with {@code split}, both
+     * panes from their players' cameras, between the poses
+     * {@link #renderSplitScene} draws between, in one scene for the card.
      *
      * @return false if this frame has to be drawn the whole way instead
      */
-    private boolean drawRetained(boolean ahead, float alpha) {
+    private boolean drawRetained(SplitRace split, boolean ahead, float alpha) {
         if (!RETAINED || !gpuSceneFrame || captureRequested || MOTION_TEST != null || keptBlocked) {
             return false;
         }
-        if (!retainedValid || retainedAhead != ahead) {
-            recordRetained(ahead);
-            if (!retainedValid) {
-                keptBlocked = true; // recording it again for every frame would only fail again until the next tick
-                return false;
-            }
+        if ((!retainedValid || retainedAhead != ahead) && !recordRetained(split, ahead)) {
+            keptBlocked = true; // recording it again for every frame would only fail again until the next tick
+            return false;
         }
         long start = System.nanoTime();
-        framePose(alpha, ahead, framePose);
-        retainedScene.realize(framePose, retainedRecorder.list().data());
-        shownRecorder = retainedRecorder;
+        if (split != null) {
+            keptPanes.place(alpha, framePose, framePose2);
+            shownRecorder = keptPanes.joined;
+        } else {
+            framePose(alpha, ahead, framePose);
+            retainedScene.realize(framePose, retainedRecorder.list().data());
+            shownRecorder = retainedRecorder;
+        }
         gpuSceneVersion = keptVersion;
         profilePlaceNanos += System.nanoTime() - start;
         profilePlaces++;
         return true;
     }
 
-    /** Records the scene kept for the frames until the next tick or run-ahead, see {@link RetainedScene}. */
-    private void recordRetained(boolean ahead) {
-        retainedValid = recordKept(ahead, retainedRecorder, retainedScene);
+    /**
+     * Records the scene kept for the frames until the next tick or run-ahead
+     * (see RetainedScene); with {@code split}, its two panes (the panes only
+     * move with a tick, see fitPicture).
+     *
+     * @return false if it used drawing the graphics card does not do
+     */
+    private boolean recordRetained(SplitRace split, boolean ahead) {
+        if (split != null) {
+            if (keptPanes == null) {
+                keptPanes = new KeptPanes();
+            }
+            measurePanes(split, keptPanes);
+            retainedValid = recordPanes(split, keptPanes);
+        } else {
+            poseSpan(ahead, spanScratch);
+            retainedValid = recordKept(ahead, retainedRecorder, retainedScene, spanScratch, 0, null);
+        }
         retainedAhead = ahead;
         keptVersion++;
+        return retainedValid;
     }
 
     /**
-     * Draws a split-screen frame from the panes kept for the tick, as
-     * {@link #drawRetained} draws one player's, recording them first if a
-     * tick came since: each player's cars and camera {@code alpha} of the
-     * way between the poses {@link #renderSplitScene} draws between, both
-     * panes in one scene for the card.
-     *
-     * @return false if this frame has to be drawn the whole way instead
+     * Where split-screen race {@code split}'s panes are in the race's picture
+     * now, and the poses each player's is drawn between, into {@code into}.
      */
-    private boolean drawSplitRetained(SplitRace split, float alpha) {
-        if (!RETAINED || !gpuSceneFrame || captureRequested || MOTION_TEST != null || keptBlocked) {
-            return false;
-        }
-        if (!panesValid) {
-            // a tick came; the panes only move with one (see fitPicture)
-            currentPanes(panesNow);
-            if (!recordPanes(split, panesNow, keptPanes)) {
-                keptBlocked = true; // until the next tick
-                return false;
-            }
-            panesValid = true;
-            keptVersion++;
-        }
-        long start = System.nanoTime();
-        placeKeptPanes(split, alpha);
-        shownRecorder = keptPanes.joined;
-        gpuSceneVersion = keptVersion;
-        profilePlaceNanos += System.nanoTime() - start;
-        profilePlaces++;
-        return true;
-    }
-
-    /** Places the game thread's kept panes {@code alpha} of the way between the last two ticks. */
-    private void placeKeptPanes(SplitRace split, float alpha) {
-        paneSpans(split, keptPanes.areas, spanScratch, spanScratch2);
-        spanScratch.at(alpha, framePose);
-        spanScratch2.at(alpha, framePose2);
-        keptPanes.place(framePose, framePose2);
-    }
-
-    /** Where the split-screen panes are in the race's picture now. */
-    private static void currentPanes(Rectangle[] into) {
+    private void measurePanes(SplitRace split, KeptPanes into) {
         for (int p = 0; p < 2; p++) {
-            into[p] = SplitRace.pane(p, GameFacts.sceneWidth, GameFacts.sceneHeight, SplitRace.pictureSide);
+            into.areas[p] = SplitRace.pane(p, GameFacts.sceneWidth, GameFacts.sceneHeight, SplitRace.pictureSide);
         }
-    }
-
-    /**
-     * Records each split-screen player's pane, at {@code areas}, kept for
-     * the tick into {@code into}: from their own camera, in the pane's
-     * coordinates, then joined.
-     *
-     * @return false if one used drawing the graphics card does not do
-     */
-    private boolean recordPanes(SplitRace split, Rectangle[] areas, KeptPanes into) {
-        System.arraycopy(areas, 0, into.areas, 0, 2);
-        for (int p = 0; p < 2; p++) {
-            if (p == 1) {
-                Medium.swap(split.cam2);
-            }
-            try {
-                if (!recordKept(false, into.recorders[p], into.scenes[p], p, into.areas[p])) {
-                    return false;
-                }
-            } finally {
-                if (p == 1) {
-                    Medium.swap(split.cam2);
-                }
-            }
-        }
-        into.join();
-        return true;
-    }
-
-    /** The poses split-screen panes {@code areas} are drawn between: the first player's and the second's. */
-    private void paneSpans(SplitRace split, Rectangle[] areas, PoseSpan first, PoseSpan second) {
-        paneSpan(0, areas[0], first);
+        paneSpan(0, into.areas[0], into.spans[0]);
         Medium.swap(split.cam2);
         try {
-            paneSpan(1, areas[1], second);
+            paneSpan(1, into.areas[1], into.spans[1]);
         } finally {
             Medium.swap(split.cam2);
         }
     }
 
-    private boolean recordKept(boolean ahead, SceneRecorder recorder, RetainedScene scene) {
-        return recordKept(ahead, recorder, scene, 0, null);
+    /**
+     * Records each split-screen player's pane kept for the tick into
+     * {@code into}, where {@link #measurePanes} put it: from their own
+     * camera, in the pane's coordinates; then joins them.
+     *
+     * @return false if one used drawing the graphics card does not do
+     */
+    private boolean recordPanes(SplitRace split, KeptPanes into) {
+        if (!recordPane(0, into)) {
+            return false;
+        }
+        Medium.swap(split.cam2);
+        try {
+            if (!recordPane(1, into)) {
+                return false;
+            }
+        } finally {
+            Medium.swap(split.cam2);
+        }
+        into.join();
+        return true;
+    }
+
+    private boolean recordPane(int player, KeptPanes into) {
+        return recordKept(false, into.recorders[player], into.scenes[player], into.spans[player], player,
+                into.areas[player]);
     }
 
     /**
      * Records a scene kept for a whole tick into {@code recorder} and
-     * {@code scene}, halfway between the poses {@link #renderIngameScene} (or
-     * with {@code ahead}, {@link #renderAheadScene}) draws between; with a
-     * {@code pane}, split-screen player {@code player}'s, from their camera
-     * (in place in Medium), in the pane's own coordinates.
+     * {@code scene}, halfway along {@code span}, the poses
+     * {@link #renderIngameScene} (or with {@code ahead},
+     * {@link #renderAheadScene}) draws between; with a {@code pane},
+     * split-screen player {@code player}'s, from their camera (in place in
+     * Medium), in the pane's own coordinates.
      *
      * @return false if it used drawing the graphics card does not do
      */
-    private boolean recordKept(boolean ahead, SceneRecorder recorder, RetainedScene scene, int player,
-            Rectangle pane) {
+    private boolean recordKept(boolean ahead, SceneRecorder recorder, RetainedScene scene, PoseSpan span,
+            int player, Rectangle pane) {
         long start = System.nanoTime();
         Medium.cullX = RETAINED_MARGIN_X;
         Medium.cullY = RETAINED_MARGIN_Y;
@@ -2851,12 +2828,7 @@ public class GameSparker extends Panel implements Runnable {
         recordingRecorder = recorder;
         recordingScene = scene;
         try {
-            if (pane == null) {
-                framePose(RETAINED_AT, ahead, scene.recorded);
-            } else {
-                paneSpan(player, pane, spanScratch);
-                spanScratch.at(RETAINED_AT, scene.recorded);
-            }
+            span.at(RETAINED_AT, scene.recorded);
             // the kept scene is projected as the frames are drawn: in the race's picture (or the pane) as shown
             try (var _ = pane == null ? Medium.shownView() : Medium.paneView(pane.width, pane.height)) {
                 scene.begin();
@@ -2903,20 +2875,23 @@ public class GameSparker extends Panel implements Runnable {
         if (!stale) {
             return true;
         }
-        SplitRace split = SplitRace.pictureSplit ? SplitRace.active : null;
-        if (split != null) {
-            currentPanes(panesNow);
-            paneSpans(split, panesNow, spanScratch, spanScratch2);
-        } else {
-            poseSpan(ahead, spanScratch);
-        }
-        spanScratch.handedLate = System.nanoTime() - tickStartNanos;
-        spanScratch.keysNanos = ahead ? aheadKeysNanos : tickKeysNanos;
-        presenter.handOverSpan(spanScratch, split != null ? spanScratch2 : null);
+        SplitRace split = SplitRace.inPicture();
         Presenter.Kept kept = presenter.free();
         kept.split = split != null;
-        boolean recorded = kept.split ? recordPanes(split, panesNow, kept.panes)
-                : recordKept(ahead, kept.recorder, kept.scene);
+        PoseSpan first = spanScratch;
+        PoseSpan second = null;
+        if (kept.split) {
+            measurePanes(split, kept.panes());
+            first = kept.panes.spans[0];
+            second = kept.panes.spans[1];
+        } else {
+            poseSpan(ahead, first);
+        }
+        first.handedLate = System.nanoTime() - tickStartNanos;
+        first.keysNanos = ahead ? aheadKeysNanos : tickKeysNanos;
+        presenter.handOverSpan(first, second);
+        boolean recorded = kept.split ? recordPanes(split, kept.panes)
+                : recordKept(ahead, kept.recorder, kept.scene, first, 0, null);
         if (!recorded) {
             keptBlocked = true; // until the next tick
             return false;
@@ -3004,6 +2979,29 @@ public class GameSparker extends Panel implements Runnable {
      * between them are due, for any thread to place a kept scene with.
      */
     private void poseSpan(boolean ahead, PoseSpan out) {
+        poseCars(ahead, out);
+        if (ahead) {
+            currentCamera(out.cameraStart);
+            int[] to = out.cameraEnd;
+            to[0] = aheadPoses.camX;
+            to[1] = aheadPoses.camY;
+            to[2] = aheadPoses.camZ;
+            to[3] = aheadPoses.camXZ;
+            to[4] = aheadPoses.camZY;
+        } else {
+            lastCamera(0, out.cameraStart);
+            currentCamera(out.cameraEnd);
+        }
+        // placed as frames are drawn: in the picture as it is shown (see Medium.showView)
+        placeCamera(out, -GameFacts.sceneMarginX(), -GameFacts.sceneMarginY());
+    }
+
+    /**
+     * The cars' poses of {@link #poseSpan}, and when its frames are due. A
+     * car that was replaced or jumped stays where it is, as in
+     * {@link #renderIngameScene}.
+     */
+    private void poseCars(boolean ahead, PoseSpan out) {
         int np = Math.min(GameFacts.numberOfPlayers, Math.min(prevCarX.length, FramePose.SLOTS));
         out.slots = np;
         out.moving = prevFrameValid;
@@ -3030,20 +3028,6 @@ public class GameSparker extends Panel implements Runnable {
                 out.setCar(i, PoseSpan.MOVING, c.x, c.y, c.z, c.xz, c.xy, c.zy, c.wxz, c.wzy);
             }
         }
-        int[] from = out.cameraStart;
-        int[] to = out.cameraEnd;
-        from[0] = ahead ? Medium.x : prevCamX;
-        from[1] = ahead ? Medium.y : prevCamY;
-        from[2] = ahead ? Medium.z : prevCamZ;
-        from[3] = ahead ? Medium.xz : prevCamXZ;
-        from[4] = ahead ? Medium.zy : prevCamZY;
-        to[0] = ahead ? aheadPoses.camX : Medium.x;
-        to[1] = ahead ? aheadPoses.camY : Medium.y;
-        to[2] = ahead ? aheadPoses.camZ : Medium.z;
-        to[3] = ahead ? aheadPoses.camXZ : Medium.xz;
-        to[4] = ahead ? aheadPoses.camZY : Medium.zy;
-        // placed as frames are drawn: in the picture as it is shown (see Medium.showView)
-        placeCamera(out, -GameFacts.sceneMarginX(), -GameFacts.sceneMarginY());
     }
 
     /**
@@ -3052,22 +3036,30 @@ public class GameSparker extends Panel implements Runnable {
      * Medium, from its own last tick, as {@link #renderScene} moves it.
      */
     private void paneSpan(int player, Rectangle pane, PoseSpan out) {
-        poseSpan(false, out);
-        int[] from = out.cameraStart;
-        int[] to = out.cameraEnd;
-        boolean second = player == 1;
-        from[0] = second ? prevCam2X : prevCamX;
-        from[1] = second ? prevCam2Y : prevCamY;
-        from[2] = second ? prevCam2Z : prevCamZ;
-        from[3] = second ? prevCam2XZ : prevCamXZ;
-        from[4] = second ? prevCam2ZY : prevCamZY;
-        to[0] = Medium.x;
-        to[1] = Medium.y;
-        to[2] = Medium.z;
-        to[3] = Medium.xz;
-        to[4] = Medium.zy;
+        poseCars(false, out);
+        lastCamera(player, out.cameraStart);
+        currentCamera(out.cameraEnd);
         // placed as the pane is drawn (see Medium.paneView)
         placeCamera(out, GameFacts.GAME_WIDTH / 2 - pane.width / 2, GameFacts.GAME_HEIGHT / 2 - pane.height / 2);
+    }
+
+    /** Where split-screen player {@code player}'s camera (the first's out of split screen) was at the last tick. */
+    private void lastCamera(int player, int[] into) {
+        boolean second = player == 1;
+        into[0] = second ? prevCam2X : prevCamX;
+        into[1] = second ? prevCam2Y : prevCamY;
+        into[2] = second ? prevCam2Z : prevCamZ;
+        into[3] = second ? prevCam2XZ : prevCamXZ;
+        into[4] = second ? prevCam2ZY : prevCamZY;
+    }
+
+    /** Where the camera in Medium is now: x, y, z, xz, zy. */
+    private static void currentCamera(int[] into) {
+        into[0] = Medium.x;
+        into[1] = Medium.y;
+        into[2] = Medium.z;
+        into[3] = Medium.xz;
+        into[4] = Medium.zy;
     }
 
     /**
@@ -3115,11 +3107,19 @@ public class GameSparker extends Panel implements Runnable {
                 new nfm.lit.gpu.ProjectedScene()};
             private final nfm.lit.gpu.ProjectedScene[] whole = {projected[0]};
             /** A split-screen race's two panes, kept instead of {@link #recorder}'s one scene when {@link #split}. */
-            final KeptPanes panes = new KeptPanes();
+            private KeptPanes panes;
             boolean split;
             BufferedImage hud;
             boolean flash;
             long version;
+
+            /** Its {@link #panes}, made the first time a split-screen race needs them. */
+            KeptPanes panes() {
+                if (panes == null) {
+                    panes = new KeptPanes();
+                }
+                return panes;
+            }
 
             /** The recording its frames show, and the back buffer gets. */
             SceneRecorder shown() {
@@ -3167,7 +3167,6 @@ public class GameSparker extends Panel implements Runnable {
         /* guarded by lock */
         private Kept drawing;
         private Kept latest;
-        private long versions;
         private final PoseSpan handedSpan = new PoseSpan();
         /** Split screen's second player's; the first's when it is not split. */
         private final PoseSpan handedSpan2 = new PoseSpan();
@@ -3265,7 +3264,7 @@ public class GameSparker extends Panel implements Runnable {
         /** Game thread: {@code k} is the scene for the frames from now on. */
         void handOver(Kept k) {
             synchronized (lock) {
-                k.version = ++versions;
+                k.version = ++keptVersion;
                 latest = k;
                 lock.notifyAll();
             }
@@ -6626,7 +6625,6 @@ public class GameSparker extends Panel implements Runnable {
                 nextTickNanos += currentTickNanos;
                 ticked = true;
                 retainedValid = false; // the next frame records the scene for this tick
-                panesValid = false;
                 keptStale = true;
                 keptBlocked = false;
                 ticksThisFrame++;
@@ -7478,7 +7476,7 @@ public class GameSparker extends Panel implements Runnable {
                     gpuSceneVersion = -1L;
                     if (splitFrame != null && SplitRace.pictureSplit) {
                         aheadValid = false;
-                        if (!drawSplitRetained(splitFrame, renderAlpha)) {
+                        if (!drawRetained(splitFrame, false, renderAlpha)) {
                             renderSplitScene(splitFrame, renderAlpha);
                         }
                     } else if (aheadPossible()) {
@@ -7488,12 +7486,12 @@ public class GameSparker extends Panel implements Runnable {
                             profileAheads++;
                             retainedValid = false;
                         }
-                        if (!drawRetained(true, renderAlpha)) {
+                        if (!drawRetained(null, true, renderAlpha)) {
                             renderAheadScene(renderAlpha);
                         }
                     } else {
                         aheadValid = false;
-                        if (!drawRetained(false, renderAlpha)) {
+                        if (!drawRetained(null, false, renderAlpha)) {
                             renderIngameScene(renderAlpha);
                         }
                     }

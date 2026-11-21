@@ -262,6 +262,11 @@ final class SplitRace {
     static volatile boolean pictureSplit;
     static volatile boolean pictureSide;
 
+    /** The split-screen race the race's picture is split for now; null when it is not split. */
+    static SplitRace inPicture() {
+        return pictureSplit ? active : null;
+    }
+
     /** How the window is shared now, in words, for the settings: "side by side, each view 960x1080". */
     static String describe(int width, int height) {
         boolean side = sideBySide(width, height, view);
