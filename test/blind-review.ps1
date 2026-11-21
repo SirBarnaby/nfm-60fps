@@ -54,6 +54,35 @@ if (-not $companion -or -not (Test-Path $companion)) {
         'then claude plugin install codex@openai-codex.')
 }
 
+# The plugin's runner leaves a shared Codex broker running for the repo; inside Claude Code the plugin's
+# SessionEnd hook stops it. Started from here it would outlive the review and, on Windows, keep the
+# caller's output pipe open, so anything capturing this script's output would wait forever.
+# 'peek' gives the pid of the broker serving the repo now; 'stop' stops the broker unless it is the one
+# given to keep, with the plugin's own teardown (the same steps as its SessionEnd hook).
+function Invoke-Broker([string]$action, [string]$keepPid = '') {
+    $lib = ([Uri](Join-Path (Split-Path $companion -Parent) 'lib\')).AbsoluteUri
+    $js = @"
+import { loadBrokerSession, sendBrokerShutdown, teardownBrokerSession, clearBrokerSession } from '${lib}broker-lifecycle.mjs';
+import { terminateProcessTree } from '${lib}process.mjs';
+const root = process.env.BLIND_REVIEW_ROOT;
+const session = loadBrokerSession(root);
+const pid = String(session?.pid ?? '');
+if (process.env.BLIND_REVIEW_BROKER === 'peek') {
+  process.stdout.write(pid);
+} else if (session && pid !== process.env.BLIND_REVIEW_KEEP.slice(4)) {
+  if (session.endpoint) await sendBrokerShutdown(session.endpoint);
+  teardownBrokerSession({ ...session, killProcess: terminateProcessTree });
+  clearBrokerSession(root);
+}
+"@
+    $env:BLIND_REVIEW_ROOT = $root
+    $env:BLIND_REVIEW_BROKER = $action
+    $env:BLIND_REVIEW_KEEP = "pid:$keepPid"   # never empty: PowerShell drops an empty variable
+    try { ($js | & $node.Source --no-deprecation --input-type=module -) -join '' }
+    finally { Remove-Item Env:BLIND_REVIEW_ROOT, Env:BLIND_REVIEW_BROKER, Env:BLIND_REVIEW_KEEP -ErrorAction SilentlyContinue }
+}
+
+$brokerBefore = $null
 Push-Location $root
 try {
     $baseSha = (& git rev-parse --verify --quiet "$Base^{commit}")
@@ -64,10 +93,12 @@ try {
         Write-Host 'note: there are uncommitted changes; only committed work is reviewed.'
     }
 
-    $arguments = @($companion, 'adversarial-review', '--wait', '--json', '--base', $baseSha)
+    # --no-deprecation: Node 24 warns about the runner's own Windows spawn (DEP0190), noise for this report
+    $arguments = @('--no-deprecation', $companion, 'adversarial-review', '--wait', '--json', '--base', $baseSha)
     if ($Model) { $arguments += @('--model', $Model) }
     $arguments += $focus
     Write-Host ('Codex is reviewing {0}..{1} (a few minutes)...' -f $baseShort, $headSha)
+    $brokerBefore = Invoke-Broker 'peek'
     $raw = (& $node.Source @arguments) -join "`n"
     $exit = $LASTEXITCODE
 
@@ -124,5 +155,6 @@ try {
     if ($result.verdict -eq 'approve') { exit 0 }
     exit 1
 } finally {
+    if ($null -ne $brokerBefore) { Invoke-Broker 'stop' $brokerBefore | Out-Null }
     Pop-Location
 }
