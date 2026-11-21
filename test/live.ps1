@@ -1,7 +1,8 @@
 # The live test: plays the game the way you do, with your saved settings, and
 # reports how fast and how evenly each part of it went on screen.
 #
-#   .\test\live.ps1                                  one run with your settings
+#   .\test\live.ps1                                  one run with your settings, at 1920x1080 fullscreen
+#   .\test\live.ps1 -AsSaved                         at your saved window or fullscreen resolution instead
 #   .\test\live.ps1 -Split                           split screen instead
 #   .\test\live.ps1 -Set 'nfm.overlay=off'           one run more for each entry,
 #   .\test\live.ps1 -Set 'nfm.overlay=off','nfm.smootheffects=false nfm.runahead=false'
@@ -14,7 +15,17 @@
 #                                                    judged when your settings hold frames under it (a
 #                                                    lower frame limit, Match display, Variable refresh,
 #                                                    vsync on: then the limit is the target). On battery
-#                                                    or with Battery saver on, the run is inconclusive
+#                                                    or with Battery saver on, or not at 1920x1080
+#                                                    fullscreen (-AsSaved), the run is inconclusive
+#
+# The specs ask for the floor at 1920x1080 fullscreen, so by default each run is put there on top of your saved
+# settings: the game has no command-line setting for it (it reads fullscreen and its resolution from
+# data\cookies.radq, where it saves them), so the run plays in a folder in %TEMP% of hard links to the files the
+# game reads where it starts (data, mods, cache, replays, lib\dlls, madness.aot: no copies, unless a link cannot be
+# made), with its own data\cookies.radq: yours, with fullscreen on at 1920x1080 in place of your fullscreen and its
+# resolution. The folder goes when the run ends; the game's log from it is kept in the run's folder (logs\).
+# report.md says which resolution each run had. A run that is not at 1920x1080 fullscreen (-AsSaved, or a monitor
+# that cannot show it) cannot prove the floor: it is inconclusive, its frame rates under the floor are notes.
 #
 # What it plays: the main menu, fullscreen switched off and on again (a new
 # window and the graphics card started again, as F11 does), the settings
@@ -62,6 +73,7 @@
 
 param(
     [switch]$Split,
+    [switch]$AsSaved,
     [switch]$NoShots,
     [string[]]$Set = @(),
     [string]$Out,
@@ -83,6 +95,16 @@ New-Item -ItemType Directory -Force $Out | Out-Null
 # Java as madness64.exe starts it
 $launcher = @(Get-Content (Join-Path $root 'madness64.ini') | Where-Object { $_ -match '^vm\.arg\.\d+=' } |
     ForEach-Object { $_ -replace '^vm\.arg\.\d+=', '' })
+
+# The resolution the specs' floor is for, as the game's settings.txt words it, and the saved settings that put a
+# run there (GameSparker.loadFullscreen, loadFullscreenResolution); the files and folders the game reads relative
+# to where it starts (GameFiles, GameSparker's lib\dlls, SteamAcoustics' cache, Replays, the -XX:AOTCache in
+# madness64.ini), which a run's game folder links to (New-GameFolder)
+$floorWindow = 'fullscreen 1920x1080'
+$override = [ordered]@{ 'fullscreen.dat' = 1; 'fullresw.dat' = 1920; 'fullresh.dat' = 1080 }
+$cookies = Join-Path $root 'data\cookies.radq'
+$gameReads = @('data', 'mods', 'cache', 'replays', 'lib\dlls', 'madness.aot')
+Add-Type -AssemblyName System.IO.Compression
 
 # parts of a race, which should go at the frame limit; the rest are menus, drawn once a tick
 $raceParts = @('countdown', 'race', 'split countdown', 'split race', 'instantreplay', 'gamehighlight')
@@ -126,21 +148,28 @@ function Invoke-Run([string]$name, [string]$extra) {
     if ($manifest.jarOlderThan) {
         Write-Host "[live] note: madness.jar is older than $($manifest.jarOlderThan): this tests the last build, not the files as they are (run build.ps1 -Quick first)"
     }
-    # Windows is asked about power before, every 2 seconds during and after the run, so a plug pulled for a
-    # moment counts
-    $power = @(Get-PowerSaving)
-    $p = Start-Process $java -ArgumentList $arguments -WorkingDirectory $root -WindowStyle Hidden -PassThru `
-        -RedirectStandardOutput "$dir\out.log" -RedirectStandardError "$dir\err.log"
-    $stopAt = (Get-Date).AddMinutes(7)
-    while (-not $p.WaitForExit(2000)) {
-        $power += @(Get-PowerSaving)
-        if ((Get-Date) -gt $stopAt) {
-            $p.Kill()
-            Write-Host "[live] $name ran for 7 minutes and was stopped"
-            break
+    # the game plays in its own folder with -AsSaved, otherwise in one at 1920x1080 fullscreen (New-GameFolder)
+    $game = if ($AsSaved) { $root } else { New-GameFolder $name }
+    try {
+        # Windows is asked about power before, every 2 seconds during and after the run, so a plug pulled for a
+        # moment counts
+        $power = @(Get-PowerSaving)
+        $p = Start-Process $java -ArgumentList $arguments -WorkingDirectory $game -WindowStyle Hidden -PassThru `
+            -RedirectStandardOutput "$dir\out.log" -RedirectStandardError "$dir\err.log"
+        $stopAt = (Get-Date).AddMinutes(7)
+        while (-not $p.WaitForExit(2000)) {
+            $power += @(Get-PowerSaving)
+            if ((Get-Date) -gt $stopAt) {
+                $p.Kill()
+                $p.WaitForExit(10000) | Out-Null
+                Write-Host "[live] $name ran for 7 minutes and was stopped"
+                break
+            }
         }
+        $power = @($power + @(Get-PowerSaving) | Select-Object -Unique)
+    } finally {
+        if ($game -ne $root) { Remove-GameFolder $game $dir }
     }
-    $power = @($power + @(Get-PowerSaving) | Select-Object -Unique)
     $frames = Join-Path $dir 'frames.json'
     if (-not (Test-Path $frames)) { return $null }
     $settings = @{}
@@ -152,6 +181,7 @@ function Invoke-Run([string]$name, [string]$extra) {
     $plan = Get-PowerPlan
     if ($plan) { $settings['power'] += ", power plan $plan" }
     $settings['build'] = Get-BuildText $manifest
+    $settings['resolution'] = $manifest.resolution
     # the game says when its test went the whole way; one that ran out of time writes frames.json all the same
     $log = @(Get-Content "$dir\out.log" -ErrorAction SilentlyContinue)
     $finished = @($log | Where-Object { $_ -match '^\[autotest\] (split test )?done' }).Count -gt 0
@@ -199,6 +229,7 @@ function Write-Manifest([string]$dir, [string]$extra) {
         buildInfo = $buildInfo
         split = [bool]$Split
         set = $extra
+        resolution = Get-ResolutionText
     }
     [IO.File]::WriteAllText((Join-Path $dir 'manifest.json'), ($manifest | ConvertTo-Json -Depth 4),
         (New-Object Text.UTF8Encoding $false))
@@ -222,6 +253,111 @@ function Get-BuildText($manifest) {
         $(if ($info.dirty) { " with $(@($info.changed).Count) uncommitted changes" } else { '' })
     }
     return $text
+}
+
+# Saved settings read as the game reads them (GameSparker.readcookie: the last entry whose name holds the key, its
+# lines run together as a number), -1 for one never saved.
+function Read-Cookies([string]$path, [string[]]$keys) {
+    $values = @{}
+    foreach ($k in $keys) { $values[$k] = -1 }
+    if (-not (Test-Path $path)) { return $values }
+    $zip = [IO.Compression.ZipArchive]::new([IO.File]::OpenRead($path), [IO.Compression.ZipArchiveMode]::Read)
+    try {
+        foreach ($e in $zip.Entries) {
+            foreach ($k in $keys | Where-Object { $e.FullName.Contains($_) }) {
+                $reader = [IO.StreamReader]::new($e.Open())
+                try { $text = $reader.ReadToEnd() -replace '[\r\n]', '' } finally { $reader.Dispose() }
+                $n = 0
+                $values[$k] = if ([int]::TryParse($text, [ref]$n)) { $n } else { -1 }
+            }
+        }
+    } finally { $zip.Dispose() }
+    return $values
+}
+
+# The resolution a run plays at, in a line for report.md and manifest.json: yours as saved with -AsSaved, otherwise
+# 1920x1080 fullscreen on top of your settings.
+function Get-ResolutionText {
+    $saved = Read-Cookies $cookies @('fullscreen', 'fullresw', 'fullresh')
+    $yours = if ($saved['fullscreen'] -ne 1) { 'in a window' }
+    elseif ($saved['fullresw'] -gt 0 -and $saved['fullresh'] -gt 0) { 'fullscreen at {0}x{1}' -f $saved['fullresw'], $saved['fullresh'] }
+    else { "fullscreen at the monitor's own resolution" }
+    if ($AsSaved) { return "as saved, $yours (-AsSaved)" }
+    return "$floorWindow, put on top of your saved settings for the run (saved: $yours; -AsSaved runs at that)"
+}
+
+# A copy of the saved settings with some put in place (name.dat = value), each written as the game writes it, a
+# line; the rest as they were. Those put in place go last, so they are the ones the game reads (Read-Cookies).
+function Write-Cookies([string]$from, [string]$to, $set) {
+    $out = [IO.Compression.ZipArchive]::new([IO.File]::Create($to), [IO.Compression.ZipArchiveMode]::Create)
+    try {
+        if (Test-Path $from) {
+            $in = [IO.Compression.ZipArchive]::new([IO.File]::OpenRead($from), [IO.Compression.ZipArchiveMode]::Read)
+            try {
+                foreach ($e in $in.Entries | Where-Object { -not $set.Contains($_.FullName) }) {
+                    $source = $e.Open()
+                    $copy = $out.CreateEntry($e.FullName).Open()
+                    try { $source.CopyTo($copy) } finally { $copy.Dispose(); $source.Dispose() }
+                }
+            } finally { $in.Dispose() }
+        }
+        foreach ($k in $set.Keys) {
+            $writer = [IO.StreamWriter]::new($out.CreateEntry($k).Open(), [Text.UTF8Encoding]::new($false))
+            try { $writer.Write("$($set[$k])`n") } finally { $writer.Dispose() }
+        }
+    } finally { $out.Dispose() }
+}
+
+# The folder a run plays in at 1920x1080 fullscreen (see the top): hard links to what the game reads where it
+# starts ($gameReads), so nothing is copied and the game's own files are what it reads, and its own
+# data\cookies.radq ($override on top of yours). A file is copied where a link cannot be made (another drive),
+# and so is a read-only one, whose flag deleting the link would clear on the game's own file.
+function New-GameFolder([string]$name) {
+    if (-not ('NfmLive.Links' -as [type])) {
+        Add-Type -Namespace NfmLive -Name Links -MemberDefinition @'
+[DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+public static extern bool CreateHardLink(string lpFileName, string lpExistingFileName, IntPtr lpSecurityAttributes);
+'@
+    }
+    $game = Join-Path ([IO.Path]::GetTempPath()) "nfm-live-game-$PID-$name"
+    if (Test-Path $game) { Remove-GameFolder $game '' }
+    New-Item -ItemType Directory $game | Out-Null
+    foreach ($rel in $gameReads) {
+        $from = Join-Path $root $rel
+        if (-not (Test-Path -LiteralPath $from)) { continue }
+        $top = Get-Item -LiteralPath $from -Force
+        # a folder comes before what is in it
+        $items = @($top)
+        if ($top.PSIsContainer) { $items += @(Get-ChildItem -LiteralPath $from -Recurse -Force) }
+        foreach ($item in $items) {
+            $to = Join-Path $game $item.FullName.Substring($root.Length).TrimStart('\')
+            if ($item.PSIsContainer) {
+                New-Item -ItemType Directory -Force $to | Out-Null
+            } elseif ($item.FullName -ne $cookies -and
+                ($item.IsReadOnly -or -not [NfmLive.Links]::CreateHardLink($to, $item.FullName, [IntPtr]::Zero))) {
+                Copy-Item -LiteralPath $item.FullName $to
+            }
+        }
+    }
+    New-Item -ItemType Directory -Force (Join-Path $game 'data') | Out-Null
+    Write-Cookies $cookies (Join-Path $game 'data\cookies.radq') $override
+    return $game
+}
+
+# Deletes a run's game folder: links and its own files, never the game's. The game's log from it (logs\) is kept
+# in the run's folder first. Tried again for a few seconds while the antivirus or the game, closing, holds a file.
+function Remove-GameFolder([string]$game, [string]$dir) {
+    $logs = Join-Path $game 'logs'
+    if ($dir -and (Test-Path $logs)) { Copy-Item -LiteralPath $logs (Join-Path $dir 'logs') -Recurse -Force }
+    foreach ($attempt in 1..10) {
+        try {
+            Remove-Item -LiteralPath $game -Recurse -Force -ErrorAction Stop
+            return
+        } catch {
+            if ($attempt -eq 10) { Write-Host "[live] note: could not delete $game ($_)"; return }
+            Start-Sleep -Seconds 1
+        }
+    }
 }
 
 # Flags for a run as a whole: the test did not go the whole way, or a race part it plays is missing or too short
@@ -305,30 +441,45 @@ function Get-Target($run) {
 }
 
 # Whether race parts are held to the owner's floor (-MinFps, openspec\specs\performance): not when the settings
-# hold frames under it. why: the note saying so, once a run. (On battery see Get-Inconclusive.)
+# hold frames under it. why: the note saying so, once a run. offWindow: the window the run had when it was not the
+# floor's 1920x1080 fullscreen, which leaves the floor unproven (Get-Inconclusive). (On battery see there too.)
 function Get-FloorRule($run) {
     $cap = Get-Cap $run
-    if ($MinFps -le 0) { return [pscustomobject]@{ judged = $false; why = '' } }
+    if ($MinFps -le 0) { return [pscustomobject]@{ judged = $false; why = ''; offWindow = '' } }
     if (-not $cap.known) {
-        return [pscustomobject]@{ judged = $false
+        return [pscustomobject]@{ judged = $false; offWindow = ''
             why = "the frame limit follows the monitor's refresh rate, which the run could not read: the $MinFps fps floor is not judged" }
     }
     if ($cap.fps -gt 0 -and $cap.fps -lt $MinFps) {
-        return [pscustomobject]@{ judged = $false
+        return [pscustomobject]@{ judged = $false; offWindow = ''
             why = ('frames are held to {0:N0} a second by {1}, under the {2} fps floor: race parts are judged against {0:N0}' -f
                 $cap.fps, $cap.why, $MinFps) }
     }
-    return [pscustomobject]@{ judged = $true; why = '' }
+    $window = [string]$run.settings['window']
+    if ($window -ne $floorWindow) {
+        return [pscustomobject]@{ judged = $false; why = ''; offWindow = $(if ($window) { $window } else { 'unknown' }) }
+    }
+    return [pscustomobject]@{ judged = $true; why = ''; offWindow = '' }
 }
 
-# Why a run cannot prove a frame rate, '' when it can: Windows saved power during it in a way the owner did not
-# choose (on battery it slows the processor and the card; Battery saver too). The game itself never holds a test
-# run to its battery cap, so the slowing is Windows' alone, and its frame rates are notes, not passes or flags.
+# Why a run cannot prove what it is meant to, one line each, none when it can. Windows saved power during it in a
+# way the owner did not choose (on battery it slows the processor and the card; Battery saver too; the game itself
+# never holds a test run to its battery cap, so the slowing is Windows' alone): its frame rates are notes, not
+# passes or flags. Or it was not at 1920x1080 fullscreen, where the specs ask for the floor: its frame rates under
+# the floor are notes (a frame limit is still judged).
 function Get-Inconclusive($run) {
-    if (@($run.power).Count -eq 0) { return '' }
-    return ('Windows was saving power during the run ({0}), when it slows the processor and the graphics card, so ' +
-        'the run cannot prove {1} fps or any frame rate: plug in, turn Battery saver off and run again') -f
-    ($run.power -join ' and '), $MinFps
+    if (@($run.power).Count -gt 0) {
+        ('Windows was saving power during the run ({0}), when it slows the processor and the graphics card, so ' +
+            'the run cannot prove {1} fps or any frame rate: plug in, turn Battery saver off and run again') -f
+        ($run.power -join ' and '), $MinFps
+    }
+    $rule = Get-FloorRule $run
+    if ($rule.offWindow) {
+        $how = if ($AsSaved) { 'run without -AsSaved to put it there' }
+        else { 'the game did not take the 1920x1080 fullscreen this test put in its settings (a monitor that cannot show it?)' }
+        ('the run was at {0}, not the {1} the specs ask the {2} fps floor at, so it cannot prove the floor: {3}' -f
+            $rule.offWindow, $floorWindow, $MinFps, $how)
+    }
 }
 
 # What Windows does to save power now that the owner did not choose: 'on battery', 'with Battery saver on', or nothing
@@ -408,8 +559,12 @@ function Get-Flags($run, $part) {
         $slow = '{0:N0} fps, under {1}' -f $fps, $target
     }
     # a run Windows slowed to save power cannot prove a frame rate (Get-Inconclusive): too slow is only noted
-    if ($slow -and (Get-Inconclusive $run)) { $flags += "note: $slow, not judged: $($run.power -join ' and ')" }
+    if ($slow -and @($run.power).Count -gt 0) { $flags += "note: $slow, not judged: $($run.power -join ' and ')" }
     elseif ($slow) { $pacing += $slow }
+    # nor can one at another resolution prove the floor
+    if ($race -and $rule.offWindow -and $part.fps -lt $MinFps) {
+        $flags += 'note: {0:N0} fps, under {1}, not judged at {2}' -f $part.fps, $MinFps, $rule.offWindow
+    }
     # unevenness needs enough frames to tell: 100 over two seconds the card did not hold up (a menu's second
     # of 25 frames has one 99th-percentile frame); and frames that all come within the display's frame time
     # look even on it, however much quicker the rest are
@@ -478,7 +633,7 @@ if ($runs.Count -eq 0) { exit 2 }
 
 # a run that never wrote its frames is a flag, not a run left out
 $flagged = $lost.Count -gt 0
-$inconclusive = $false
+$inconclusive = @()
 $md = @('# Live test', '', "$(Get-Date -Format 'yyyy-MM-dd HH:mm'), $env:COMPUTERNAME", '')
 if ($lost.Count -gt 0) { $md += @($lost | ForEach-Object { "**Flagged:** $_  " }) + '' }
 foreach ($run in $runs) {
@@ -487,14 +642,16 @@ foreach ($run in $runs) {
     $md += @($run.settings.GetEnumerator() | Sort-Object Name | ForEach-Object { "- $($_.Name): $($_.Value)" })
     $runFlags = @(Get-RunFlags $run)
     if (@($runFlags | Where-Object { $_ -notlike 'note: *' }).Count -gt 0) { $flagged = $true }
-    $why = Get-Inconclusive $run
-    if ($why) { $inconclusive = $true; $md += @('', "**Inconclusive:** $why.") }
+    $md += @('', "**Resolution:** $($run.settings['resolution']); the game reported $($run.settings['window']).")
+    $why = @(Get-Inconclusive $run)
+    if ($why.Count -gt 0) { $inconclusive += $why; $md += @($why | ForEach-Object { '', "**Inconclusive:** $_." }) }
     if ($runFlags.Count -gt 0) { $md += @('', "**Whole run:** $($runFlags -join '; ')") }
     $md += @('', '| Part | Seconds | Frames/s | Median ms | 99% ms | Longest ms | Late | Card ms | Drawn | Flags |',
         '|---|---:|---:|---:|---:|---:|---:|---:|---|---|')
     Write-Host ''
     Write-Host "== $title"
-    if ($why) { Write-Host "inconclusive: $why" }
+    Write-Host "resolution: $($run.settings['resolution'])"
+    foreach ($line in $why) { Write-Host "inconclusive: $line" }
     if ($runFlags.Count -gt 0) { Write-Host "whole run: $($runFlags -join '; ')" }
     Write-Host ('{0,-26} {1,6} {2,8} {3,7} {4,7} {5,8} {6,5} {7,6}  {8}' -f 'part', 's', 'fps', 'median', '99%',
         'longest', 'late', 'card', 'flags')
@@ -552,5 +709,8 @@ Write-Host "[live] report: $report"
 # a flag fails the run even when it is inconclusive: a stutter, a missing part or a menu the processor drew is
 # one on any power
 if ($flagged) { exit 1 }
-if ($inconclusive) { Write-Host '[live] inconclusive: Windows saved power during the run; plug in and run again'; exit 3 }
+if ($inconclusive.Count -gt 0) {
+    $inconclusive | Select-Object -Unique | ForEach-Object { Write-Host "[live] inconclusive: $_" }
+    exit 3
+}
 exit 0
