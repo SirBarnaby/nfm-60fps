@@ -1492,6 +1492,8 @@ public class GameSparker extends Panel implements Runnable {
         Medium.lightson = false;
         Medium.detailtype = 2;
         Medium.ground = 250;
+        // the car select's showroom shadows (flat grey, on its floor) end with it, however it was left
+        Medium.crs = false;
 
         reverseYRot = false;
 

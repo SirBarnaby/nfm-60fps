@@ -94,7 +94,7 @@ Before a release or a large change, also run:
    `SceneList.PANE` (its rectangle, clipped), and placed there. The game sorts objects and their polygons by the
    depths the last drawing measured, so each pane keeps its own
    (`PaneDepths`), and `Medium.crs` (the car select's showroom shadows) is
-   cleared when the split car select ends, as one player's does. Check
+   cleared by `loadstage`, so no way into a race keeps them. Check
    a change to the race or the HUD with `-Dnfm.autotest.split=auto,3`, with
    and without `-Dnfm.renderer=gpu`, as well as the gates.
 

@@ -140,8 +140,6 @@ final class SplitScreens {
         ui.sc[0] = car[0];
         ui.sc[1] = car[1];
         selecting = false;
-        // the car select's showroom shadows end here, as one player's car select ends them: the race's fall on the road
-        Medium.crs = false;
         ui.sm.play("tick");
         ui.switchIntertrack("stages");
         ui.fase = Phase.NPLAYERSCHECK;
