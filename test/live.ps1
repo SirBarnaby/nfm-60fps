@@ -10,7 +10,8 @@
 #   .\test\live.ps1 -Out C:\somewhere                where the runs go (default: %TEMP%\nfm-live\<time>)
 #   .\test\live.ps1 -NoShots                         no screenshots: each one stops the frames for a moment
 #   .\test\live.ps1 -Limits 'unlimited','120'        the frame limits played too, each on top of your settings
-#                                                    (the default; your run counts for its own limit), and
+#                                                    (the default; vsync off for them; your run counts for its
+#                                                    own limit when nothing else, such as vsync, holds it), and
 #                                                    compared; -Limits none plays your settings alone
 #   .\test\live.ps1 -MinFps 300                      the frame rate a race part must reach, with no allowance
 #                                                    under it (default 250, the owner's target:
@@ -63,8 +64,9 @@
 # shows the race at a moment (frames.json's motion), and a race part whose frames stand the race still and then
 # jump it on is flagged 'motion uneven' or 'motion hitch' (Get-MotionFlags). The owner found the game smooth at
 # a 120 fps limit and stuttering with none, which frame times did not show: so it plays your settings with no
-# frame limit and at 120 fps too (-Limits), and flags a race part that stutters with no limit but not at 120
-# (openspec\specs\done-and-testing). What reaches the monitor (Windows' own record of when each frame was shown,
+# frame limit and at 120 fps too (-Limits, vsync off), and flags a race part that stutters with no limit but not
+# at 120 (openspec\specs\done-and-testing). Runs another cap holds (vsync, a display-matched limit) are not
+# compared, and the run is inconclusive. What reaches the monitor (Windows' own record of when each frame was shown,
 # PresentMon) needs a window on screen and admin rights: not measured here (docs\live-test.md).
 # A run is flagged as a whole when the game's test did not go the
 # whole way, Java did not load the startup cache madness64.ini names (build.ps1's
@@ -728,19 +730,30 @@ function Invoke-Planned($r) {
 Invoke-Planned @{ name = 'yours'; extra = ''; title = 'Your settings' }
 $n = 1
 foreach ($s in $Set) { Invoke-Planned @{ name = "set$n"; extra = $s; title = "set${n}: $s" }; $n++ }
-# each frame limit to compare (-Limits) on top of your settings, unless your own run already had it
+# Whether nothing but frame limit $limit holds a run's frames (Get-Cap): no cap at all for 'unlimited', that many
+# frames a second for a number. Vsync on, or a limit matching the display, would hold them to the refresh rate
+# however the run is labelled.
+function Test-HeldOnlyBy($run, [string]$limit) {
+    $cap = Get-Cap $run
+    if (-not $cap.known) { return $false }
+    if ($limit -eq 'unlimited') { return $cap.fps -eq 0 }
+    return [math]::Abs($cap.fps - [double]$limit) -lt 0.5
+}
+
+# each frame limit to compare (-Limits) on top of your settings, with vsync off so that the limit is what holds the
+# frames; your own run counts for its limit only when nothing else holds it
 $yours = $runs | Where-Object { $_.name -eq 'yours' } | Select-Object -First 1
 $limitRuns = @()
 foreach ($limit in $limitWanted) {
     $words = Get-LimitWords $limit
-    if ($yours -and $yours.settings['fps limit'] -eq $words) {
-        $limitRuns += [pscustomobject]@{ words = $words; run = $yours }
+    if ($yours -and $yours.settings['fps limit'] -eq $words -and (Test-HeldOnlyBy $yours $limit)) {
+        $limitRuns += [pscustomobject]@{ words = $words; limit = $limit; run = $yours }
         continue
     }
     $name = "limit-$limit"
-    Invoke-Planned @{ name = $name; extra = "nfm.fps=$limit"; title = "Your settings at the frame limit: $words" }
+    Invoke-Planned @{ name = $name; extra = "nfm.fps=$limit nfm.vsync=off"; title = "Your settings at the frame limit: $words, vsync off" }
     $run = $runs | Where-Object { $_.name -eq $name } | Select-Object -First 1
-    if ($run) { $limitRuns += [pscustomobject]@{ words = $words; run = $run } }
+    if ($run) { $limitRuns += [pscustomobject]@{ words = $words; limit = $limit; run = $run } }
 }
 if ($runs.Count -eq 0) { exit 2 }
 
@@ -825,14 +838,32 @@ if ($runs.Count -gt 1) {
 }
 # The owner found the game smooth at a 120 fps limit and stuttering with none (openspec\specs\done-and-testing,
 # "Stutter with no frame limit is caught"): each race part with no limit next to the same part at each limit
-# (-Limits), flagged where it showed the race moving unevenly with no limit but evenly at the limit.
+# (-Limits), flagged where it showed the race moving unevenly with no limit but evenly at the limit. Two runs are
+# compared only when each is held by its own limit alone (Test-HeldOnlyBy: vsync or a display-matched limit would
+# make "no limit" and "120 fps" the same refresh-paced run), and a part is judged only when both have enough frames
+# to grade (Get-MotionFlags' note): otherwise the comparison says why and the run is inconclusive.
 $open = $limitRuns | Where-Object { $_.words -eq 'unlimited' } | Select-Object -First 1
 foreach ($capped in @($limitRuns | Where-Object { $_.words -ne 'unlimited' })) {
     if (-not $open) { break }
-    $md += @("## No frame limit and $($capped.words) compared", '',
-        ('| Part | Frames/s, none | Frames/s, {0} | Motion 99% ms, none | Motion 99% ms, {0} |' +
-            ' Off in a row ms, none | Off in a row ms, {0} | Flags |') -f $capped.words,
-        '|---|---:|---:|---:|---:|---:|---:|---|')
+    $heading = "## No frame limit and $($capped.words) compared"
+    $held = @(foreach ($side in @($open, $capped)) {
+            if (-not (Test-HeldOnlyBy $side.run $side.limit)) {
+                $cap = Get-Cap $side.run
+                $what = if (-not $cap.known) { 'a cap that follows the refresh rate, which the run could not read' }
+                else { '{0:N0} fps by {1}' -f $cap.fps, $cap.why }
+                '{0} is held to {1}, not by {2} alone' -f $side.run.title, $what, $side.words
+            }
+        })
+    if ($held.Count -gt 0) {
+        $md += @($heading, '', "Not compared: $($held -join '; ').", '')
+        Write-Host ''
+        Write-Host "== $($heading.TrimStart('# ')): not compared: $($held -join '; ')"
+        $script:inconclusive += "no frame limit and $($capped.words) not compared: $($held -join '; ')"
+        continue
+    }
+    $header = ('| Part | Frames/s, none | Frames/s, {0} | Motion 99% ms, none | Motion 99% ms, {0} |' +
+        ' Off in a row ms, none | Off in a row ms, {0} | Flags |') -f $capped.words
+    $md += @($heading, '', $header, '|---|---:|---:|---:|---:|---:|---:|---|')
     Write-Host ''
     Write-Host "== No frame limit and $($capped.words) compared (motion 99% ms / off in a row ms)"
     $theirs = @{}
@@ -843,10 +874,18 @@ foreach ($capped in @($limitRuns | Where-Object { $_.words -ne 'unlimited' })) {
         $part = $open.run.parts[$i]
         $other = $theirs[$openLabels[$i]]
         if ($raceParts -notcontains $part.name -or -not $other -or -not $part.motion -or -not $other.motion) { continue }
-        $openUneven = @(Get-MotionFlags $part | Where-Object { $_ -notlike 'note: *' }).Count -gt 0
-        $cappedUneven = @(Get-MotionFlags $other | Where-Object { $_ -notlike 'note: *' }).Count -gt 0
+        $openFlags = @(Get-MotionFlags $part)
+        $cappedFlags = @(Get-MotionFlags $other)
+        $openUneven = @($openFlags | Where-Object { $_ -notlike 'note: *' }).Count -gt 0
+        $cappedUneven = @($cappedFlags | Where-Object { $_ -notlike 'note: *' }).Count -gt 0
+        # too few frames to grade the share on a side that shows no hitch: it is not known to be even
+        $openUnknown = -not $openUneven -and @($openFlags | Where-Object { $_ -like 'note: *too few*' }).Count -gt 0
+        $cappedUnknown = -not $cappedUneven -and @($cappedFlags | Where-Object { $_ -like 'note: *too few*' }).Count -gt 0
         $flag = ''
-        if ($openUneven -and -not $cappedUneven) {
+        if ($openUnknown -or ($openUneven -and $cappedUnknown)) {
+            $flag = 'not judged: too few frames to grade'
+            $script:inconclusive += "$($openLabels[$i]): no frame limit and $($capped.words) not judged, too few frames"
+        } elseif ($openUneven -and -not $cappedUneven) {
             $flag = "stutters with no frame limit, not at $($capped.words)"
             $flagged = $true
         }
