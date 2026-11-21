@@ -2907,8 +2907,6 @@ public class GameSparker extends Panel implements Runnable {
         if (split != null) {
             currentPanes(panesNow);
             paneSpans(split, panesNow, spanScratch, spanScratch2);
-            spanScratch2.handedLate = System.nanoTime() - tickStartNanos;
-            spanScratch2.keysNanos = tickKeysNanos;
         } else {
             poseSpan(ahead, spanScratch);
         }
@@ -2924,16 +2922,22 @@ public class GameSparker extends Panel implements Runnable {
             return false;
         }
         GpuDisplay card = gpu;
-        if (!kept.split && card != null && card.projecting()) {
+        if (card != null && card.projecting()) {
             // made ready for the card here, once, so no frame of the presenter's pays for it
             long projectStart = System.nanoTime();
-            kept.scene.realize(kept.scene.recorded, kept.recorder.list().data());
-            kept.scene.export(kept.projected.points());
-            kept.projected.build(kept.recorder.list());
+            if (kept.split) {
+                for (int p = 0; p < 2; p++) {
+                    project(kept.panes.scenes[p], kept.panes.recorders[p], kept.projected[p], kept.panes.areas[p]);
+                }
+            } else {
+                project(kept.scene, kept.recorder, kept.projected[0], null);
+            }
             profileProjectNanos += System.nanoTime() - projectStart;
             profileProjects++;
         } else {
-            kept.projected.clear();
+            for (nfm.lit.gpu.ProjectedScene projected : kept.projected) {
+                projected.clear();
+            }
         }
         if (hudImage instanceof BufferedImage hud) {
             if (kept.hud == null || kept.hud.getWidth() != hud.getWidth() || kept.hud.getHeight() != hud.getHeight()) {
@@ -2960,6 +2964,19 @@ public class GameSparker extends Panel implements Runnable {
         keptStale = false;
         keptAhead = ahead;
         return true;
+    }
+
+    /**
+     * Makes {@code scene}, kept in {@code recorder}, ready for the card to
+     * place (see ProjectedScene): placed for the moment it was recorded,
+     * which decides how its polygons are cut, in split-screen pane
+     * {@code pane}'s coordinates if it has one.
+     */
+    private static void project(RetainedScene scene, SceneRecorder recorder, nfm.lit.gpu.ProjectedScene into,
+            Rectangle pane) {
+        scene.realize(scene.recorded, recorder.list().data());
+        scene.export(into.points());
+        into.build(recorder.list(), pane);
     }
 
     /** True if the presenter can draw this race's frames on its own thread now. */
@@ -3093,8 +3110,10 @@ public class GameSparker extends Panel implements Runnable {
         final class Kept {
             final SceneRecorder recorder = new SceneRecorder();
             final RetainedScene scene = new RetainedScene();
-            /** The scene made ready for the card to place, when the card does. */
-            final nfm.lit.gpu.ProjectedScene projected = new nfm.lit.gpu.ProjectedScene();
+            /** Made ready for the card to place, when the card does: the scene, or each split-screen pane. */
+            final nfm.lit.gpu.ProjectedScene[] projected = {new nfm.lit.gpu.ProjectedScene(),
+                new nfm.lit.gpu.ProjectedScene()};
+            private final nfm.lit.gpu.ProjectedScene[] whole = {projected[0]};
             /** A split-screen race's two panes, kept instead of {@link #recorder}'s one scene when {@link #split}. */
             final KeptPanes panes = new KeptPanes();
             boolean split;
@@ -3106,6 +3125,40 @@ public class GameSparker extends Panel implements Runnable {
             SceneRecorder shown() {
                 return split ? panes.joined : recorder;
             }
+
+            /** What the card places for its frames: the scene, or both panes. */
+            nfm.lit.gpu.ProjectedScene[] cardScenes() {
+                return split ? projected : whole;
+            }
+
+            /** True if it was made ready for the card to place. */
+            boolean onCard() {
+                for (nfm.lit.gpu.ProjectedScene p : cardScenes()) {
+                    if (!p.built()) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            /** Places its corners here: the first player's for {@code first}, in split screen the second's for {@code second}. */
+            void place(FramePose first, FramePose second) {
+                if (split) {
+                    panes.place(first, second);
+                } else {
+                    scene.realize(first, recorder.list().data());
+                }
+            }
+
+            /** As {@link #place}, only what the frame's moment changes: the card places the points with it. */
+            void frameConstants(FramePose first, FramePose second) {
+                if (split) {
+                    panes.scenes[0].frameConstants(first, projected[0].points());
+                    panes.scenes[1].frameConstants(second, projected[1].points());
+                } else {
+                    scene.frameConstants(first, projected[0].points());
+                }
+            }
         }
 
         /* three, so one is drawn, one waits and the game thread fills the third */
@@ -3116,9 +3169,8 @@ public class GameSparker extends Panel implements Runnable {
         private Kept latest;
         private long versions;
         private final PoseSpan handedSpan = new PoseSpan();
-        /* split screen: the second player's, and whether there is one */
+        /** Split screen's second player's; the first's when it is not split. */
         private final PoseSpan handedSpan2 = new PoseSpan();
-        private boolean handedSplit;
         private long spanVersion;
         private boolean job;
         private boolean jobCapture;
@@ -3140,9 +3192,8 @@ public class GameSparker extends Panel implements Runnable {
         /* the span frames are placed with, and the one before it for the profile */
         private final PoseSpan span = new PoseSpan();
         private final PoseSpan previousSpan = new PoseSpan();
-        /* split screen: the second player's span, and whether the spans are a split screen's */
+        /** Split screen's second player's span, as {@link #handedSpan2}. */
         private final PoseSpan span2 = new PoseSpan();
-        private boolean spanSplit;
         private long placedSpanVersion = -1L;
         private boolean spanChanged;
         private long flashedVersion = -1L;
@@ -3206,10 +3257,7 @@ public class GameSparker extends Panel implements Runnable {
         void handOverSpan(PoseSpan s, PoseSpan second) {
             synchronized (lock) {
                 handedSpan.copyFrom(s);
-                handedSplit = second != null;
-                if (handedSplit) {
-                    handedSpan2.copyFrom(second);
-                }
+                handedSpan2.copyFrom(second != null ? second : s);
                 spanVersion++;
             }
         }
@@ -3290,10 +3338,7 @@ public class GameSparker extends Panel implements Runnable {
                         if (placedSpanVersion != spanVersion) {
                             previousSpan.copyFrom(span);
                             span.copyFrom(handedSpan);
-                            spanSplit = handedSplit;
-                            if (spanSplit) {
-                                span2.copyFrom(handedSpan2);
-                            }
+                            span2.copyFrom(handedSpan2);
                             spanChanged = placedSpanVersion != -1L;
                             placedSpanVersion = spanVersion;
                         }
@@ -3352,17 +3397,16 @@ public class GameSparker extends Panel implements Runnable {
             }
             spanChanged = false;
             GpuDisplay card = gpu;
-            boolean onCard = !k.split && card != null && card.projecting() && k.projected.built();
+            boolean onCard = card != null && card.projecting() && k.onCard();
             if (k.split) {
-                // the second player's pane from their camera (spans and scenes are handed over split together)
-                (spanSplit ? span2 : span).at(alpha, pose2);
-                k.panes.place(pose, pose2);
-            } else if (!onCard || projectionTests > 0) {
-                k.scene.realize(pose, k.recorder.list().data());
+                span2.at(alpha, pose2); // the second player's pane, from their camera
+            }
+            if (!onCard || projectionTests > 0) {
+                k.place(pose, pose2);
             }
             if (onCard) {
                 // the card places every point: only what the frame's moment changes goes to it
-                k.scene.frameConstants(pose, k.projected.points());
+                k.frameConstants(pose, pose2);
                 if (projectionTests > 0 && ++projectionTestFrame % 30 == 0) {
                     projectionTests--;
                     testProjection(k);
@@ -3375,7 +3419,7 @@ public class GameSparker extends Panel implements Runnable {
             long placed = System.nanoTime();
             boolean shown;
             try {
-                shown = showOnGpu(false, k.shown().list(), onCard ? k.projected : null, k.hud, k.version, k.version,
+                shown = showOnGpu(false, k.shown().list(), onCard ? k.cardScenes() : null, k.hud, k.version, k.version,
                         flash, true);
             } catch (RuntimeException | LinkageError ex) {
                 HLogger.warn("The graphics card stopped drawing a race: " + ex);
@@ -3414,12 +3458,12 @@ public class GameSparker extends Panel implements Runnable {
          * most go to the autotest folder.
          */
         private void testProjection(Kept k) {
-            nfm.lit.gpu.SceneList list = k.recorder.list();
+            nfm.lit.gpu.SceneList list = k.shown().list();
             if (!showOnGpu(true, list, null, k.hud, -1L, -1L, false, true)) {
                 return;
             }
             BufferedImage here = capturedGpuScene;
-            if (!showOnGpu(true, list, k.projected, k.hud, k.version, -1L, false, true)) {
+            if (!showOnGpu(true, list, k.cardScenes(), k.hud, k.version, -1L, false, true)) {
                 return;
             }
             BufferedImage onCard = capturedGpuScene;
@@ -3936,7 +3980,7 @@ public class GameSparker extends Panel implements Runnable {
      * game thread's picture. A frame the {@code presenter} draws on its own
      * never falls back to the picture.
      */
-    private boolean showOnGpu(boolean capture, nfm.lit.gpu.SceneList scene, nfm.lit.gpu.ProjectedScene projected,
+    private boolean showOnGpu(boolean capture, nfm.lit.gpu.SceneList scene, nfm.lit.gpu.ProjectedScene[] projected,
             BufferedImage hud, long version,
             long hudVersion, boolean flash, boolean presenterFrame) {
         if (gpu == null && presenterFrame) {

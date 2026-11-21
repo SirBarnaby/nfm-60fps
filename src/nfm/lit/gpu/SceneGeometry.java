@@ -185,7 +185,7 @@ final class SceneGeometry {
                 }
                 case SceneList.PANE -> {
                     if (projecting) {
-                        // a kept scene has one camera; split screen's panes are recorded frame by frame
+                        // a kept scene has one camera: each split-screen pane is built on its own (ProjectedScene#build)
                         throw new IllegalStateException("a kept scene cannot hold split-screen panes");
                     }
                     startPane(data[i + 1], data[i + 2], data[i + 3], data[i + 4]);

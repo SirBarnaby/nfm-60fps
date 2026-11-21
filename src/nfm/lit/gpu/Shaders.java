@@ -158,7 +158,9 @@ final class Shaders {
      * values), placed as RetainedScene places it: turned and projected by
      * the camera in u_cam, or moved with car slot s by u_car[4s..4s+3].
      * u_cam: [cx, cy, cz, focus], [sin, cos yaw, sin, cos pitch], [camera
-     * move, trail share], [top, bottom, 2 / width, 2 / height], [pixel scale].
+     * move, trail share], [top, bottom, 2 / width, 2 / height], [pixel scale,
+     * where the scene's top left is in the picture: a split-screen pane's
+     * corner, 0, 0 for the whole picture].
      */
     static final String PROJECTED_VS = """
             Texture2D<float4> s_pointsTexture : register(t0);
@@ -306,6 +308,7 @@ final class Shaders {
                     }
                 }
                 Out o;
+                p += u_cam[4].yz;
                 o.pos = float4(p.x * u_cam[3].z - 1.0, 1.0 - p.y * u_cam[3].w, 0.0, 1.0);
                 o.col = i.col;
                 o.edge = edge;

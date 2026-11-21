@@ -1,5 +1,6 @@
 package nfm.lit.gpu;
 
+import java.awt.Rectangle;
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import org.lwjgl.system.MemoryUtil;
@@ -26,6 +27,8 @@ public final class ProjectedScene {
     private int pointCount;
     private boolean built;
     private long buildNanos;
+    /** The split-screen pane it is drawn in, in the picture's pixels; null for the whole picture. */
+    private Rectangle pane;
 
     /** The recording to build from, and the frame's camera and cars to place it with. */
     public ScenePoints points() {
@@ -45,10 +48,13 @@ public final class ProjectedScene {
     /**
      * Builds the scene for the card from {@code list}, whose corners have
      * been placed for one moment of it (how polygons are cut into triangles
-     * is decided there), and the recording {@link #points()} was given.
+     * is decided there), and the recording {@link #points()} was given; with
+     * a {@code pane}, a split-screen pane's, recorded in its own coordinates,
+     * drawn there and clipped to it.
      */
-    public void build(SceneList list) {
+    public void build(SceneList list, Rectangle pane) {
         long start = System.nanoTime();
+        this.pane = pane == null ? null : new Rectangle(pane);
         SceneGeometry g = geometry;
         // the size only scales vertices placed here; the card places these with its own
         g.buildProjected(list, points, 1, 1);
@@ -95,6 +101,11 @@ public final class ProjectedScene {
         f.position(floats).flip();
         built = true;
         buildNanos = System.nanoTime() - start;
+    }
+
+    /** The split-screen pane it is drawn in, null for the whole picture. */
+    Rectangle pane() {
+        return pane;
     }
 
     /** The vertices, {@link SceneGeometry#PROJECTED_STRIDE} bytes each, from position 0 to the limit. */

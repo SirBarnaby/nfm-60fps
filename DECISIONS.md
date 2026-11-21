@@ -26,11 +26,18 @@ this file is about everything else.
   `test\live.ps1` (and `-Split`) flags a race part drawn in software, and the
   game's log says how every part was drawn ("Frames in race: ... kept scene
   100%").
-- **Race frames are placed, not recorded.** Each game tick records the race's
-  scene once, with a margin, and every frame until the next tick moves it to
-  where the camera is now: one player's race, each split-screen pane, replays.
-  Recording every frame is what made split screen slow. Check: the game's log
-  says "kept scene 100%" for every race part, split races too.
+- **Race frames are placed, not recorded, and the card places them.** Each
+  game tick records the race's scene once, with a margin, and every frame
+  until the next tick moves it to where the camera is now: one player's race,
+  each split-screen pane, replays. The card does the moving (a vertex
+  shader), so a frame sends it only the cameras and the cars. Recording every
+  frame is what made split screen slow, and placing its panes on the
+  processor still cost a millisecond a frame. Check: the game's log says
+  "kept scene 100%" for every race part, split races too; with
+  `-Dnfm.profile=true` the drawing thread's line says "placing 0.01 ms" and
+  "placed on the card"; `-Dnfm.projectiontest=40` (and with
+  `-Dnfm.autotest.split=auto,3`) compares the card's frames with the
+  processor's.
 - **No black bars.** The race and the menus take the window's shape, from 5:4
   to 32:9; past those shapes the race is cut a little to fill. Check: hidden
   autotest screenshots at 1920x1080, 2560x1080 and 1720x720.

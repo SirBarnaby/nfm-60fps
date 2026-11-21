@@ -88,9 +88,10 @@ Before a release or a large change, also run:
    `GameFacts.humans` is 1 outside it, so the computer cars, `paceCar` and
    every recorded race are as before. Each pane is kept once a tick from its
    own camera (`GameSparker.KeptPanes`, a `RetainedScene` each) and placed for
-   every frame like one player's race, on the presenter thread too; the two
-   are joined into one scene for the card, each after a `SceneList.PANE` (its
-   rectangle, clipped). The game sorts objects and their polygons by the
+   every frame like one player's race: by the card, each pane a
+   `ProjectedScene` of its own drawn in its rectangle. On the game thread
+   (no presenter) the two are joined into one scene, each after a
+   `SceneList.PANE` (its rectangle, clipped), and placed there. The game sorts objects and their polygons by the
    depths the last drawing measured, so each pane keeps its own
    (`PaneDepths`), and `Medium.crs` (the car select's showroom shadows) is
    cleared when the split car select ends, as one player's does. Check
@@ -120,7 +121,7 @@ ruleset beside the classic one, never in place of it: see `AFTER-1.0.md`.
   `Shaders.PROJECTED_VS`), which mirrors `RetainedScene.placeOne` and
   `project`. A change to how a point kind is placed goes into both, and
   `-Dnfm.projectiontest=40` proves they still agree (well under 0.1% of
-  pixels).
+  pixels), with `-Dnfm.autotest.split=auto,3` for split screen's panes.
 - **Every frame shown goes through `FrameLog.shown`**, which sums up each
   part of a session (the race, a menu) in the game's log and feeds the live
   test. A new way of putting frames on screen must call it too.
