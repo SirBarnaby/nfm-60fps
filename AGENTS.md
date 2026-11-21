@@ -117,6 +117,13 @@ format, https://openspec.dev). They come only from the owner's answers
   design and the tasks. `/openspec-apply-change` builds it and
   `/openspec-archive-change` merges the spec edits into `openspec\specs`.
   `openspec\config.yaml` holds the rules every step follows.
+- When the owner's prompt asks for a change, run propose, apply and archive in
+  one go, without waiting for another request: the owner's prompt is the
+  go-ahead. The openspec-propose skill says to stop after the plan and wait
+  for a new request; here that does not apply, so once the proposal is written
+  go straight on to `/openspec-apply-change` (Codex: `$openspec-apply-change`),
+  the gates and `/openspec-archive-change`. A requirement changed or removed,
+  or a feature nobody asked for, still waits for the owner (below).
 - Only the owner changes or removes a requirement, or adds a feature nobody
   asked for. Everything else goes ahead without stopping: the owner works
   hands-off.
