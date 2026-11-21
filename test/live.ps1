@@ -8,8 +8,9 @@
 #                                                    each entry's -D settings on top of yours
 #   .\test\live.ps1 -Out C:\somewhere                where the runs go (default: %TEMP%\nfm-live\<time>)
 #   .\test\live.ps1 -NoShots                         no screenshots: each one stops the frames for a moment
-#   .\test\live.ps1 -MinFps 300                      the frame rate a race part must reach (default 250, the
-#                                                    owner's target: openspec\specs\performance); 0 turns it off
+#   .\test\live.ps1 -MinFps 300                      the frame rate a race part must reach, with no allowance
+#                                                    under it (default 250, the owner's target:
+#                                                    openspec\specs\performance); 0 turns it off
 #
 # What it plays: the main menu, fullscreen switched off and on again (a new
 # window and the graphics card started again, as F11 does), the settings
@@ -119,12 +120,13 @@ function Get-Flags($run, $part) {
     if ($part.frames -lt 10) { return $flags }
     $race = $raceParts -contains $part.name
     $target = Get-Target $run
+    $floor = 0
     # the owner's floor for race parts (openspec\specs\performance), unless the player capped the frames lower
     # or vsync holds them to the monitor
     if ($race -and $MinFps -gt 0 -and $run.settings['vsync'] -notmatch '^on') {
         $limit = $run.settings['fps limit']
         $capped = $limit -match 'vrr|battery' -or ($limit -match '^(\d+)' -and [int]$Matches[1] -lt $MinFps)
-        if (-not $capped) { $target = [math]::Max($target, $MinFps) }
+        if (-not $capped) { $target = [math]::Max($target, $MinFps); $floor = $MinFps }
     }
     $drawn = $part.drawn.PSObject.Properties.Name
     if ($race -and $drawn -contains 'software' -and $run.settings['renderer'] -like 'gpu*') {
@@ -136,7 +138,8 @@ function Get-Flags($run, $part) {
     foreach ($h in @($part.cardHeld.holds)) { if ($null -ne $h) { $heldMs += [double]$h.ms } }
     $fps = $part.fps
     if ($heldMs -gt 0 -and $part.seconds * 1000 -gt $heldMs + 100) { $fps = $part.frames / ($part.seconds - $heldMs / 1000) }
-    if ($race -and $target -gt 0 -and $fps -lt $target * 0.9) {
+    # 10% under the target is allowed, but never under the owner's floor
+    if ($race -and $target -gt 0 -and ($fps -lt $target * 0.9 -or $fps -lt $floor)) {
         $pacing += ('{0:N0} fps, under {1}' -f $fps, $target)
     }
     # unevenness needs enough frames to tell: 100 over two seconds the card did not hold up (a menu's second

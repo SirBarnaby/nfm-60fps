@@ -10,7 +10,7 @@ On the owner's PC, at 1920x1080 fullscreen with the owner's settings and no fram
 
 #### Scenario: Check: live test, one player
 - **WHEN** `test\live.ps1` runs on the owner's PC with the owner's settings
-- **THEN** no race part is flagged as under 250 fps (it flags under 90% of `-MinFps`, which is 250 by default)
+- **THEN** no race part is flagged as under 250 fps (it flags any race part under `-MinFps`, 250 by default)
 
 #### Scenario: Check: live test, split screen
 - **WHEN** `test\live.ps1 -Split` runs on the owner's PC
