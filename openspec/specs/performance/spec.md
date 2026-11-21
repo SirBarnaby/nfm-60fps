@@ -17,11 +17,11 @@ On the owner's PC, at 1920x1080 fullscreen with the owner's settings and no fram
 - **THEN** no split race part is flagged as under 250 fps
 
 ### Requirement: No stuttering, ever
-The game SHALL NOT stutter: not at the start of a race, not during it, not in menus. Frames SHALL come evenly. (Owner, 2026-11-21, R2 A4.)
+The game SHALL NOT stutter: not at the start of a race, not during it, not in menus. Frames SHALL come evenly. (Owner, 2026-11-21, R2 A4.) The one exception: switching fullscreen on or off MAY pause for up to half a second while the window and the graphics card restart. (Owner, 2026-11-21, decision card.)
 
 #### Scenario: Check: live test pacing
 - **WHEN** `test\live.ps1` and `test\live.ps1 -Split` run on the owner's PC
-- **THEN** no part is flagged `uneven`, `frames late`, `hitch` or `stall`
+- **THEN** no part is flagged `uneven`, `frames late`, `hitch` or `stall` (the fullscreen switch is flagged only for a pause over 500 ms)
 
 #### Scenario: Check: the owner plays
 - **WHEN** the owner starts a race at 1080p fullscreen
