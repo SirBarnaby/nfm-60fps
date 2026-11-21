@@ -29,7 +29,9 @@
 # neither drive it nor shake, sound goes to a file instead of the speakers, and
 # nothing is saved.
 #
-# Each run writes frames.json (every part's frames a second, frame times, late
+# Each run writes manifest.json before the game starts (the commit, uncommitted
+# changes, madness.jar's SHA-256: what was tested, for test\blind-review.ps1),
+# frames.json (every part's frames a second, frame times, late
 # frames, the card's time, how frames were drawn), settings.txt (what it ran
 # with) and screenshots: <name>-gpu.png is read back from the card, so it is
 # what your screen shows. report.md and the console list each part and flag
@@ -95,6 +97,10 @@ function Invoke-Run([string]$name, [string]$extra) {
     if ($NoShots) { $arguments += '-Dnfm.autotest.shots=false' }
     $arguments += @($extra -split ' ' | Where-Object { $_ } | ForEach-Object { "-D$_" })
     $arguments += @('-jar', $jar)
+    $manifest = Write-Manifest $dir $extra
+    if ($manifest.jarOlderThan) {
+        Write-Host "[live] note: madness.jar is older than $($manifest.jarOlderThan): this tests the last build, not the files as they are (run build.ps1 -Quick first)"
+    }
     # Windows is asked about power before, every 2 seconds during and after the run, so a plug pulled for a
     # moment counts
     $power = @(Get-PowerSaving)
@@ -120,6 +126,7 @@ function Invoke-Run([string]$name, [string]$extra) {
     $settings['power'] = if ($power.Count -gt 0) { "$($power -join ' and ') during the run" } else { 'plugged in' }
     $plan = Get-PowerPlan
     if ($plan) { $settings['power'] += ", power plan $plan" }
+    $settings['build'] = Get-BuildText $manifest
     # the game says when its test went the whole way; one that ran out of time writes frames.json all the same
     $log = @(Get-Content "$dir\out.log" -ErrorAction SilentlyContinue)
     $finished = @($log | Where-Object { $_ -match '^\[autotest\] (split test )?done' }).Count -gt 0
@@ -134,6 +141,48 @@ function Invoke-Run([string]$name, [string]$extra) {
         finished = $finished
         ending = if ($ending) { $ending[0] -replace '^\[autotest\] ', '' } else { 'out.log has no "[autotest] done" line' }
     }
+}
+
+# What a run is made from, written to manifest.json in its folder before the game starts, so its evidence can be
+# matched to a build (test\blind-review.ps1 does): the commit checked out, whether the tree had changes and which
+# (git status --porcelain lines), madness.jar's SHA-256 and when it was built, and the newest source file (src\,
+# lib\) if one is newer than the jar, which is then an earlier build than the files. commit is null outside git.
+function Write-Manifest([string]$dir, [string]$extra) {
+    $ErrorActionPreference = 'Continue'   # git's own messages, if any, are not the test's
+    $commit = [string](& git -C $root rev-parse --verify --quiet HEAD 2>$null)
+    $changed = @(& git -C $root status --porcelain 2>$null)
+    $ErrorActionPreference = 'Stop'
+    $jarFile = Get-Item $jar
+    $newest = @(Get-ChildItem (Join-Path $root 'src') -Recurse -File -Filter '*.java') +
+    @(Get-ChildItem (Join-Path $root 'lib') -File -Filter '*.jar' -ErrorAction SilentlyContinue) |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    $manifest = [ordered]@{
+        time = (Get-Date).ToString('o')
+        repo = $root
+        commit = if ($commit) { $commit.Trim() } else { $null }
+        dirty = $changed.Count -gt 0
+        changed = $changed
+        jarSha256 = (Get-FileHash $jar -Algorithm SHA256).Hash.ToLowerInvariant()
+        jarBuilt = $jarFile.LastWriteTime.ToString('o')
+        jarOlderThan = if ($newest -and $newest.LastWriteTime -gt $jarFile.LastWriteTime) {
+            $newest.FullName.Substring($root.Length + 1)
+        } else { $null }
+        split = [bool]$Split
+        set = $extra
+    }
+    [IO.File]::WriteAllText((Join-Path $dir 'manifest.json'), ($manifest | ConvertTo-Json -Depth 3),
+        (New-Object Text.UTF8Encoding $false))
+    return [pscustomobject]$manifest
+}
+
+# The manifest in a line, for the settings list in report.md.
+function Get-BuildText($manifest) {
+    $text = if ($manifest.commit) { 'commit ' + $manifest.commit.Substring(0, 10) } else { 'not a git checkout' }
+    $text += if ($manifest.dirty) { ", $($manifest.changed.Count) uncommitted changes" } else { ', nothing uncommitted' }
+    $text += ', madness.jar sha256 {0} built {1:yyyy-MM-dd HH:mm}' -f $manifest.jarSha256.Substring(0, 12),
+    [datetime]$manifest.jarBuilt
+    if ($manifest.jarOlderThan) { $text += ", older than $($manifest.jarOlderThan) (an earlier build than the files)" }
+    return $text
 }
 
 # Flags for a run as a whole: the test did not go the whole way, or a race part it plays is missing or too short
