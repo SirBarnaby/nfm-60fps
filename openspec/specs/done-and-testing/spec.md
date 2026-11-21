@@ -32,3 +32,10 @@ Specs SHALL be written in plain language, so a reviewer with no context (such as
 #### Scenario: Check: a review with no context
 - **WHEN** a reviewer is given only the specs and the built game
 - **THEN** they can tell for each requirement whether it is met, without reading code or chat history
+
+### Requirement: A blind Codex review rates every change
+Before a change is reported done, a Codex review SHALL rate it with no context from whoever made it: it sees only the owner's specs and the repo, never the agent's explanation or chat. The report SHALL give its verdict and its findings. (Owner, 2026-11-21, R1 Q32, R2 B13; set up at the owner's request the same day.)
+
+#### Scenario: Check: blind review
+- **WHEN** a change is reported done
+- **THEN** `test\blind-review.ps1` has run on its commits, its review is in `docs\reviews\`, and the change's report gives the verdict and findings

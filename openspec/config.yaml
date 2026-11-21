@@ -25,7 +25,7 @@ rules:
     - Say how the change keeps 250+ fps at 1080p fullscreen with no stutter, and that the graphics card draws anything new.
     - Before 1.0, say how races stay identical to the original (test\verify-races.ps1).
   tasks:
-    - End with the gates in AGENTS.md, test\live.ps1 (and -Split for anything in a race) on the owner's PC, and test\spec-check.ps1.
+    - End with the gates in AGENTS.md, test\live.ps1 (and -Split for anything in a race) on the owner's PC, test\spec-check.ps1, and last test\blind-review.ps1 -Base <the commit before the work>.
     - For a bigger feature, add a cleanup pass before the final gates, and write lessons into docs\solutions\.
 
 operations:

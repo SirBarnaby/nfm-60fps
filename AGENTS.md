@@ -31,6 +31,7 @@ Before a release or a large change, also run:
 | Sound | `test\verify-sound.ps1` | every race `same` (the baseline is per machine) |
 | Speed | `test\perf.ps1` | no regression against this machine's baseline |
 | Your settings | `test\live.ps1`, then `-Split` (on the owner's PC) | no flag on a race part, 250 fps or more (`-MinFps`); read `report.md` |
+| Blind review (last, before reporting) | `test\blind-review.ps1 -Base <commit before the work>` | `approve`; the review is saved in `docs\reviews\` |
 
 ## Invariants
 
@@ -124,6 +125,11 @@ format, https://openspec.dev). They come only from the owner's answers
   fails when one is missing. A new owner decision goes into the specs in the
   same commit, tagged "(Owner, YYYY-MM-DD.)", and the copy in the project
   files is refreshed.
+- Before reporting work done, run `test\blind-review.ps1 -Base <commit before
+  the work>`: Codex rates the commits against the specs with no word from you.
+  Never pass it your own explanation. Fix findings that show a requirement
+  unmet or a bug, commit, and run it once more; the report gives the last
+  verdict and every finding left, with the path of its file in `docs\reviews\`.
 
 ## How things are done here
 
