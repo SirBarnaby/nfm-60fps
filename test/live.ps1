@@ -10,7 +10,11 @@
 #   .\test\live.ps1 -NoShots                         no screenshots: each one stops the frames for a moment
 #   .\test\live.ps1 -MinFps 300                      the frame rate a race part must reach, with no allowance
 #                                                    under it (default 250, the owner's target:
-#                                                    openspec\specs\performance); 0 turns it off
+#                                                    openspec\specs\performance); 0 turns it off. Not
+#                                                    judged when your settings hold frames under it (a
+#                                                    lower frame limit, Match display, Variable refresh,
+#                                                    vsync on: then the limit is the target), and only a
+#                                                    note when the PC ran on battery
 #
 # What it plays: the main menu, fullscreen switched off and on again (a new
 # window and the graphics card started again, as F11 does), the settings
@@ -85,12 +89,14 @@ function Invoke-Run([string]$name, [string]$extra) {
     if ($NoShots) { $arguments += '-Dnfm.autotest.shots=false' }
     $arguments += @($extra -split ' ' | Where-Object { $_ } | ForEach-Object { "-D$_" })
     $arguments += @('-jar', $jar)
+    $battery = Test-OnBattery
     $p = Start-Process $java -ArgumentList $arguments -WorkingDirectory $root -WindowStyle Hidden -PassThru `
         -RedirectStandardOutput "$dir\out.log" -RedirectStandardError "$dir\err.log"
     if (-not $p.WaitForExit(420000)) {
         $p.Kill()
         Write-Host "[live] $name ran for 7 minutes and was stopped"
     }
+    $battery = $battery -or (Test-OnBattery)
     $frames = Join-Path $dir 'frames.json'
     if (-not (Test-Path $frames)) { return $null }
     $settings = @{}
@@ -98,6 +104,7 @@ function Invoke-Run([string]$name, [string]$extra) {
         $i = $_.IndexOf(': ')
         if ($i -gt 0) { $settings[$_.Substring(0, $i)] = $_.Substring($i + 2) }
     }
+    $settings['power'] = if ($battery) { 'on battery (at the start or the end of the run)' } else { 'plugged in' }
     # the game says when its test went the whole way; one that ran out of time writes frames.json all the same
     $log = @(Get-Content "$dir\out.log" -ErrorAction SilentlyContinue)
     $finished = @($log | Where-Object { $_ -match '^\[autotest\] (split test )?done' }).Count -gt 0
@@ -108,6 +115,7 @@ function Invoke-Run([string]$name, [string]$extra) {
         dir = $dir
         parts = @((Get-Content $frames -Raw | ConvertFrom-Json).parts)
         settings = $settings
+        battery = $battery
         finished = $finished
         ending = if ($ending) { $ending[0] -replace '^\[autotest\] ', '' } else { 'out.log has no "[autotest] done" line' }
     }
@@ -129,6 +137,8 @@ function Get-RunFlags($run) {
                 $seconds, $enoughFrames, $enoughSeconds)
         }
     }
+    $rule = Get-FloorRule $run
+    if ($rule.why) { $flags += "note: $($rule.why)" }
     return $flags
 }
 
@@ -138,13 +148,65 @@ function Get-Refresh($run) {
     return 0
 }
 
-# The frames a second a race part should reach: the frame limit, or the monitor's refresh rate with none.
-function Get-Target($run) {
+# What holds a run's frames down, from its settings as the game words them (GameSparker.describeFpsLimit and
+# describeVsync): a limit of 'N fps', 'match display' (the monitor's refresh rate) or 'variable refresh (...)'
+# (just under it, GameSparker.vrrRate), and vsync on (frames wait for the monitor). fps 0: nothing holds them;
+# known false: a cap follows the refresh rate, which the run could not read. The game never holds a test run to
+# its battery cap (GameSparker.batteryCap skips hidden runs), so that is not one.
+function Get-Cap($run) {
     $refresh = Get-Refresh $run
-    $limit = $run.settings['fps limit']
-    if ($limit -match '^(\d+)') { return [int]$Matches[1] }
-    if ($limit -match 'vrr') { return [math]::Max(1, $refresh - $refresh * $refresh / 3600) }
-    return $refresh
+    $limit = [string]$run.settings['fps limit']
+    $caps = @()
+    if ($limit -match '^(\d+)') {
+        $caps += [pscustomobject]@{ fps = [double]$Matches[1]; why = "the $limit limit" }
+    } elseif ($limit -like 'match display*') {
+        $caps += [pscustomobject]@{ fps = [double]$refresh; why = 'the limit matching the display' }
+    } elseif ($limit -like 'variable refresh*') {
+        $caps += [pscustomobject]@{ fps = $refresh - $refresh * $refresh / 3600; why = 'the variable refresh limit' }
+    }
+    if ([string]$run.settings['vsync'] -match '^on') { $caps += [pscustomobject]@{ fps = [double]$refresh; why = 'vsync' } }
+    $lowest = $caps | Where-Object { $_.fps -gt 0 } | Sort-Object fps | Select-Object -First 1
+    [pscustomobject]@{
+        fps = if ($lowest) { $lowest.fps } else { 0 }
+        why = if ($lowest) { $lowest.why } else { '' }
+        known = @($caps | Where-Object { $_.fps -le 0 }).Count -eq 0
+    }
+}
+
+# The frames a second a race part should reach: what holds the frames down, or the monitor's refresh rate with
+# nothing.
+function Get-Target($run) {
+    $cap = Get-Cap $run
+    if ($cap.fps -gt 0) { return $cap.fps }
+    return Get-Refresh $run
+}
+
+# Whether race parts are held to the owner's floor (-MinFps, openspec\specs\performance): not when the settings
+# hold frames under it, and on battery only as a note, as perf.ps1 does (the PC is slower; the game does not cap
+# test runs there). why: the note saying so, once a run.
+function Get-FloorRule($run) {
+    $cap = Get-Cap $run
+    if ($MinFps -le 0) { return [pscustomobject]@{ judged = $false; noted = $false; why = '' } }
+    if (-not $cap.known) {
+        return [pscustomobject]@{ judged = $false; noted = $false
+            why = "the frame limit follows the monitor's refresh rate, which the run could not read: the $MinFps fps floor is not judged" }
+    }
+    if ($cap.fps -gt 0 -and $cap.fps -lt $MinFps) {
+        return [pscustomobject]@{ judged = $false; noted = $false
+            why = ('frames are held to {0:N0} a second by {1}, under the {2} fps floor: race parts are judged against {0:N0}' -f
+                $cap.fps, $cap.why, $MinFps) }
+    }
+    if ($run.battery) {
+        return [pscustomobject]@{ judged = $true; noted = $true
+            why = "the PC ran on battery: race parts under $MinFps fps are noted, not flagged (plug in and run again)" }
+    }
+    return [pscustomobject]@{ judged = $true; noted = $false; why = '' }
+}
+
+# Windows says the PC runs on battery.
+function Test-OnBattery {
+    Add-Type -AssemblyName System.Windows.Forms
+    [System.Windows.Forms.SystemInformation]::PowerStatus.PowerLineStatus -eq 'Offline'
 }
 
 # Flags, and notes (starting "note: ") for what this window, off every monitor, cannot show.
@@ -154,13 +216,8 @@ function Get-Flags($run, $part) {
     $race = $raceParts -contains $part.name
     $target = Get-Target $run
     $floor = 0
-    # the owner's floor for race parts (openspec\specs\performance), unless the player capped the frames lower
-    # or vsync holds them to the monitor
-    if ($race -and $MinFps -gt 0 -and $run.settings['vsync'] -notmatch '^on') {
-        $limit = $run.settings['fps limit']
-        $capped = $limit -match 'vrr|battery' -or ($limit -match '^(\d+)' -and [int]$Matches[1] -lt $MinFps)
-        if (-not $capped) { $target = [math]::Max($target, $MinFps); $floor = $MinFps }
-    }
+    $rule = Get-FloorRule $run
+    if ($race -and $rule.judged) { $target = [math]::Max($target, $MinFps); $floor = $MinFps }
     $drawn = $part.drawn.PSObject.Properties.Name
     if ($race -and $drawn -contains 'software' -and $run.settings['renderer'] -like 'gpu*') {
         $flags += 'drawn in software'
@@ -177,7 +234,7 @@ function Get-Flags($run, $part) {
         # kept the player waiting all the same
         $text = '{0:N0} fps, under {1}' -f $part.fps, $floor
         if ($heldMs -gt 0) { $text += ' ({0:N0} without the {1:N0} ms the card held frames up)' -f $fps, $heldMs }
-        $pacing += $text
+        if ($rule.noted) { $flags += "note: $text, on battery" } else { $pacing += $text }
     } elseif ($race -and $target -gt 0 -and $fps -lt $target * 0.9) {
         # 10% under a frame limit is allowed
         $pacing += ('{0:N0} fps, under {1}' -f $fps, $target)
@@ -248,10 +305,8 @@ foreach ($run in $runs) {
     $md += @("## $title", '')
     $md += @($run.settings.GetEnumerator() | Sort-Object Name | ForEach-Object { "- $($_.Name): $($_.Value)" })
     $runFlags = @(Get-RunFlags $run)
-    if ($runFlags.Count -gt 0) {
-        $flagged = $true
-        $md += @('', "**Flagged for the whole run:** $($runFlags -join '; ')")
-    }
+    if (@($runFlags | Where-Object { $_ -notlike 'note: *' }).Count -gt 0) { $flagged = $true }
+    if ($runFlags.Count -gt 0) { $md += @('', "**Whole run:** $($runFlags -join '; ')") }
     $md += @('', '| Part | Seconds | Frames/s | Median ms | 99% ms | Longest ms | Late | Card ms | Drawn | Flags |',
         '|---|---:|---:|---:|---:|---:|---:|---:|---|---|')
     Write-Host ''
