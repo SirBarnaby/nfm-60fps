@@ -14,10 +14,12 @@
 # Codex gets the live test's evidence in review-evidence\ inside its checkout: each run's report.md,
 # manifest.json, frames.json, settings.txt and the *-gpu.png screenshots read back from the graphics card,
 # to judge the frame rate, stutter and what is on screen against the specs. From each run's manifest.json
-# (the commit, uncommitted changes and madness.jar it ran with) Codex is told whether the run came from the
-# build under review: the reviewed commit, or one with the same game files (src, lib, data, build.ps1,
-# madness64.ini, test\live.ps1), nothing of those uncommitted, and the jar built after its sources. The
-# review file names the runs it got and says plainly which do not match, or that there were none.
+# (the commit, uncommitted changes and madness.jar it ran with, and build.ps1's build-info.json for that jar)
+# Codex is told whether the run came from the build under review, on the build's own record: the jar is the
+# one build-info.json describes, built, and run, at the reviewed commit or one with the same game files (src,
+# lib, data, build.ps1, madness64.ini, test\live.ps1), with nothing of those uncommitted. A jar with no
+# build-info.json, or another jar's, is not matched. The review file names the runs it got and says plainly
+# which are not matched, or that there were none.
 #
 # Needs Node.js 18.18 or later, the Codex CLI signed in (`codex login`), and the plugin:
 #   claude plugin marketplace add openai/codex-plugin-cc
@@ -45,8 +47,8 @@ Blind review for the game's owner, who alone decides what the game should be. Yo
 $withLive = 'The latest live test results are in review-evidence\ (a folder per live test, named by when it ran: its report.md, and for each run its manifest.json, frames.json, settings.txt and the *-gpu.png screenshots read back from the graphics card, which are what the screen showed). Judge frame rate and stutter from report.md and frames.json, and open the screenshots to judge whether what is on screen meets the specs.'
 $withoutLive = 'There are no live test results for this review, so frame rate, stutter and what is on screen cannot be judged from a live run.'
 # then, after $withLive, whether each run came from the build under review (Get-BuildMatch), and when one did not:
-$buildIntro = 'Whether each live test run came from the build under review, from the manifest.json test\live.ps1 wrote in its folder when it started:'
-$buildWarning = 'Evidence that does not match may not show the build under review: say so wherever you rely on it.'
+$buildIntro = 'Whether each live test run came from the build under review, from the manifest.json test\live.ps1 wrote in its folder when it started and the build-info.json build.ps1 wrote for the jar it ran:'
+$buildWarning = 'Evidence that is not matched may not show the build under review: say so wherever you rely on it.'
 
 # What the reviewed build is made from, and what a live test's figures depend on: the game's sources and libraries,
 # its data, how it is built and started, and the live test that judged it
@@ -156,56 +158,73 @@ function Find-LiveTests {
     return @(@($onePlayer, $splitScreen) | Where-Object { $_ })
 }
 
-# Whether a live test run came from the reviewed build ($headFull), from the manifest.json test\live.ps1 wrote in
-# the run's folder when it started: made at the reviewed commit or at one whose $buildPaths are the same, with
-# none of them changed and not committed, and madness.jar built after its sources. text says which, plainly.
-function Get-BuildMatch($run) {
-    $file = Join-Path $run.FullName 'manifest.json'
-    if (-not (Test-Path $file)) {
-        return [pscustomobject]@{ matches = $false
-            text = 'does not match the build under review: it has no manifest.json, so which build it came from is unknown' }
-    }
-    $manifest = Get-Content $file -Raw | ConvertFrom-Json
-    $commit = [string]$manifest.commit
+# Why a commit and its uncommitted changes are not the reviewed build's ($headFull), nothing when they are: $what is
+# what happened there ('madness.jar was built', 'the run started'). The same build is the reviewed commit, or one
+# whose $buildPaths are the same, with none of those changed and not committed. $same gets a word on the second.
+function Test-Commit([string]$what, [string]$commit, $changed, [ref]$same) {
     $short = if ($commit.Length -gt 7) { $commit.Substring(0, 7) } else { $commit }
-    $why = @()
-    $same = ''
     if (-not $commit) {
-        $why += 'its manifest names no commit (not run from a git checkout)'
+        "$what outside a git checkout, so at no commit"
     } elseif (-not (& git rev-parse --verify --quiet "$commit^{commit}")) {
-        $why += "it was made at $short, a commit this repository does not have"
+        "$what at $short, a commit this repository does not have"
     } elseif ($commit -ne $headFull) {
         $differ = @(& git diff --name-only $commit $headFull -- $buildPaths)
         if ($differ.Count -gt 0) {
             $list = (($differ | Select-Object -First 5) -join ', ') + $(if ($differ.Count -gt 5) { ', ...' })
-            $why += ('it was made at {0}, and {1} of the files the build and the live test come from differ from {2}: {3}' -f
-                $short, $differ.Count, $headSha, $list)
+            '{0} at {1}, and {2} of the files the build and the live test come from differ from {3}: {4}' -f
+            $what, $short, $differ.Count, $headSha, $list
         } else {
-            $same = " (its $($buildPaths -join ', ') are the same as $headSha's)"
+            $same.Value = " ($short's $($buildPaths -join ', ') are the same as $headSha's)"
         }
     }
     # git status --porcelain lines: 'XY path', or 'XY old -> new' for a rename
-    $changed = @(foreach ($line in @($manifest.changed)) {
+    $paths = @(foreach ($line in @($changed)) {
             if (-not $line) { continue }
             $path = ([string]$line).Substring(3)
             if ($path -match ' -> (.+)$') { $path = $Matches[1] }
             $path = $path.Trim('"')
             if (@($buildPaths | Where-Object { $path -eq $_ -or $path.StartsWith("$_/") }).Count -gt 0) { $path }
         })
-    if ($changed.Count -gt 0) {
-        $why += 'it was made with uncommitted changes to ' + (($changed | Select-Object -First 5) -join ', ') +
-        $(if ($changed.Count -gt 5) { ', ...' })
+    if ($paths.Count -gt 0) {
+        "$what with uncommitted changes to " + (($paths | Select-Object -First 5) -join ', ') +
+        $(if ($paths.Count -gt 5) { ', ...' })
     }
-    if ($manifest.jarOlderThan) {
-        $why += "madness.jar was older than $($manifest.jarOlderThan), so it was an earlier build than the files"
+}
+
+# Whether a live test run came from the reviewed build ($headFull), on the build's own record: build.ps1's
+# build-info.json for the jar the run launched (test\live.ps1 copies it into the run's manifest.json as buildInfo)
+# must describe that very jar (its SHA-256) and have been built from the reviewed build (Test-Commit); the
+# checkout the run started from must be too, for its data, madness64.ini and test\live.ps1. A run with no
+# manifest, or a jar with no build-info.json or another one's, is not matched. text says which, plainly.
+function Get-BuildMatch($run) {
+    $file = Join-Path $run.FullName 'manifest.json'
+    if (-not (Test-Path $file)) {
+        return [pscustomobject]@{ matches = $false
+            text = 'is not matched to the build under review: it has no manifest.json, so which build it came from is unknown' }
     }
-    $jarHash = if ($manifest.jarSha256) { ([string]$manifest.jarSha256).Substring(0, 12) } else { 'unknown' }
+    $manifest = Get-Content $file -Raw | ConvertFrom-Json
+    $info = $manifest.buildInfo
+    $jar = if ($manifest.jarSha256) { ([string]$manifest.jarSha256).Substring(0, 12) } else { 'unknown' }
+    $why = @()
+    $same = ''
+    if (-not $info) {
+        $why += 'madness.jar had no build-info.json (build.ps1 writes one), so what it was built from is unknown'
+    } elseif ([string]$info.jarSha256 -ne [string]$manifest.jarSha256) {
+        $why += "madness.jar (sha256 $jar) is not the jar its build-info.json describes (sha256 $(([string]$info.jarSha256).Substring(0, 12)))"
+    } else {
+        $why += @(Test-Commit 'madness.jar was built' ([string]$info.commit) $info.changed ([ref]$same))
+    }
+    $runSame = ''
+    $why += @(Test-Commit 'the run started' ([string]$manifest.commit) $manifest.changed ([ref]$runSame))
     if ($why.Count -gt 0) {
-        return [pscustomobject]@{ matches = $false; text = 'does not match the build under review: ' + ($why -join '; ') }
+        return [pscustomobject]@{ matches = $false; text = 'is not matched to the build under review: ' + ($why -join '; ') }
     }
+    $built = ([string]$info.commit).Substring(0, 7)
+    $started = ([string]$manifest.commit).Substring(0, 7)
+    $where = if ($built -eq $started) { "built and run at $built$same" } else { "built at $built$same and run at $started$runSame" }
     return [pscustomobject]@{ matches = $true
-        text = ("matches the build under review: made at $short$same, with no uncommitted changes to the files the build and the live test " +
-            "come from, and madness.jar (sha256 $jarHash) built after its sources") }
+        text = ("matches the build under review: madness.jar (sha256 $jar) is the jar build.ps1 recorded, $where, with " +
+            'no uncommitted changes to the files the build and the live test come from') }
 }
 
 # Copies a live test's evidence into the review's checkout: report.md, and each run's manifest.json, frames.json,
@@ -268,7 +287,7 @@ try {
         foreach ($run in $test.runs) {
             $match = Get-BuildMatch $run
             if (-not $match.matches) { $mismatch = $true }
-            $liveLines += "  - $($run.Name): $($match.text)"
+            $liveLines += "  - $($run.Name) $($match.text)"
             $buildLines += "review-evidence\$name\$($run.Name) $($match.text)."
         }
     }
@@ -312,7 +331,7 @@ try {
     if ($liveLines.Count -gt 0) {
         $lines += @('Live test evidence given to Codex:', '') + $liveLines + ''
         if ($mismatch) {
-            $lines += @("**Some of this evidence is not from the build under review** (above), so what it shows may not be $headSha's. Run test\live.ps1 on $headSha and review again.", '')
+            $lines += @("**Some of this evidence is not matched to the build under review** (above), so what it shows may not be $headSha's. Build $headSha with build.ps1, run test\live.ps1 and review again.", '')
         }
     } else {
         $lines += @('No live test run was found (test\live.ps1 writes them to %TEMP%\nfm-live), so Codex had no live test evidence.', '')
