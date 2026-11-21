@@ -8,18 +8,21 @@ the specs that cover a system before changing it (see **Specs** below).
 
 ## The one command
 
-Build, then prove gameplay is unchanged:
+Build, then prove gameplay is unchanged, the speed kept and the specs whole:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1 -Quick
 powershell -NoProfile -ExecutionPolicy Bypass -File test\verify-races.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File test\perf.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File test\spec-check.ps1
 ```
 
 Expected last lines: `20 matched, 0 differed, 0 could not be run` and
-`golden frames: 80 same, 0 changed, 0 saved`, then `spec check: ... every one
-checked`. Exit code 0 is a pass; anything
-else is a failure to fix, never a baseline to update.
+`golden frames: 80 same, 0 changed, 0 saved`, then `[perf] as fast as the
+baseline`, then `spec check: ... every one checked`. Exit code 0 is a pass;
+anything else is a failure to fix, never a baseline to update. These four are
+the gates `openspec\specs\done-and-testing` names; a report of done work gives
+their results.
 
 Before a release or a large change, also run:
 
@@ -29,7 +32,6 @@ Before a release or a large change, also run:
 | AOT cache valid | `runtime\bin\java --enable-native-access=ALL-UNNAMED -XX:AOTCache=madness.aot -XX:+PrintSharedArchiveAndExit -jar madness.jar` | no line starting `[` and containing `error` |
 | Rollback | `test\verify-races.ps1 -Rollback 50` | as above |
 | Sound | `test\verify-sound.ps1` | every race `same` (the baseline is per machine) |
-| Speed | `test\perf.ps1` | no regression against this machine's baseline |
 | Your settings | `test\live.ps1`, then `-Split` (on the owner's PC) | no flag on a race part, 250 fps or more (`-MinFps`); read `report.md` |
 | Blind review (last, before reporting) | `test\blind-review.ps1 -Base <commit before the work>` | `approve`; the review is saved in `docs\reviews\` |
 
