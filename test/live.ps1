@@ -33,7 +33,8 @@
 # frames, the card's time, how frames were drawn), settings.txt (what it ran
 # with) and screenshots: <name>-gpu.png is read back from the card, so it is
 # what your screen shows. report.md and the console list each part and flag
-# what is wrong: a race drawn in software, frames a second under the frame
+# what is wrong: a race drawn in software, or drawn by the processor and only
+# put on screen by the card, frames a second under the frame
 # limit (or the monitor's refresh rate), uneven or late frames, hitches and
 # stalls (told apart from frames the card held up: the game was ready, the
 # card or Windows took that long to take the frame), the card near its time
@@ -43,7 +44,9 @@
 # was, 2 the game could not be run. What a window off every monitor cannot show is a note, not a flag: with
 # vsync its frames can wait for Windows' own clock, not your monitor's refresh (then half of them
 # come quicker than the refresh allows, which no screen could show), and Windows sometimes holds
-# one of its frames up for half a second.
+# one of its frames up for half a second. Notes also name what the specs ask
+# that this test does not judge: menus drawn by the processor, a frame cap
+# under the floor, a run on battery.
 # Build first with build.ps1: this uses madness.jar and the runtime it makes.
 
 param(
@@ -139,6 +142,16 @@ function Get-RunFlags($run) {
     }
     $rule = Get-FloorRule $run
     if ($rule.why) { $flags += "note: $($rule.why)" }
+    # openspec\specs\performance has the card draw menus too, but its check covers race parts: menus the processor
+    # drew are named, not flagged
+    if ($run.settings['renderer'] -like 'gpu*') {
+        $menus = @($run.parts | Where-Object { $raceParts -notcontains $_.name -and
+                @($_.drawn.PSObject.Properties.Name | Where-Object { $_ -in 'picture', 'software' }).Count -gt 0 } |
+            ForEach-Object { $_.name } | Select-Object -Unique)
+        if ($menus.Count -gt 0) {
+            $flags += "note: menus drawn by the processor, not the card (the specs ask for the card): $($menus -join ', ')"
+        }
+    }
     return $flags
 }
 
@@ -218,9 +231,12 @@ function Get-Flags($run, $part) {
     $floor = 0
     $rule = Get-FloorRule $run
     if ($race -and $rule.judged) { $target = [math]::Max($target, $MinFps); $floor = $MinFps }
+    # how frames were drawn (FrameLog): 'kept scene' and 'recorded scene' by the card; 'picture' by the processor,
+    # the card only putting it on screen; 'software' by the processor, put on screen by Windows
     $drawn = $part.drawn.PSObject.Properties.Name
-    if ($race -and $drawn -contains 'software' -and $run.settings['renderer'] -like 'gpu*') {
-        $flags += 'drawn in software'
+    if ($race -and $run.settings['renderer'] -like 'gpu*') {
+        if ($drawn -contains 'software') { $flags += 'drawn in software' }
+        if ($drawn -contains 'picture') { $flags += ('{0} frames drawn by the processor, shown by the card' -f $part.drawn.picture) }
     }
     $pacing = @()
     # frames the card held up are the card's (see below), so against a frame limit frames a second are counted
