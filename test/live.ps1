@@ -21,9 +21,10 @@
 # The specs ask for the floor at 1920x1080 fullscreen, so by default each run is put there on top of your saved
 # settings: the game has no command-line setting for it (it reads fullscreen and its resolution from
 # data\cookies.radq, where it saves them), so the run plays in a folder in %TEMP% of hard links to the files the
-# game reads where it starts (data, mods, cache, replays, lib\dlls, madness.aot: no copies, unless a link cannot be
-# made), with its own data\cookies.radq: yours, with fullscreen on at 1920x1080 in place of your fullscreen and its
-# resolution. The folder goes when the run ends; the game's log from it is kept in the run's folder (logs\).
+# game only reads where it starts (data, mods, replays, lib\dlls, madness.aot: no copies, unless a link cannot be
+# made), a copy of cache (the game updates its files, which must stay yours) and its own data\cookies.radq: yours,
+# with fullscreen on at 1920x1080 in place of your fullscreen and its resolution. The folder goes when the run
+# ends; the game's log from it is kept in the run's folder (logs\).
 # report.md says which resolution each run had. A run that is not at 1920x1080 fullscreen (-AsSaved, or a monitor
 # that cannot show it) cannot prove the floor: it is inconclusive, its frame rates under the floor are notes.
 #
@@ -97,13 +98,15 @@ $launcher = @(Get-Content (Join-Path $root 'madness64.ini') | Where-Object { $_ 
     ForEach-Object { $_ -replace '^vm\.arg\.\d+=', '' })
 
 # The resolution the specs' floor is for, as the game's settings.txt words it, and the saved settings that put a
-# run there (GameSparker.loadFullscreen, loadFullscreenResolution); the files and folders the game reads relative
-# to where it starts (GameFiles, GameSparker's lib\dlls, SteamAcoustics' cache, Replays, the -XX:AOTCache in
-# madness64.ini), which a run's game folder links to (New-GameFolder)
+# run there (GameSparker.loadFullscreen, loadFullscreenResolution); the files and folders the game only reads
+# relative to where it starts (GameFiles, GameSparker's lib\dlls, Replays, the -XX:AOTCache in madness64.ini),
+# which a run's game folder links to, and those it also writes (SteamAcoustics' cache: it touches a probe file it
+# reads and rewrites one it bakes), which it copies (New-GameFolder)
 $floorWindow = 'fullscreen 1920x1080'
 $override = [ordered]@{ 'fullscreen.dat' = 1; 'fullresw.dat' = 1920; 'fullresh.dat' = 1080 }
 $cookies = Join-Path $root 'data\cookies.radq'
-$gameReads = @('data', 'mods', 'cache', 'replays', 'lib\dlls', 'madness.aot')
+$gameReads = @('data', 'mods', 'replays', 'lib\dlls', 'madness.aot')
+$gameWrites = @('cache')
 Add-Type -AssemblyName System.IO.Compression
 
 # parts of a race, which should go at the frame limit; the rest are menus, drawn once a tick
@@ -308,10 +311,12 @@ function Write-Cookies([string]$from, [string]$to, $set) {
     } finally { $out.Dispose() }
 }
 
-# The folder a run plays in at 1920x1080 fullscreen (see the top): hard links to what the game reads where it
-# starts ($gameReads), so nothing is copied and the game's own files are what it reads, and its own
-# data\cookies.radq ($override on top of yours). A file is copied where a link cannot be made (another drive),
-# and so is a read-only one, whose flag deleting the link would clear on the game's own file.
+# The folder a run plays in at 1920x1080 fullscreen (see the top): hard links to what the game only reads where it
+# starts ($gameReads), so the game's own files are what it reads, copies of what it also writes ($gameWrites), so
+# nothing the run does reaches yours through a link, and its own data\cookies.radq ($override on top of yours).
+# A file to link is copied where a link cannot be made (another drive), and so is a read-only one, whose flag
+# deleting the link would clear on the game's own file. The game's music temporaries (data\music\temp_*, which it
+# writes and deletes) are left out.
 function New-GameFolder([string]$name) {
     if (-not ('NfmLive.Links' -as [type])) {
         Add-Type -Namespace NfmLive -Name Links -MemberDefinition @'
@@ -322,9 +327,11 @@ public static extern bool CreateHardLink(string lpFileName, string lpExistingFil
     $game = Join-Path ([IO.Path]::GetTempPath()) "nfm-live-game-$PID-$name"
     if (Test-Path $game) { Remove-GameFolder $game '' }
     New-Item -ItemType Directory $game | Out-Null
-    foreach ($rel in $gameReads) {
+    $musicTemp = Join-Path $root 'data\music\temp_*'
+    foreach ($rel in $gameReads + $gameWrites) {
         $from = Join-Path $root $rel
         if (-not (Test-Path -LiteralPath $from)) { continue }
+        $copy = $gameWrites -contains $rel
         $top = Get-Item -LiteralPath $from -Force
         # a folder comes before what is in it
         $items = @($top)
@@ -333,8 +340,10 @@ public static extern bool CreateHardLink(string lpFileName, string lpExistingFil
             $to = Join-Path $game $item.FullName.Substring($root.Length).TrimStart('\')
             if ($item.PSIsContainer) {
                 New-Item -ItemType Directory -Force $to | Out-Null
-            } elseif ($item.FullName -ne $cookies -and
-                ($item.IsReadOnly -or -not [NfmLive.Links]::CreateHardLink($to, $item.FullName, [IntPtr]::Zero))) {
+            } elseif ($item.FullName -eq $cookies -or $item.FullName -like $musicTemp) {
+                continue
+            } elseif ($copy -or $item.IsReadOnly -or
+                -not [NfmLive.Links]::CreateHardLink($to, $item.FullName, [IntPtr]::Zero)) {
                 Copy-Item -LiteralPath $item.FullName $to
             }
         }
