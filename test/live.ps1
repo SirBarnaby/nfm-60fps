@@ -19,7 +19,9 @@
 # What it plays: the main menu, fullscreen switched off and on again (a new
 # window and the graphics card started again, as F11 does), the settings
 # screen, car and stage select, a race, the pause menu, the instant replay, the
-# race again and the post-race highlight. It reads your settings as the game
+# race again and the post-race highlight; with -Split, a split screen race, the
+# instant replay, the race again, the results and a race again from them (split
+# screen has no highlight). It reads your settings as the game
 # does (window or fullscreen and its resolution, the picture's shape, renderer,
 # frame limit, vsync, MSAA, supersampling, dynamic resolution, HDR, smooth
 # effects, run-ahead, the overlay, sound and its effects, mods, game
@@ -43,7 +45,9 @@
 # told apart from frames the card held up: the game was ready, the
 # card or Windows took that long to take the frame), the card near its time
 # per frame. A run is flagged as a whole when the game's test did not go the
-# whole way, a race part it plays is missing or too short to judge, or it
+# whole way, a race part it plays is missing or too short to judge (each time
+# it comes up is graded on its own: 'race (2nd time)' is the race resumed after
+# the instant replay, never added to the first), or it
 # wrote no frames at all. A run during which the PC was on battery or had
 # Battery saver on (Windows slows the processor and the card then, which the
 # owner did not choose) cannot prove a frame rate: it is inconclusive, its
@@ -82,12 +86,31 @@ $launcher = @(Get-Content (Join-Path $root 'madness64.ini') | Where-Object { $_ 
 
 # parts of a race, which should go at the frame limit; the rest are menus, drawn once a tick
 $raceParts = @('countdown', 'race', 'split countdown', 'split race', 'instantreplay', 'gamehighlight')
-# the race parts the test plays (GameSparker.runAutoTest, runSplitAutoTest): a run missing one, or with one too
-# short to judge (the 100 frames over 2 seconds that unevenness needs), did not show what it was meant to
-$expectedParts = if ($Split) { @('split countdown', 'split race', 'instantreplay') }
-else { @('countdown', 'race', 'instantreplay', 'gamehighlight') }
+# the race parts the test plays, in order (GameSparker.runAutoTest, runSplitTest): one player races, pauses for the
+# instant replay, races on and ends in the post-race highlight; split screen races, pauses for the instant replay,
+# races on, then races again from the results (it has no highlight). Each time a part comes up it is graded on
+# its own, never added to another: a run missing one, or with one too short to judge (the 100 frames over 2
+# seconds that unevenness needs), did not show what it was meant to.
+$expectedParts = if ($Split) { @('split countdown', 'split race', 'instantreplay', 'split race', 'split countdown', 'split race') }
+else { @('countdown', 'race', 'instantreplay', 'race', 'gamehighlight') }
 $enoughFrames = 100
 $enoughSeconds = 2
+
+# A race part's name the nth time it comes up in a run: 'race', then 'race (2nd time)', and so on. Menus keep theirs.
+function Get-PartLabel([string]$name, [int]$nth) {
+    if ($nth -le 1 -or $raceParts -notcontains $name) { return $name }
+    $suffix = if ($nth % 100 -in 11..13) { 'th' } else { @('th', 'st', 'nd', 'rd', 'th', 'th', 'th', 'th', 'th', 'th')[$nth % 10] }
+    return "$name ($nth$suffix time)"
+}
+
+# The labels of a run's parts, in order (Get-PartLabel).
+function Get-PartLabels($parts) {
+    $seen = @{}
+    foreach ($part in $parts) {
+        $seen[$part.name] = 1 + [int]$seen[$part.name]
+        Get-PartLabel $part.name $seen[$part.name]
+    }
+}
 
 function Invoke-Run([string]$name, [string]$extra) {
     $dir = Join-Path $Out $name
@@ -206,15 +229,20 @@ function Get-BuildText($manifest) {
 function Get-RunFlags($run) {
     $flags = @()
     if (-not $run.finished) { $flags += "the test did not finish: $($run.ending)" }
+    $wanted = @{}
     foreach ($name in $expectedParts) {
-        $parts = @($run.parts | Where-Object { $_.name -eq $name })
-        $frames = [double](($parts | Measure-Object frames -Sum).Sum)
-        $seconds = [double](($parts | Measure-Object seconds -Sum).Sum)
-        if ($parts.Count -eq 0) {
-            $flags += "no $name"
-        } elseif ($frames -lt $enoughFrames -or $seconds -lt $enoughSeconds) {
-            $flags += ('{0}: {1:N0} frames over {2:N1} s, too few to judge (needs {3} over {4} s)' -f $name, $frames,
-                $seconds, $enoughFrames, $enoughSeconds)
+        # the nth time this part should come up, matched with the nth time it did
+        $wanted[$name] = 1 + [int]$wanted[$name]
+        $label = Get-PartLabel $name $wanted[$name]
+        $came = @($run.parts | Where-Object { $_.name -eq $name })
+        if ($came.Count -lt $wanted[$name]) {
+            $flags += "no $label"
+            continue
+        }
+        $part = $came[$wanted[$name] - 1]
+        if ($part.frames -lt $enoughFrames -or $part.seconds -lt $enoughSeconds) {
+            $flags += ('{0}: {1:N0} frames over {2:N1} s, too few to judge (needs {3} over {4} s)' -f $label, $part.frames,
+                $part.seconds, $enoughFrames, $enoughSeconds)
         }
     }
     $rule = Get-FloorRule $run
@@ -330,26 +358,38 @@ function Get-PowerPlan {
     return ''
 }
 
+# A race part's frames the processor drew with the GPU renderer on (FrameLog): 'kept scene' and 'recorded scene' are
+# drawn by the card; 'picture' by the processor, the card only putting it on screen; 'software' by the processor,
+# put on screen by Windows.
+function Get-DrawnFlags($run, $part) {
+    if ($run.settings['renderer'] -notlike 'gpu*') { return }
+    $drawn = $part.drawn.PSObject.Properties.Name
+    if ($drawn -contains 'software') { 'drawn in software' }
+    if ($drawn -contains 'picture') { '{0} frames drawn by the processor, shown by the card' -f $part.drawn.picture }
+}
+
 # Flags, and notes (starting "note: ") for what this window, off every monitor, cannot show.
 function Get-Flags($run, $part) {
     $flags = @()
+    $race = $raceParts -contains $part.name
     if ($part.frames -lt 10) {
-        # too few frames to judge, but a long pause in the fullscreen switch is one however few frames it showed
-        if ($part.name -eq 'fullscreen switch') { $flags += @(Get-Stall $part $false) }
+        # too few frames for a frame rate or pacing, which fails a race part (one the test plays is a whole-run flag
+        # too, Get-RunFlags); how its frames were drawn and a long pause still show, and a long pause in the
+        # fullscreen switch is one however few frames it showed
+        if ($race) {
+            $flags += 'only {0} frames, too few to judge' -f $part.frames
+            $flags += @(Get-DrawnFlags $run $part)
+            $flags += @(Get-Stall $part $true)
+        } elseif ($part.name -eq 'fullscreen switch') {
+            $flags += @(Get-Stall $part $false)
+        }
         return $flags
     }
-    $race = $raceParts -contains $part.name
     $target = Get-Target $run
     $floor = 0
     $rule = Get-FloorRule $run
     if ($race -and $rule.judged) { $target = [math]::Max($target, $MinFps); $floor = $MinFps }
-    # how frames were drawn (FrameLog): 'kept scene' and 'recorded scene' by the card; 'picture' by the processor,
-    # the card only putting it on screen; 'software' by the processor, put on screen by Windows
-    $drawn = $part.drawn.PSObject.Properties.Name
-    if ($race -and $run.settings['renderer'] -like 'gpu*') {
-        if ($drawn -contains 'software') { $flags += 'drawn in software' }
-        if ($drawn -contains 'picture') { $flags += ('{0} frames drawn by the processor, shown by the card' -f $part.drawn.picture) }
-    }
+    if ($race) { $flags += @(Get-DrawnFlags $run $part) }
     $pacing = @()
     # frames the card held up are the card's (see below), so against a frame limit frames a second are counted
     # without them
@@ -456,29 +496,34 @@ foreach ($run in $runs) {
     Write-Host "== $title"
     if ($why) { Write-Host "inconclusive: $why" }
     if ($runFlags.Count -gt 0) { Write-Host "whole run: $($runFlags -join '; ')" }
-    Write-Host ('{0,-18} {1,6} {2,8} {3,7} {4,7} {5,8} {6,5} {7,6}  {8}' -f 'part', 's', 'fps', 'median', '99%',
+    Write-Host ('{0,-26} {1,6} {2,8} {3,7} {4,7} {5,8} {6,5} {7,6}  {8}' -f 'part', 's', 'fps', 'median', '99%',
         'longest', 'late', 'card', 'flags')
-    foreach ($part in $run.parts) {
+    # a race part that comes up again is named for the time it is (Get-PartLabel), in the table and the lists below
+    $labels = @(Get-PartLabels $run.parts)
+    for ($i = 0; $i -lt $run.parts.Count; $i++) {
+        $part = $run.parts[$i]
         $flags = @(Get-Flags $run $part)
         if (@($flags | Where-Object { $_ -notlike 'note: *' }).Count -gt 0) { $flagged = $true }
         $drawn = ($part.drawn.PSObject.Properties | ForEach-Object { "$($_.Name) $($_.Value)" }) -join ', '
         if ($part.screenshotFrames) { $drawn += "; $($part.screenshotFrames) screenshot frames left out" }
-        $md += ('| {0} | {1:N1} | {2:N1} | {3:N2} | {4:N2} | {5:N1} | {6} | {7:N2} | {8} | {9} |' -f $part.name,
+        $md += ('| {0} | {1:N1} | {2:N1} | {3:N2} | {4:N2} | {5:N1} | {6} | {7:N2} | {8} | {9} |' -f $labels[$i],
             $part.seconds, $part.fps, $part.ms.median, $part.ms.p99, $part.ms.max, $part.late, $part.gpuMs, $drawn,
             ($flags -join '; '))
-        Write-Host ('{0,-18} {1,6:N1} {2,8:N1} {3,7:N2} {4,7:N2} {5,8:N1} {6,5} {7,6:N2}  {8}' -f $part.name,
+        Write-Host ('{0,-26} {1,6:N1} {2,8:N1} {3,7:N2} {4,7:N2} {5,8:N1} {6,5} {7,6:N2}  {8}' -f $labels[$i],
             $part.seconds, $part.fps, $part.ms.median, $part.ms.p99, $part.ms.max, $part.late, $part.gpuMs,
             ($flags -join '; '))
     }
     $md += ''
-    foreach ($part in $run.parts | Where-Object { $raceParts -contains $_.name -and $_.slowest }) {
-        $md += ("Slowest frames in $($part.name): " + (($part.slowest | ForEach-Object {
+    for ($i = 0; $i -lt $run.parts.Count; $i++) {
+        $part = $run.parts[$i]
+        if ($raceParts -notcontains $part.name -or -not $part.slowest) { continue }
+        $md += ("Slowest frames in $($labels[$i]): " + (($part.slowest | ForEach-Object {
                         '{0:N1} ms at {1:N1} s' -f $_.ms, $_.at }) -join ', ') + '  ')
     }
-    $holds = @(foreach ($part in $run.parts) {
-            foreach ($h in @($part.cardHeld.holds)) {
+    $holds = @(for ($i = 0; $i -lt $run.parts.Count; $i++) {
+            foreach ($h in @($run.parts[$i].cardHeld.holds)) {
                 if ($null -eq $h) { continue }
-                '{0:N0} ms in {1} at {2:N1} s{3}' -f $h.ms, $part.name, $h.at, $(if ($h.after) { " ($($h.after))" })
+                '{0:N0} ms in {1} at {2:N1} s{3}' -f $h.ms, $labels[$i], $h.at, $(if ($h.after) { " ($($h.after))" })
             }
         })
     if ($holds.Count -gt 0) {
