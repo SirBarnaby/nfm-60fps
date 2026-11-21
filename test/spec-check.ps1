@@ -3,11 +3,12 @@
 #
 #   .\test\spec-check.ps1
 #
-# 1. Runs `openspec validate --specs --strict` (the OpenSpec CLI, installed per user). If the CLI is
-#    missing it says so and goes on with step 2; install it with
+# 1. Runs `openspec validate --specs --strict` (the OpenSpec CLI, installed per user). Without the
+#    CLI the format cannot be proven, so that is a failure; install it with
 #    irm https://openspec.dev/cli/install.ps1 | iex
 # 2. Reads every openspec\specs\<area>\spec.md and fails if a requirement has no scenario whose name
-#    starts with "Check:", or if a check names a test\*.ps1 file that does not exist.
+#    starts with "Check:", or if a check names a test\*.ps1 file that does not exist. No spec, or a
+#    spec with no requirement, is a failure too.
 #
 # Exit code 0: every spec valid and every requirement checked. 1: something to fix.
 # It only reads files: no window, no sound, nothing saved.
@@ -34,7 +35,9 @@ if ($cli) {
         Pop-Location
     }
 } else {
-    Write-Host 'note: the openspec CLI is not installed, so the format check was skipped.'
+    $failed = $true
+    Write-Host 'The openspec CLI is not installed, so the specs'' format cannot be checked. Install it with'
+    Write-Host '  irm https://openspec.dev/cli/install.ps1 | iex'
 }
 
 # 2. Every requirement has a "Check:" scenario, and the test files it names exist
@@ -45,6 +48,10 @@ foreach ($file in Get-ChildItem -Path $specs -Filter 'spec.md' -Recurse) {
     $area = Split-Path (Split-Path $file.FullName -Parent) -Leaf
     $text = Get-Content -Raw -Encoding UTF8 $file.FullName
     $blocks = [regex]::Split($text, '(?m)^### Requirement:')
+    if ($blocks.Count -lt 2) {
+        $failed = $true
+        Write-Host ("{0}: no requirement found (each starts with '### Requirement:')" -f $area)
+    }
     for ($i = 1; $i -lt $blocks.Count; $i++) {
         $requirements++
         $block = $blocks[$i]
@@ -60,6 +67,10 @@ foreach ($file in Get-ChildItem -Path $specs -Filter 'spec.md' -Recurse) {
             }
         }
     }
+}
+if ($areas -eq 0) {
+    $failed = $true
+    Write-Host 'openspec\specs has no spec.md.'
 }
 
 if ($failed) {
