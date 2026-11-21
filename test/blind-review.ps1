@@ -9,11 +9,14 @@
 #   .\test\blind-review.ps1 -Model gpt-5.5    another Codex model than its default
 #   .\test\blind-review.ps1 -Live C:\runs\a   the live test runs to give Codex (folders test\live.ps1
 #                                             wrote; default: the newest one-player and the newest
-#                                             split screen run in %TEMP%\nfm-live)
+#                                             split screen attempt in %TEMP%\nfm-live, by when its
+#                                             manifest.json says it started, a failed one included)
 #
 # Codex gets the live test's evidence in review-evidence\ inside its checkout: each run's report.md,
-# manifest.json, frames.json, settings.txt and the *-gpu.png screenshots read back from the graphics card,
-# to judge the frame rate, stutter and what is on screen against the specs. From each run's manifest.json
+# manifest.json, frames.json, settings.txt, the game's out.log and err.log and the *-gpu.png screenshots read
+# back from the graphics card, to judge the frame rate, stutter and what is on screen against the specs. The
+# newest attempt is given even when it failed (no frames.json) or the game's test did not go the whole way, and
+# Codex is told so: an older complete run would hide it. From each run's manifest.json
 # (the commit, uncommitted changes and madness.jar it ran with, and build.ps1's build-info.json for that jar)
 # Codex is told whether the run came from the build under review, on the build's own record: the jar is the
 # one build-info.json describes, built, and run, at the reviewed commit or one with the same game files (src,
@@ -44,11 +47,13 @@ $focus = @'
 Blind review for the game's owner, who alone decides what the game should be. You get no explanation from whoever made this change, on purpose. Judge it only against the owner's requirements in openspec/specs (read every spec.md the change touches, and openspec/config.yaml for the rules agents must follow) and against the repository itself. For each requirement the change touches, decide whether it is met, not met, or cannot be judged from what you can see, and make every unmet requirement a finding. Treat each of these as blocking: a requirement or its Check scenario changed, removed or weakened without the owner; a test, check or baseline loosened, skipped, deleted or updated so that it passes; a claim in docs, specs or commit messages that no test output backs; until 1.0, anything that could make a race play differently from the original (physics, AI, timing, random streams, race state); drawing moved from the graphics card to the processor; anything likely to drop the frame rate under 250 fps at 1080p fullscreen, or to add stutter or input lag.
 '@.Trim()
 # one of these follows the focus, as there is live test evidence or not
-$withLive = 'The latest live test results are in review-evidence\ (a folder per live test, named by when it ran: its report.md, and for each run its manifest.json, frames.json, settings.txt and the *-gpu.png screenshots read back from the graphics card, which are what the screen showed). Judge frame rate and stutter from report.md and frames.json, and open the screenshots to judge whether what is on screen meets the specs.'
+$withLive = 'The latest live test results are in review-evidence\ (a folder per live test, named by when it ran: its report.md, and for each run its manifest.json, frames.json, settings.txt, the game''s out.log and err.log, and the *-gpu.png screenshots read back from the graphics card, which are what the screen showed). Judge frame rate and stutter from report.md and frames.json, and open the screenshots to judge whether what is on screen meets the specs.'
 $withoutLive = 'There are no live test results for this review, so frame rate, stutter and what is on screen cannot be judged from a live run.'
 # then, after $withLive, whether each run came from the build under review (Get-BuildMatch), and when one did not:
 $buildIntro = 'Whether each live test run came from the build under review, from the manifest.json test\live.ps1 wrote in its folder when it started and the build-info.json build.ps1 wrote for the jar it ran:'
 $buildWarning = 'Evidence that is not matched may not show the build under review: say so wherever you rely on it.'
+# and when the newest attempt failed or did not go the whole way (Get-RunState):
+$stateWarning = 'The newest live test attempt failed or is incomplete (above), so it shows less than a whole run: say so, judge only what it shows, and never take a part it is missing as passing.'
 
 # What the reviewed build is made from, and what a live test's figures depend on: the game's sources and libraries,
 # its data, how it is built and started, and the live test that judged it
@@ -114,48 +119,74 @@ if (process.env.BLIND_REVIEW_BROKER === 'peek') {
     finally { Remove-Item Env:BLIND_REVIEW_ROOT, Env:BLIND_REVIEW_BROKER, Env:BLIND_REVIEW_PID -ErrorAction SilentlyContinue }
 }
 
-# A live test's folder (test\live.ps1 -Out, by default %TEMP%\nfm-live\<time>): its runs (each a folder with
-# frames.json) and whether they raced split screen; a run folder given on its own counts as its live test with
-# that one run. Null if there is no run in it.
+# Whether a folder is a live test run: test\live.ps1 writes manifest.json in it before the game starts, and the
+# game frames.json at the end (a run from before manifests has only that).
+function Test-LiveRun([string]$folder) {
+    (Test-Path (Join-Path $folder 'manifest.json')) -or (Test-Path (Join-Path $folder 'frames.json'))
+}
+
+# A live test's folder (test\live.ps1 -Out, by default %TEMP%\nfm-live\<time>): its runs, a failed one with no
+# frames.json included, whether they raced split screen (manifest.json says; a run from before manifests, its
+# frames.json) and when it started (the earliest manifest.json time; else when frames.json was written, else the
+# folder). A run folder given on its own counts as its live test with that one run. Null if there is no run in it.
 function Get-LiveTest([string]$folder) {
     if (-not (Test-Path $folder -PathType Container)) { return $null }
     $folder = (Resolve-Path $folder).Path
-    $runs = @(Get-ChildItem $folder -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'frames.json') })
-    if ($runs.Count -eq 0 -and (Test-Path (Join-Path $folder 'frames.json'))) {
+    $runs = @(Get-ChildItem $folder -Directory | Where-Object { Test-LiveRun $_.FullName })
+    if ($runs.Count -eq 0 -and (Test-LiveRun $folder)) {
         $runs = @(Get-Item $folder)
         $folder = Split-Path $folder -Parent
     }
     if ($runs.Count -eq 0) { return $null }
-    $split = @($runs | Where-Object { (Get-Content (Join-Path $_.FullName 'frames.json') -Raw) -match '"name":\s*"split ' }).Count -gt 0
+    $manifests = @(foreach ($run in $runs) {
+            $file = Join-Path $run.FullName 'manifest.json'
+            if (Test-Path $file) { Get-Content $file -Raw | ConvertFrom-Json }
+        })
+    $frames = @($runs | ForEach-Object { Join-Path $_.FullName 'frames.json' } | Where-Object { Test-Path $_ })
+    $split = if ($manifests.Count -gt 0) { @($manifests | Where-Object { $_.split }).Count -gt 0 }
+    else { @($frames | Where-Object { (Get-Content $_ -Raw) -match '"name":\s*"split ' }).Count -gt 0 }
+    $ranAt = if ($manifests.Count -gt 0) { @($manifests | ForEach-Object { [datetime]$_.time } | Sort-Object)[0] }
+    elseif ($frames.Count -gt 0) { (Get-Item $frames[0]).LastWriteTime }
+    else { $runs[0].LastWriteTime }
     [pscustomobject]@{
         folder = $folder
         runs = $runs
         split = $split
-        ranAt = (Get-Item (Join-Path $runs[0].FullName 'frames.json')).LastWriteTime
+        ranAt = $ranAt
     }
 }
 
 # The live tests to give Codex: those named with -Live, else the newest one-player and the newest split screen
-# test in %TEMP%\nfm-live (none when there are none).
+# attempt in %TEMP%\nfm-live by when it started, even one that failed (Get-RunState says how; none when there are
+# none).
 function Find-LiveTests {
     if ($Live) {
         return @(foreach ($folder in $Live) {
                 $test = Get-LiveTest $folder
-                if (-not $test) { Fail "No live test run in $folder (a folder test\live.ps1 wrote, with frames.json)." }
+                if (-not $test) { Fail "No live test run in $folder (a folder test\live.ps1 wrote, with manifest.json or frames.json)." }
                 $test
             })
     }
-    $onePlayer = $null
-    $splitScreen = $null
-    $folders = Get-ChildItem (Join-Path ([IO.Path]::GetTempPath()) 'nfm-live') -Directory -ErrorAction SilentlyContinue |
-        Sort-Object Name -Descending
-    foreach ($folder in $folders) {
-        $test = Get-LiveTest $folder.FullName
-        if (-not $test) { continue }
-        if ($test.split) { if (-not $splitScreen) { $splitScreen = $test } } elseif (-not $onePlayer) { $onePlayer = $test }
-        if ($onePlayer -and $splitScreen) { break }
-    }
+    $tests = @(Get-ChildItem (Join-Path ([IO.Path]::GetTempPath()) 'nfm-live') -Directory -ErrorAction SilentlyContinue |
+        ForEach-Object { Get-LiveTest $_.FullName } | Where-Object { $_ } | Sort-Object ranAt -Descending)
+    $onePlayer = $tests | Where-Object { -not $_.split } | Select-Object -First 1
+    $splitScreen = $tests | Where-Object { $_.split } | Select-Object -First 1
     return @(@($onePlayer, $splitScreen) | Where-Object { $_ })
+}
+
+# How far a live test run got, '' when the game's test went the whole way: it wrote no frames.json (the game
+# stopped or never started: its out.log and err.log say), or its out.log has no "[autotest] done" line (the test
+# ran out of time or was stopped, as test\live.ps1 flags it).
+function Get-RunState($run) {
+    if (-not (Test-Path (Join-Path $run.FullName 'frames.json'))) {
+        return 'failed: it wrote no frames.json, so it has no frame figures (its out.log and err.log say how far it got)'
+    }
+    $log = Join-Path $run.FullName 'out.log'
+    $lines = @(if (Test-Path $log) { Get-Content $log })
+    if (@($lines | Where-Object { $_ -match '^\[autotest\] (split test )?done' }).Count -gt 0) { return '' }
+    $end = @($lines | Where-Object { $_ -match '^\[autotest\] .*ran out of time' } | Select-Object -Last 1)
+    $how = if ($end.Count -gt 0) { 'out.log: ' + ($end[0] -replace '^\[autotest\] ', '') } else { 'out.log has no "[autotest] done" line' }
+    return "is incomplete: the game's test did not go the whole way ($how), so parts it should have played may be missing"
 }
 
 # Why a commit and its uncommitted changes are not the reviewed build's ($headFull), nothing when they are: $what is
@@ -228,7 +259,7 @@ function Get-BuildMatch($run) {
 }
 
 # Copies a live test's evidence into the review's checkout: report.md, and each run's manifest.json, frames.json,
-# settings.txt and the screenshots read back from the card.
+# settings.txt, the game's out.log and err.log, and the screenshots read back from the card.
 function Copy-LiveEvidence($test, [string]$to) {
     New-Item -ItemType Directory -Force $to | Out-Null
     $report = Join-Path $test.folder 'report.md'
@@ -236,7 +267,7 @@ function Copy-LiveEvidence($test, [string]$to) {
     foreach ($run in $test.runs) {
         $runTo = Join-Path $to $run.Name
         New-Item -ItemType Directory -Force $runTo | Out-Null
-        foreach ($name in 'manifest.json', 'frames.json', 'settings.txt') {
+        foreach ($name in 'manifest.json', 'frames.json', 'settings.txt', 'out.log', 'err.log') {
             $file = Join-Path $run.FullName $name
             if (Test-Path $file) { Copy-Item $file $runTo }
         }
@@ -279,6 +310,7 @@ try {
     $liveLines = @()
     $buildLines = @()
     $mismatch = $false
+    $unfinished = $false
     foreach ($test in $liveTests) {
         $name = (Split-Path $test.folder -Leaf) + $(if ($test.split) { '-split' })
         Copy-LiveEvidence $test (Join-Path $tree "review-evidence\$name")
@@ -289,16 +321,26 @@ try {
             if (-not $match.matches) { $mismatch = $true }
             $liveLines += "  - $($run.Name) $($match.text)"
             $buildLines += "review-evidence\$name\$($run.Name) $($match.text)."
+            $state = Get-RunState $run
+            if ($state) {
+                $unfinished = $true
+                $liveLines += "  - $($run.Name) $state"
+                $buildLines += "review-evidence\$name\$($run.Name) $state."
+            }
         }
     }
     $reviewFocus = $focus + ' ' + $(if ($liveTests.Count -gt 0) {
-            (@($withLive, $buildIntro) + $buildLines + @($(if ($mismatch) { $buildWarning }))) -join ' '
+            $warnings = @($(if ($mismatch) { $buildWarning }), $(if ($unfinished) { $stateWarning })) | Where-Object { $_ }
+            (@($withLive, $buildIntro) + $buildLines + @($warnings)) -join ' '
         } else { $withoutLive })
 
     # --no-deprecation: Node 24 warns about the runner's own Windows spawn (DEP0190), noise for this report
     $arguments = @('--no-deprecation', $companion, 'adversarial-review', '--wait', '--json', '--base', $baseSha)
     if ($Model) { $arguments += @('--model', $Model) }
-    $arguments += $reviewFocus
+    # Windows PowerShell passes an argument to a program in quotes without escaping the double quotes inside it, so
+    # one there (out.log has no "[autotest] done" line) would split the focus in two and lose the quotes: single
+    # quotes say the same
+    $arguments += $reviewFocus -replace '"', "'"
     Write-Host ('Codex is reviewing {0}..{1} (a few minutes)...' -f $baseShort, $headSha)
     $brokerBefore = Invoke-Broker $tree 'peek'
     # Node writes UTF-8, which PowerShell reads in the console's code page (850 here) unless told otherwise,
@@ -332,6 +374,9 @@ try {
         $lines += @('Live test evidence given to Codex:', '') + $liveLines + ''
         if ($mismatch) {
             $lines += @("**Some of this evidence is not matched to the build under review** (above), so what it shows may not be $headSha's. Build $headSha with build.ps1, run test\live.ps1 and review again.", '')
+        }
+        if ($unfinished) {
+            $lines += @('**The newest live test attempt failed or is incomplete** (above), so it shows less than a whole run.', '')
         }
     } else {
         $lines += @('No live test run was found (test\live.ps1 writes them to %TEMP%\nfm-live), so Codex had no live test evidence.', '')
