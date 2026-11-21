@@ -22,7 +22,11 @@ Every frame the game shows during a race notes two times: when it went on screen
 - **Where it goes.** `frames.json` → `parts[].motion`: `p99Ms`, `strays`, `judged`, `maxMs`/`maxAt`, `stretchMs`/`stretchAt` (the longest stretch off in a row). The game's log also gets a line per part.
 - **Every frame, for a closer look.** Use `-Dnfm.framelog.csv=true`, which writes `frames-NN-<part>.csv` (shown, moment, chosen, lag, off, in ms) next to `frames.json`.
 
-`test\live.ps1` flags a race part `motion uneven` when over 1% of its judged frames are off, and `motion hitch` when frames are off in a row for over 100 ms. It plays your settings with no frame limit and at 120 fps (`-Limits`) and flags a part that stutters only with no limit.
+`test\live.ps1` flags a race part `motion uneven` when over 1% of its judged frames are off, and `motion hitch` when frames are off in a row for over 100 ms.
+- The share is counted from `strays` and `judged`, never read off `p99Ms`, which is rounded: 4 off in 320 frames is 1.25%, uneven, even when `p99Ms` says 4.00.
+- A measured hitch always counts. Only the share needs 100 judged frames; with fewer it is a note saying so.
+
+It plays your settings with no frame limit and at 120 fps (`-Limits`) and flags a part that stutters only with no limit.
 
 ## Reading a CSV
 

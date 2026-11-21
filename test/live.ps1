@@ -671,16 +671,21 @@ function Get-Flags($run, $part) {
 # went on screen. A frame off that distance (the median around it) by over 4 ms shows the race stopped or jumped.
 # 'motion uneven': over 1% of the frames are (99% are not within 4 ms of even). 'motion hitch': frames in a row are
 # for over 100 ms, the race standing still or jumping about that long, the race hitch limit (Get-Stall). Frames near
-# a part's start and end are not judged (FrameLog.Motion); a part with too few judged frames is a note.
+# a part's start and end are not judged (FrameLog.Motion).
+# The share is counted from the frames themselves (strays of judged), not read off the 99% figure, which frames.json
+# rounds: 4 strays in 320 frames are 1.25%, uneven, though their 99% figure can come out as exactly 4.00 ms. A hitch
+# that was measured is a hitch however few frames were judged; only the share needs enough frames
+# ($enoughFrames), and with fewer it is a note that says so.
 function Get-MotionFlags($part) {
     $m = $part.motion
     if (-not $m) { return 'note: no motion in frames.json (a build from before it was measured)' }
-    if ([int]$m.judged -lt $enoughFrames) {
-        return 'note: the motion was measured on {0} frames, too few to judge' -f [int]$m.judged
-    }
-    if ([double]$m.p99Ms -gt [double]$m.strayMs) {
-        'motion uneven: 99% of frames within {0:N1} ms of even, {1} of {2} off by over {3} ms' -f $m.p99Ms, $m.strays,
-        $m.judged, $m.strayMs
+    $judged = [int]$m.judged
+    $strays = [int]$m.strays
+    if ($judged -lt $enoughFrames) {
+        'note: the motion was measured on {0} frames, too few to judge how many are off even' -f $judged
+    } elseif ($strays * 100 -gt $judged) {
+        'motion uneven: {0} of {1} frames ({2:N1}%) off even by over {3} ms, 99% within {4:N1} ms' -f $strays, $judged,
+        (100.0 * $strays / $judged), $m.strayMs, $m.p99Ms
     }
     if ([double]$m.stretchMs -gt $motionHitchMs) {
         'motion hitch: the race stood still or jumped for {0:N0} ms at {1:N1} s' -f $m.stretchMs, $m.stretchAt

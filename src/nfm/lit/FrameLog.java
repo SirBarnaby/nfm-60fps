@@ -609,7 +609,7 @@ final class FrameLog {
         s.append(String.format(Locale.ROOT, ", \"gpuMs\": %.2f", t.gpuMs()));
         s.append(String.format(Locale.ROOT, ", \"motion\": {\"frames\": %d, \"judged\": %d, \"lagMs\": %.2f,"
                 + " \"p99Ms\": %.2f, \"maxMs\": %.2f, \"maxAt\": %.2f, \"strays\": %d, \"strayMs\": %d,"
-                + " \"stretchMs\": %.1f, \"stretchAt\": %.2f}", m.frames, m.judged, m.lagMs, m.p99Ms, m.maxMs,
+                + " \"stretchMs\": %.3f, \"stretchAt\": %.2f}", m.frames, m.judged, m.lagMs, m.p99Ms, m.maxMs,
                 m.maxAt, m.strays, MOTION_STRAY_NANOS / 1_000_000L, m.stretchMs, m.stretchAt));
         s.append(", \"drawn\": {");
         int k = 0;
