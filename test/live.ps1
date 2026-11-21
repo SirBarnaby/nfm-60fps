@@ -38,7 +38,8 @@
 # what is wrong: a race or a menu drawn in software, or drawn by the processor
 # and only put on screen by the card, frames a second under the frame
 # limit (or the monitor's refresh rate), uneven or late frames, hitches and
-# stalls (the fullscreen switch may pause up to 500 ms, as the owner allows;
+# stalls (the fullscreen switch may pause up to 500 ms as the player sees it,
+# as the owner allows; elsewhere
 # told apart from frames the card held up: the game was ready, the
 # card or Windows took that long to take the frame), the card near its time
 # per frame. A run is flagged as a whole when the game's test did not go the
@@ -386,18 +387,22 @@ function Get-Flags($run, $part) {
 }
 
 # A part's longest frame as a hitch (race) or a stall (menu), or nothing: over 100 ms in a race, 250 in a menu, and
-# 500 in the fullscreen switch, which the owner allows a pause of up to half a second while the window and the
-# card restart (openspec\specs\performance, "No stuttering, ever"). The game's start and loading are not judged.
+# 500 in the fullscreen switch, which the owner allows a pause of up to half a second as the player sees it while
+# the window and the card restart (openspec\specs\performance, "No stuttering, ever"), so there the time the card
+# held a frame counts too. The game's start and loading are not judged.
 function Get-Stall($part, [bool]$race) {
-    $limit = if ($race) { 100 } elseif ($part.name -eq 'fullscreen switch') { 500 } else { 250 }
+    $switch = $part.name -eq 'fullscreen switch'
+    $limit = if ($race) { 100 } elseif ($switch) { 500 } else { 250 }
     if ($part.ms.max -le $limit -or (-not $race -and $part.name -in @('start', 'loading'))) { return }
-    # a stall the card held up (handing it the frame took that long) is the card's, not the game's drawing
+    # elsewhere a stall the card held up (handing it the frame took that long) is the card's, not the game's drawing
     $held = if ($part.cardHeld) { [double]$part.cardHeld.longestMs } else { 0 }
-    if ($held -gt 0 -and $held -ge $part.ms.max - 100) {
+    if (-not $switch -and $held -gt 0 -and $held -ge $part.ms.max - 100) {
         # Windows does this now and then to a window off every monitor: the test cannot tell whether a screen would
         return ('note: the card held a frame up {0:N0} ms' -f $held)
     }
-    return ('{0} of {1:N0} ms' -f $(if ($race) { 'hitch' } else { 'stall' }), $part.ms.max)
+    $text = '{0} of {1:N0} ms' -f $(if ($race) { 'hitch' } else { 'stall' }), $part.ms.max
+    if ($switch -and $held -gt 0) { $text += ' (the card held a frame up {0:N0} ms, counted too)' -f $held }
+    return $text
 }
 
 $runs = @()
