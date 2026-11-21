@@ -32,8 +32,9 @@
 # card or Windows took that long to take the frame), the card near its time
 # per frame. Exit code 0 means nothing was flagged, 1 something was, 2 the
 # game could not be run. What a window off every monitor cannot show is a note, not a flag: with
-# vsync its frames wait for Windows' own clock, not your monitor's refresh (their median says
-# so), and Windows sometimes holds one of its frames up for half a second.
+# vsync its frames can wait for Windows' own clock, not your monitor's refresh (then half of them
+# come quicker than the refresh allows, which no screen could show), and Windows sometimes holds
+# one of its frames up for half a second.
 # Build first with build.ps1: this uses madness.jar and the runtime it makes.
 
 param(
@@ -94,10 +95,15 @@ function Invoke-Run([string]$name, [string]$extra) {
     }
 }
 
+# The monitor's refresh rate the run read, 0 if it could not.
+function Get-Refresh($run) {
+    if ($run.settings['refresh'] -match '^(\d+)') { return [int]$Matches[1] }
+    return 0
+}
+
 # The frames a second a race part should reach: the frame limit, or the monitor's refresh rate with none.
 function Get-Target($run) {
-    $refresh = 0
-    if ($run.settings['refresh'] -match '^(\d+)') { $refresh = [int]$Matches[1] }
+    $refresh = Get-Refresh $run
     $limit = $run.settings['fps limit']
     if ($limit -match '^(\d+)') { return [int]$Matches[1] }
     if ($limit -match 'vrr') { return [math]::Max(1, $refresh - $refresh * $refresh / 3600) }
@@ -115,20 +121,32 @@ function Get-Flags($run, $part) {
         $flags += 'drawn in software'
     }
     $pacing = @()
-    if ($race -and $target -gt 0 -and $part.fps -lt $target * 0.9) {
-        $pacing += ('{0:N0} fps, under {1}' -f $part.fps, $target)
+    # frames the card held up are the card's (see below), so frames a second are counted without them
+    $heldMs = 0
+    foreach ($h in @($part.cardHeld.holds)) { if ($null -ne $h) { $heldMs += [double]$h.ms } }
+    $fps = $part.fps
+    if ($heldMs -gt 0 -and $part.seconds * 1000 -gt $heldMs + 100) { $fps = $part.frames / ($part.seconds - $heldMs / 1000) }
+    if ($race -and $target -gt 0 -and $fps -lt $target * 0.9) {
+        $pacing += ('{0:N0} fps, under {1}' -f $fps, $target)
     }
-    # unevenness needs enough frames to tell: a menu's second of 25 frames has one 99th-percentile frame
-    $enough = $part.frames -ge 100
-    if ($enough -and $part.ms.p99 -gt $part.ms.median * 2.5 -and $part.ms.p99 - $part.ms.median -gt 4) {
+    # unevenness needs enough frames to tell: 100 over two seconds the card did not hold up (a menu's second
+    # of 25 frames has one 99th-percentile frame); and frames that all come within the display's frame time
+    # look even on it, however much quicker the rest are
+    $enough = $part.frames -ge 100 -and $part.seconds - $heldMs / 1000 -ge 2
+    $frameTime = if ($target -gt 0) { 1000 / $target } else { 0 }
+    if ($enough -and $part.ms.p99 -gt $part.ms.median * 2.5 -and $part.ms.p99 - $part.ms.median -gt 4 -and
+        $part.ms.p99 -gt $frameTime) {
         $pacing += ('uneven: 99% of frames within {0:N1} ms, half within {1:N1}' -f $part.ms.p99, $part.ms.median)
     }
     if ($enough -and $part.late -gt $part.frames * 0.05) {
         $pacing += ('{0} of {1} frames late' -f $part.late, $part.frames)
     }
-    $refresh = if ($run.settings['refresh'] -match '^(\d+)') { [int]$Matches[1] } else { 0 }
-    if ($pacing.Count -gt 0 -and $run.settings['vsync'] -match '^on' -and $refresh -gt 0) {
-        # off every monitor vsync waits for Windows' clock, not the monitor's refresh: the median shows which
+    $refresh = Get-Refresh $run
+    # off every monitor vsync can wait for Windows' clock instead of the monitor's refresh; then half the frames
+    # come quicker than the refresh allows, which no screen shows, and its late frames are that clock's too.
+    # Frames at the refresh or slower are the game's, and stay flags.
+    $offClock = $refresh -gt 0 -and $part.ms.median -lt 0.98 * 1000 / $refresh
+    if ($pacing.Count -gt 0 -and $run.settings['vsync'] -match '^on' -and $offClock) {
         $flags += ('note: paced by vsync off screen, on Windows'' clock (half the frames within {0:N1} ms, ' +
             'the monitor''s refresh {1:N1}): {2}') -f $part.ms.median, (1000 / $refresh), ($pacing -join ', ')
     } else {
