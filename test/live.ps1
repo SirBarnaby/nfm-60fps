@@ -8,6 +8,8 @@
 #                                                    each entry's -D settings on top of yours
 #   .\test\live.ps1 -Out C:\somewhere                where the runs go (default: %TEMP%\nfm-live\<time>)
 #   .\test\live.ps1 -NoShots                         no screenshots: each one stops the frames for a moment
+#   .\test\live.ps1 -MinFps 300                      the frame rate a race part must reach (default 250, the
+#                                                    owner's target: openspec\specs\performance); 0 turns it off
 #
 # What it plays: the main menu, fullscreen switched off and on again (a new
 # window and the graphics card started again, as F11 does), the settings
@@ -41,7 +43,8 @@ param(
     [switch]$Split,
     [switch]$NoShots,
     [string[]]$Set = @(),
-    [string]$Out
+    [string]$Out,
+    [int]$MinFps = 250
 )
 
 $ErrorActionPreference = 'Stop'
@@ -116,6 +119,13 @@ function Get-Flags($run, $part) {
     if ($part.frames -lt 10) { return $flags }
     $race = $raceParts -contains $part.name
     $target = Get-Target $run
+    # the owner's floor for race parts (openspec\specs\performance), unless the player capped the frames lower
+    # or vsync holds them to the monitor
+    if ($race -and $MinFps -gt 0 -and $run.settings['vsync'] -notmatch '^on') {
+        $limit = $run.settings['fps limit']
+        $capped = $limit -match 'vrr|battery' -or ($limit -match '^(\d+)' -and [int]$Matches[1] -lt $MinFps)
+        if (-not $capped) { $target = [math]::Max($target, $MinFps) }
+    }
     $drawn = $part.drawn.PSObject.Properties.Name
     if ($race -and $drawn -contains 'software' -and $run.settings['renderer'] -like 'gpu*') {
         $flags += 'drawn in software'
