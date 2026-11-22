@@ -239,6 +239,7 @@ The `mods` folder holds mods: each is a folder that mirrors `data`, its files re
 | `-Dnfm.autotest.split=<auto, side, stacked or saved>[,<computer cars>]` | With `-Dnfm.autotest`: plays split screen instead, from the main menu through its car select and settings tab, a race driven by both players (paused for an instant replay), its results, Race Again and a second race, with screenshots throughout; `saved` keeps the split screen settings as you left them. `-Dnfm.autotest.resize` resizes the window during the first race. |
 | `-Dnfm.autotest.shots=false` | With `-Dnfm.autotest`: take no screenshots. Each screenshot holds the frames up for a moment, so this is how to time every frame of a run. |
 | `-Dnfm.live=true` | With `-Dnfm.autotest`: play it your way, with your saved settings and mods, fullscreen switched off and on again as F11 does, but still off screen, silent and saving nothing (see the live test below). |
+| `-Dnfm.seed=<number>` | Every race of this run starts from this seed, so two runs race alike: the same opponents, effects and camera shake. The live test gives all its runs one. Without it each race gets a fresh random seed; a recorded race always replays its own. The game's log names each race's seed (`Race seed ...`). |
 | `-Dnfm.autotest=<dir>` | Run the scripted smoke test and write screenshots to `<dir>`. The window is never shown and the test drives the game through its own controls, so it is safe to run while using the machine. |
 
 For example:
@@ -342,6 +343,7 @@ It lists each part with its frames a second, the frame times half and 99% of fra
 | `-Set '<name=value> ...'` | One run more on top of yours with these `-D` settings, to compare: `-Set 'nfm.overlay=off','nfm.msaa=off'` makes two. The report then compares the races. |
 | `-NoShots` | Take no screenshots, so no frame is held up by one. Without it a race is shot once every 10 seconds and the settings screen once a visit, read back from the card, as writing a screenshot takes a processor core from the frames being measured. |
 | `-Out <dir>` | Where the runs go (default `%TEMP%\nfm-live\<time>`). |
+| `-Seed <n>` | The race seed all runs play (`-Dnfm.seed`), so they race alike and the no-limit and 120 fps runs can be compared (default: one picked at random for the test). `report.md` names it, so a run can be played again with the same race. |
 
 The game itself also sums up every part as you play: the log in `logs` gets a line such as `Frames in race: 287 a second over 41.2 s, half within 3.3 ms, 99% within 6.2 ms, longest 9 ms, kept scene 100%` for each, so a session that ran badly says where and how. A frame the card takes a tenth of a second or more to accept gets a line of its own, `The graphics card held a frame up 480 ms in main menu`, with what changed on the card just before it (a new swap chain, a new texture) when something did; the live test's `frames.json` keeps the same holds per part, under `cardHeld`.
 

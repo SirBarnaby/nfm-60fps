@@ -1500,6 +1500,7 @@ public class GameSparker extends Panel implements Runnable {
          * of the stage draws a number, so the race can be played again exactly.
          */
         long seed = session != null ? session.stageLoading(custom) : RaceRandom.newSeed();
+        HLogger.info("Race seed " + seed); // the live test compares runs that raced the same seed (-Dnfm.seed)
         world.seed(seed);
         Medium.seedRace(seed);
         trackers.nt = 0;

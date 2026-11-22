@@ -8,6 +8,8 @@
 #   .\test\live.ps1 -Set 'nfm.overlay=off','nfm.smootheffects=false nfm.runahead=false'
 #                                                    each entry's -D settings on top of yours
 #   .\test\live.ps1 -Out C:\somewhere                where the runs go (default: %TEMP%\nfm-live\<time>)
+#   .\test\live.ps1 -Seed 12345                      the race seed every run plays (-Dnfm.seed: the same race, so the
+#                                                    runs compare; default one picked at random, named in report.md)
 #   .\test\live.ps1 -NoShots                         no screenshots: each one stops the frames for a moment
 #   .\test\live.ps1 -Limits 'unlimited','120'        the frame limits played too, each on top of your settings
 #                                                    (the default; vsync off for them; your run counts for its
@@ -66,9 +68,9 @@
 # 'motion not measured' (an older build: how the race moved is unknown, which cannot pass). The owner found the game smooth at
 # a 120 fps limit and stuttering with none, which frame times did not show: so it plays your settings with no
 # frame limit and at 120 fps too (-Limits, vsync off), and flags a race part that stutters with no limit but not
-# at 120 (openspec\specs\done-and-testing). Runs another cap holds (vsync, a display-matched limit), or with vsync
-# or the stage not the same, are not comparable, and the run is inconclusive (each race's seed is the game's own
-# random pick, which nothing here can set: the report says so). What reaches the monitor (Windows' own record of when each frame was shown,
+# at 120 (openspec\specs\done-and-testing). Every run races the same seed (-Seed, -Dnfm.seed). Runs another cap
+# holds (vsync, a display-matched limit), or with vsync, the stage or the race seed not the same, are not comparable,
+# and the run is inconclusive. What reaches the monitor (Windows' own record of when each frame was shown,
 # PresentMon) needs a window on screen and admin rights: not measured here (docs\live-test.md).
 # A run is flagged as a whole when the game's test did not go the
 # whole way, Java did not load the startup cache madness64.ini names (build.ps1's
@@ -95,7 +97,8 @@ param(
     [string[]]$Set = @(),
     [string]$Out,
     [int]$MinFps = 250,
-    [string[]]$Limits = @('unlimited', '120')
+    [string[]]$Limits = @('unlimited', '120'),
+    [long]$Seed = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -109,6 +112,9 @@ if (-not $Out) {
     $Out = Join-Path ([IO.Path]::GetTempPath()) ('nfm-live\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 }
 New-Item -ItemType Directory -Force $Out | Out-Null
+# every run races from this seed (-Dnfm.seed, RaceRandom.newSeed): the same opponents, effects and camera shake, so
+# the runs differ only in what they are meant to; one at random for this test unless -Seed gives it
+if ($Seed -eq 0) { $Seed = Get-Random -Minimum 1 -Maximum ([int]::MaxValue) }
 
 # Java as madness64.exe starts it
 $launcher = @(Get-Content (Join-Path $root 'madness64.ini') | Where-Object { $_ -match '^vm\.arg\.\d+=' } |
@@ -179,7 +185,7 @@ function Invoke-Run([string]$name, [string]$extra) {
     if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
     New-Item -ItemType Directory -Force $dir | Out-Null
     $arguments = @($launcher) + @('-Dnfm.debug=false', '-Dnfm.live=true', "-Dnfm.autotest=$dir",
-        "-Dnfm.sound.render=$dir\sound.wav")
+        "-Dnfm.sound.render=$dir\sound.wav", "-Dnfm.seed=$Seed")
     # Java's own account of the startup cache, as it starts (Get-StartupCacheProblem)
     if ($aotCache) { $arguments += "-Xlog:aot=info,cds=info:file=$dir\aot.log" }
     if ($Split) { $arguments += '-Dnfm.autotest.split=saved' }
@@ -232,6 +238,9 @@ function Invoke-Run([string]$name, [string]$extra) {
     elseif ($noCache) { "$aotCache, not loaded" } else { "$aotCache, loaded" }
     # the game says when its test went the whole way; one that ran out of time writes frames.json all the same
     $log = @(Get-Content "$dir\out.log" -ErrorAction SilentlyContinue)
+    $seeds = @(Get-RaceSeeds $log)
+    $settings['race seed'] = if ($seeds.Count -gt 0) { "$($seeds -join ', ') (-Seed $Seed)" }
+    else { "-Seed $Seed, but the game's log names no race seed" }
     $finished = @($log | Where-Object { $_ -match '^\[autotest\] (split test )?done' }).Count -gt 0
     $ending = @($log | Where-Object { $_ -match '^\[autotest\] .*ran out of time' } | Select-Object -Last 1)
     [pscustomobject]@{
@@ -245,7 +254,13 @@ function Invoke-Run([string]$name, [string]$extra) {
         ending = if ($ending) { $ending[0] -replace '^\[autotest\] ', '' } else { 'out.log has no "[autotest] done" line' }
         noCache = $noCache
         stage = Get-RaceStage $log
+        seeds = $seeds
     }
+}
+
+# Each race's seed, in order, as the game logs it when it sets the race up ("Race seed <n>", GameSparker.loadstage).
+function Get-RaceSeeds([string[]]$log) {
+    foreach ($line in $log) { if ($line -match 'Race seed (-?\d+)') { [long]$Matches[1] } }
 }
 
 # The stage a run raced, from the game's log (out.log) of your saved progress: a live run keeps it, reading the
@@ -778,9 +793,8 @@ function Test-HeldOnlyBy($run, [string]$limit) {
 
 # Why two runs' races ($limitRuns entries) cannot be compared for their frame limits alone, one line each, none when
 # they can: each held by its own limit alone (Test-HeldOnlyBy), vsync the same in both (on or off as the game uses it:
-# GameSparker.describeVsync), and the same stage (Get-RaceStage). Each race's seed (the opponents' order, the
-# effects) is the game's own random pick (RaceRandom.newSeed), which no setting reaches and the game does not log:
-# it is not checked, and the report says so.
+# GameSparker.describeVsync), the same stage (Get-RaceStage) and the same race seeds (Get-RaceSeeds: the opponents'
+# order, the effects and the camera shake; every run gets -Seed's).
 function Get-NotComparable($open, $capped) {
     foreach ($side in @($open, $capped)) {
         if (-not (Test-HeldOnlyBy $side.run $side.limit)) {
@@ -800,6 +814,14 @@ function Get-NotComparable($open, $capped) {
     if ($null -ne $open.run.stage.number -and $null -ne $capped.run.stage.number -and
         $open.run.stage.number -ne $capped.run.stage.number) {
         'different stages: {0}: {1}; {2}: {3}' -f $open.run.title, $open.run.stage.text, $capped.run.title, $capped.run.stage.text
+    }
+    foreach ($side in @($open, $capped)) {
+        if (@($side.run.seeds).Count -eq 0) { '{0}: the game''s log names no race seed (a build from before it did?)' -f $side.run.title }
+    }
+    $openSeeds = @($open.run.seeds) -join ', '
+    $cappedSeeds = @($capped.run.seeds) -join ', '
+    if ($openSeeds -and $cappedSeeds -and $openSeeds -ne $cappedSeeds) {
+        'different race seeds: {0}: {1}; {2}: {3}' -f $open.run.title, $openSeeds, $capped.run.title, $cappedSeeds
     }
 }
 
@@ -904,7 +926,7 @@ if ($runs.Count -gt 1) {
 # (-Limits), flagged where it showed the race moving unevenly with no limit but evenly at the limit. Two runs are
 # compared only when nothing but the limit differs that the test can see (Get-NotComparable: each held by its own
 # limit alone, as vsync or a display-matched limit would make "no limit" and "120 fps" the same refresh-paced run;
-# vsync the same; the same stage), and a part is judged only when both have its motion (Test-MotionMeasured) and
+# vsync the same; the same stage and race seed), and a part is judged only when both have its motion (Test-MotionMeasured) and
 # enough frames to grade (Get-MotionFlags' note): otherwise the comparison says why and the run is inconclusive.
 $open = $limitRuns | Where-Object { $_.words -eq 'unlimited' } | Select-Object -First 1
 foreach ($capped in @($limitRuns | Where-Object { $_.words -ne 'unlimited' })) {
@@ -918,9 +940,9 @@ foreach ($capped in @($limitRuns | Where-Object { $_.words -ne 'unlimited' })) {
         $script:inconclusive += "no frame limit and $($capped.words) not comparable: $($notComparable -join '; ')"
         continue
     }
-    $alike = ('Both runs: vsync {0}, {1}. Each race''s seed (the opponents'' order, the effects) is the game''s own ' +
-        'random pick, which the test cannot set, so the opponents can differ.') -f
-    $(if ([string]$open.run.settings['vsync'] -match '^on') { 'on' } else { 'off' }), $open.run.stage.text
+    $alike = 'Both runs: vsync {0}, {1}, race seed {2}: the same race, only the frame limit differs.' -f
+    $(if ([string]$open.run.settings['vsync'] -match '^on') { 'on' } else { 'off' }), $open.run.stage.text,
+    (@($open.run.seeds) -join ', ')
     $header = ('| Part | Frames/s, none | Frames/s, {0} | Motion 99% ms, none | Motion 99% ms, {0} |' +
         ' Off in a row ms, none | Off in a row ms, {0} | Flags |') -f $capped.words
     $md += @($heading, '', $alike, '', $header, '|---|---:|---:|---:|---:|---:|---:|---|')

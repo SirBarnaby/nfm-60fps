@@ -1,5 +1,6 @@
 package nfm.lit;
 
+import fallk.logmaster.HLogger;
 import java.security.SecureRandom;
 
 /**
@@ -20,6 +21,8 @@ import java.security.SecureRandom;
 public final class RaceRandom {
 
     private static final SecureRandom ENTROPY = new SecureRandom();
+    /** The seed every new race starts from with -Dnfm.seed, null without it (see {@link #newSeed()}). */
+    private static final Long FIXED_SEED = fixedSeed();
 
     private int cntrn;
     private final boolean[] diup = new boolean[3];
@@ -167,8 +170,27 @@ public final class RaceRandom {
         return z ^ (z >>> 33);
     }
 
-    /** A fresh random seed for a new race. */
+    /**
+     * A seed for a new race: -Dnfm.seed when it is given, so every race of the
+     * run starts alike (the live test gives its runs one, to compare frame
+     * limits on the same race), else a fresh random one. A recorded race
+     * replays its own seed, never this.
+     */
     static long newSeed() {
-        return ENTROPY.nextLong();
+        return FIXED_SEED != null ? FIXED_SEED : ENTROPY.nextLong();
+    }
+
+    /** -Dnfm.seed as a number, null when it is not given or not a number (then races start from random seeds). */
+    private static Long fixedSeed() {
+        String text = System.getProperty("nfm.seed");
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(text.trim());
+        } catch (NumberFormatException ex) {
+            HLogger.warn("-Dnfm.seed=" + text + " is not a number, so races start from random seeds");
+            return null;
+        }
     }
 }

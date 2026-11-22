@@ -49,7 +49,7 @@ The live test SHALL catch the stutter the player sees, not only frames that come
 
 #### Scenario: Check: only the frame limit differs between the two runs
 - **WHEN** `test\live.ps1` compares the run with no frame limit and the one at 120 fps
-- **THEN** it compares them only when each is held by its own limit alone, vsync is the same in both and both raced the same stage; otherwise the report says `not comparable` and why, and the run is inconclusive. Each race's seed is the game's own random pick, which the test cannot set, and the report says so
+- **THEN** both runs race the same seed (`-Seed`, `-Dnfm.seed`), and it compares them only when each is held by its own limit alone, vsync is the same in both and both raced the same stage and seed; otherwise the report says `not comparable` and why, and the run is inconclusive
 
 #### Scenario: Check: uneven motion fails a race part
 - **WHEN** `test\live.ps1` runs and a race part has over 1% of its frames more than 4 ms off even progress, or frames in a row off it for 100 ms or longer, its first frames included
