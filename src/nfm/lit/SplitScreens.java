@@ -459,6 +459,9 @@ final class SplitScreens {
     private int[] standingCar = new int[0];
     private int choice;
     private boolean shaded;
+    /* where the mouse was when it last chose by hovering, as the pause menu keeps it: resting, it leaves the keys' choice be */
+    private int hoverX;
+    private int hoverY;
     private final Rectangle[] itemBox = {new Rectangle(), new Rectangle(), new Rectangle(), new Rectangle()};
 
     /**
@@ -496,6 +499,8 @@ final class SplitScreens {
         }
         choice = RESULT_AGAIN;
         shaded = false;
+        hoverX = -10; // the first tick takes the mouse where it is, as the pause menu does
+        hoverY = -10;
         SettingsScreen.takeEscape(); // one pressed in the race is not for here
     }
 
@@ -569,8 +574,12 @@ final class SplitScreens {
             choice = over;
             shaded = true;
         }
-        if (mouseState == 0 && over >= 0) {
-            choice = over;
+        if (mouseState == 0 && (mouseX != hoverX || mouseY != hoverY)) {
+            if (over >= 0) {
+                choice = over;
+            }
+            hoverX = mouseX;
+            hoverY = mouseY;
         }
         if (SettingsScreen.takeEscape()) {
             // Escape is Enter to the game: here it only goes to Main Menu, which Enter then takes
