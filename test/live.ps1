@@ -62,7 +62,8 @@
 # card or Windows took that long to take the frame), the card near its time
 # per frame, and the race moving unevenly as the player sees it, however evenly the frames come: each frame
 # shows the race at a moment (frames.json's motion), and a race part whose frames stand the race still and then
-# jump it on is flagged 'motion uneven' or 'motion hitch' (Get-MotionFlags). The owner found the game smooth at
+# jump it on is flagged 'motion uneven' or 'motion hitch' (Get-MotionFlags), and one with no motion in frames.json
+# 'motion not measured' (an older build: how the race moved is unknown, which cannot pass). The owner found the game smooth at
 # a 120 fps limit and stuttering with none, which frame times did not show: so it plays your settings with no
 # frame limit and at 120 fps too (-Limits, vsync off), and flags a race part that stutters with no limit but not
 # at 120 (openspec\specs\done-and-testing). Runs another cap holds (vsync, a display-matched limit) are not
@@ -679,10 +680,13 @@ function Get-Flags($run, $part) {
 # The share is counted from the frames themselves (strays of judged), not read off the 99% figure, which frames.json
 # rounds: 4 strays in 320 frames are 1.25%, uneven, though their 99% figure can come out as exactly 4.00 ms. A hitch
 # that was measured is a hitch however few frames were judged; only the share needs enough frames
-# ($enoughFrames), and with fewer it is a note that says so.
+# ($enoughFrames), and with fewer it is a note that says so. A race part with no motion at all fails: how the race
+# moved for the player is then unknown, which cannot pass (Test-MotionMeasured).
 function Get-MotionFlags($part) {
+    if (-not (Test-MotionMeasured $part)) {
+        return 'motion not measured: frames.json has no motion for this race part (a build from before it was measured?), so how evenly the race moved is unknown'
+    }
     $m = $part.motion
-    if (-not $m) { return 'note: no motion in frames.json (a build from before it was measured)' }
     $judged = [int]$m.judged
     $strays = [int]$m.strays
     if ($judged -lt $enoughFrames) {
@@ -694,6 +698,18 @@ function Get-MotionFlags($part) {
     if ([double]$m.stretchMs -ge $motionHitchMs) {
         'motion hitch: the race stood still or jumped for {0:N0} ms at {1:N1} s' -f $m.stretchMs, $m.stretchAt
     }
+}
+
+# Whether frames.json has the race's motion for a part (FrameLog.Motion): a motion entry with frames in it.
+function Test-MotionMeasured($part) {
+    return [bool]($part.motion -and [int]$part.motion.frames -gt 0)
+}
+
+# The titles of the runs, of two compared, with no motion for the part each played: such a side cannot be compared
+# (the part fails there too, Get-MotionFlags).
+function Get-Unmeasured($openRun, $openPart, $cappedRun, $cappedPart) {
+    if (-not (Test-MotionMeasured $openPart)) { $openRun.title }
+    if (-not (Test-MotionMeasured $cappedPart)) { $cappedRun.title }
 }
 
 # A part's longest frame as a hitch (race) or a stall (menu), or nothing: over 100 ms in a race, 250 in a menu, and
@@ -842,8 +858,9 @@ if ($runs.Count -gt 1) {
 # "Stutter with no frame limit is caught"): each race part with no limit next to the same part at each limit
 # (-Limits), flagged where it showed the race moving unevenly with no limit but evenly at the limit. Two runs are
 # compared only when each is held by its own limit alone (Test-HeldOnlyBy: vsync or a display-matched limit would
-# make "no limit" and "120 fps" the same refresh-paced run), and a part is judged only when both have enough frames
-# to grade (Get-MotionFlags' note): otherwise the comparison says why and the run is inconclusive.
+# make "no limit" and "120 fps" the same refresh-paced run), and a part is judged only when both have its motion
+# (Test-MotionMeasured) and enough frames to grade (Get-MotionFlags' note): otherwise the comparison says why and the
+# run is inconclusive.
 $open = $limitRuns | Where-Object { $_.words -eq 'unlimited' } | Select-Object -First 1
 foreach ($capped in @($limitRuns | Where-Object { $_.words -ne 'unlimited' })) {
     if (-not $open) { break }
@@ -875,7 +892,15 @@ foreach ($capped in @($limitRuns | Where-Object { $_.words -ne 'unlimited' })) {
     for ($i = 0; $i -lt $open.run.parts.Count; $i++) {
         $part = $open.run.parts[$i]
         $other = $theirs[$openLabels[$i]]
-        if ($raceParts -notcontains $part.name -or -not $other -or -not $part.motion -or -not $other.motion) { continue }
+        if ($raceParts -notcontains $part.name -or -not $other) { continue }
+        $unmeasured = @(Get-Unmeasured $open.run $part $capped.run $other)
+        if ($unmeasured.Count -gt 0) {
+            $flag = "not compared: no motion data in $($unmeasured -join ' and ')"
+            $script:inconclusive += "$($openLabels[$i]): no frame limit and $($capped.words) not compared, no motion data"
+            $md += ('| {0} | {1:N1} | {2:N1} |  |  |  |  | {3} |' -f $openLabels[$i], $part.fps, $other.fps, $flag)
+            Write-Host ('{0,-26} {1}' -f $openLabels[$i], $flag)
+            continue
+        }
         $openFlags = @(Get-MotionFlags $part)
         $cappedFlags = @(Get-MotionFlags $other)
         $openUneven = @($openFlags | Where-Object { $_ -notlike 'note: *' }).Count -gt 0

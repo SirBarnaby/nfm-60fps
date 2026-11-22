@@ -50,3 +50,7 @@ The live test SHALL catch the stutter the player sees, not only frames that come
 #### Scenario: Check: uneven motion fails a race part
 - **WHEN** `test\live.ps1` runs and a race part has over 1% of its frames more than 4 ms off even progress, or frames in a row off it for 100 ms or longer, its first frames included
 - **THEN** that part is flagged `motion uneven` or `motion hitch` and the test exits 1, whatever its frame times were
+
+#### Scenario: Check: a race part with no motion data fails
+- **WHEN** `test\live.ps1` runs and `frames.json` has no motion for a race part (a build from before it was measured, or a frame log that lost it)
+- **THEN** that part is flagged `motion not measured` and the test exits 1, and the no-limit comparison says the part was not compared
