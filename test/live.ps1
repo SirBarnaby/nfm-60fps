@@ -66,8 +66,9 @@
 # 'motion not measured' (an older build: how the race moved is unknown, which cannot pass). The owner found the game smooth at
 # a 120 fps limit and stuttering with none, which frame times did not show: so it plays your settings with no
 # frame limit and at 120 fps too (-Limits, vsync off), and flags a race part that stutters with no limit but not
-# at 120 (openspec\specs\done-and-testing). Runs another cap holds (vsync, a display-matched limit) are not
-# compared, and the run is inconclusive. What reaches the monitor (Windows' own record of when each frame was shown,
+# at 120 (openspec\specs\done-and-testing). Runs another cap holds (vsync, a display-matched limit), or with vsync
+# or the stage not the same, are not comparable, and the run is inconclusive (each race's seed is the game's own
+# random pick, which nothing here can set: the report says so). What reaches the monitor (Windows' own record of when each frame was shown,
 # PresentMon) needs a window on screen and admin rights: not measured here (docs\live-test.md).
 # A run is flagged as a whole when the game's test did not go the
 # whole way, Java did not load the startup cache madness64.ini names (build.ps1's
@@ -141,6 +142,8 @@ $enoughSeconds = 2
 # the race standing still or jumping about for this long or longer is a hitch (Get-MotionFlags): the race hitch limit
 # a frame's own time is held to (Get-Stall)
 $motionHitchMs = 100
+# the game's last stage (GameFacts.numberOfStages): once it is unlocked a race's stage is picked at random (Get-RaceStage)
+$lastStage = 17
 
 # The frame limits to compare (-Limits): 'unlimited' or a number of frames a second; 'none' for none.
 $limitWanted = @($Limits | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim().ToLowerInvariant() } |
@@ -241,7 +244,22 @@ function Invoke-Run([string]$name, [string]$extra) {
         finished = $finished
         ending = if ($ending) { $ending[0] -replace '^\[autotest\] ', '' } else { 'out.log has no "[autotest] done" line' }
         noCache = $noCache
+        stage = Get-RaceStage $log
     }
+}
+
+# The stage a run raced, from the game's log (out.log) of your saved progress: a live run keeps it, reading the
+# 'unlocked' cookie and racing the newest stage it unlocks, and once the last is unlocked a stage at random, which the
+# log never names (GameSparker's start). number: the stage, $null when it is not known; text: which, or why not.
+function Get-RaceStage([string[]]$log) {
+    $unlocked = 0
+    foreach ($line in $log) { if ($line -match 'read cookie unlocked with value (\d+)') { $unlocked = [int]$Matches[1] } }
+    if ($unlocked -ge 1 -and $unlocked -lt $lastStage) {
+        return [pscustomobject]@{ number = $unlocked; text = "stage $unlocked" }
+    }
+    $why = if ($unlocked -ge $lastStage) { 'picked at random: every stage is unlocked' }
+    else { 'not known: the game''s log does not say which stages are unlocked' }
+    return [pscustomobject]@{ number = $null; text = "the stage $why" }
 }
 
 # Why Java did not load the startup cache madness64.ini names (-XX:AOTCache: build.ps1's madness.aot), '' when it
@@ -758,6 +776,33 @@ function Test-HeldOnlyBy($run, [string]$limit) {
     return [math]::Abs($cap.fps - [double]$limit) -lt 0.5
 }
 
+# Why two runs' races ($limitRuns entries) cannot be compared for their frame limits alone, one line each, none when
+# they can: each held by its own limit alone (Test-HeldOnlyBy), vsync the same in both (on or off as the game uses it:
+# GameSparker.describeVsync), and the same stage (Get-RaceStage). Each race's seed (the opponents' order, the
+# effects) is the game's own random pick (RaceRandom.newSeed), which no setting reaches and the game does not log:
+# it is not checked, and the report says so.
+function Get-NotComparable($open, $capped) {
+    foreach ($side in @($open, $capped)) {
+        if (-not (Test-HeldOnlyBy $side.run $side.limit)) {
+            $cap = Get-Cap $side.run
+            $what = if (-not $cap.known) { 'a cap that follows the refresh rate, which the run could not read' }
+            else { '{0:N0} fps by {1}' -f $cap.fps, $cap.why }
+            '{0} is held to {1}, not by {2} alone' -f $side.run.title, $what, $side.words
+        }
+    }
+    $vsync = @(foreach ($side in @($open, $capped)) { [string]$side.run.settings['vsync'] })
+    if (($vsync[0] -match '^on') -ne ($vsync[1] -match '^on')) {
+        'vsync differs: {0} "{1}", {2} "{3}"' -f $open.run.title, $vsync[0], $capped.run.title, $vsync[1]
+    }
+    foreach ($side in @($open, $capped)) {
+        if ($null -eq $side.run.stage.number) { '{0}: {1}' -f $side.run.title, $side.run.stage.text }
+    }
+    if ($null -ne $open.run.stage.number -and $null -ne $capped.run.stage.number -and
+        $open.run.stage.number -ne $capped.run.stage.number) {
+        'different stages: {0}: {1}; {2}: {3}' -f $open.run.title, $open.run.stage.text, $capped.run.title, $capped.run.stage.text
+    }
+}
+
 # each frame limit to compare (-Limits) on top of your settings, with vsync off so that the limit is what holds the
 # frames; your own run counts for its limit only when nothing else holds it
 $yours = $runs | Where-Object { $_.name -eq 'yours' } | Select-Object -First 1
@@ -857,34 +902,31 @@ if ($runs.Count -gt 1) {
 # The owner found the game smooth at a 120 fps limit and stuttering with none (openspec\specs\done-and-testing,
 # "Stutter with no frame limit is caught"): each race part with no limit next to the same part at each limit
 # (-Limits), flagged where it showed the race moving unevenly with no limit but evenly at the limit. Two runs are
-# compared only when each is held by its own limit alone (Test-HeldOnlyBy: vsync or a display-matched limit would
-# make "no limit" and "120 fps" the same refresh-paced run), and a part is judged only when both have its motion
-# (Test-MotionMeasured) and enough frames to grade (Get-MotionFlags' note): otherwise the comparison says why and the
-# run is inconclusive.
+# compared only when nothing but the limit differs that the test can see (Get-NotComparable: each held by its own
+# limit alone, as vsync or a display-matched limit would make "no limit" and "120 fps" the same refresh-paced run;
+# vsync the same; the same stage), and a part is judged only when both have its motion (Test-MotionMeasured) and
+# enough frames to grade (Get-MotionFlags' note): otherwise the comparison says why and the run is inconclusive.
 $open = $limitRuns | Where-Object { $_.words -eq 'unlimited' } | Select-Object -First 1
 foreach ($capped in @($limitRuns | Where-Object { $_.words -ne 'unlimited' })) {
     if (-not $open) { break }
     $heading = "## No frame limit and $($capped.words) compared"
-    $held = @(foreach ($side in @($open, $capped)) {
-            if (-not (Test-HeldOnlyBy $side.run $side.limit)) {
-                $cap = Get-Cap $side.run
-                $what = if (-not $cap.known) { 'a cap that follows the refresh rate, which the run could not read' }
-                else { '{0:N0} fps by {1}' -f $cap.fps, $cap.why }
-                '{0} is held to {1}, not by {2} alone' -f $side.run.title, $what, $side.words
-            }
-        })
-    if ($held.Count -gt 0) {
-        $md += @($heading, '', "Not compared: $($held -join '; ').", '')
+    $notComparable = @(Get-NotComparable $open $capped)
+    if ($notComparable.Count -gt 0) {
+        $md += @($heading, '', "Not comparable: $($notComparable -join '; ').", '')
         Write-Host ''
-        Write-Host "== $($heading.TrimStart('# ')): not compared: $($held -join '; ')"
-        $script:inconclusive += "no frame limit and $($capped.words) not compared: $($held -join '; ')"
+        Write-Host "== $($heading.TrimStart('# ')): not comparable: $($notComparable -join '; ')"
+        $script:inconclusive += "no frame limit and $($capped.words) not comparable: $($notComparable -join '; ')"
         continue
     }
+    $alike = ('Both runs: vsync {0}, {1}. Each race''s seed (the opponents'' order, the effects) is the game''s own ' +
+        'random pick, which the test cannot set, so the opponents can differ.') -f
+    $(if ([string]$open.run.settings['vsync'] -match '^on') { 'on' } else { 'off' }), $open.run.stage.text
     $header = ('| Part | Frames/s, none | Frames/s, {0} | Motion 99% ms, none | Motion 99% ms, {0} |' +
         ' Off in a row ms, none | Off in a row ms, {0} | Flags |') -f $capped.words
-    $md += @($heading, '', $header, '|---|---:|---:|---:|---:|---:|---:|---|')
+    $md += @($heading, '', $alike, '', $header, '|---|---:|---:|---:|---:|---:|---:|---|')
     Write-Host ''
     Write-Host "== No frame limit and $($capped.words) compared (motion 99% ms / off in a row ms)"
+    Write-Host $alike
     $theirs = @{}
     $cappedLabels = @(Get-PartLabels $capped.run.parts)
     for ($i = 0; $i -lt $capped.run.parts.Count; $i++) { $theirs[$cappedLabels[$i]] = $capped.run.parts[$i] }

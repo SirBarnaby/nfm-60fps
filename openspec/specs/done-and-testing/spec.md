@@ -47,6 +47,10 @@ The live test SHALL catch the stutter the player sees, not only frames that come
 - **WHEN** `test\live.ps1` runs on the owner's PC (by default it plays the owner's settings with no frame limit and at 120 fps)
 - **THEN** a race part that shows the race moving unevenly with no limit but evenly at 120 fps is flagged `stutters with no frame limit, not at 120 fps`, the report compares the two per race part, and the test exits 1
 
+#### Scenario: Check: only the frame limit differs between the two runs
+- **WHEN** `test\live.ps1` compares the run with no frame limit and the one at 120 fps
+- **THEN** it compares them only when each is held by its own limit alone, vsync is the same in both and both raced the same stage; otherwise the report says `not comparable` and why, and the run is inconclusive. Each race's seed is the game's own random pick, which the test cannot set, and the report says so
+
 #### Scenario: Check: uneven motion fails a race part
 - **WHEN** `test\live.ps1` runs and a race part has over 1% of its frames more than 4 ms off even progress, or frames in a row off it for 100 ms or longer, its first frames included
 - **THEN** that part is flagged `motion uneven` or `motion hitch` and the test exits 1, whatever its frame times were
