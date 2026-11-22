@@ -25,6 +25,10 @@
 - [x] 4.3 The stall about 1.7 s in: `Plane.d` compiled before `EffectTrails` was initialized (JIT log: `uninitialized` trap at the debris path); `Plane` initializes `EffectTrails` and `Glow`
 - [x] 4.4 Temporary A/B and check code removed (`nfm.warmup`, `[warmup]` lines, `portraitCheck`); a log line when a race begins before the warm-up is done
 - [x] 4.5 The countdown's frame rate: polygons that cross or touch themselves cut in bands for the card (`bandsOnCard`, `ROLE_ALONG`), no stencil; flat ones keep it. Projection test as before (worst 0.0129% against 0.0103%); draw calls a scene 1-3 against 130-387
+- [x] 4.6 The countdown's start: a race's frames timed from its first scene, the ticks due from there (decision 9, 3a8fab1)
+- [x] 4.7 The countdown at 120 fps: frames placed for the moment they reach the screen, apart for frames that send the card a new scene (decision 10, 3a8fab1)
+- [x] 4.8 No warm-up ticks in the countdown; up to 500 ms while the music loads, once a run (decision 2, 3a8fab1)
+- [x] 4.9 Split screen's results took the item under a resting mouse every tick, so the live split test raced again instead of going to Main Menu; hovering now counts only when the mouse moves, as in the pause menu (907de35)
 
 ## 5. Gates
 
