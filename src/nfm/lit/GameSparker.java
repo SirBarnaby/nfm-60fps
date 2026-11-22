@@ -148,6 +148,8 @@ public class GameSparker extends Panel implements Runnable {
      */
     private static final int MAX_TICKS_PER_FRAME = 5;
     private static final long MAX_TICK_LAG_NS = 500_000_000L;
+    /** The most a frame's placing may count on reaching the screen after it (see Presenter#freshShowNanos). */
+    private static final long MAX_SHOW_GUESS_NANOS = 16_000_000L;
     /** A car or camera that moves further than this in one tick was teleported. */
     private static final int TELEPORT_DISTANCE = 2500;
     private static final boolean PROFILE_LOOP = Boolean.getBoolean("nfm.profile");
@@ -253,16 +255,19 @@ public class GameSparker extends Panel implements Runnable {
      * race's code.
      */
     private static final int WARM_UP_TICKS = 96;
-    /** How long {@link #warmUpWhileLoading} may add to the music's loading, for the first, slowest ticks. */
-    private static final long WARM_UP_LOADING_NANOS = 200_000_000L;
+    /**
+     * How long {@link #warmUpWhileLoading} may add to the music's loading,
+     * once a run, for the first, slowest ticks: most of the warm-up, as the
+     * screen before the race may be short and the countdown plays none.
+     */
+    private static final long WARM_UP_LOADING_NANOS = 500_000_000L;
     /** What {@link #warmUpInSpareTime} leaves of the time before the next tick is due. */
     private static final long WARM_UP_MARGIN_NANOS = 6_000_000L;
     private int warmUpTicksPlayed;
     /** How long the last warm-up tick took: the next one starts only where that much time is spare. */
     private long warmUpLastNanos;
-    /* for the log: how long the warm-up ticks took, and how many were played in the countdown */
+    /* for the log: how long the warm-up ticks took */
     private long warmUpNanos;
-    private int warmUpInCountdown;
     /** The warm-up's ticks when a race last began before it was done, for the log (see {@link #warmUpInSpareTime}). */
     private int warmUpReportedAt;
     /** The warm-up drew this stage's scene for the card once. */
@@ -353,6 +358,12 @@ public class GameSparker extends Panel implements Runnable {
     private boolean pendingWhiteFlash;
     private float renderAlpha = 1F;
     private long tickStartNanos;
+    /**
+     * When a race's first scene was handed to the presenter, for the run loop
+     * to have the next tick due one tick later (see {@link #handOverKept}); 0
+     * otherwise.
+     */
+    private long firstSceneNanos;
 
     /** Set by the autotest thread; the next race tick jumps to the post-race highlight. */
     private volatile boolean autotestHighlightRequested;
@@ -2919,6 +2930,7 @@ public class GameSparker extends Panel implements Runnable {
      */
     private boolean handOverKept() {
         warmUpKept = null; // the presenter's own from here: a warm-up scene not drawn by now is not needed
+        boolean firstScene = !presenter.drawingRaces(); // nothing of this race on the screen yet
         boolean ahead = aheadPossible();
         boolean stale = keptStale || keptAhead != ahead;
         long aheadNanos = 0L;
@@ -2996,6 +3008,26 @@ public class GameSparker extends Panel implements Runnable {
         if (pendingWhiteFlash) {
             rd.setColor(new Color(255, 255, 255)); // as the software frame would leave it
             pendingWhiteFlash = false;
+        }
+        if (firstScene) {
+            /*
+             * A race's first scene takes longer than a tick to make (the
+             * countdown's sees most of the track), and the screen before
+             * shows meanwhile: its frames start now, not when the tick was
+             * due, or the first ones stand still at the end of a stretch
+             * already gone by, and the ticks after it run late to catch up.
+             * The ticks are due from here on (see the run loop).
+             */
+            long now = System.nanoTime();
+            long length = tickNanosFor(ui.fase); // a race tick, though the tick that started the race was the menu's
+            first.startNanos = now;
+            first.lengthNanos = length;
+            if (second != null) {
+                second.startNanos = now;
+                second.lengthNanos = length;
+            }
+            presenter.handOverSpan(first, second);
+            firstSceneNanos = now;
         }
         presenter.handOver(kept);
         // what syncBackBuffer redraws in software: this scene, at the moment it was recorded
@@ -3270,6 +3302,18 @@ public class GameSparker extends Panel implements Runnable {
         private long flashedVersion = -1L;
         private long nextFrameNanos;
         private long lastShownNanos;
+        /**
+         * How long a frame takes from being placed to reaching the screen,
+         * smoothed: one that sends the card a new scene (a tick's, 1-3 MB, and
+         * its HUD) takes 4-6 ms longer than the others. Each frame is placed
+         * for that moment, or the ones with a new scene show the race that
+         * much earlier than the frames around them: at 120 fps about one in
+         * eight frames of the countdown was off even by over 4 ms.
+         */
+        private long freshShowNanos;
+        private long sameShowNanos;
+        /** The kept scene the last frame showed, to tell a frame with a new one. */
+        private long shownVersion = -1L;
 
         /* the profile, presenter thread only */
         private int statFrames;
@@ -3457,14 +3501,16 @@ public class GameSparker extends Panel implements Runnable {
         /** Places the kept scene for now, shows it and waits for the next frame. */
         private void drawFrame(Kept k) {
             long start = System.nanoTime();
-            float alpha = span.alphaAt(start, true);
+            boolean fresh = k.version != shownVersion; // the card gets this scene with this frame
+            long showAt = start + (fresh ? freshShowNanos : sameShowNanos);
+            float alpha = span.alphaAt(showAt, true);
             if (alpha > 1F) {
                 statCarried++;
             }
             span.at(alpha, pose);
             if (PROFILE_LOOP && spanChanged) {
                 // how far the motion carried on from the last tick was from where the new one has things
-                previousSpan.at(previousSpan.alphaAt(start, true), carried);
+                previousSpan.at(previousSpan.alphaAt(showAt, true), carried);
                 if (statCorrectionCount < statCorrections.length) {
                     statCorrections[statCorrectionCount] = difference(carried, pose);
                     statHandedLate[statCorrectionCount++] = span.handedLate / 1e6D;
@@ -3495,7 +3541,7 @@ public class GameSparker extends Panel implements Runnable {
             boolean shown;
             try {
                 shown = showOnGpu(false, k.shown().list(), onCard ? k.cardScenes() : null, k.hud, k.version, k.version,
-                        flash, true, span.motionAt(alpha), start);
+                        flash, true, span.motionAt(alpha), showAt);
             } catch (RuntimeException | LinkageError ex) {
                 HLogger.warn("The graphics card stopped drawing a race: " + ex);
                 shown = false;
@@ -3505,6 +3551,14 @@ public class GameSparker extends Panel implements Runnable {
                 failed = true; // the game thread takes over and finds out why
                 return;
             }
+            // a stall (the card held the frame up, the thread waited) is not what the next frame will take
+            long reached = Math.min(end - start, MAX_SHOW_GUESS_NANOS);
+            if (fresh) {
+                freshShowNanos += (reached - freshShowNanos) / 4L;
+            } else {
+                sameShowNanos += (reached - sameShowNanos) / 16L;
+            }
+            shownVersion = k.version;
             if (span.keysNanos != keysShown) {
                 long took = end - span.keysNanos;
                 // a change more than a second old is from before the race (or a pause), not a frame late
@@ -3767,8 +3821,8 @@ public class GameSparker extends Panel implements Runnable {
      * the countdown either), and Java runs code slowly until it has compiled
      * it. Without this the first two seconds of the first race took two to
      * three times as long a tick, and frames stood still while they did. The
-     * rest of {@link #WARM_UP_TICKS} is played in the spare time before the
-     * race ({@link #warmUpInSpareTime}).</li>
+     * rest of {@link #WARM_UP_TICKS} is played in the spare time on the
+     * screen before the race ({@link #warmUpInSpareTime}).</li>
      * </ul>
      * Nothing of it is seen, heard or kept: under the rollback self-test
      * ({@code verify-races.ps1 -Rollback}) every tick is played here and
@@ -3791,9 +3845,11 @@ public class GameSparker extends Panel implements Runnable {
 
     /**
      * Plays the warm-up's remaining ticks (see {@link #warmUpWhileLoading})
-     * on the screen before the race and in the countdown, in the time left
-     * before the next tick is due ({@code until}), one only where the last
-     * one would fit: no tick or frame waits for them.
+     * on the screen before the race, in the time left before the next tick
+     * is due ({@code until}), one only where the last one would fit: no tick
+     * or frame waits for them. The countdown plays none: a warm-up tick
+     * that ran long there (code Java had not compiled yet) made the next
+     * tick late and the countdown's motion jump.
      */
     private void warmUpInSpareTime(long until) {
         if (warmUpTicksPlayed >= WARM_UP_TICKS) {
@@ -3801,11 +3857,10 @@ public class GameSparker extends Panel implements Runnable {
         }
         if (!warmingUp()) {
             if (ui.fase == Phase.INGAME && warmUpReportedAt != warmUpTicksPlayed) {
-                // the race began before the warm-up was done (the next race's screen goes on with it): for the log
+                // the countdown began before the warm-up was done (the next race's screen goes on with it): for the log
                 warmUpReportedAt = warmUpTicksPlayed;
-                HLogger.info(String.format("The race began %d ticks into the warm-up of %d (%d ms, %d of them in"
-                        + " the countdown)", warmUpTicksPlayed, WARM_UP_TICKS, warmUpNanos / 1_000_000L,
-                        warmUpInCountdown));
+                HLogger.info(String.format("The countdown began %d ticks into the warm-up of %d (%d ms)",
+                        warmUpTicksPlayed, WARM_UP_TICKS, warmUpNanos / 1_000_000L));
             }
             return;
         }
@@ -3814,10 +3869,10 @@ public class GameSparker extends Panel implements Runnable {
         }
     }
 
-    /** Whether the warm-up can play now: on the screen before a race or in its countdown, never in split screen. */
+    /** Whether the warm-up can play now: on the screen before a race, never in its countdown or in split screen. */
     private boolean warmingUp() {
         // split screen's ticks are never played ahead (its own camera and HUD are not put back)
-        return !SplitRace.on && (ui.fase == Phase.PREGAME || ui.fase == Phase.INGAME && ui.starcnt > 0);
+        return !SplitRace.on && ui.fase == Phase.PREGAME;
     }
 
     /** The race as it stands, for the snapshots and the recorder. */
@@ -3837,15 +3892,12 @@ public class GameSparker extends Panel implements Runnable {
         warmUpLastNanos = System.nanoTime() - start;
         warmUpNanos += warmUpLastNanos;
         warmUpTicksPlayed++;
-        if (ui.fase == Phase.INGAME) {
-            warmUpInCountdown++;
-        }
         if (before != null) {
             session.warmUpLeftovers(before.differences());
         }
         if (warmUpTicksPlayed == WARM_UP_TICKS) {
-            HLogger.info(String.format("Warmed up for the race: %d ticks played ahead and put back in %d ms,"
-                    + " %d of them in the countdown", WARM_UP_TICKS, warmUpNanos / 1_000_000L, warmUpInCountdown));
+            HLogger.info(String.format("Warmed up for the race: %d ticks played ahead and put back in %d ms",
+                    WARM_UP_TICKS, warmUpNanos / 1_000_000L));
         }
     }
 
@@ -7751,6 +7803,10 @@ public class GameSparker extends Panel implements Runnable {
              */
             followFrameLog();
             boolean presented = presenterDraws(scenePhase, unpaced) && handOverKept();
+            if (firstSceneNanos != 0L) {
+                nextTickNanos = firstSceneNanos + tickNanosFor(gameUi.fase); // from the race's first frame (see handOverKept)
+                firstSceneNanos = 0L;
+            }
             if (presenter != null) {
                 presenter.drawRaces(presented);
             }
