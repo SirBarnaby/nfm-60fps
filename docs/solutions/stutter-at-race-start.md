@@ -23,7 +23,8 @@ With G1 or the serial collector `System.gc()` is a pause everyone expects. With 
 
 The countdown ticks the race with the cars held: the physics, the AI and the collisions do not run until the start. Java interprets them, then compiles them in steps, so the first two seconds of the first race took 1.5-2.5 times as long a tick.
 
-- Fix: play the race's next tick ahead and put the race back (the run-ahead's own `playAndPutBack`) before the race, unseen: while the music loads (the screen holds still then anyway, up to 200 ms) and in spare time between ticks. Never block a frame for it: a block of 96 ticks gave smooth races and a 1.3 s frame on the stage screen.
+- Fix: play the race's next tick ahead and put the race back (the run-ahead's own `playAndPutBack`) before the race, unseen: while the music loads (the screen holds still then anyway, up to 500 ms) and in spare time on the screen before the race. Never block a frame for it: a block of 96 ticks gave smooth races and a 1.3 s frame on the stage screen.
+- Not in the countdown's spare time either: a warm-up tick is the coldest code there is, and one that ran long there made the next tick 17-42 ms late and the motion jump 43 ms. "Fits in the spare time" is judged by the last tick's length, which says nothing about the next one while Java is still compiling.
 - The rollback self-test (`verify-races.ps1 -Rollback`) checks every warm-up tick leaves the race exactly as it found it.
 - The race state is complete only from `SELECTEDCARSAVE` on: a warm-up tick earlier (at `loadstage` or `STAGESELECT`) plays a half-made race.
 
@@ -47,9 +48,33 @@ The countdown was the slowest part in every run (216 fps with no limit) though i
 - A cut fixed for a tick while the card moves its corners each frame must have no T-junction: every piece runs through every point on its cuts, or a corner of the next band comes off the cut and the picture cracks for a frame. The projection test (`-Dnfm.projectiontest=60`) caught the first version's crack; compare its worst frame against a run of the build before.
 - A temporary count of why polygons took the stencil (crossing, touching, flat) in a scratch build pointed at the fix in one hidden run.
 
+### 7. A part's first frame: start its clock when its first scene is ready
+
+Frames are placed between two ticks by the clock: tick start plus alpha times the tick's length. The race's first scene takes 60-90 ms to make (the countdown's camera sees most of the track), while the screen before stays up; its stretch was timed from when the menu tick that started the race was due. So the first frame showed the race 79 ms behind, frames stood at the end of a stretch already gone by, and ticks 1 and 2 ran 28-85 ms late to catch up, each with a scene of its own to make.
+
+- Seen as: "the race stood still or jumped" at 0.1 s in every live run, and in the ticks CSV tick 1 late by about the first scene's time.
+- Fix: the first scene a presenter shows of a part starts its stretch when it is handed over, a race tick long, and the next tick is due one tick later (`handOverKept`, `firstSceneNanos`). The same ticks with the same keys: only their moment on the clock moves, once, while the screen before is still up. Tick 1: 0.0-0.1 ms late.
+- Where else: anything timed from a tick that started in another part, at another tick length (the menu's 40 ms against the race's 53).
+
+### 8. Place a frame for when it reaches the screen, not when it is begun
+
+With frames drawn on their own thread, one frame a tick does more than the others: it sends the card the tick's scene (1-3 MB) and HUD. At 120 fps that frame took 12-14 ms instead of 8.3 and showed the race 4-6.7 ms behind the screen against 0.7 for the rest: one countdown frame in eight was off even by over 4 ms, evenly spread, with no tick late.
+
+- Seen as: in the frames CSV, `lag_ms` higher once a tick, on the frame after the tick's `kept_ms`; the "off" count flat across the part instead of in a burst.
+- Fix: keep how long a frame takes from being placed to reaching the screen, smoothed, apart for frames that send a new scene and the others, capped (16 ms) so one stall does not throw the next frames off, and place each frame for that moment (`Presenter.freshShowNanos`). Countdown at 120 fps: 82 of 793 frames off even → 14 of 815.
+- New poses are still used the moment they come: placing for the screen moves no input later.
+
+### 9. The live test plays the menus too: a resting mouse can choose
+
+The split-screen live test ran out of time: its results screen took the item under the mouse every tick, so with the mouse resting over "Race again" the keys' choice of "Main Menu" was undone a tick later and the test raced again and again. The pause menu already took a hover only when the mouse moved.
+
+- Fix: a menu takes the item under the mouse only when the mouse has moved since it last chose (`SplitScreens`, `hoverX`/`hoverY`); the first tick takes it where it is, as the pause menu does.
+- A live test that "times out" is worth a look at what was on the screen: here it was a real bug a player with a mouse at rest would have hit.
+
 ## How to find the next one
 
 - `-Dnfm.framelog.csv=true` also writes `ticks-NN-<part>.csv`: per tick, when it was due, how late it began, the race step, the run-ahead, when the poses were handed to the presenter, the kept scene, the card and when it was done. A tick whose `done_ms` passes 53 makes frames stand still; an empty `handed_ms` is a hand-over skipped to catch up.
 - `[framelog] <part> began at <time>` lines line the CSVs up with Java's own logs (`-Xlog:gc*`, `-Xlog:jit+compilation=debug,deoptimization=debug` with `time`).
-- The PC is noisy: judge a change by interleaved A/B runs, several rounds, on the spread, never on one pair.
+- The PC is noisy: judge a change by interleaved A/B runs, several rounds, on the spread, never on one pair. Wait for a quiet PC (processor under 15% for 30 s, no game running) before a hidden run that is to be judged, and repeat a once-seen stall before chasing it.
+- For one part's start, line its first ten ticks against its first two dozen frames (`shown`, `motion`, `lag`, `off`): a tick late at the start, a frame placed for a moment already gone, and a frame that took long to show each have their own look.
 - To make drawing code cheaper without changing the picture, build every scene twice in a scratch build, with the committed class copied under another name and with the new one, and compare the bytes; alternate which goes first to time both on the same scenes (the band code: the same bytes in 4,800 scenes, 8% quicker). `-Dnfm.retained=false` sends every frame down the processor's path, which the default run never takes.
