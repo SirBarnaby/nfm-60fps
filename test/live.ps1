@@ -137,7 +137,8 @@ $expectedParts = if ($Split) { @('split countdown', 'split race', 'instantreplay
 else { @('countdown', 'race', 'instantreplay', 'race', 'gamehighlight') }
 $enoughFrames = 100
 $enoughSeconds = 2
-# the race standing still or jumping about for longer than this is a hitch, as a frame this long is (Get-Stall)
+# the race standing still or jumping about for this long or longer is a hitch (Get-MotionFlags): the race hitch limit
+# a frame's own time is held to (Get-Stall)
 $motionHitchMs = 100
 
 # The frame limits to compare (-Limits): 'unlimited' or a number of frames a second; 'none' for none.
@@ -672,8 +673,9 @@ function Get-Flags($run, $part) {
 # frame shows the race at a moment; moving evenly, that moment keeps the same distance behind the time the frame
 # went on screen. A frame off that distance (the median around it) by over 4 ms shows the race stopped or jumped.
 # 'motion uneven': over 1% of the frames are (99% are not within 4 ms of even). 'motion hitch': frames in a row are
-# for over 100 ms, the race standing still or jumping about that long, the race hitch limit (Get-Stall). Frames near
-# a part's start and end are not judged (FrameLog.Motion).
+# for 100 ms or longer, the race standing still or jumping about that long, the race hitch limit (Get-Stall). A
+# part's frames are judged from its first on, as it starts or resumes; only those in its last 100 ms are not, where
+# the race holds its last tick still for the cut (FrameLog.Motion).
 # The share is counted from the frames themselves (strays of judged), not read off the 99% figure, which frames.json
 # rounds: 4 strays in 320 frames are 1.25%, uneven, though their 99% figure can come out as exactly 4.00 ms. A hitch
 # that was measured is a hitch however few frames were judged; only the share needs enough frames
@@ -689,7 +691,7 @@ function Get-MotionFlags($part) {
         'motion uneven: {0} of {1} frames ({2:N1}%) off even by over {3} ms, 99% within {4:N1} ms' -f $strays, $judged,
         (100.0 * $strays / $judged), $m.strayMs, $m.p99Ms
     }
-    if ([double]$m.stretchMs -gt $motionHitchMs) {
+    if ([double]$m.stretchMs -ge $motionHitchMs) {
         'motion hitch: the race stood still or jumped for {0:N0} ms at {1:N1} s' -f $m.stretchMs, $m.stretchAt
     }
 }

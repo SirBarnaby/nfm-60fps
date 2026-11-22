@@ -18,11 +18,11 @@ Every frame the game shows during a race notes two times: when it went on screen
 - **The lag** = shown − moment. It stays constant when the race moves evenly.
 - **Off even progress** = the lag − the median lag over the frames within ±0.5 s.
   - Off by over 4 ms means the race stopped or jumped for that frame.
-  - Frames within 100 ms of a part's edges are not judged.
+  - A part is judged from its first frame, so a race that stands still as it starts or resumes counts. Only its last 100 ms are not judged: the race holds its last tick still there for the cut.
 - **Where it goes.** `frames.json` → `parts[].motion`: `p99Ms`, `strays`, `judged`, `maxMs`/`maxAt`, `stretchMs`/`stretchAt` (the longest stretch off in a row). The game's log also gets a line per part.
 - **Every frame, for a closer look.** Use `-Dnfm.framelog.csv=true`, which writes `frames-NN-<part>.csv` (shown, moment, chosen, lag, off, in ms) next to `frames.json`.
 
-`test\live.ps1` flags a race part `motion uneven` when over 1% of its judged frames are off, and `motion hitch` when frames are off in a row for over 100 ms.
+`test\live.ps1` flags a race part `motion uneven` when over 1% of its judged frames are off, and `motion hitch` when frames are off in a row for 100 ms or longer.
 - The share is counted from `strays` and `judged`, never read off `p99Ms`, which is rounded: 4 off in 320 frames is 1.25%, uneven, even when `p99Ms` says 4.00.
 - A measured hitch always counts. Only the share needs 100 judged frames; with fewer it is a note saying so.
 
@@ -32,7 +32,7 @@ It plays your settings with no frame limit and at 120 fps (`-Limits`) and flags 
 
 A freeze then a jump looks like this: `motion_ms` stays the same for many lines while `shown_ms` goes on, then `motion_ms` steps by several ticks (53 ms each in a race). `lag_ms` climbs during the freeze and drops at the jump.
 
-A one-off frame far off right at a part's start is a resume after a pause, not a stutter.
+A one-off frame far off right at a part's start is a resume after a pause. It is judged: one frame adds a stray, not a hitch. Frames off in a row as the race starts or resumes are a hitch like any other.
 
 ## Tools for the screen side (none used yet)
 

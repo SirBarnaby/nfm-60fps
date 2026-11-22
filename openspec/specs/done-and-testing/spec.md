@@ -48,5 +48,5 @@ The live test SHALL catch the stutter the player sees, not only frames that come
 - **THEN** a race part that shows the race moving unevenly with no limit but evenly at 120 fps is flagged `stutters with no frame limit, not at 120 fps`, the report compares the two per race part, and the test exits 1
 
 #### Scenario: Check: uneven motion fails a race part
-- **WHEN** `test\live.ps1` runs and a race part has over 1% of its frames more than 4 ms off even progress, or frames in a row off it for over 100 ms
+- **WHEN** `test\live.ps1` runs and a race part has over 1% of its frames more than 4 ms off even progress, or frames in a row off it for 100 ms or longer, its first frames included
 - **THEN** that part is flagged `motion uneven` or `motion hitch` and the test exits 1, whatever its frame times were

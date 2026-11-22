@@ -57,8 +57,8 @@ final class FrameLog {
      * stop: a quarter of a 60 Hz frame of the race's movement.
      */
     static final long MOTION_STRAY_NANOS = 4_000_000L;
-    /** Frames this close to a part's first or last motion frame are not judged (see {@link Motion}). */
-    private static final long MOTION_EDGE_NANOS = 100_000_000L;
+    /** Frames this close to a part's last motion frame are not judged (see {@link Motion}). */
+    private static final long MOTION_END_NANOS = 100_000_000L;
     /*
      * Sums parts up off the game thread, one after another so the log keeps
      * their order: a long part's sums (its frame times and motion sorted) take
@@ -400,18 +400,20 @@ final class FrameLog {
      * the frames shown {@link #MOTION_WINDOW_NANOS} before and after it)
      * shows the race that much ahead (a jump) or behind (a stop).
      * <p>
-     * What it comes to is judged on the frames more than
-     * {@link #MOTION_EDGE_NANOS} from the part's first and last motion frame:
-     * at its edges the race pauses, resumes or cuts to the replay, which
-     * shows as one frame far off the lag after it, or the last tick held
-     * still before the cut, and is not a stutter. All of them go in the CSV.
+     * What it comes to is judged on every frame from the part's first on,
+     * but not on those within {@link #MOTION_END_NANOS} of its last: before
+     * the race pauses or cuts to the replay, the last tick is held still for
+     * the cut, which is not a stutter. Its start is judged, a resume's frame
+     * far off the lag after it too: a race standing still or jumping as it
+     * starts or resumes is the first thing the player sees of it. All of them
+     * go in the CSV.
      */
     private static final class Motion {
         final int frames;
         /** How far each frame was off even progress, in time order; positive is behind. */
         final long[] off;
         final double lagMs;
-        /** The frames judged: those away from the part's edges. */
+        /** The frames judged: all but those near the part's end. */
         final int judged;
         final double p99Ms;
         final double maxMs;
@@ -464,8 +466,7 @@ final class FrameLog {
             long from = -1L; // when the frames off in a row began (the frame before the first one off), -1 for none
             for (int k = 0; k < n; k++) {
                 long away = Math.abs(off[k]);
-                boolean inside = n > 0 && shown[k] - shown[0] >= MOTION_EDGE_NANOS
-                        && shown[n - 1] - shown[k] >= MOTION_EDGE_NANOS;
+                boolean inside = shown[n - 1] - shown[k] >= MOTION_END_NANOS;
                 if (!inside || away <= MOTION_STRAY_NANOS) {
                     from = -1L;
                     if (!inside) {
