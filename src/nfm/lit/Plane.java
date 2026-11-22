@@ -200,6 +200,25 @@ public class Plane {
 
     static {
         seedShapes(0L);
+        initialize(EffectTrails.class);
+        initialize(Glow.class);
+    }
+
+    /**
+     * Initializes a class {@link #d} uses only on its rarer paths (flying
+     * debris, glowing lights). Java can compile d() fully while the menus draw
+     * cars, before a race has initialized those classes; d() is then compiled
+     * with a trap where it uses one, and the first race to take that path
+     * (the first chip of debris, about 1.7 s in) threw the whole compiled
+     * method away: two or three ticks of 50 to 100 ms while d() ran slowly and
+     * was compiled again. Neither class sets up anything the race could see.
+     */
+    private static void initialize(Class<?> type) {
+        try {
+            Class.forName(type.getName(), true, type.getClassLoader());
+        } catch (ClassNotFoundException ex) {
+            throw new IllegalStateException(ex);
+        }
     }
 
     /** Called with the race seed when a stage is set up, see {@link Medium#seedRace(long)}. */

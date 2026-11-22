@@ -185,6 +185,8 @@ public class GameSparker extends Panel implements Runnable {
      * one tick ago, which takes a tick (53 ms) off the input lag.
      */
     private static volatile boolean runAhead = true;
+    /** For the frame log's tick CSV (FrameLog.tracingTicks): how long this tick's race step took, 0 for none. */
+    private long traceRaceNanos;
     private static volatile boolean runAheadChanged;
 
     private Image hudImage;
@@ -245,6 +247,30 @@ public class GameSparker extends Panel implements Runnable {
     /** Real ticks that ran with the keys a run-ahead tick used, and how many of them landed elsewhere. */
     private int profileAheadChecked;
     private int profileAheadMissed;
+
+    /**
+     * Race ticks the warm-up plays ahead before the first race (see
+     * {@link #warmUpWhileLoading}): about as many as the first two seconds of
+     * a race run, ticks and run-ahead ticks, before Java has compiled the
+     * race's code.
+     */
+    private static final int WARM_UP_TICKS = 96;
+    /** How long {@link #warmUpWhileLoading} may add to the music's loading, for the first, slowest ticks. */
+    private static final long WARM_UP_LOADING_NANOS = 200_000_000L;
+    /** What {@link #warmUpInSpareTime} leaves of the time before the next tick is due. */
+    private static final long WARM_UP_MARGIN_NANOS = 6_000_000L;
+    private int warmUpTicksPlayed;
+    /** How long the last warm-up tick took: the next one starts only where that much time is spare. */
+    private long warmUpLastNanos;
+    /* for the log: how long the warm-up ticks took, and how many were played in the countdown */
+    private long warmUpNanos;
+    private int warmUpInCountdown;
+    /** The warm-up's ticks when a race last began before it was done, for the log (see {@link #warmUpInSpareTime}). */
+    private int warmUpReportedAt;
+    /** The warm-up drew this stage's scene for the card once. */
+    private boolean sceneWarmedUp;
+    /** That scene, until a picture is shown with it drawn behind (see {@link #showOnGpu}). Game thread. */
+    private Presenter.Kept warmUpKept;
 
     /** Real back-buffer graphics while a tick draws its overlays into the HUD layer. */
     private Graphics2D sceneGraphics;
@@ -1499,6 +1525,7 @@ public class GameSparker extends Panel implements Runnable {
          * Every race starts its random streams from one seed, before anything
          * of the stage draws a number, so the race can be played again exactly.
          */
+        sceneWarmedUp = false; // a new stage: its scene is drawn once on the card before its race (see warmUpWhileLoading)
         long seed = session != null ? session.stageLoading(custom) : RaceRandom.newSeed();
         HLogger.info("Race seed " + seed); // the live test compares runs that raced the same seed (-Dnfm.seed)
         world.seed(seed);
@@ -2683,9 +2710,12 @@ public class GameSparker extends Panel implements Runnable {
                  * The back buffer holds the last presented frame, scene and
                  * HUD, which is what the original grabbed here too. It must
                  * run in this tick: the portrait is drawn from the next one,
-                 * and a slow frame can let both ticks run back to back.
+                 * and a slow frame can let both ticks run back to back. Only
+                 * the part of the picture the portrait reads is drawn into
+                 * it: the whole frame in software held this tick up for
+                 * 45 ms or more, 1.7 s before the start.
                  */
-                syncBackBuffer();
+                syncBackBuffer(GameUi.PORTRAIT_BEHIND);
                 ui.blendude(pictureAtGameSize());
             }
         } else {
@@ -2885,12 +2915,15 @@ public class GameSparker extends Panel implements Runnable {
      * @return false if this tick's frames have to be drawn the whole way
      */
     private boolean handOverKept() {
+        warmUpKept = null; // the presenter's own from here: a warm-up scene not drawn by now is not needed
         boolean ahead = aheadPossible();
         boolean stale = keptStale || keptAhead != ahead;
+        long aheadNanos = 0L;
         if (ahead) {
             long aheadStart = System.nanoTime();
             if (runAheadTick()) {
-                profileAheadNanos += System.nanoTime() - aheadStart;
+                aheadNanos = System.nanoTime() - aheadStart;
+                profileAheadNanos += aheadNanos;
                 profileAheads++;
                 stale = true;
             }
@@ -2915,13 +2948,19 @@ public class GameSparker extends Panel implements Runnable {
         first.handedLate = System.nanoTime() - tickStartNanos;
         first.keysNanos = ahead ? aheadKeysNanos : tickKeysNanos;
         presenter.handOverSpan(first, second);
+        long handed = System.nanoTime();
         boolean recorded = kept.split ? recordPanes(split, kept.panes)
                 : recordKept(ahead, kept.recorder, kept.scene, first, 0, null);
+        long keptNanos = System.nanoTime() - handed;
         if (!recorded) {
             keptBlocked = true; // until the next tick
+            if (FrameLog.tracingTicks()) {
+                FrameLog.handedOver(aheadNanos, handed, keptNanos, 0L, System.nanoTime());
+            }
             return false;
         }
         GpuDisplay card = gpu;
+        long cardNanos = 0L;
         if (card != null && card.projecting()) {
             // made ready for the card here, once, so no frame of the presenter's pays for it
             long projectStart = System.nanoTime();
@@ -2932,7 +2971,8 @@ public class GameSparker extends Panel implements Runnable {
             } else {
                 project(kept.scene, kept.recorder, kept.projected[0], null);
             }
-            profileProjectNanos += System.nanoTime() - projectStart;
+            cardNanos = System.nanoTime() - projectStart;
+            profileProjectNanos += cardNanos;
             profileProjects++;
         } else {
             for (nfm.lit.gpu.ProjectedScene projected : kept.projected) {
@@ -2963,6 +3003,9 @@ public class GameSparker extends Panel implements Runnable {
         backBufferStale = true;
         keptStale = false;
         keptAhead = ahead;
+        if (FrameLog.tracingTicks()) {
+            FrameLog.handedOver(aheadNanos, handed, keptNanos, cardNanos, System.nanoTime());
+        }
         return true;
     }
 
@@ -3641,46 +3684,179 @@ public class GameSparker extends Panel implements Runnable {
      * @return false if the last run-ahead still holds: no tick since and the same keys
      */
     private boolean runAheadTick() {
-        int np = Math.min(GameFacts.numberOfPlayers, prevCarX.length);
         synchronized (inputLock) {
             int keys = heldKeys();
             if (aheadValid && aheadTick == raceTicks && aheadKeys == keys) {
                 return false;
             }
-            int mousesBefore = mouses;
-            int viewBefore = view;
-            int shakaBefore = shaka;
-            boolean flashBefore = pendingWhiteFlash;
-            Graphics2D hud = hudG;
-            FontMetrics metrics = FontHandler.fMetrics;
-            // the HUD measures its text, so it needs real font metrics: a copy of its layer clipped to nothing
-            Graphics2D blind = (Graphics2D) hud.create();
-            blind.setClip(0, 0, 0, 0);
-            aheadSnapshot.capture(new RaceState.View(world, racers, u, sceneObjects, raceCheckpoints, raceRecord, ui,
-                    raceTrackers, GameFacts.numberOfPlayers), nob);
-            SoundManager.setDiscarding(true);
-            hudG = blind;
-            try {
-                applyHeldKeys();
-                view = live[0].view;
-                advanceRace();
-                aheadPoses.takeLive(np);
-            } finally {
-                aheadSnapshot.restore();
-                SoundManager.setDiscarding(false);
-                hudG = hud;
-                blind.dispose();
-                FontHandler.fMetrics = metrics;
-                mouses = mousesBefore;
-                view = viewBefore;
-                shaka = shakaBefore;
-                pendingWhiteFlash = flashBefore;
-            }
+            playAndPutBack(-1);
             aheadTick = raceTicks;
             aheadKeys = keys;
             aheadKeysNanos = keysChangedNanos;
             aheadValid = true;
             return true;
+        }
+    }
+
+    /**
+     * Plays one race tick and puts the whole race back as it was, unheard
+     * and undrawn: the run-ahead tick (with {@code warmUp} -1), which keeps
+     * where it leaves the cars and the camera, or warm-up tick number
+     * {@code warmUp} (see {@link #warmUpWhileLoading}), which plays the race's first
+     * tick from where the cars stand, with the throttle held and the
+     * steering changing, and keeps nothing. Game thread, under
+     * {@link #inputLock}.
+     */
+    private void playAndPutBack(int warmUp) {
+        int mousesBefore = mouses;
+        int viewBefore = view;
+        int shakaBefore = shaka;
+        boolean flashBefore = pendingWhiteFlash;
+        Graphics2D hud = hudG;
+        FontMetrics metrics = FontHandler.fMetrics;
+        // the HUD measures its text, so it needs real font metrics: a copy of its layer clipped to nothing
+        Graphics2D blind = (Graphics2D) hud.create();
+        blind.setClip(0, 0, 0, 0);
+        aheadSnapshot.capture(new RaceState.View(world, racers, u, sceneObjects, raceCheckpoints, raceRecord, ui,
+                raceTrackers, GameFacts.numberOfPlayers), nob);
+        SoundManager.setDiscarding(true);
+        hudG = blind;
+        try {
+            if (warmUp < 0) {
+                applyHeldKeys();
+                view = live[0].view;
+            } else {
+                ui.starcnt = 0; // the race proper: the physics, the AI and the collisions run
+                Control player = u[0];
+                player.up = true;
+                player.left = (warmUp & 8) != 0;
+                player.right = (warmUp & 8) == 0 && (warmUp & 4) != 0;
+            }
+            advanceRace();
+            if (warmUp < 0) {
+                aheadPoses.takeLive(Math.min(GameFacts.numberOfPlayers, prevCarX.length));
+            }
+        } finally {
+            aheadSnapshot.restore();
+            SoundManager.setDiscarding(false);
+            hudG = hud;
+            blind.dispose();
+            FontHandler.fMetrics = metrics;
+            mouses = mousesBefore;
+            view = viewBefore;
+            shaka = shakaBefore;
+            pendingWhiteFlash = flashBefore;
+        }
+    }
+
+    /**
+     * Gets the race ready to run smoothly from its first frame, while the
+     * music for it loads (the screen holds still then anyway):
+     * <ul>
+     * <li>Once a stage, records the scene the countdown's frames place, makes
+     * it ready for the card and has the card draw it once, unseen, behind the
+     * next picture shown (see {@link #showOnGpu}): the card then has its
+     * buffers, its target and its shaders when the countdown's first frame
+     * comes, and Java has run the code that records and places a scene.</li>
+     * <li>Once a run of the game, plays the race's first tick ahead and puts
+     * the race back ({@link #playAndPutBack}), for up to
+     * {@link #WARM_UP_LOADING_NANOS}: the first ticks are the slowest, as
+     * nothing of the physics, the AI or the collisions has run before (not in
+     * the countdown either), and Java runs code slowly until it has compiled
+     * it. Without this the first two seconds of the first race took two to
+     * three times as long a tick, and frames stood still while they did. The
+     * rest of {@link #WARM_UP_TICKS} is played in the spare time before the
+     * race ({@link #warmUpInSpareTime}).</li>
+     * </ul>
+     * Nothing of it is seen, heard or kept: under the rollback self-test
+     * ({@code verify-races.ps1 -Rollback}) every tick is played here and
+     * checked to have left the race exactly as it found it.
+     */
+    private void warmUpWhileLoading() {
+        if (!warmingUp()) {
+            return;
+        }
+        if (!sceneWarmedUp) {
+            sceneWarmedUp = true;
+            warmUpScene();
+        }
+        boolean all = RaceSession.checksWarmUp(); // the self-test checks every tick
+        long until = System.nanoTime() + WARM_UP_LOADING_NANOS;
+        while (warmUpTicksPlayed < WARM_UP_TICKS && (all || System.nanoTime() - until < 0L)) {
+            playWarmUpTick();
+        }
+    }
+
+    /**
+     * Plays the warm-up's remaining ticks (see {@link #warmUpWhileLoading})
+     * on the screen before the race and in the countdown, in the time left
+     * before the next tick is due ({@code until}), one only where the last
+     * one would fit: no tick or frame waits for them.
+     */
+    private void warmUpInSpareTime(long until) {
+        if (warmUpTicksPlayed >= WARM_UP_TICKS) {
+            return;
+        }
+        if (!warmingUp()) {
+            if (ui.fase == Phase.INGAME && warmUpReportedAt != warmUpTicksPlayed) {
+                // the race began before the warm-up was done (the next race's screen goes on with it): for the log
+                warmUpReportedAt = warmUpTicksPlayed;
+                HLogger.info(String.format("The race began %d ticks into the warm-up of %d (%d ms, %d of them in"
+                        + " the countdown)", warmUpTicksPlayed, WARM_UP_TICKS, warmUpNanos / 1_000_000L,
+                        warmUpInCountdown));
+            }
+            return;
+        }
+        while (warmUpTicksPlayed < WARM_UP_TICKS && System.nanoTime() + warmUpLastNanos * 5L / 4L - until < 0L) {
+            playWarmUpTick();
+        }
+    }
+
+    /** Whether the warm-up can play now: on the screen before a race or in its countdown, never in split screen. */
+    private boolean warmingUp() {
+        // split screen's ticks are never played ahead (its own camera and HUD are not put back)
+        return !SplitRace.on && (ui.fase == Phase.PREGAME || ui.fase == Phase.INGAME && ui.starcnt > 0);
+    }
+
+    /** One warm-up tick, checked under the rollback self-test; logs the warm-up once it is done. */
+    private void playWarmUpTick() {
+        RaceSnapshot before = session != null && RaceSession.checksWarmUp()
+                ? RaceSnapshot.captureComplete(new SessionHost().race(), nob) : null;
+        long start = System.nanoTime();
+        synchronized (inputLock) {
+            playAndPutBack(warmUpTicksPlayed);
+        }
+        warmUpLastNanos = System.nanoTime() - start;
+        warmUpNanos += warmUpLastNanos;
+        warmUpTicksPlayed++;
+        if (ui.fase == Phase.INGAME) {
+            warmUpInCountdown++;
+        }
+        if (before != null) {
+            session.warmUpLeftovers(before.differences());
+        }
+        if (warmUpTicksPlayed == WARM_UP_TICKS) {
+            HLogger.info(String.format("Warmed up for the race: %d ticks played ahead and put back in %d ms,"
+                    + " %d of them in the countdown", WARM_UP_TICKS, warmUpNanos / 1_000_000L, warmUpInCountdown));
+        }
+    }
+
+    /**
+     * Records the scene kept for the countdown's first frames and makes it
+     * ready for the card, for the next picture shown to draw unseen (see
+     * {@link #warmUpWhileLoading}).
+     */
+    private void warmUpScene() {
+        GpuDisplay card = gpu;
+        if (presenter == null || card == null || !card.projecting() || !GPU_SCENE || !RETAINED) {
+            return;
+        }
+        Presenter.Kept k = presenter.free();
+        k.split = false;
+        poseSpan(false, spanScratch);
+        if (recordKept(false, k.recorder, k.scene, spanScratch, 0, null)) {
+            project(k.scene, k.recorder, k.projected[0], null);
+            warmUpKept = k;
         }
     }
 
@@ -3984,20 +4160,40 @@ public class GameSparker extends Panel implements Runnable {
      * back buffer next finds exactly what the software renderer left there.
      */
     private void syncBackBuffer() {
+        syncBackBuffer(null);
+    }
+
+    /**
+     * {@link #syncBackBuffer()}, or with {@code region} (in the back buffer's
+     * pixels) only that part of it: the pixels there come out the same, the
+     * rest is drawn by the next whole sync.
+     */
+    private void syncBackBuffer(Rectangle region) {
         if (!backBufferStale) {
             return;
         }
-        backBufferStale = false;
+        backBufferStale = region != null;
         Color color = rd.getColor();
-        replayScene(shownRecorder);
-        if (gpuSceneHud != null) {
-            rd.drawImage(gpuSceneHud, 0, 0, GameFacts.screenWidth, GameFacts.screenHeight, null);
+        Shape clip = rd.getClip();
+        if (region != null) {
+            AffineTransform transform = rd.getTransform();
+            rd.setTransform(new AffineTransform()); // the clip in pixels, whatever the picture is scaled by
+            rd.clip(region);
+            rd.setTransform(transform);
         }
-        if (gpuSceneFlash) {
-            rd.setColor(new Color(255, 255, 255));
-            rd.fillRect(0, 0, GameFacts.screenWidth, GameFacts.screenHeight);
+        try {
+            replayScene(shownRecorder);
+            if (gpuSceneHud != null) {
+                rd.drawImage(gpuSceneHud, 0, 0, GameFacts.screenWidth, GameFacts.screenHeight, null);
+            }
+            if (gpuSceneFlash) {
+                rd.setColor(new Color(255, 255, 255));
+                rd.fillRect(0, 0, GameFacts.screenWidth, GameFacts.screenHeight);
+            }
+        } finally {
+            rd.setClip(clip);
+            rd.setColor(color);
         }
-        rd.setColor(color);
     }
 
     /**
@@ -4065,14 +4261,20 @@ public class GameSparker extends Panel implements Runnable {
             boolean shown;
             try {
                 BufferedImage picture = (BufferedImage) offImage;
+                Presenter.Kept warm = warmUpKept;
+                if (scene == null && warm != null) {
+                    // drawn into the scene's target, which a picture frame does not show (see warmUpWhileLoading)
+                    warmUpKept = null;
+                    gpu.setMultisample(multisample);
+                    Rectangle scenePlace = places.scene();
+                    gpu.drawScene(warm.shown().list(), warm.cardScenes(), null, Long.MAX_VALUE, -1L, false, false,
+                            sceneTargetSize(drawnPlace(scenePlace, width), gpu.maxTextureSize()), 1F, null);
+                }
                 if (scene != null) {
                     picture = null; // show the scene drawn on the card
                     gpu.setMultisample(multisample);
                     float scale = dynamicResolution == 0 ? 1F : resolution.scale();
-                    // a fullscreen resolution under the monitor's draws fewer pixels, scaled up when shown
-                    double drawn0 = Math.min(1D, drawWidthNow / (double) width);
-                    Rectangle drawnPlace = new Rectangle(0, 0, (int) Math.round(place.width * drawn0),
-                            (int) Math.round(place.height * drawn0));
+                    Rectangle drawnPlace = drawnPlace(place, width);
                     Dimension target = sceneTargetSize(drawnPlace, gpu.maxTextureSize());
                     Rectangle c = places.canvas();
                     float[] hudArea = {(c.x - place.x) / (float) place.width, (c.y - place.y) / (float) place.height,
@@ -4130,6 +4332,16 @@ public class GameSparker extends Panel implements Runnable {
             }
             return shown;
         }
+    }
+
+    /**
+     * The part of the scene's {@code place} in a window {@code width} wide
+     * that is drawn: all of it, or with a fullscreen resolution under the
+     * monitor's, fewer pixels, scaled up when shown.
+     */
+    private Rectangle drawnPlace(Rectangle place, int width) {
+        double drawn = Math.min(1D, drawWidthNow / (double) width);
+        return new Rectangle(0, 0, (int) Math.round(place.width * drawn), (int) Math.round(place.height * drawn));
     }
 
     /**
@@ -6978,6 +7190,8 @@ public class GameSparker extends Panel implements Runnable {
             }
             if (gameUi.fase == Phase.PREGAMEMUSIC) {
                 gameUi.loadmusic(checkpoints.stage, previewFrames);
+                gameUi.readPortraits(); // for the countdown's portrait (GameUi.blendude), while the screen holds still
+                warmUpWhileLoading();
             }
             if (gameUi.fase == Phase.LOCKEDSTAGE) {
                 gameUi.cantgo(u[0]);
@@ -7127,7 +7341,9 @@ public class GameSparker extends Panel implements Runnable {
                 }
 
                 boolean aheadComparable = aheadValid && aheadTick == raceTicks && aheadKeys == latchedKeys;
+                long raceStart = System.nanoTime();
                 advanceRace();
+                traceRaceNanos = System.nanoTime() - raceStart;
                 if (aheadComparable) {
                     // same state, same keys: the race must land where the run-ahead tick did
                     profileAheadChecked++;
@@ -7498,7 +7714,12 @@ public class GameSparker extends Panel implements Runnable {
                     // the performance overlay: on the HUD layer over a race, on the picture elsewhere
                     PerfOverlay.draw(isScenePhase(gameUi.fase) ? hudG : rd, isScenePhase(gameUi.fase));
                 }
-                profileTickNanos += System.nanoTime() - now;
+                long tickEnded = System.nanoTime();
+                profileTickNanos += tickEnded - now;
+                if (FrameLog.tracingTicks()) {
+                    FrameLog.tick(tickStartNanos, now, traceRaceNanos, tickEnded);
+                }
+                traceRaceNanos = 0L;
             } // end of simulation tick
 
             /*
@@ -7694,6 +7915,7 @@ public class GameSparker extends Panel implements Runnable {
             if (unpaced) {
                 continue; // a verify or corpus run: next tick right away
             }
+            warmUpInSpareTime(nextTickNanos - WARM_UP_MARGIN_NANOS);
             long wakeAt = nextTickNanos;
             if (presenter != null && presenter.drawingRaces()) {
                 wakeAt = Math.min(wakeAt - System.nanoTime(), KEY_CHECK_NANOS) + System.nanoTime();

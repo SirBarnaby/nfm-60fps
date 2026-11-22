@@ -53,18 +53,18 @@ final class RaceSnapshot {
      * wasted) lives there, and a stunt finished in an undone tick must not
      * leave its caption behind.
      */
-    private static final Field[] UI_FIELDS = scalarFields(GameUi.class);
+    private static final FieldSlot[] UI_FIELDS = StateCopy.slots(scalarFields(GameUi.class));
 
     /** The HUD's own copy of who is wasted, and which engine loop it believes is playing. */
-    private static final Field[] UI_ARRAYS = {StateCopy.field(GameUi.class, "dested"),
-            StateCopy.field(GameUi.class, "pengs")};
+    private static final FieldSlot[] UI_ARRAYS = StateCopy.slots(new Field[] {StateCopy.field(GameUi.class, "dested"),
+            StateCopy.field(GameUi.class, "pengs")});
 
     /**
      * Medium's statics a race can change: all but the stage's mountains,
      * ground polygons, clouds and star positions, which are built when it
      * loads, and the presentation pass's own save buffers.
      */
-    private static final Field[] MEDIUM_FIELDS = staticFieldsExcept(Medium.class, "mrd", "nmv", "mtx", "mty",
+    private static final FieldSlot[] MEDIUM_FIELDS = staticFieldsExcept(Medium.class, "mrd", "nmv", "mtx", "mty",
             "mtz", "mtc", "ogpx", "ogpz", "cgpx", "cgpz", "pvr", "pmx", "pcv", "clx", "clz", "cmx", "clax", "clay",
             "claz", "clc", "stx", "stz", "bst", "savedFx", "savedLilo", "savedLightn", "savedNoelec", "savedCpflik",
             "savedElecr", "savedFlex", "savedLastmaf", "savedTwn", "savedStc");
@@ -165,8 +165,8 @@ final class RaceSnapshot {
         }
         copy.capture(v.checkpoints());
         copy.captureFields(v.ui(), UI_FIELDS);
-        for (Field f : UI_ARRAYS) {
-            copy.captureArray(StateCopy.get(f, v.ui()));
+        for (FieldSlot s : UI_ARRAYS) {
+            copy.captureArray(s.ref(v.ui()));
         }
         return Arrays.copyOf(v.cars(), sceneCount);
     }
@@ -208,18 +208,18 @@ final class RaceSnapshot {
         return out.toArray(new Field[0]);
     }
 
-    private static Field[] staticFieldsExcept(Class<?> type, String... names) {
+    private static FieldSlot[] staticFieldsExcept(Class<?> type, String... names) {
         Set<String> skip = new HashSet<>(Arrays.asList(names));
-        List<Field> out = new ArrayList<>();
-        for (Field f : StateCopy.staticFields(type)) {
-            if (!skip.remove(f.getName())) {
-                out.add(f);
+        List<FieldSlot> out = new ArrayList<>();
+        for (FieldSlot s : StateCopy.staticSlots(type)) {
+            if (!skip.remove(s.field.getName())) {
+                out.add(s);
             }
         }
         if (!skip.isEmpty()) {
             throw new IllegalStateException(type.getSimpleName() + " has no static field " + skip);
         }
-        return out.toArray(new Field[0]);
+        return out.toArray(new FieldSlot[0]);
     }
 
     private static <T> Set<T> union(Set<T> a, Set<T> b) {

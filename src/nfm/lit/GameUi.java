@@ -4577,6 +4577,24 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         }
     }
 
+    /**
+     * Where the countdown portrait can stand, in the picture's pixels: both
+     * places {@link #blendude} picks from, side by side. It tints the portrait
+     * with what this part of the picture shows, and reads nothing else.
+     */
+    static final Rectangle PORTRAIT_BEHIND = new Rectangle(217, 0, 331 + 122 - 217, 160);
+
+    /** The portrait's three pictures as {@link #blendude} reads them, and the images they were read from. */
+    private final int[][] dudePixels = new int[3][];
+    private final Image[] dudePixelsOf = new Image[3];
+
+    /**
+     * Tints the countdown portrait with the picture behind it, as the
+     * original did. The picture's pixels are read straight from its buffer
+     * and the portrait's once, and blended with whole numbers: the same
+     * colours as reading both through a {@link PixelGrabber} and blending
+     * through {@link Color}, which took the game thread some 25 ms.
+     */
     public void blendude(Image image) {
         if (!macn) {
             if (Math.random() > Math.random()) {
@@ -4585,53 +4603,40 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                 dudo = 331;
             }
             int background[] = new int[19520];
-            PixelGrabber grabber = new PixelGrabber(image, dudo, 0, 122, 160, background, 0, 122);
-            try {
-                grabber.grabPixels();
-            } catch (InterruptedException ignored) {
-                dudo = -1;
-            }
-            int j = 0;
-            do {
-                int dudePixels[] = new int[19520];
-                PixelGrabber dudeGrabber = new PixelGrabber(dude[j], 0, 10, 122, 160, dudePixels, 0, 122);
+            if (image instanceof BufferedImage picture && picture.getType() == BufferedImage.TYPE_INT_RGB) {
+                // the pixels as stored, 0xRRGGBB, in one go: the blend reads only red, green and blue
+                picture.getRaster().getDataElements(dudo, 0, 122, 160, background);
+            } else if (image instanceof BufferedImage picture) {
+                picture.getRGB(dudo, 0, 122, 160, background, 0, 122);
+            } else {
+                PixelGrabber grabber = new PixelGrabber(image, dudo, 0, 122, 160, background, 0, 122);
                 try {
-                    dudeGrabber.grabPixels();
+                    grabber.grabPixels();
                 } catch (InterruptedException ignored) {
                     dudo = -1;
                 }
+            }
+            int j = 0;
+            do {
+                int portrait[] = portraitPixels(j);
+                if (portrait == null) {
+                    dudo = -1;
+                }
                 if (dudo != -1) {
+                    int pixels[] = portrait.clone();
                     int k = 0;
                     do {
-                        if (dudePixels[k] != dudePixels[0]) {
-                            Color color = new Color(dudePixels[k]);
-                            Color behind = new Color(background[k]);
-                            int red = (color.getRed() + behind.getRed() * 3) / 4;
-                            if (red > 255) {
-                                red = 255;
-                            }
-                            if (red < 0) {
-                                red = 0;
-                            }
-                            int green = (color.getGreen() + behind.getGreen() * 3) / 4;
-                            if (green > 255) {
-                                green = 255;
-                            }
-                            if (green < 0) {
-                                green = 0;
-                            }
-                            int blue = (color.getBlue() + behind.getBlue() * 3) / 4;
-                            if (blue > 255) {
-                                blue = 255;
-                            }
-                            if (blue < 0) {
-                                blue = 0;
-                            }
-                            Color blended = new Color(red, green, blue);
-                            dudePixels[k] = blended.getRGB();
+                        if (pixels[k] != pixels[0]) {
+                            int color = pixels[k];
+                            int behind = background[k];
+                            // a quarter the portrait, three quarters the picture behind it, each 0 to 255
+                            int red = ((color >> 16 & 0xFF) + (behind >> 16 & 0xFF) * 3) / 4;
+                            int green = ((color >> 8 & 0xFF) + (behind >> 8 & 0xFF) * 3) / 4;
+                            int blue = ((color & 0xFF) + (behind & 0xFF) * 3) / 4;
+                            pixels[k] = 0xFF000000 | red << 16 | green << 8 | blue;
                         }
                     } while (++k < 19520);
-                    dudeb[j] = createImage(new MemoryImageSource(122, 160, dudePixels, 0, 122));
+                    dudeb[j] = createImage(new MemoryImageSource(122, 160, pixels, 0, 122));
                 }
             } while (++j < 3);
         } else {
@@ -4645,6 +4650,34 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                 dudeb[i] = dude[i];
             } while (++i < 3);
         }
+    }
+
+    /**
+     * Reads the portrait's pictures ahead of {@link #blendude}, which runs in
+     * a countdown tick: reading them the first time decodes them, some 20 ms.
+     */
+    void readPortraits() {
+        if (!macn) {
+            for (int j = 0; j < 3; j++) {
+                portraitPixels(j);
+            }
+        }
+    }
+
+    /** Portrait picture {@code j}'s 122 x 160 pixels from 10 down, read once; null if reading it was interrupted. */
+    private int[] portraitPixels(int j) {
+        if (dudePixelsOf[j] != dude[j]) {
+            int pixels[] = new int[19520];
+            PixelGrabber dudeGrabber = new PixelGrabber(dude[j], 0, 10, 122, 160, pixels, 0, 122);
+            try {
+                dudeGrabber.grabPixels();
+            } catch (InterruptedException ignored) {
+                return null;
+            }
+            dudePixels[j] = pixels;
+            dudePixelsOf[j] = dude[j];
+        }
+        return dudePixels[j];
     }
 
     public void musicomp(int stage, Control control) {

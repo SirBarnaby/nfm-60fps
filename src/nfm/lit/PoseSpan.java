@@ -17,9 +17,15 @@ final class PoseSpan {
     /**
      * How far past the end a frame may carry the motion on while the next
      * tick is still being worked out on the game thread, as a share of the
-     * tick (0.25 is 13 ms); past that it stays at the end.
+     * tick (0.5 is 26 ms); past that it stays at the end. The next tick and
+     * its run-ahead tick usually reach the presenter 10-25 ms after the tick
+     * was due, so at 0.25 (13 ms) frames stood still for a few ms at most
+     * ticks and then jumped. Hidden A/B runs of the same race: frames off
+     * even by over 4 ms went from 4.9-8.7% of the race to 2.9-3.3%, and the
+     * jump where the new tick takes over got smaller too (median 15 to 6
+     * world units), as carrying on lands nearer than standing still.
      */
-    static final float MAX_CARRY_ON = 0.25F;
+    static final float MAX_CARRY_ON = 0.5F;
 
     int slots;
     final int[] mode = new int[FramePose.SLOTS];

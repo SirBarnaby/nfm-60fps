@@ -24,27 +24,36 @@ import java.util.concurrent.ConcurrentHashMap;
  * so code that shares an array or an object sees the old state again too.
  * <p>
  * Final fields are never reassigned, only their contents restored.
+ * <p>
+ * Fields are read and written through {@link FieldSlot}s, never
+ * {@link Field#get}: the run-ahead tick captures and restores with this
+ * class every tick (see FieldSlot for what reflection cost there), and
+ * primitive values are kept unboxed.
  */
 final class StateCopy {
 
-    private static final Map<Class<?>, Field[]> INSTANCE_FIELDS = new ConcurrentHashMap<>();
-    private static final Map<Class<?>, Field[]> STATIC_FIELDS = new ConcurrentHashMap<>();
+    private static final Map<Class<?>, FieldSlot[]> INSTANCE_SLOTS = new ConcurrentHashMap<>();
+    private static final Map<Class<?>, FieldSlot[]> STATIC_SLOTS = new ConcurrentHashMap<>();
 
     private final Set<Class<?>> followed;
     /** Fields whose objects are kept by reference only, even if their class is followed. */
     private final Set<Field> shallow;
-    private final Map<Object, Object[]> objects = new IdentityHashMap<>();
-    private final List<Class<?>> classes = new ArrayList<>();
-    private final List<Object[]> statics = new ArrayList<>();
-    /** Some fields of objects that are not captured whole. */
-    private final List<Object> partialTargets = new ArrayList<>();
-    private final List<Field[]> partialFields = new ArrayList<>();
-    private final List<Object[]> partialValues = new ArrayList<>();
+    private final Map<Object, Saved> objects = new IdentityHashMap<>();
+    /** The statics captured, and some fields of objects that are not captured whole. */
+    private final List<Saved> parts = new ArrayList<>();
     private final List<ArrayCopy> arrays = new ArrayList<>();
 
     StateCopy(Set<Class<?>> followed, Set<Field> shallow) {
         this.followed = followed;
         this.shallow = shallow;
+    }
+
+    /**
+     * The values of some fields of {@code target} (null for statics): a
+     * primitive's raw bits in {@code bits}, a reference's saved form
+     * ({@link Ref}, {@link ArrayCopy} or a boxed value) in {@code refs}.
+     */
+    private record Saved(Object target, FieldSlot[] slots, long[] bits, Object[] refs) {
     }
 
     /** Captures an object and everything it reaches in the followed classes. */
@@ -55,34 +64,25 @@ final class StateCopy {
         if (root.getClass().isArray()) {
             throw new IllegalArgumentException("capture the object that holds the array");
         }
-        Field[] fields = instanceFields(root.getClass());
-        Object[] values = new Object[fields.length];
-        objects.put(root, values);
-        for (int i = 0; i < fields.length; i++) {
-            values[i] = copyOf(get(fields[i], root), !shallow.contains(fields[i]));
-        }
+        FieldSlot[] slots = instanceSlots(root.getClass());
+        Saved saved = new Saved(root, slots, new long[slots.length], new Object[slots.length]);
+        objects.put(root, saved);
+        save(saved, false);
     }
 
     /** Captures the static fields of a class, and what they reach. */
     void captureStatics(Class<?> type) {
-        Field[] fields = staticFields(type);
-        Object[] values = new Object[fields.length];
-        classes.add(type);
-        statics.add(values);
-        for (int i = 0; i < fields.length; i++) {
-            values[i] = copyOf(get(fields[i], null), !shallow.contains(fields[i]));
-        }
+        FieldSlot[] slots = staticSlots(type);
+        Saved saved = new Saved(null, slots, new long[slots.length], new Object[slots.length]);
+        parts.add(saved);
+        save(saved, false);
     }
 
-    /** Captures only the given fields of an object, and what they reach. */
-    void captureFields(Object target, Field[] fields) {
-        Object[] values = new Object[fields.length];
-        partialTargets.add(target);
-        partialFields.add(fields);
-        partialValues.add(values);
-        for (int i = 0; i < fields.length; i++) {
-            values[i] = copyOf(get(fields[i], target), true);
-        }
+    /** Captures only the given fields of an object (null for statics), and what they reach. */
+    void captureFields(Object target, FieldSlot[] slots) {
+        Saved saved = new Saved(target, slots, new long[slots.length], new Object[slots.length]);
+        parts.add(saved);
+        save(saved, true);
     }
 
     /** Captures an array's contents, and what they reach. */
@@ -90,31 +90,56 @@ final class StateCopy {
         arrays.add(new ArrayCopy(array, copyArray(array, true)));
     }
 
+    /** Saves what {@code saved}'s fields hold now; {@code followAll} follows even the shallow fields. */
+    private void save(Saved saved, boolean followAll) {
+        FieldSlot[] slots = saved.slots;
+        Object target = saved.target;
+        for (int i = 0; i < slots.length; i++) {
+            FieldSlot s = slots[i];
+            if (s.primitive()) {
+                saved.bits[i] = s.bits(target);
+            } else {
+                saved.refs[i] = copyOf(s.ref(target), followAll || !shallow.contains(s.field));
+            }
+        }
+    }
+
     /** Puts every captured value back. */
     void restore() {
         for (ArrayCopy a : arrays) {
             restoreArray(a);
         }
-        for (int p = 0; p < partialTargets.size(); p++) {
-            Field[] fields = partialFields.get(p);
-            Object[] values = partialValues.get(p);
-            for (int i = 0; i < fields.length; i++) {
-                put(fields[i], partialTargets.get(p), values[i]);
-            }
+        for (Saved saved : parts) {
+            put(saved);
         }
-        for (Map.Entry<Object, Object[]> e : objects.entrySet()) {
-            Object target = e.getKey();
-            Field[] fields = instanceFields(target.getClass());
-            Object[] values = e.getValue();
-            for (int i = 0; i < fields.length; i++) {
-                put(fields[i], target, values[i]);
-            }
+        for (Saved saved : objects.values()) {
+            put(saved);
         }
-        for (int c = 0; c < classes.size(); c++) {
-            Field[] fields = staticFields(classes.get(c));
-            Object[] values = statics.get(c);
-            for (int i = 0; i < fields.length; i++) {
-                put(fields[i], null, values[i]);
+    }
+
+    private static void put(Saved saved) {
+        FieldSlot[] slots = saved.slots;
+        Object target = saved.target;
+        for (int i = 0; i < slots.length; i++) {
+            FieldSlot s = slots[i];
+            if (s.primitive()) {
+                if (!s.isFinal) {
+                    s.putBits(target, saved.bits[i]);
+                }
+                continue;
+            }
+            Object value;
+            Object kept = saved.refs[i];
+            if (kept instanceof ArrayCopy copy) {
+                restoreArray(copy);
+                value = copy.array();
+            } else if (kept instanceof Ref ref) {
+                value = ref.value();
+            } else {
+                value = kept;
+            }
+            if (!s.isFinal) {
+                s.putRef(target, value);
             }
         }
     }
@@ -132,22 +157,23 @@ final class StateCopy {
                 out.merge(a.array().getClass().getSimpleName(), 1, Integer::sum);
             }
         }
-        for (int p = 0; p < partialTargets.size(); p++) {
-            compare(partialTargets.get(p), partialFields.get(p), partialValues.get(p), out);
+        for (Saved saved : parts) {
+            compare(saved, out);
         }
-        for (Map.Entry<Object, Object[]> e : objects.entrySet()) {
-            compare(e.getKey(), instanceFields(e.getKey().getClass()), e.getValue(), out);
-        }
-        for (int c = 0; c < classes.size(); c++) {
-            compare(null, staticFields(classes.get(c)), statics.get(c), out);
+        for (Saved saved : objects.values()) {
+            compare(saved, out);
         }
         return out;
     }
 
-    private static void compare(Object target, Field[] fields, Object[] values, Map<String, Integer> out) {
-        for (int i = 0; i < fields.length; i++) {
-            if (!same(get(fields[i], target), values[i])) {
-                out.merge(fields[i].getDeclaringClass().getSimpleName() + "." + fields[i].getName(), 1, Integer::sum);
+    private static void compare(Saved saved, Map<String, Integer> out) {
+        FieldSlot[] slots = saved.slots;
+        for (int i = 0; i < slots.length; i++) {
+            FieldSlot s = slots[i];
+            boolean same = s.primitive() ? s.bits(saved.target) == saved.bits[i]
+                    : same(s.ref(saved.target), saved.refs[i]);
+            if (!same) {
+                out.merge(s.name(), 1, Integer::sum);
             }
         }
     }
@@ -228,9 +254,10 @@ final class StateCopy {
             System.arraycopy(array, 0, copy, 0, n);
             return copy;
         }
+        Object[] from = (Object[]) array;
         Object[] copy = new Object[n];
         for (int i = 0; i < n; i++) {
-            Object element = Array.get(array, i);
+            Object element = from[i];
             if (element != null && element.getClass().isArray()) {
                 copy[i] = new ArrayCopy(element, copyArray(element, follow));
             } else {
@@ -262,34 +289,6 @@ final class StateCopy {
         }
     }
 
-    private static void put(Field field, Object target, Object saved) {
-        Object value;
-        if (saved instanceof ArrayCopy copy) {
-            restoreArray(copy);
-            value = copy.array();
-        } else if (saved instanceof Ref ref) {
-            value = ref.value();
-        } else {
-            value = saved;
-        }
-        if (Modifier.isFinal(field.getModifiers())) {
-            return;
-        }
-        try {
-            field.set(target, value);
-        } catch (IllegalAccessException ex) {
-            throw new IllegalStateException(field.toString(), ex);
-        }
-    }
-
-    static Object get(Field field, Object target) {
-        try {
-            return field.get(target);
-        } catch (IllegalAccessException ex) {
-            throw new IllegalStateException(field.toString(), ex);
-        }
-    }
-
     private static boolean isBoxed(Class<?> type) {
         return type == Integer.class || type == Float.class || type == Boolean.class || type == Long.class
                 || type == Double.class || type == Short.class || type == Byte.class || type == Character.class;
@@ -297,13 +296,22 @@ final class StateCopy {
 
     /* ---------------------------------------------------------------- fields */
 
-    private static Field[] instanceFields(Class<?> type) {
-        return INSTANCE_FIELDS.computeIfAbsent(type, t -> fields(t, false));
+    private static FieldSlot[] instanceSlots(Class<?> type) {
+        return INSTANCE_SLOTS.computeIfAbsent(type, t -> slots(fields(t, false)));
     }
 
     /** The static fields a capture of {@code type} covers. */
-    static Field[] staticFields(Class<?> type) {
-        return STATIC_FIELDS.computeIfAbsent(type, t -> fields(t, true));
+    static FieldSlot[] staticSlots(Class<?> type) {
+        return STATIC_SLOTS.computeIfAbsent(type, t -> slots(fields(t, true)));
+    }
+
+    /** Slots for the given fields, for {@link #captureFields}. */
+    static FieldSlot[] slots(Field[] fields) {
+        FieldSlot[] out = new FieldSlot[fields.length];
+        for (int i = 0; i < fields.length; i++) {
+            out[i] = new FieldSlot(fields[i]);
+        }
+        return out;
     }
 
     private static Field[] fields(Class<?> type, boolean wantStatic) {

@@ -371,6 +371,24 @@ final class RaceSession {
         pendingSpectate = host.ui().spectate;
     }
 
+    /**
+     * True under the rollback self-test ({@code -Dnfm.verify.rollback}): the
+     * game then checks that each tick it plays ahead to warm up before a race
+     * left the race exactly as it found it, and reports what it did not with
+     * {@link #warmUpLeftovers}.
+     */
+    static boolean checksWarmUp() {
+        return ROLLBACK_EVERY > 0;
+    }
+
+    /** A warm-up tick before the race left these values changed (see checksWarmUp): the race fails. */
+    void warmUpLeftovers(Map<String, Integer> left) {
+        if (verifier != null && !left.isEmpty() && verifier.warmUpProblem == null) {
+            verifier.warmUpProblem = "playing ahead to warm up before the race did not put everything back: "
+                    + Verifier.describeLeftovers(left);
+        }
+    }
+
     /** The countdown begins: the race proper starts from here. */
     void countdownStarting() {
         if (verifier != null) {
@@ -381,9 +399,9 @@ final class RaceSession {
             return;
         }
         RaceState.View race = host.race();
-        log.layout = RaceState.layout(race);
         log.startState = RaceState.startState(race);
         log.startNames = RaceState.startStateNames(race);
+        log.layout = RaceState.layout(race, log.startNames); // the names once: making them is most of the work here
         log.raceRandom = host.race().world().random.exportState();
         log.trackShape = RaceState.trackShape(race.track());
         log.trackLeftovers = RaceState.trackLeftovers(race);
@@ -687,6 +705,8 @@ final class RaceSession {
         /** Track values left by earlier stages that differed from the recording and were put back. */
         private int trackDifferences;
         private String carsProblem;
+        /** What the warm-up before the race left changed, under the rollback self-test (see warmUpLeftovers). */
+        private String warmUpProblem;
         /** Golden screenshots to check while the race plays, or null. */
         private final GoldenFrames golden;
         private final List<String> goldenReport = new ArrayList<>();
@@ -773,6 +793,7 @@ final class RaceSession {
             startDifferenceNames.clear();
             trackDifferences = 0;
             carsProblem = null;
+            warmUpProblem = null;
             goldenReport.clear();
             rewindReference = null;
             aheadLeft = 0;
@@ -834,6 +855,10 @@ final class RaceSession {
             }
             if (carsProblem != null) {
                 fail(carsProblem);
+                return;
+            }
+            if (warmUpProblem != null) {
+                fail(warmUpProblem);
                 return;
             }
             RaceState.View race = host.race();

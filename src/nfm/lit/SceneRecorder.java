@@ -3,6 +3,7 @@ package nfm.lit;
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.Image;
+import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.Shape;
 import java.awt.geom.AffineTransform;
@@ -120,12 +121,14 @@ final class SceneRecorder extends NullGraphics {
         int size = list.size();
         int[] xs = new int[16];
         int[] ys = new int[16];
+        Rectangle area = reachable(g);
         for (int i = 0; i < size;) {
             switch (data[i]) {
                 case SceneList.PANE -> {
                     g.setTransform(base);
                     g.translate(data[i + 1], data[i + 2]);
                     g.setClip(0, 0, data[i + 3], data[i + 4]);
+                    area = reachable(g);
                     i += 5;
                 }
                 case SceneList.SET_COLOR -> {
@@ -152,7 +155,9 @@ final class SceneRecorder extends NullGraphics {
                     }
                     System.arraycopy(data, i + 2, xs, 0, n);
                     System.arraycopy(data, i + 2 + n, ys, 0, n);
-                    if (op == SceneList.FILL_POLYGON || op == SceneList.FILL_POLYGON_EXACT) {
+                    if (area != null && !touches(xs, ys, n, area)) {
+                        // nothing of it could land inside the clip: Java 2D would only find that out slowly
+                    } else if (op == SceneList.FILL_POLYGON || op == SceneList.FILL_POLYGON_EXACT) {
                         g.fillPolygon(xs, ys, n);
                     } else {
                         g.drawPolygon(xs, ys, n);
@@ -164,6 +169,39 @@ final class SceneRecorder extends NullGraphics {
                 default -> throw new IllegalStateException("bad scene command " + data[i]);
             }
         }
+    }
+
+    /**
+     * The part of {@code g}'s drawing space a polygon can still change under
+     * its clip, widened by the pixels an antialiased edge or an outline
+     * reaches past the corners; null with no clip (or a transform that
+     * squashes it), when every polygon is drawn.
+     */
+    private static Rectangle reachable(Graphics2D g) {
+        Rectangle clip = g.getClipBounds();
+        AffineTransform t = g.getTransform();
+        double scale = Math.min(Math.hypot(t.getScaleX(), t.getShearY()), Math.hypot(t.getShearX(), t.getScaleY()));
+        if (clip == null || scale < 0.01) {
+            return null;
+        }
+        int margin = (int) Math.ceil(3 / scale) + 1;
+        clip.grow(margin, margin);
+        return clip;
+    }
+
+    /** Whether the polygon's corners' bounds meet {@code area}. */
+    private static boolean touches(int[] xs, int[] ys, int n, Rectangle area) {
+        int minX = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE;
+        int minY = Integer.MAX_VALUE;
+        int maxY = Integer.MIN_VALUE;
+        for (int k = 0; k < n; k++) {
+            minX = Math.min(minX, xs[k]);
+            maxX = Math.max(maxX, xs[k]);
+            minY = Math.min(minY, ys[k]);
+            maxY = Math.max(maxY, ys[k]);
+        }
+        return maxX >= area.x && minX <= area.x + area.width && maxY >= area.y && minY <= area.y + area.height;
     }
 
     /* ---------------------------------------------------- what is recorded */

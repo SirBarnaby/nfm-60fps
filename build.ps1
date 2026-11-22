@@ -98,10 +98,14 @@ $buildInfo = [ordered]@{
 # madness64.ini gives it a soft limit of 512 MB, which it collects to keep
 # under, concurrently, still with no pauses. (Here the JVM's own sizing would
 # override it.) Memory it no longer needs goes back to Windows after 30 s
-# instead of 5 minutes.
+# instead of 5 minutes. The original calls System.gc() on its way into a race
+# (on Enter at the stage, and loading the music): with ZGC each call holds the
+# game thread until a whole collection is done, 60-160 ms, the last of them
+# right before the countdown's first tick. ZGC collects on its own anyway, so
+# -XX:+DisableExplicitGC lets those calls return at once.
 $jlinkArgs = @('--add-modules', 'java.base,java.desktop,java.logging', '--strip-debug', '--no-header-files',
     '--no-man-pages',
-    '--add-options=-XX:+UseZGC -XX:+UseCompactObjectHeaders -XX:-DontCompileHugeMethods -XX:PerMethodTrapLimit=0 -XX:PerBytecodeTrapLimit=0 -XX:ZUncommitDelay=30')
+    '--add-options=-XX:+UseZGC -XX:+UseCompactObjectHeaders -XX:-DontCompileHugeMethods -XX:PerMethodTrapLimit=0 -XX:PerBytecodeTrapLimit=0 -XX:ZUncommitDelay=30 -XX:+DisableExplicitGC')
 # Rebuilt only when the JDK or these arguments change: a runtime just written
 # is often held by the antivirus for a while, so it cannot be deleted at once.
 $stampFile = 'runtime\nfm-runtime.txt'

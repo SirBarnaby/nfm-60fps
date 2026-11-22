@@ -67,17 +67,22 @@ final class RaceState {
      */
     private static final List<String> HUD_FIELDS = List.of("aflk");
 
-    private static final Field[] MADNESS = fieldsOf(Madness.class, Set.of(), true);
-    private static final Field[] STAT = fieldsOf(Stat.class, Set.of(), true);
-    private static final Field[] CONTROL = fieldsOf(Control.class, CONTROL_SKIP, true);
-    private static final Field[] CHECKPOINTS = fieldsOf(CheckPoints.class, Set.of(), true);
+    /*
+     * Read and written through FieldSlot, not Field.get: a recorded race reads
+     * every one of these every tick, and Java rebuilds each reflected field's
+     * accessor after 127 uses, all of them in the same tick (see FieldSlot).
+     */
+    private static final FieldSlot[] MADNESS = fieldsOf(Madness.class, Set.of(), true);
+    private static final FieldSlot[] STAT = fieldsOf(Stat.class, Set.of(), true);
+    private static final FieldSlot[] CONTROL = fieldsOf(Control.class, CONTROL_SKIP, true);
+    private static final FieldSlot[] CHECKPOINTS = fieldsOf(CheckPoints.class, Set.of(), true);
     /** Only the scalars: the replay buffers are megabytes and the race never reads them. */
-    private static final Field[] RECORD = fieldsOf(Record.class, Set.of(), false);
-    private static final Field[] CAR = named(ContO.class, CAR_FIELDS);
-    private static final Field[] CAMERA = named(Medium.class, CAMERA_FIELDS);
-    private static final Field[] FLOW = named(GameUi.class, FLOW_FIELDS);
-    private static final Field[] SOUND = named(GameUi.class, SOUND_FIELDS);
-    private static final Field[] HUD = named(GameUi.class, HUD_FIELDS);
+    private static final FieldSlot[] RECORD = fieldsOf(Record.class, Set.of(), false);
+    private static final FieldSlot[] CAR = named(ContO.class, CAR_FIELDS);
+    private static final FieldSlot[] CAMERA = named(Medium.class, CAMERA_FIELDS);
+    private static final FieldSlot[] FLOW = named(GameUi.class, FLOW_FIELDS);
+    private static final FieldSlot[] SOUND = named(GameUi.class, SOUND_FIELDS);
+    private static final FieldSlot[] HUD = named(GameUi.class, HUD_FIELDS);
 
     /** The live objects of one race. */
     record View(World world, Madness[] racers, Control[] drivers, ContO[] cars, CheckPoints checkpoints,
@@ -85,7 +90,7 @@ final class RaceState {
     }
 
     /** One named slice of the state: some fields of one object. */
-    private record Group(String name, Object target, Field[] fields) {
+    private record Group(String name, Object target, FieldSlot[] fields) {
     }
 
     /** Receives every value in a fixed order. */
@@ -138,6 +143,11 @@ final class RaceState {
     /** Walks every value: the restorable state, then the random streams' fingerprints. */
     static void visit(View v, Sink sink) {
         visitRestorable(v, sink);
+        visitRandom(v, sink);
+    }
+
+    /** The random streams' fingerprints, in a group of their own. */
+    private static void visitRandom(View v, Sink sink) {
         sink.group("random");
         long r = v.world().random.fingerprint();
         long cam = Medium.cameraRandom.fingerprint();
@@ -200,8 +210,20 @@ final class RaceState {
      * falls back to the canonical state.
      */
     static int layout(View v) {
+        return layout(v, startStateNames(v));
+    }
+
+    /**
+     * {@link #layout(View)} from the start state's names, already made
+     * ({@link #startStateNames}): the names of every value, which
+     * {@link #names} lists, are those followed by the random streams'.
+     */
+    static int layout(View v, List<String> startNames) {
         int h = 17;
-        for (String name : names(v)) {
+        for (String name : startNames) {
+            h = h * 31 + name.hashCode();
+        }
+        for (String name : collect(v, RaceState::visitRandom, true).names()) {
             h = h * 31 + name.hashCode();
         }
         return h;
@@ -281,11 +303,7 @@ final class RaceState {
 
     /** GameUi keeps "the race is over and the result is on screen" private. */
     private static boolean raceOver(GameUi ui) {
-        try {
-            return FLOW[FLOW_FIELDS.indexOf("holdit")].getBoolean(ui);
-        } catch (IllegalAccessException ex) {
-            throw new IllegalStateException(ex);
-        }
+        return FLOW[FLOW_FIELDS.indexOf("holdit")].bits(ui) != 0L;
     }
 
     private static void put(Sink sink, String name, int value) {
@@ -455,7 +473,7 @@ final class RaceState {
         return differed;
     }
 
-    private static Field[] fieldsOf(Class<?> type, Set<String> skip, boolean arrays) {
+    private static FieldSlot[] fieldsOf(Class<?> type, Set<String> skip, boolean arrays) {
         List<Field> out = new ArrayList<>();
         for (Field f : type.getDeclaredFields()) {
             Class<?> t = f.getType();
@@ -463,14 +481,13 @@ final class RaceState {
                     || (!arrays && t.isArray())) {
                 continue;
             }
-            f.setAccessible(true);
             out.add(f);
         }
         out.sort(Comparator.comparing(Field::getName));
-        return out.toArray(new Field[0]);
+        return StateCopy.slots(out.toArray(new Field[0]));
     }
 
-    private static Field[] named(Class<?> type, List<String> names) {
+    private static FieldSlot[] named(Class<?> type, List<String> names) {
         Field[] out = new Field[names.size()];
         for (int i = 0; i < out.length; i++) {
             try {
@@ -478,9 +495,8 @@ final class RaceState {
             } catch (NoSuchFieldException ex) {
                 throw new IllegalStateException(type.getSimpleName() + "." + names.get(i) + " is gone", ex);
             }
-            out[i].setAccessible(true);
         }
-        return out;
+        return StateCopy.slots(out);
     }
 
     private static boolean isPrimitiveData(Class<?> t) {
@@ -491,43 +507,19 @@ final class RaceState {
     }
 
     private static void visit(Group g, Sink sink) {
-        try {
-            for (Field f : g.fields()) {
-                if (f.getType().isArray()) {
-                    visitArray(g.name(), f, f.get(g.target()), sink);
-                } else {
-                    sink.value(g.name(), f, -1, scalar(f, g.target()));
-                }
+        for (FieldSlot f : g.fields()) {
+            if (f.primitive()) {
+                sink.value(g.name(), f.field, -1, scalar(f, g.target()));
+            } else {
+                visitArray(g.name(), f.field, f.ref(g.target()), sink);
             }
-        } catch (IllegalAccessException ex) {
-            throw new IllegalStateException(ex);
         }
     }
 
-    private static int scalar(Field f, Object target) throws IllegalAccessException {
-        Class<?> t = f.getType();
-        if (t == int.class) {
-            return f.getInt(target);
-        }
-        if (t == float.class) {
-            return Float.floatToRawIntBits(f.getFloat(target));
-        }
-        if (t == boolean.class) {
-            return f.getBoolean(target) ? 1 : 0;
-        }
-        if (t == long.class) {
-            return fold(f.getLong(target));
-        }
-        if (t == double.class) {
-            return fold(Double.doubleToRawLongBits(f.getDouble(target)));
-        }
-        if (t == byte.class) {
-            return f.getByte(target);
-        }
-        if (t == short.class) {
-            return f.getShort(target);
-        }
-        return f.getChar(target);
+    /** A value as one int: raw bits for floats, both halves folded for longs and doubles, chars unsigned. */
+    private static int scalar(FieldSlot f, Object target) {
+        long bits = f.bits(target);
+        return f.kind == 'J' || f.kind == 'D' ? fold(bits) : (int) bits;
     }
 
     /** Both halves of a 64-bit value in one int (raw bits for doubles, so NaNs keep theirs). */
@@ -588,39 +580,21 @@ final class RaceState {
     }
 
     private static int restore(Group g, int[] values, int at) {
-        try {
-            for (Field f : g.fields()) {
-                if (f.getType().isArray()) {
-                    at = restoreArray(f.get(g.target()), values, at);
-                } else {
-                    restoreScalar(f, g.target(), values[at++]);
-                }
+        for (FieldSlot f : g.fields()) {
+            if (f.primitive()) {
+                restoreScalar(f, g.target(), values[at++]);
+            } else {
+                at = restoreArray(f.ref(g.target()), values, at);
             }
-        } catch (IllegalAccessException ex) {
-            throw new IllegalStateException(ex);
         }
         return at;
     }
 
-    private static void restoreScalar(Field f, Object target, int bits) throws IllegalAccessException {
-        if (Modifier.isFinal(f.getModifiers())) {
-            return;
-        }
-        Class<?> t = f.getType();
-        if (t == int.class) {
-            f.setInt(target, bits);
-        } else if (t == float.class) {
-            f.setFloat(target, Float.intBitsToFloat(bits));
-        } else if (t == boolean.class) {
-            f.setBoolean(target, bits != 0);
-        } else if (t == byte.class) {
-            f.setByte(target, (byte) bits);
-        } else if (t == short.class) {
-            f.setShort(target, (short) bits);
-        } else if (t == char.class) {
-            f.setChar(target, (char) bits);
-        }
+    private static void restoreScalar(FieldSlot f, Object target, int bits) {
         // long and double values are stored folded and stay as they are; the race has none
+        if (!f.isFinal && f.kind != 'J' && f.kind != 'D') {
+            f.putBits(target, bits); // narrowed to the field's type, as the casts to it did
+        }
     }
 
     private static int restoreArray(Object array, int[] values, int at) {

@@ -72,6 +72,25 @@ final class FrameLog {
     });
     /** -Dnfm.framelog.csv=true: every race part's frames, one line each, next to frames.json (for a closer look). */
     private static final boolean CSV = Boolean.getBoolean("nfm.framelog.csv");
+    /*
+     * With CSV, every tick of a part too, in ticks-NN-<part>.csv: when it was
+     * due and began, how long the race's own step and the whole tick took,
+     * then (for a race the presenter draws) the run-ahead tick, when the
+     * frames' poses went to the presenter, recording the kept scene, making it
+     * ready for the card and when the hand-over was done. A race that stands
+     * still while frames come is the game thread late with these.
+     */
+    private static final int TICK_FIELDS = 9;
+    private static final int KEPT_TICKS = 1 << 14;
+    private static final int T_DUE = 0;
+    private static final int T_BEGAN = 1;
+    private static final int T_RACE = 2;
+    private static final int T_ENDED = 3;
+    private static final int T_AHEAD = 4;
+    private static final int T_HANDED = 5;
+    private static final int T_KEPT = 6;
+    private static final int T_CARD = 7;
+    private static final int T_DONE = 8;
 
     private static volatile boolean on;
     private static boolean keepParts;
@@ -118,10 +137,24 @@ final class FrameLog {
         long[] motionChosen = new long[1024];
         int motionKept;
         long motionFrames;
+        /* with CSV: each tick's times on the game thread, TICK_FIELDS a tick (see {@link #tick}) */
+        long[] ticks = new long[0];
+        int tickCount;
 
         Part(String name, long startedAt) {
             this.name = name;
             this.startedAt = startedAt;
+        }
+
+        /** Room for one more tick's row; false once {@link #KEPT_TICKS} are kept. */
+        boolean roomForTick() {
+            if (tickCount >= KEPT_TICKS) {
+                return false;
+            }
+            if ((tickCount + 1) * TICK_FIELDS > ticks.length) {
+                ticks = Arrays.copyOf(ticks, Math.max(64, tickCount * 2) * TICK_FIELDS);
+            }
+            return true;
         }
 
         void add(long gap, long end) {
@@ -226,6 +259,10 @@ final class FrameLog {
             lastShown = 0L; // the gap across the change is the change's, not a frame's
             afterScreenshot = false;
         }
+        if (CSV && name != null) {
+            // the CSVs count from here: the wall clock lines them up with Java's own logs (-Xlog with time)
+            System.out.println("[framelog] " + name + " began at " + java.time.OffsetDateTime.now());
+        }
         // summed up outside the lock, so frames go on being shown meanwhile: nothing notes into it any more
         if (ended == null) {
             return;
@@ -311,6 +348,61 @@ final class FrameLog {
         }
     }
 
+    /** True if ticks are kept for the CSV: {@link #tick} and {@link #handedOver} only cost anything then. */
+    static boolean tracingTicks() {
+        return CSV && on;
+    }
+
+    /**
+     * Game thread, with {@link #tracingTicks}: a tick due at {@code due}
+     * began at {@code began}, its race step took {@code raceNanos} (0 for
+     * none) and it ended at {@code ended}.
+     */
+    static void tick(long due, long began, long raceNanos, long ended) {
+        synchronized (LOCK) {
+            Part p = current;
+            if (p == null || !p.roomForTick()) {
+                return;
+            }
+            int at = p.tickCount++ * TICK_FIELDS;
+            Arrays.fill(p.ticks, at, at + TICK_FIELDS, 0L);
+            p.ticks[at + T_DUE] = due;
+            p.ticks[at + T_BEGAN] = began;
+            p.ticks[at + T_RACE] = raceNanos;
+            p.ticks[at + T_ENDED] = ended;
+        }
+    }
+
+    /**
+     * Game thread, with {@link #tracingTicks}: the presenter was handed the
+     * frames to come, after the last {@link #tick} (or, with no tick since,
+     * after the keys changed): the run-ahead tick took {@code aheadNanos},
+     * the poses went over at {@code handed}, recording the kept scene took
+     * {@code keptNanos}, making it ready for the card {@code cardNanos}, and
+     * it was all done at {@code done}.
+     */
+    static void handedOver(long aheadNanos, long handed, long keptNanos, long cardNanos, long done) {
+        synchronized (LOCK) {
+            Part p = current;
+            if (p == null) {
+                return;
+            }
+            int last = (p.tickCount - 1) * TICK_FIELDS;
+            if (p.tickCount == 0 || p.ticks[last + T_DONE] != 0L) {
+                if (!p.roomForTick()) {
+                    return;
+                }
+                last = p.tickCount++ * TICK_FIELDS; // a run-ahead for changed keys, no tick of its own
+                Arrays.fill(p.ticks, last, last + TICK_FIELDS, 0L);
+            }
+            p.ticks[last + T_AHEAD] = aheadNanos;
+            p.ticks[last + T_HANDED] = handed;
+            p.ticks[last + T_KEPT] = keptNanos;
+            p.ticks[last + T_CARD] = cardNanos;
+            p.ticks[last + T_DONE] = done;
+        }
+    }
+
     /** A frame the card held up: for how long, when (since the part started) and what changed on the card before. */
     private record Hold(long nanos, long at, String after) {
     }
@@ -357,10 +449,12 @@ final class FrameLog {
                 Part p = parts.get(i);
                 Motion motion = new Motion(p);
                 out.append(i == 0 ? "\n" : ",\n").append(describe(new Times(p), motion));
+                String slug = String.format(Locale.ROOT, "%02d-%s.csv", i, p.name.replaceAll("[^A-Za-z0-9]+", "-"));
                 if (CSV && motion.frames > 0) {
-                    writeCsv(new File(file.getAbsoluteFile().getParentFile(),
-                            String.format(Locale.ROOT, "frames-%02d-%s.csv", i, p.name.replaceAll("[^A-Za-z0-9]+", "-"))),
-                            p, motion);
+                    writeCsv(new File(file.getAbsoluteFile().getParentFile(), "frames-" + slug), p, motion);
+                }
+                if (CSV && p.tickCount > 0 && motion.frames > 0) {
+                    writeTicks(new File(file.getAbsoluteFile().getParentFile(), "ticks-" + slug), p);
                 }
             }
             json = out.append("\n  ]\n}\n").toString();
@@ -386,6 +480,43 @@ final class FrameLog {
         } catch (IOException ex) {
             System.out.println("[framelog] cannot write " + file + ": " + ex);
         }
+    }
+
+    /**
+     * A part's ticks, one line each (see {@link #tick}): when due and how late
+     * it began, in ms from the part's start; how long the race's step and the
+     * whole tick took; the run-ahead tick; how long after it was due the
+     * presenter had the poses; recording the kept scene; making it ready for
+     * the card; how long after it was due the hand-over was done. Blank where
+     * the step did not happen.
+     */
+    private static void writeTicks(File file, Part p) {
+        StringBuilder s = new StringBuilder("due_ms,late_ms,race_ms,tick_ms,ahead_ms,handed_ms,kept_ms,card_ms,done_ms\n");
+        for (int k = 0; k < p.tickCount; k++) {
+            int at = k * TICK_FIELDS;
+            long[] t = p.ticks;
+            long due = t[at + T_DUE];
+            boolean ticked = due != 0L;
+            boolean handed = t[at + T_DONE] != 0L;
+            s.append(ticked ? ms((due - p.startedAt) / 1e6D) : "").append(',')
+                    .append(ticked ? ms((t[at + T_BEGAN] - due) / 1e6D) : "").append(',')
+                    .append(ticked && t[at + T_RACE] != 0L ? ms(t[at + T_RACE] / 1e6D) : "").append(',')
+                    .append(ticked ? ms((t[at + T_ENDED] - t[at + T_BEGAN]) / 1e6D) : "").append(',')
+                    .append(handed && t[at + T_AHEAD] != 0L ? ms(t[at + T_AHEAD] / 1e6D) : "").append(',')
+                    .append(handed && ticked ? ms((t[at + T_HANDED] - due) / 1e6D) : "").append(',')
+                    .append(handed ? ms(t[at + T_KEPT] / 1e6D) : "").append(',')
+                    .append(handed && t[at + T_CARD] != 0L ? ms(t[at + T_CARD] / 1e6D) : "").append(',')
+                    .append(handed && ticked ? ms((t[at + T_DONE] - due) / 1e6D) : "").append('\n');
+        }
+        try {
+            Files.writeString(file.toPath(), s.toString(), StandardCharsets.UTF_8);
+        } catch (IOException ex) {
+            System.out.println("[framelog] cannot write " + file + ": " + ex);
+        }
+    }
+
+    private static String ms(double value) {
+        return String.format(Locale.ROOT, "%.3f", value);
     }
 
     /**
