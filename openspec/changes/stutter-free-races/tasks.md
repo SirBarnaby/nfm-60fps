@@ -34,7 +34,7 @@
 - [ ] 5.4 `test\perf.ps1` on a quiet PC with an interleaved A/B against afa93ec (baseline left as it is; at 17:20 the gate ran beside another game's test runs, 74% processor: 92-181 fps, not judged); `test\spec-check.ps1`: 11 passed
 - [ ] 5.5 `test\live.ps1` (no limit and 120 fps compared, supersampling off) and `test\live.ps1 -Split`, on a quiet PC, until no flag is left
 - [ ] 5.6 `test\blind-review.ps1 -Base afa93ec`
-- [ ] 5.7 Cleanup pass; the lessons in `docs\solutions\`
+- [x] 5.7 Cleanup pass (four reviews: reuse, simpler code, wasted work, depth; applied where the behaviour stays, 13c3f7a): the card's bands built 8% quicker with the same bytes (every scene built both ways in the same hidden runs: 1,000+ for the card, 3,800 on the processor); again `build.ps1`, `verify-races.ps1` 20 matched and golden frames 95 same, `-Rollback 50` 20 matched with every rewind put back, `spec-check.ps1` 11 passed. The lessons in `docs\solutions\stutter-at-race-start.md`
 
 ## 6. Workflow follow-up
 
