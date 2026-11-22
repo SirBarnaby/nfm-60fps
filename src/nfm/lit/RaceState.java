@@ -488,15 +488,7 @@ final class RaceState {
     }
 
     private static FieldSlot[] named(Class<?> type, List<String> names) {
-        Field[] out = new Field[names.size()];
-        for (int i = 0; i < out.length; i++) {
-            try {
-                out[i] = type.getDeclaredField(names.get(i));
-            } catch (NoSuchFieldException ex) {
-                throw new IllegalStateException(type.getSimpleName() + "." + names.get(i) + " is gone", ex);
-            }
-        }
-        return StateCopy.slots(out);
+        return StateCopy.slots(type, names.toArray(new String[0]));
     }
 
     private static boolean isPrimitiveData(Class<?> t) {
@@ -592,7 +584,7 @@ final class RaceState {
 
     private static void restoreScalar(FieldSlot f, Object target, int bits) {
         // long and double values are stored folded and stay as they are; the race has none
-        if (!f.isFinal && f.kind != 'J' && f.kind != 'D') {
+        if (f.kind != 'J' && f.kind != 'D') {
             f.putBits(target, bits); // narrowed to the field's type, as the casts to it did
         }
     }

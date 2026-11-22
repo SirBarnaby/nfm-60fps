@@ -185,8 +185,6 @@ public class GameSparker extends Panel implements Runnable {
      * one tick ago, which takes a tick (53 ms) off the input lag.
      */
     private static volatile boolean runAhead = true;
-    /** For the frame log's tick CSV (FrameLog.tracingTicks): how long this tick's race step took, 0 for none. */
-    private long traceRaceNanos;
     private static volatile boolean runAheadChanged;
 
     private Image hudImage;
@@ -269,7 +267,12 @@ public class GameSparker extends Panel implements Runnable {
     private int warmUpReportedAt;
     /** The warm-up drew this stage's scene for the card once. */
     private boolean sceneWarmedUp;
-    /** That scene, until a picture is shown with it drawn behind (see {@link #showOnGpu}). Game thread. */
+    /**
+     * That scene, until a picture is shown with it drawn behind (see
+     * {@link #showOnGpu}). Game thread. Borrowed from {@link Presenter#free}:
+     * the presenter neither draws nor waits on it, and {@link #handOverKept},
+     * the only other taker of a free scene, gives it up first.
+     */
     private Presenter.Kept warmUpKept;
 
     /** Real back-buffer graphics while a tick draws its overlays into the HUD layer. */
@@ -2716,7 +2719,7 @@ public class GameSparker extends Panel implements Runnable {
                  * 45 ms or more, 1.7 s before the start.
                  */
                 syncBackBuffer(GameUi.PORTRAIT_BEHIND);
-                ui.blendude(pictureAtGameSize());
+                ui.blendude((BufferedImage) pictureAtGameSize());
             }
         } else {
             if (GameFacts.numberOfPlayers < 5)
@@ -3717,8 +3720,7 @@ public class GameSparker extends Panel implements Runnable {
         // the HUD measures its text, so it needs real font metrics: a copy of its layer clipped to nothing
         Graphics2D blind = (Graphics2D) hud.create();
         blind.setClip(0, 0, 0, 0);
-        aheadSnapshot.capture(new RaceState.View(world, racers, u, sceneObjects, raceCheckpoints, raceRecord, ui,
-                raceTrackers, GameFacts.numberOfPlayers), nob);
+        aheadSnapshot.capture(raceView(), nob);
         SoundManager.setDiscarding(true);
         hudG = blind;
         try {
@@ -3818,10 +3820,16 @@ public class GameSparker extends Panel implements Runnable {
         return !SplitRace.on && (ui.fase == Phase.PREGAME || ui.fase == Phase.INGAME && ui.starcnt > 0);
     }
 
+    /** The race as it stands, for the snapshots and the recorder. */
+    private RaceState.View raceView() {
+        return new RaceState.View(world, racers, u, sceneObjects, raceCheckpoints, raceRecord, ui, raceTrackers,
+                GameFacts.numberOfPlayers);
+    }
+
     /** One warm-up tick, checked under the rollback self-test; logs the warm-up once it is done. */
     private void playWarmUpTick() {
         RaceSnapshot before = session != null && RaceSession.checksWarmUp()
-                ? RaceSnapshot.captureComplete(new SessionHost().race(), nob) : null;
+                ? RaceSnapshot.captureComplete(raceView(), nob) : null;
         long start = System.nanoTime();
         synchronized (inputLock) {
             playAndPutBack(warmUpTicksPlayed);
@@ -6906,6 +6914,7 @@ public class GameSparker extends Panel implements Runnable {
              */
             while (ticksThisFrame < MAX_TICKS_PER_FRAME && (unpaced || System.nanoTime() - nextTickNanos >= 0L)) {
                 long now = System.nanoTime();
+                long raceNanos = 0L; // for the frame log's tick CSV: how long this tick's race step took, 0 for none
                 if (now - nextTickNanos > MAX_TICK_LAG_NS) {
                     /*
                      * Debugger stop, window drag or a long GC pause. Drop the
@@ -7343,7 +7352,7 @@ public class GameSparker extends Panel implements Runnable {
                 boolean aheadComparable = aheadValid && aheadTick == raceTicks && aheadKeys == latchedKeys;
                 long raceStart = System.nanoTime();
                 advanceRace();
-                traceRaceNanos = System.nanoTime() - raceStart;
+                raceNanos = System.nanoTime() - raceStart;
                 if (aheadComparable) {
                     // same state, same keys: the race must land where the run-ahead tick did
                     profileAheadChecked++;
@@ -7717,9 +7726,8 @@ public class GameSparker extends Panel implements Runnable {
                 long tickEnded = System.nanoTime();
                 profileTickNanos += tickEnded - now;
                 if (FrameLog.tracingTicks()) {
-                    FrameLog.tick(tickStartNanos, now, traceRaceNanos, tickEnded);
+                    FrameLog.tick(tickStartNanos, now, raceNanos, tickEnded);
                 }
-                traceRaceNanos = 0L;
             } // end of simulation tick
 
             /*
@@ -8113,8 +8121,7 @@ public class GameSparker extends Panel implements Runnable {
 
         @Override
         public RaceState.View race() {
-            return new RaceState.View(world, racers, u, sceneObjects, raceCheckpoints, raceRecord, ui,
-                    raceTrackers, GameFacts.numberOfPlayers);
+            return raceView();
         }
 
         @Override

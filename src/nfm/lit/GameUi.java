@@ -4577,16 +4577,23 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         }
     }
 
+    /* the countdown portrait (not on a Mac): where it can stand, left or right, and its size */
+    private static final int PORTRAIT_LEFT = 217;
+    private static final int PORTRAIT_RIGHT = 331;
+    private static final int PORTRAIT_WIDTH = 122;
+    private static final int PORTRAIT_HEIGHT = 160;
+    private static final int PORTRAIT_PIXELS = PORTRAIT_WIDTH * PORTRAIT_HEIGHT;
+
     /**
      * Where the countdown portrait can stand, in the picture's pixels: both
      * places {@link #blendude} picks from, side by side. It tints the portrait
      * with what this part of the picture shows, and reads nothing else.
      */
-    static final Rectangle PORTRAIT_BEHIND = new Rectangle(217, 0, 331 + 122 - 217, 160);
+    static final Rectangle PORTRAIT_BEHIND = new Rectangle(PORTRAIT_LEFT, 0,
+            PORTRAIT_RIGHT + PORTRAIT_WIDTH - PORTRAIT_LEFT, PORTRAIT_HEIGHT);
 
-    /** The portrait's three pictures as {@link #blendude} reads them, and the images they were read from. */
+    /** The portrait's three pictures as {@link #blendude} reads them. */
     private final int[][] dudePixels = new int[3][];
-    private final Image[] dudePixelsOf = new Image[3];
 
     /**
      * Tints the countdown portrait with the picture behind it, as the
@@ -4595,26 +4602,19 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
      * colours as reading both through a {@link PixelGrabber} and blending
      * through {@link Color}, which took the game thread some 25 ms.
      */
-    public void blendude(Image image) {
+    public void blendude(BufferedImage picture) {
         if (!macn) {
             if (Math.random() > Math.random()) {
-                dudo = 217;
+                dudo = PORTRAIT_LEFT;
             } else {
-                dudo = 331;
+                dudo = PORTRAIT_RIGHT;
             }
-            int background[] = new int[19520];
-            if (image instanceof BufferedImage picture && picture.getType() == BufferedImage.TYPE_INT_RGB) {
+            int background[] = new int[PORTRAIT_PIXELS];
+            if (picture.getType() == BufferedImage.TYPE_INT_RGB) {
                 // the pixels as stored, 0xRRGGBB, in one go: the blend reads only red, green and blue
-                picture.getRaster().getDataElements(dudo, 0, 122, 160, background);
-            } else if (image instanceof BufferedImage picture) {
-                picture.getRGB(dudo, 0, 122, 160, background, 0, 122);
+                picture.getRaster().getDataElements(dudo, 0, PORTRAIT_WIDTH, PORTRAIT_HEIGHT, background);
             } else {
-                PixelGrabber grabber = new PixelGrabber(image, dudo, 0, 122, 160, background, 0, 122);
-                try {
-                    grabber.grabPixels();
-                } catch (InterruptedException ignored) {
-                    dudo = -1;
-                }
+                picture.getRGB(dudo, 0, PORTRAIT_WIDTH, PORTRAIT_HEIGHT, background, 0, PORTRAIT_WIDTH);
             }
             int j = 0;
             do {
@@ -4627,16 +4627,11 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                     int k = 0;
                     do {
                         if (pixels[k] != pixels[0]) {
-                            int color = pixels[k];
-                            int behind = background[k];
-                            // a quarter the portrait, three quarters the picture behind it, each 0 to 255
-                            int red = ((color >> 16 & 0xFF) + (behind >> 16 & 0xFF) * 3) / 4;
-                            int green = ((color >> 8 & 0xFF) + (behind >> 8 & 0xFF) * 3) / 4;
-                            int blue = ((color & 0xFF) + (behind & 0xFF) * 3) / 4;
-                            pixels[k] = 0xFF000000 | red << 16 | green << 8 | blue;
+                            // a quarter the portrait, three quarters the picture behind it, rounded down as the original
+                            pixels[k] = 0xFF000000 | FrameScaler.mix(pixels[k], background[k], 192);
                         }
-                    } while (++k < 19520);
-                    dudeb[j] = createImage(new MemoryImageSource(122, 160, pixels, 0, 122));
+                    } while (++k < PORTRAIT_PIXELS);
+                    dudeb[j] = createImage(new MemoryImageSource(PORTRAIT_WIDTH, PORTRAIT_HEIGHT, pixels, 0, PORTRAIT_WIDTH));
                 }
             } while (++j < 3);
         } else {
@@ -4664,18 +4659,22 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         }
     }
 
-    /** Portrait picture {@code j}'s 122 x 160 pixels from 10 down, read once; null if reading it was interrupted. */
+    /**
+     * Portrait picture {@code j}'s pixels from 10 down, read once (the
+     * pictures are loaded once, at the start); null if reading it was
+     * interrupted.
+     */
     private int[] portraitPixels(int j) {
-        if (dudePixelsOf[j] != dude[j]) {
-            int pixels[] = new int[19520];
-            PixelGrabber dudeGrabber = new PixelGrabber(dude[j], 0, 10, 122, 160, pixels, 0, 122);
+        if (dudePixels[j] == null) {
+            int pixels[] = new int[PORTRAIT_PIXELS];
+            PixelGrabber dudeGrabber = new PixelGrabber(dude[j], 0, 10, PORTRAIT_WIDTH, PORTRAIT_HEIGHT, pixels, 0,
+                    PORTRAIT_WIDTH);
             try {
                 dudeGrabber.grabPixels();
             } catch (InterruptedException ignored) {
                 return null;
             }
             dudePixels[j] = pixels;
-            dudePixelsOf[j] = dude[j];
         }
         return dudePixels[j];
     }

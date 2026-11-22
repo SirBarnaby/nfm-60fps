@@ -22,12 +22,14 @@ import java.lang.reflect.Modifier;
  */
 final class FieldSlot {
 
-    /** What the field holds: one of the primitive type letters of the JVM, or {@link #REFERENCE}. */
+    /** {@link #kind} for a field that holds a reference. */
     static final char REFERENCE = 'L';
 
     final Field field;
+    /** What the field holds: one of the primitive type letters of the JVM, or {@link #REFERENCE}. */
     final char kind;
-    final boolean isFinal;
+    /* a final field is only read: the put calls leave it as it is (its VarHandle cannot write it) */
+    private final boolean isFinal;
     private final boolean isStatic;
     private final VarHandle handle;
 
@@ -83,8 +85,11 @@ final class FieldSlot {
         };
     }
 
-    /** Puts a primitive field's value back from {@link #bits}; never called for a final field. */
+    /** Puts a primitive field's value back from {@link #bits}; a final field keeps its own. */
     void putBits(Object target, long bits) {
+        if (isFinal) {
+            return;
+        }
         if (isStatic) {
             putStaticBits(bits);
         } else {
@@ -125,8 +130,11 @@ final class FieldSlot {
         return isStatic ? (Object) handle.get() : (Object) handle.get(target);
     }
 
-    /** Points a reference field at {@code value}; never called for a final field. */
+    /** Points a reference field at {@code value}; a final field keeps its own. */
     void putRef(Object target, Object value) {
+        if (isFinal) {
+            return;
+        }
         if (isStatic) {
             handle.set(value);
         } else {

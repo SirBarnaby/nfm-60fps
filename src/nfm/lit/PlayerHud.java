@@ -1,7 +1,5 @@
 package nfm.lit;
 
-import java.lang.reflect.Field;
-
 /**
  * Split screen's Player 2 as the HUD and the race's sounds know a player:
  * the captions on show and their timers, the arrow's mode, the stunt being
@@ -22,8 +20,8 @@ final class PlayerHud {
         "loop", "spin", "sm", "spectate"};
     /** One player's arrays: their contents are swapped. */
     private static final String[] ARRAYS = {"dested", "pengs"};
-    private static final FieldSlot[] FIELDS = fields(NAMES);
-    private static final FieldSlot[] ARRAY_FIELDS = fields(ARRAYS);
+    private static final FieldSlot[] FIELDS = StateCopy.slots(GameUi.class, NAMES);
+    private static final FieldSlot[] ARRAY_FIELDS = StateCopy.slots(GameUi.class, ARRAYS);
     private static final int SPECTATE = NAMES.length - 1;
     private static final int VOICES = NAMES.length - 2;
 
@@ -31,18 +29,6 @@ final class PlayerHud {
     private final long[] bits = new long[FIELDS.length];
     private final Object[] refs = new Object[FIELDS.length];
     private final Object[] arrays = new Object[ARRAY_FIELDS.length];
-
-    private static FieldSlot[] fields(String[] names) {
-        Field[] f = new Field[names.length];
-        for (int i = 0; i < names.length; i++) {
-            try {
-                f[i] = GameUi.class.getDeclaredField(names[i]);
-            } catch (NoSuchFieldException ex) {
-                throw new IllegalStateException("GameUi has no field " + names[i], ex);
-            }
-        }
-        return StateCopy.slots(f);
-    }
 
     /**
      * Player 2 as Player 1 is now in {@code ui}: called as the race is set

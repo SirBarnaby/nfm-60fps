@@ -56,8 +56,7 @@ final class RaceSnapshot {
     private static final FieldSlot[] UI_FIELDS = StateCopy.slots(scalarFields(GameUi.class));
 
     /** The HUD's own copy of who is wasted, and which engine loop it believes is playing. */
-    private static final FieldSlot[] UI_ARRAYS = StateCopy.slots(new Field[] {StateCopy.field(GameUi.class, "dested"),
-            StateCopy.field(GameUi.class, "pengs")});
+    private static final FieldSlot[] UI_ARRAYS = StateCopy.slots(GameUi.class, "dested", "pengs");
 
     /**
      * Medium's statics a race can change: all but the stage's mountains,

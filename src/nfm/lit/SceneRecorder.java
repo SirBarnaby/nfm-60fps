@@ -155,12 +155,13 @@ final class SceneRecorder extends NullGraphics {
                     }
                     System.arraycopy(data, i + 2, xs, 0, n);
                     System.arraycopy(data, i + 2 + n, ys, 0, n);
-                    if (area != null && !touches(xs, ys, n, area)) {
-                        // nothing of it could land inside the clip: Java 2D would only find that out slowly
-                    } else if (op == SceneList.FILL_POLYGON || op == SceneList.FILL_POLYGON_EXACT) {
-                        g.fillPolygon(xs, ys, n);
-                    } else {
-                        g.drawPolygon(xs, ys, n);
+                    // skipped if nothing of it could land inside the clip: Java 2D would only find that out slowly
+                    if (area == null || touches(xs, ys, n, area)) {
+                        if (op == SceneList.FILL_POLYGON || op == SceneList.FILL_POLYGON_EXACT) {
+                            g.fillPolygon(xs, ys, n);
+                        } else {
+                            g.drawPolygon(xs, ys, n);
+                        }
                     }
                     // software draws the whole pixels; the exact corners are for the graphics card
                     boolean exact = op == SceneList.FILL_POLYGON_EXACT || op == SceneList.DRAW_POLYGON_EXACT;

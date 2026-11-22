@@ -265,10 +265,10 @@ final class SceneGeometry {
         }
         boolean convex = isConvex(px, py, n);
         if (projecting) {
-            if (!convex && (earClip(which, n) || bandFill(n))) {
-                return; // plain triangles the card places: no stencil, and in the same draw call as the rest
-            }
             if (!convex) {
+                if (scanEdges(n) && earClip(which, n) || bandFill(n)) {
+                    return; // plain triangles the card places: no stencil, and in the same draw call as the rest
+                }
                 evenOddPolygons++;
             }
             begin(convex ? PLAIN : EVEN_ODD);
@@ -279,10 +279,10 @@ final class SceneGeometry {
             }
             return;
         }
-        if (!convex && (reuseCut(which, n) || earClip(which, n) || bandFill(n))) {
-            return; // plain triangles cover what even-odd would
-        }
         if (!convex) {
+            if (scanEdges(n) && (reuseCut(which, n) || earClip(which, n)) || bandFill(n)) {
+                return; // plain triangles cover what even-odd would
+            }
             evenOddPolygons++;
         }
         begin(convex ? PLAIN : EVEN_ODD);
@@ -311,8 +311,9 @@ final class SceneGeometry {
     private int cutUsed;
 
     /**
-     * Fills polygon number {@code which} with the triangles it was cut into
-     * in an earlier frame of the same kept scene, if they still fit: while
+     * Fills polygon number {@code which}, which does not cross or touch
+     * itself ({@link #scanEdges}), with the triangles it was cut into in an
+     * earlier frame of the same kept scene, if they still fit: while
      * the polygon does not cross itself and none of the triangles has turned
      * over, together they cover each point inside it exactly once (the
      * outline goes round each such point once, and that is the sum of the
@@ -322,7 +323,7 @@ final class SceneGeometry {
      * @return false if there are none or they no longer fit; nothing has been drawn then
      */
     private boolean reuseCut(int which, int n) {
-        if (which >= cutStart.length || cutStart[which] < 0 || !isSimple(px, py, n)) {
+        if (which >= cutStart.length || cutStart[which] < 0) {
             return false;
         }
         int sign = winding(n);
@@ -392,18 +393,14 @@ final class SceneGeometry {
     }
 
     /**
-     * Fills a polygon that does not cross itself with plain triangles, cut
-     * off one corner (an "ear") at a time: what they cover is exactly what
-     * the even-odd rule fills, without the stencil and in the same draw
-     * call as the plain polygons around it.
+     * Fills a polygon that does not cross or touch itself ({@link #scanEdges})
+     * with plain triangles, cut off one corner (an "ear") at a time: what
+     * they cover is exactly what the even-odd rule fills, without the stencil
+     * and in the same draw call as the plain polygons around it.
      *
-     * @return false if the polygon crosses or touches itself, or no ear was
-     *         found; nothing has been drawn then
+     * @return false if rounding left no clean ear; nothing has been drawn then
      */
     private boolean earClip(int which, int n) {
-        if (!isSimple(px, py, n)) {
-            return false;
-        }
         int sign = winding(n);
         if (sign == 0) {
             return true; // covers nothing
@@ -462,10 +459,60 @@ final class SceneGeometry {
     /** Polygons with more corners keep the stencil: cutting one in bands takes a pass over every pair of its edges. */
     private static final int MOST_BAND_CORNERS = 64;
 
-    /* the heights a polygon crossing itself is cut at, and the edges across one band in order from the left */
+    /*
+     * the heights a polygon crossing itself is cut at (levelCount of them,
+     * see scanEdges), and the edges across one band in order from the left
+     */
     private double[] levels = new double[64];
+    private int levelCount;
     private int[] spans = new int[16];
     private double[] spanX = new double[16];
+
+    /**
+     * Looks at every pair of the polygon's edges that do not share a corner,
+     * once: true if none of them meet, so it has an inside and an outside
+     * (as {@link #isSimple}). For a polygon {@link #bandFill} may cut, it
+     * also puts the heights it is cut at into {@link #levels}: every
+     * corner's, then every height where two edges cross (not just touch).
+     * The ear clipper and the bands each took a pass over the pairs of their
+     * own, and most polygons that reach this cross themselves.
+     */
+    private boolean scanEdges(int n) {
+        if (n > MOST_BAND_CORNERS) {
+            return isSimple(px, py, n); // stops at the first pair that meets
+        }
+        int most = n + n * (n - 3) / 2;
+        if (levels.length < most) {
+            levels = new double[most];
+        }
+        int count = 0;
+        for (int k = 0; k < n; k++) {
+            levels[count++] = py[k];
+        }
+        boolean simple = true;
+        for (int i = 0; i < n; i++) {
+            int i1 = i + 1 < n ? i + 1 : 0;
+            for (int j = i + 2; j < n; j++) {
+                int j1 = j + 1 < n ? j + 1 : 0;
+                if (j1 == i) {
+                    continue; // the edge before i: they share corner i
+                }
+                double sa = side(px[j], py[j], px[j1], py[j1], px[i], py[i]);
+                double sb = side(px[j], py[j], px[j1], py[j1], px[i1], py[i1]);
+                double sc = side(px[i], py[i], px[i1], py[i1], px[j], py[j]);
+                double sd = side(px[i], py[i], px[i1], py[i1], px[j1], py[j1]);
+                if (crosses(sa, sb, sc, sd)) {
+                    // a cut at that height; edges that only touch meet at a corner, whose height is a cut anyway
+                    simple = false;
+                    levels[count++] = py[i] + sa / (sa - sb) * ((double) py[i1] - py[i]);
+                } else if (simple && touches(sa, sb, sc, sd, px[i], py[i], px[i1], py[i1], px[j], py[j], px[j1], py[j1])) {
+                    simple = false;
+                }
+            }
+        }
+        levelCount = count;
+        return simple;
+    }
 
     /**
      * Fills a polygon that crosses itself with plain triangles, exactly what
@@ -488,27 +535,11 @@ final class SceneGeometry {
         if (n > MOST_BAND_CORNERS) {
             return false;
         }
-        int most = n + n * (n - 3) / 2;
-        if (levels.length < most) {
-            levels = new double[most];
-        }
         if (spans.length < n) {
             spans = new int[n];
             spanX = new double[n];
         }
-        int count = 0;
-        for (int k = 0; k < n; k++) {
-            levels[count++] = py[k];
-        }
-        for (int i = 0; i < n; i++) {
-            int i1 = i + 1 < n ? i + 1 : 0;
-            for (int j = i + 2; j < n; j++) {
-                int j1 = j + 1 < n ? j + 1 : 0;
-                if (j1 != i) {
-                    count = addCrossing(i, i1, j, j1, count);
-                }
-            }
-        }
+        int count = levelCount; // scanEdges put them there
         Arrays.sort(levels, 0, count);
         if (projecting && (float) levels[0] == (float) levels[count - 1]) {
             // flat now, it may not be by the next tick: the stencil fills what its corners cover in each frame
@@ -528,19 +559,6 @@ final class SceneGeometry {
             }
         }
         return true;
-    }
-
-    /** Adds the height where edges a-b and c-d cross (not just touch) to {@link #levels}; returns how many it holds. */
-    private int addCrossing(int a, int b, int c, int d, int count) {
-        double sa = side(px[c], py[c], px[d], py[d], px[a], py[a]);
-        double sb = side(px[c], py[c], px[d], py[d], px[b], py[b]);
-        double sc = side(px[a], py[a], px[b], py[b], px[c], py[c]);
-        double sd = side(px[a], py[a], px[b], py[b], px[d], py[d]);
-        if (sa == 0D || sb == 0D || sc == 0D || sd == 0D || sa > 0D == sb > 0D || sc > 0D == sd > 0D) {
-            return count; // apart, or meeting at a corner, whose height is a cut anyway
-        }
-        levels[count] = py[a] + sa / (sa - sb) * ((double) py[b] - py[a]);
-        return count + 1;
     }
 
     /**
@@ -603,15 +621,19 @@ final class SceneGeometry {
      * The cuts of the polygon being cut in bands for the card: each cut's
      * height, and its points from the left (lineStart, lineCount) as point
      * codes, a corner's number or n + an edge's for where that edge crosses
-     * the cut, with their x for the order. And one band piece's outline.
+     * the cut, with their x for the order and, for an edge's, the share of
+     * the way along it. And one band piece's outline, as places in those.
      */
     private double[] lineY = new double[64];
     private int[] lineStart = new int[64];
     private int[] lineCount = new int[64];
     private int[] linePoint = new int[128];
     private double[] lineX = new double[128];
+    private float[] lineAlong = new float[128];
     private int[] piece = new int[32];
-    private double[] pieceY = new double[32];
+    /* each edge's lowest and highest corner height */
+    private float[] edgeLow = new float[16];
+    private float[] edgeHigh = new float[16];
 
     /**
      * {@link #bandFill}'s bands for the card, which places the corners anew
@@ -639,33 +661,44 @@ final class SceneGeometry {
                 lineY[cuts++] = levels[l];
             }
         }
+        if (edgeLow.length < n) {
+            edgeLow = new float[n];
+            edgeHigh = new float[n];
+        }
+        for (int k = 0; k < n; k++) {
+            int next = k + 1 < n ? k + 1 : 0;
+            edgeLow[k] = Math.min(py[k], py[next]);
+            edgeHigh[k] = Math.max(py[k], py[next]);
+        }
         int points = 0;
         for (int c = 0; c < cuts; c++) {
-            if (linePoint.length < points + 2 * n) {
-                linePoint = Arrays.copyOf(linePoint, 2 * (points + 2 * n));
+            if (linePoint.length < points + n) { // a cut holds each edge's point, or its first corner's, at most
+                linePoint = Arrays.copyOf(linePoint, 2 * (points + n));
                 lineX = Arrays.copyOf(lineX, linePoint.length);
+                lineAlong = Arrays.copyOf(lineAlong, linePoint.length);
             }
             double y = lineY[c];
             lineStart[c] = points;
             for (int k = 0; k < n; k++) {
-                int next = k + 1 < n ? k + 1 : 0;
                 if (py[k] == y) {
-                    points = addLinePoint(lineStart[c], points, k, px[k]);
+                    points = addLinePoint(lineStart[c], points, k, px[k], 0F);
                 }
-                if (Math.min(py[k], py[next]) < y && Math.max(py[k], py[next]) > y) {
-                    points = addLinePoint(lineStart[c], points, n + k, edgeX(k, next, y));
+                if (edgeLow[k] < y && edgeHigh[k] > y) {
+                    int next = k + 1 < n ? k + 1 : 0;
+                    // worked out from the cut's height alone, so every piece on the cut places it at the same spot
+                    float along = (float) ((y - py[k]) / ((double) py[next] - py[k]));
+                    points = addLinePoint(lineStart[c], points, n + k, edgeX(k, next, y), along);
                 }
             }
             lineCount[c] = points - lineStart[c];
         }
-        if (piece.length < 4 * n) { // up to 2n points on each of its two cuts
-            piece = new int[4 * n];
-            pieceY = new double[piece.length];
+        if (piece.length < 2 * n) { // up to n points on each of its two cuts
+            piece = new int[2 * n];
         }
         for (int c = 0; c + 1 < cuts; c++) {
             double top = lineY[c];
             double bottom = lineY[c + 1];
-            int m = edgesAcross(n, top, bottom);
+            int m = edgesFromCut(n, c, top, bottom);
             for (int e = 0; e + 1 < m; e += 2) {
                 int left = spans[e];
                 int right = spans[e + 1];
@@ -674,25 +707,70 @@ final class SceneGeometry {
                 size = addRun(c + 1, pointCode(n, right, bottom), pointCode(n, left, bottom), size);
                 // the piece is convex now (a band's part between two edges, with points along its top and bottom)
                 for (int k = 1; k + 1 < size; k++) {
-                    pointVertex(n, piece[0], pieceY[0]);
-                    pointVertex(n, piece[k], pieceY[k]);
-                    pointVertex(n, piece[k + 1], pieceY[k + 1]);
+                    pointVertex(n, piece[0]);
+                    pointVertex(n, piece[k]);
+                    pointVertex(n, piece[k + 1]);
                 }
             }
         }
     }
 
-    /** Puts point {@code code} at {@code x} into the cut whose points start at {@code from}, in order; the new end. */
-    private int addLinePoint(int from, int end, int code, double x) {
+    /**
+     * Puts point {@code code} at {@code x} ({@code along} its edge) into the
+     * cut whose points start at {@code from}, in order; returns the new end.
+     */
+    private int addLinePoint(int from, int end, int code, double x, float along) {
         int at = end;
         // left to right, and points at the same place by their codes: one order for every piece on this cut
         for (; at > from && (lineX[at - 1] > x || lineX[at - 1] == x && linePoint[at - 1] > code); at--) {
             lineX[at] = lineX[at - 1];
             linePoint[at] = linePoint[at - 1];
+            lineAlong[at] = lineAlong[at - 1];
         }
         lineX[at] = x;
         linePoint[at] = code;
+        lineAlong[at] = along;
         return end + 1;
+    }
+
+    /**
+     * {@link #edgesAcross} for the band below cut {@code c}, from the cut's
+     * own points rather than every edge: an edge across the band reaches
+     * from its top to its bottom, so it crosses the top cut or has a corner
+     * on it. The same edges in the same order (by x halfway down, then by
+     * number, as edgesAcross keeps them).
+     */
+    private int edgesFromCut(int n, int c, double top, double bottom) {
+        double middle = (top + bottom) / 2D;
+        int m = 0;
+        for (int q = lineStart[c], end = q + lineCount[c]; q < end; q++) {
+            int code = linePoint[q];
+            if (code >= n) {
+                m = addEdgeAcross(n, code - n, top, bottom, middle, m);
+            } else {
+                // a corner's two edges; one along the cut is not across the band, so none is added twice
+                m = addEdgeAcross(n, code > 0 ? code - 1 : n - 1, top, bottom, middle, m);
+                m = addEdgeAcross(n, code, top, bottom, middle, m);
+            }
+        }
+        return m;
+    }
+
+    /** Adds edge k to {@link #spans} if it is across the band; returns how many are there. */
+    private int addEdgeAcross(int n, int k, double top, double bottom, double middle, int m) {
+        if (!(edgeLow[k] <= top && edgeHigh[k] >= bottom)) {
+            return m; // the test edgesAcross makes
+        }
+        int next = k + 1 < n ? k + 1 : 0;
+        double x = edgeX(k, next, middle);
+        int at = m;
+        for (; at > 0 && (spanX[at - 1] > x || spanX[at - 1] == x && spans[at - 1] > k); at--) {
+            spanX[at] = spanX[at - 1];
+            spans[at] = spans[at - 1];
+        }
+        spanX[at] = x;
+        spans[at] = k;
+        return m + 1;
     }
 
     /** Edge k's point at height {@code y}, which it reaches: its corner's number at a corner's height, else n + k. */
@@ -703,8 +781,8 @@ final class SceneGeometry {
 
     /**
      * Adds cut {@code c}'s points from point {@code from} to point {@code to}
-     * (both on it) to the piece's outline, which holds {@code size}; returns
-     * how many it holds now.
+     * (both on it) to the piece's outline, as their places on the cut, which
+     * holds {@code size}; returns how many it holds now.
      */
     private int addRun(int c, int from, int to, int size) {
         int start = lineStart[c];
@@ -721,25 +799,23 @@ final class SceneGeometry {
         }
         int step = i <= j ? 1 : -1;
         for (int q = i;; q += step) {
-            piece[size] = linePoint[q];
-            pieceY[size++] = lineY[c];
+            piece[size++] = q;
             if (q == j) {
                 return size;
             }
         }
     }
 
-    /** Point {@code code} of a cut at height {@code y} (see {@link #bandsOnCard}), placed on the card. */
-    private void pointVertex(int n, int code, double y) {
+    /** The point at place {@code q} on a cut (see {@link #bandsOnCard}), placed on the card. */
+    private void pointVertex(int n, int q) {
+        int code = linePoint[q];
         if (code < n) {
             cornerVertex(code);
             return;
         }
         int a = code - n;
         int b = a + 1 < n ? a + 1 : 0;
-        // worked out from the cut's height alone, so every piece on the cut places it at the same spot
-        float along = (float) ((y - py[a]) / ((double) py[b] - py[a]));
-        projectedVertex(along, 0F, refX[a], refY[a], refX[b], refY[b], ROLE_ALONG);
+        projectedVertex(lineAlong[q], 0F, refX[a], refY[a], refX[b], refY[b], ROLE_ALONG);
     }
 
     /**
@@ -793,9 +869,21 @@ final class SceneGeometry {
         double d2 = side(cx, cy, dx, dy, bx, by);
         double d3 = side(ax, ay, bx, by, cx, cy);
         double d4 = side(ax, ay, bx, by, dx, dy);
-        if ((d1 > 0D && d2 < 0D || d1 < 0D && d2 > 0D) && (d3 > 0D && d4 < 0D || d3 < 0D && d4 > 0D)) {
-            return true;
-        }
+        return crosses(d1, d2, d3, d4) || touches(d1, d2, d3, d4, ax, ay, bx, by, cx, cy, dx, dy);
+    }
+
+    /**
+     * True if two segments cross, given which side of the second the first's
+     * ends are on ({@code d1}, {@code d2}) and the second's of the first
+     * ({@code d3}, {@code d4}): each pair strictly either side.
+     */
+    private static boolean crosses(double d1, double d2, double d3, double d4) {
+        return (d1 > 0D && d2 < 0D || d1 < 0D && d2 > 0D) && (d3 > 0D && d4 < 0D || d3 < 0D && d4 > 0D);
+    }
+
+    /** True if an end of segment a-b lies on segment c-d or one of c-d on a-b (sides as for {@link #crosses}). */
+    private static boolean touches(double d1, double d2, double d3, double d4, float ax, float ay, float bx, float by,
+            float cx, float cy, float dx, float dy) {
         return d1 == 0D && within(cx, cy, dx, dy, ax, ay) || d2 == 0D && within(cx, cy, dx, dy, bx, by)
                 || d3 == 0D && within(ax, ay, bx, by, cx, cy) || d4 == 0D && within(ax, ay, bx, by, dx, dy);
     }
@@ -1058,7 +1146,9 @@ final class SceneGeometry {
      * cut into triangles where {@code list}'s corners are now (placed for
      * the frame being drawn): a flat polygon seen from in front keeps how it
      * was cut while it moves, as {@link #reuseCut} relies on too, and one
-     * crossing itself is filled with the stencil, wherever its corners go.
+     * crossing itself is cut in bands whose cuts the card places along the
+     * edges ({@link #bandsOnCard}); only a flat one, or one with very many
+     * corners, is filled with the stencil, wherever its corners go.
      */
     void buildProjected(SceneList list, ScenePoints points, int width, int height) {
         projecting = true;

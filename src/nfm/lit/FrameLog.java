@@ -146,15 +146,19 @@ final class FrameLog {
             this.startedAt = startedAt;
         }
 
-        /** Room for one more tick's row; false once {@link #KEPT_TICKS} are kept. */
-        boolean roomForTick() {
+        /**
+         * Where a new tick's row starts in {@link #ticks}, all zeros (rows are
+         * only ever added, and the array grows with zeros); -1 once
+         * {@link #KEPT_TICKS} are kept.
+         */
+        int newTickRow() {
             if (tickCount >= KEPT_TICKS) {
-                return false;
+                return -1;
             }
             if ((tickCount + 1) * TICK_FIELDS > ticks.length) {
                 ticks = Arrays.copyOf(ticks, Math.max(64, tickCount * 2) * TICK_FIELDS);
             }
-            return true;
+            return tickCount++ * TICK_FIELDS;
         }
 
         void add(long gap, long end) {
@@ -361,11 +365,10 @@ final class FrameLog {
     static void tick(long due, long began, long raceNanos, long ended) {
         synchronized (LOCK) {
             Part p = current;
-            if (p == null || !p.roomForTick()) {
+            int at = p == null ? -1 : p.newTickRow();
+            if (at < 0) {
                 return;
             }
-            int at = p.tickCount++ * TICK_FIELDS;
-            Arrays.fill(p.ticks, at, at + TICK_FIELDS, 0L);
             p.ticks[at + T_DUE] = due;
             p.ticks[at + T_BEGAN] = began;
             p.ticks[at + T_RACE] = raceNanos;
@@ -389,11 +392,10 @@ final class FrameLog {
             }
             int last = (p.tickCount - 1) * TICK_FIELDS;
             if (p.tickCount == 0 || p.ticks[last + T_DONE] != 0L) {
-                if (!p.roomForTick()) {
+                last = p.newTickRow(); // a run-ahead for changed keys, no tick of its own
+                if (last < 0) {
                     return;
                 }
-                last = p.tickCount++ * TICK_FIELDS; // a run-ahead for changed keys, no tick of its own
-                Arrays.fill(p.ticks, last, last + TICK_FIELDS, 0L);
             }
             p.ticks[last + T_AHEAD] = aheadNanos;
             p.ticks[last + T_HANDED] = handed;
@@ -449,18 +451,23 @@ final class FrameLog {
                 Part p = parts.get(i);
                 Motion motion = new Motion(p);
                 out.append(i == 0 ? "\n" : ",\n").append(describe(new Times(p), motion));
-                String slug = String.format(Locale.ROOT, "%02d-%s.csv", i, p.name.replaceAll("[^A-Za-z0-9]+", "-"));
                 if (CSV && motion.frames > 0) {
-                    writeCsv(new File(file.getAbsoluteFile().getParentFile(), "frames-" + slug), p, motion);
-                }
-                if (CSV && p.tickCount > 0 && motion.frames > 0) {
-                    writeTicks(new File(file.getAbsoluteFile().getParentFile(), "ticks-" + slug), p);
+                    File dir = file.getAbsoluteFile().getParentFile();
+                    String slug = String.format(Locale.ROOT, "%02d-%s.csv", i, p.name.replaceAll("[^A-Za-z0-9]+", "-"));
+                    writeCsv(new File(dir, "frames-" + slug), p, motion);
+                    if (p.tickCount > 0) {
+                        writeTicks(new File(dir, "ticks-" + slug), p);
+                    }
                 }
             }
             json = out.append("\n  ]\n}\n").toString();
         }
+        writeText(file, json);
+    }
+
+    private static void writeText(File file, String text) {
         try {
-            Files.writeString(file.toPath(), json, StandardCharsets.UTF_8);
+            Files.writeString(file.toPath(), text, StandardCharsets.UTF_8);
         } catch (IOException ex) {
             System.out.println("[framelog] cannot write " + file + ": " + ex);
         }
@@ -475,11 +482,7 @@ final class FrameLog {
                     (p.motionAt[i] - p.startedAt) / 1e6D, (p.motionChosen[i] - p.startedAt) / 1e6D,
                     (p.motionShown[i] - p.motionAt[i]) / 1e6D, m.off[k] / 1e6D));
         }
-        try {
-            Files.writeString(file.toPath(), s.toString(), StandardCharsets.UTF_8);
-        } catch (IOException ex) {
-            System.out.println("[framelog] cannot write " + file + ": " + ex);
-        }
+        writeText(file, s.toString());
     }
 
     /**
@@ -508,11 +511,7 @@ final class FrameLog {
                     .append(handed && t[at + T_CARD] != 0L ? ms(t[at + T_CARD] / 1e6D) : "").append(',')
                     .append(handed && ticked ? ms((t[at + T_DONE] - due) / 1e6D) : "").append('\n');
         }
-        try {
-            Files.writeString(file.toPath(), s.toString(), StandardCharsets.UTF_8);
-        } catch (IOException ex) {
-            System.out.println("[framelog] cannot write " + file + ": " + ex);
-        }
+        writeText(file, s.toString());
     }
 
     private static String ms(double value) {

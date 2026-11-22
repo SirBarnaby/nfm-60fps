@@ -123,9 +123,7 @@ final class StateCopy {
         for (int i = 0; i < slots.length; i++) {
             FieldSlot s = slots[i];
             if (s.primitive()) {
-                if (!s.isFinal) {
-                    s.putBits(target, saved.bits[i]);
-                }
+                s.putBits(target, saved.bits[i]);
                 continue;
             }
             Object value;
@@ -138,9 +136,7 @@ final class StateCopy {
             } else {
                 value = kept;
             }
-            if (!s.isFinal) {
-                s.putRef(target, value);
-            }
+            s.putRef(target, value);
         }
     }
 
@@ -305,11 +301,20 @@ final class StateCopy {
         return STATIC_SLOTS.computeIfAbsent(type, t -> slots(fields(t, true)));
     }
 
-    /** Slots for the given fields, for {@link #captureFields}. */
-    static FieldSlot[] slots(Field[] fields) {
+    /** Slots for the given fields, in their order. */
+    static FieldSlot[] slots(Field... fields) {
         FieldSlot[] out = new FieldSlot[fields.length];
         for (int i = 0; i < fields.length; i++) {
             out[i] = new FieldSlot(fields[i]);
+        }
+        return out;
+    }
+
+    /** Slots for {@code type}'s own fields of these names, in their order. */
+    static FieldSlot[] slots(Class<?> type, String... names) {
+        FieldSlot[] out = new FieldSlot[names.length];
+        for (int i = 0; i < names.length; i++) {
+            out[i] = new FieldSlot(field(type, names[i]));
         }
         return out;
     }
