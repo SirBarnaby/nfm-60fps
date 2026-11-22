@@ -1,6 +1,6 @@
-# Stutter at the race's start: what Java does behind the game's back
+# Stutter at the race's start: what Java and the card do behind the game's back
 
-*22 Nov 2026, from the live run that flagged a 251 ms freeze about a second into the race, a hitch as the countdown started and uneven races (the change `stutter-free-races`).*
+*22 Nov 2026, from the live run that flagged a 251 ms freeze about a second into the race, a hitch as the countdown started, uneven races and a countdown under 250 fps with no limit (the change `stutter-free-races`).*
 
 ## The lessons
 
@@ -38,6 +38,14 @@ C2 cannot compile a use of a class that is not initialized yet; it puts a trap t
 - Seen as: a slow `Plane.d` in every phase of a few ticks (race step, run-ahead, kept scene), and in the JIT log `uninitialized reinterpret` with a `trap_bci`. `javap -c -p` on the class names the bytecode at that index.
 - Fix: initialize such classes with the class whose hot method uses them (`Plane`'s static initializer). `-XX:PerMethodTrapLimit=0` does not cover this kind of trap.
 - An intermittent stall at the same moment of the same seed is a timing race between Java's compiler threads and the game: log `-Xlog:jit+compilation=debug,deoptimization=debug` and compare a run with the stall against one without.
+
+### 6. A part with light ticks and a low frame rate: count the draw calls
+
+The countdown was the slowest part in every run (216 fps with no limit) though its ticks were lighter than the race's. The presenter, not the game thread, was slow: handing the card a frame took 5.3 ms against 4.3. The `[draw]` line's "last scene N draws, ... even-odd" said why: 216-387 draw calls against 130-160, because polygons that cross or touch themselves (wheels drawn as rings, faces seen edge-on, track pieces near the camera) went through the stencil, two draw calls each, and broke the batches around them.
+
+- Fix: cut them in bands for the card too (`SceneGeometry.bandsOnCard`), with the points where bands meet edges placed by the card along the edge (`ROLE_ALONG`). 1-3 draw calls a scene.
+- A cut fixed for a tick while the card moves its corners each frame must have no T-junction: every piece runs through every point on its cuts, or a corner of the next band comes off the cut and the picture cracks for a frame. The projection test (`-Dnfm.projectiontest=60`) caught the first version's crack; compare its worst frame against a run of the build before.
+- A temporary count of why polygons took the stencil (crossing, touching, flat) in a scratch build pointed at the fix in one hidden run.
 
 ## How to find the next one
 

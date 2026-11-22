@@ -24,6 +24,7 @@
 - [x] 4.2 `PoseSpan.MAX_CARRY_ON` 0.25 to 0.5 after an A/B
 - [x] 4.3 The stall about 1.7 s in: `Plane.d` compiled before `EffectTrails` was initialized (JIT log: `uninitialized` trap at the debris path); `Plane` initializes `EffectTrails` and `Glow`
 - [x] 4.4 Temporary A/B and check code removed (`nfm.warmup`, `[warmup]` lines, `portraitCheck`); a log line when a race begins before the warm-up is done
+- [x] 4.5 The countdown's frame rate: polygons that cross or touch themselves cut in bands for the card (`bandsOnCard`, `ROLE_ALONG`), no stencil; flat ones keep it. Projection test as before (worst 0.0129% against 0.0103%); draw calls a scene 1-3 against 130-387
 
 ## 5. Gates
 

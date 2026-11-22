@@ -18,6 +18,7 @@ This change touches no spec: it makes the game meet the existing requirements "N
 - **The portrait tint at "3".** At the countdown's 36th tick from the end the game tints the player's portrait over the picture behind it. To read that picture it drew the whole frame again in software (45 ms or more) and blended through `PixelGrabber` and `Color` (about 25 ms): 67-137 ms in one tick.
 - **Frames stand still while a tick is worked out.** Frames carry the last motion on for at most 13 ms past a tick (`PoseSpan.MAX_CARRY_ON`), then stand still until the tick and its run-ahead are done. They took 10-17 ms on a quiet PC, more when it was busy, so with no frame limit many frames fell in that gap: 10% against 2% at 120 fps.
 - **Replay recording in real play** (not seen by the live test, which records no replays): 5-7 ms a tick, 29 ms every 40th tick and 125 ms at "3", from the same reflection plus walking the state's names twice.
+- **The countdown's frames held the presenter under 250 a second.** Its ticks were lighter than the race's, yet it was the slowest part in every run: the frames cost more, not the ticks. With the cars side by side near the camera, a countdown scene had 216-387 draw calls against 130-160 in the race. A polygon whose outline crosses or touches itself (the wheels are rings drawn as one outline that goes round twice; faces seen edge-on cross) was filled through the stencil, two draw calls of its own, and ended the batch of plain polygons before it: 140-200 of them a countdown scene, 60-90 in a race, replay or highlight. Handing a frame to the card took 5.3 ms against 4.3 (hidden runs).
 - **The polygon drawing was compiled again mid-race.** In about half the runs, about 1.7 s in, two or three ticks took 50-100 ms each. The JIT log: Java had compiled `Plane.d` in the menus before the class it uses for flying debris (`EffectTrails`) was initialized, so the compiled code held a trap there, and the first chip of debris threw the whole method away while it was compiled again.
 
 ## What Changes
@@ -29,6 +30,7 @@ This change touches no spec: it makes the game meet the existing requirements "N
 - **Frames carry the motion on for up to half a tick** (`MAX_CARRY_ON` 0.25 to 0.5): measured, it halves the frames off even without larger corrections and cannot add input lag (see the design).
 - **The replay recorder walks the state's names once** at the countdown, not twice.
 - **`Plane` initializes the effect classes its drawing uses** (`EffectTrails`, `Glow`) when it is first loaded, so its compiled drawing never holds a trap for them.
+- **Polygons that cross or touch themselves are cut in bands for the card too**, as split screen's drawing on the processor already was: plain triangles, drawn in the same call as the rest, so a race scene is 1-3 draw calls. The points where a band meets an edge are placed by the card as a share of the way along that edge, so they move with the polygon between ticks, and each band runs through every point on its cuts, so neighbouring bands meet without a crack. A polygon flat when it is cut keeps the stencil.
 - **The tick trace stays** (`-Dnfm.framelog.csv=true` writes `ticks-NN-part.csv` next to the frame log) for the next stutter hunt.
 - **Not changed:** the race code, the frame limit, the frame log's checks and thresholds, `test\perf.ps1`'s baseline.
 
@@ -52,5 +54,6 @@ Specs touched (from `openspec list --specs`): none changed. `performance` holds 
 - `src\nfm\lit\FrameLog.java`: the tick trace.
 - `src\nfm\lit\PoseSpan.java`: the carry-on.
 - `src\nfm\lit\Plane.java`: the effect classes initialized with it.
+- `src\nfm\lit\gpu\SceneGeometry.java`, `Shaders.java`: bands for the card, a vertex placed along an edge (the shader is baked again by `build.ps1`).
 - `build.ps1`: `-XX:+DisableExplicitGC` (the runtime is rebuilt once, as its options change).
 - Race code untouched: `test\verify-races.ps1` must match all 20 races, with no golden frame changed, also with `-Rollback 50`.

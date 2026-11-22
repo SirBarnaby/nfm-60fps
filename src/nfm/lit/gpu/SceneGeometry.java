@@ -13,10 +13,12 @@ import java.util.Arrays;
  * into as few draw calls as possible: the card draws the triangles of one
  * call in order, so later ones still cover earlier ones. A concave polygon is
  * cut into triangles that fill what Java2D's even-odd rule does, one crossing
- * itself in bands between its corners and crossings. Only a kept scene placed
- * on the card (whose corners move after it is cut) or a polygon with very
- * many corners uses the stencil buffer: its fan of triangles flips the
- * stencil, and a second pass colours where it ended up odd.
+ * itself in bands between its corners and crossings; in a kept scene placed
+ * on the card, whose corners move after it is cut, the points where bands
+ * meet edges move along with them. Only a polygon with very many corners, or
+ * one placed on the card that is flat when it is cut, uses the stencil
+ * buffer: its fan of triangles flips the stencil, and a second pass colours
+ * where it ended up odd.
  * <p>
  * Outlines are drawn as parallelograms one pixel thick across their major
  * axis, which lights one pixel per column (or row), as a one-pixel line does.
@@ -263,8 +265,8 @@ final class SceneGeometry {
         }
         boolean convex = isConvex(px, py, n);
         if (projecting) {
-            if (!convex && earClip(which, n)) {
-                return;
+            if (!convex && (earClip(which, n) || bandFill(n))) {
+                return; // plain triangles the card places: no stencil, and in the same draw call as the rest
             }
             if (!convex) {
                 evenOddPolygons++;
@@ -472,9 +474,15 @@ final class SceneGeometry {
      * lies between the first and second edge from the left, the third and
      * fourth and so on, two triangles each. With the stencil each such
      * polygon was two draw calls of its own, and the few hundred a split-screen
-     * frame has cost the card several times the rest of the scene.
+     * frame has cost the card several times the rest of the scene. For the
+     * card the bands are cut once a tick ({@link #bandsOnCard}): the
+     * countdown's scenes had 140-200 such polygons (wheels, faces seen
+     * edge-on), and their 400-600 draw calls held the presenter under 250
+     * frames a second.
      *
-     * @return false if it has too many corners; nothing has been drawn then
+     * @return false if it has too many corners, or, for the card, if it is
+     *         flat (the stencil then fills it from its corners in each
+     *         frame); nothing has been drawn then
      */
     private boolean bandFill(int n) {
         if (n > MOST_BAND_CORNERS) {
@@ -502,7 +510,15 @@ final class SceneGeometry {
             }
         }
         Arrays.sort(levels, 0, count);
+        if (projecting && (float) levels[0] == (float) levels[count - 1]) {
+            // flat now, it may not be by the next tick: the stencil fills what its corners cover in each frame
+            return false;
+        }
         begin(PLAIN);
+        if (projecting) {
+            bandsOnCard(n, count);
+            return true;
+        }
         double top = levels[0];
         for (int l = 1; l < count; l++) {
             double bottom = levels[l];
@@ -534,21 +550,7 @@ final class SceneGeometry {
      * the band meets an even number of edges, as it meets any closed outline.
      */
     private void band(int n, double top, double bottom) {
-        double middle = (top + bottom) / 2D;
-        int m = 0;
-        for (int k = 0; k < n; k++) {
-            int next = k + 1 < n ? k + 1 : 0;
-            if (Math.min(py[k], py[next]) <= top && Math.max(py[k], py[next]) >= bottom) {
-                double x = edgeX(k, next, middle);
-                int at = m++;
-                for (; at > 0 && spanX[at - 1] > x; at--) {
-                    spanX[at] = spanX[at - 1];
-                    spans[at] = spans[at - 1];
-                }
-                spanX[at] = x;
-                spans[at] = k;
-            }
-        }
+        int m = edgesAcross(n, top, bottom);
         float topY = (float) top + FILL_SHIFT;
         float bottomY = (float) bottom + FILL_SHIFT;
         for (int e = 0; e + 1 < m; e += 2) {
@@ -571,6 +573,173 @@ final class SceneGeometry {
                 vertex(leftBottom, bottomY);
             }
         }
+    }
+
+    /**
+     * Puts the edges across the band between {@code top} and {@code bottom}
+     * into {@link #spans} in order from the left (edge k runs from corner k
+     * to the next); returns how many there are.
+     */
+    private int edgesAcross(int n, double top, double bottom) {
+        double middle = (top + bottom) / 2D;
+        int m = 0;
+        for (int k = 0; k < n; k++) {
+            int next = k + 1 < n ? k + 1 : 0;
+            if (Math.min(py[k], py[next]) <= top && Math.max(py[k], py[next]) >= bottom) {
+                double x = edgeX(k, next, middle);
+                int at = m++;
+                for (; at > 0 && spanX[at - 1] > x; at--) {
+                    spanX[at] = spanX[at - 1];
+                    spans[at] = spans[at - 1];
+                }
+                spanX[at] = x;
+                spans[at] = k;
+            }
+        }
+        return m;
+    }
+
+    /*
+     * The cuts of the polygon being cut in bands for the card: each cut's
+     * height, and its points from the left (lineStart, lineCount) as point
+     * codes, a corner's number or n + an edge's for where that edge crosses
+     * the cut, with their x for the order. And one band piece's outline.
+     */
+    private double[] lineY = new double[64];
+    private int[] lineStart = new int[64];
+    private int[] lineCount = new int[64];
+    private int[] linePoint = new int[128];
+    private double[] lineX = new double[128];
+    private int[] piece = new int[32];
+    private double[] pieceY = new double[32];
+
+    /**
+     * {@link #bandFill}'s bands for the card, which places the corners anew
+     * each frame until the next tick. A point where a cut meets an edge is
+     * placed there as a share of the way along the edge, so it stays on it.
+     * Each band piece runs along its cuts through every point on them
+     * between its two edges (the corners and edge crossings of the bands
+     * either side), so a piece and its neighbours across a cut share the
+     * same points in the same order and meet exactly however far the corners
+     * move. Cut at just the two edges' points, a corner of the next band
+     * lying between them came off the cut as the corners moved: a crack a
+     * frame, a pixel high, across a road whose far corner was thousands of
+     * pixels off the screen.
+     */
+    private void bandsOnCard(int n, int count) {
+        if (lineY.length < count) {
+            lineY = new double[count];
+            lineStart = new int[count];
+            lineCount = new int[count];
+        }
+        int cuts = 0;
+        lineY[cuts++] = levels[0];
+        for (int l = 1; l < count; l++) {
+            if ((float) levels[l] != (float) lineY[cuts - 1]) { // a thinner band rounds to nothing, as on the processor
+                lineY[cuts++] = levels[l];
+            }
+        }
+        int points = 0;
+        for (int c = 0; c < cuts; c++) {
+            if (linePoint.length < points + 2 * n) {
+                linePoint = Arrays.copyOf(linePoint, 2 * (points + 2 * n));
+                lineX = Arrays.copyOf(lineX, linePoint.length);
+            }
+            double y = lineY[c];
+            lineStart[c] = points;
+            for (int k = 0; k < n; k++) {
+                int next = k + 1 < n ? k + 1 : 0;
+                if (py[k] == y) {
+                    points = addLinePoint(lineStart[c], points, k, px[k]);
+                }
+                if (Math.min(py[k], py[next]) < y && Math.max(py[k], py[next]) > y) {
+                    points = addLinePoint(lineStart[c], points, n + k, edgeX(k, next, y));
+                }
+            }
+            lineCount[c] = points - lineStart[c];
+        }
+        if (piece.length < 4 * n) { // up to 2n points on each of its two cuts
+            piece = new int[4 * n];
+            pieceY = new double[piece.length];
+        }
+        for (int c = 0; c + 1 < cuts; c++) {
+            double top = lineY[c];
+            double bottom = lineY[c + 1];
+            int m = edgesAcross(n, top, bottom);
+            for (int e = 0; e + 1 < m; e += 2) {
+                int left = spans[e];
+                int right = spans[e + 1];
+                int size = 0;
+                size = addRun(c, pointCode(n, left, top), pointCode(n, right, top), size);
+                size = addRun(c + 1, pointCode(n, right, bottom), pointCode(n, left, bottom), size);
+                // the piece is convex now (a band's part between two edges, with points along its top and bottom)
+                for (int k = 1; k + 1 < size; k++) {
+                    pointVertex(n, piece[0], pieceY[0]);
+                    pointVertex(n, piece[k], pieceY[k]);
+                    pointVertex(n, piece[k + 1], pieceY[k + 1]);
+                }
+            }
+        }
+    }
+
+    /** Puts point {@code code} at {@code x} into the cut whose points start at {@code from}, in order; the new end. */
+    private int addLinePoint(int from, int end, int code, double x) {
+        int at = end;
+        // left to right, and points at the same place by their codes: one order for every piece on this cut
+        for (; at > from && (lineX[at - 1] > x || lineX[at - 1] == x && linePoint[at - 1] > code); at--) {
+            lineX[at] = lineX[at - 1];
+            linePoint[at] = linePoint[at - 1];
+        }
+        lineX[at] = x;
+        linePoint[at] = code;
+        return end + 1;
+    }
+
+    /** Edge k's point at height {@code y}, which it reaches: its corner's number at a corner's height, else n + k. */
+    private int pointCode(int n, int k, double y) {
+        int next = k + 1 < n ? k + 1 : 0;
+        return y == py[k] ? k : y == py[next] ? next : n + k;
+    }
+
+    /**
+     * Adds cut {@code c}'s points from point {@code from} to point {@code to}
+     * (both on it) to the piece's outline, which holds {@code size}; returns
+     * how many it holds now.
+     */
+    private int addRun(int c, int from, int to, int size) {
+        int start = lineStart[c];
+        int end = start + lineCount[c];
+        int i = start;
+        int j = start;
+        for (int q = start; q < end; q++) {
+            if (linePoint[q] == from) {
+                i = q;
+            }
+            if (linePoint[q] == to) {
+                j = q;
+            }
+        }
+        int step = i <= j ? 1 : -1;
+        for (int q = i;; q += step) {
+            piece[size] = linePoint[q];
+            pieceY[size++] = lineY[c];
+            if (q == j) {
+                return size;
+            }
+        }
+    }
+
+    /** Point {@code code} of a cut at height {@code y} (see {@link #bandsOnCard}), placed on the card. */
+    private void pointVertex(int n, int code, double y) {
+        if (code < n) {
+            cornerVertex(code);
+            return;
+        }
+        int a = code - n;
+        int b = a + 1 < n ? a + 1 : 0;
+        // worked out from the cut's height alone, so every piece on the cut places it at the same spot
+        float along = (float) ((y - py[a]) / ((double) py[b] - py[a]));
+        projectedVertex(along, 0F, refX[a], refY[a], refX[b], refY[b], ROLE_ALONG);
     }
 
     /**
@@ -854,12 +1023,15 @@ final class SceneGeometry {
 
     /*
      * Roles of a vertex placed on the card (see Shaders.PROJECTED_VS): a
-     * polygon's corner, a fixed position, or one of the four corners of a
-     * one-pixel line's parallelogram (ROLE_SEGMENT + 0..3), plain or
-     * antialiased, which the shader works out from the line's two ends.
+     * polygon's corner, a fixed position, a point a share of the way along
+     * the edge between two corners (the share in the position's x), or one
+     * of the four corners of a one-pixel line's parallelogram (ROLE_SEGMENT +
+     * 0..3), plain or antialiased, which the shader works out from the line's
+     * two ends.
      */
     static final int ROLE_FILL = 0;
     static final int ROLE_FIXED = 1;
+    static final int ROLE_ALONG = 2;
     static final int ROLE_SEGMENT = 10;
     static final int ROLE_SMOOTH = 20;
 

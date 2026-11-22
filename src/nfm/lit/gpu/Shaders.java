@@ -279,6 +279,12 @@ final class Shaders {
                 float2 edge = float2(0.0, 1.0);
                 if (role == 0) {
                     p = corner(i.refs.x, i.refs.y) + 0.25;
+                } else if (role == 2) {
+                    // a share of the way along the edge between two corners (a polygon cut in bands)
+                    float2 a = corner(i.refs.x, i.refs.y);
+                    float2 b = corner(i.refs.z, i.refs.w);
+                    precise float2 d = b - a;
+                    p = a + d * i.pos.x + 0.25;
                 } else if (role >= 10) {
                     int k = role % 10;
                     float2 a = corner(i.refs.x, i.refs.y);
