@@ -2921,6 +2921,11 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         }
     }
 
+    /** A custom game's result, where a classic race names the stage it completes: the player's place in the field. */
+    private static String customPlace(CheckPoints checkpoints) {
+        return "You came " + ordinal(checkpoints.pos[0] + 1) + " of " + GameFacts.numberOfPlayers + "!";
+    }
+
     /** How long the player's own Go! stays up: about half a second. */
     private static final int LAUNCH_GO_TICKS = 10;
 
@@ -3739,7 +3744,9 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             } else {
                 pin = 30;
                 rd.drawImage(congrd, Utility.centeredImageX(congrd), 87, null);
-                if (checkpoints.stage != -1) {
+                if (CustomGame.on) {
+                    drawcs(137, customPlace(checkpoints), 170, 170, 170, 3);
+                } else if (checkpoints.stage != -1) {
                     drawcs(137, "Stage " + checkpoints.stage + " Completed!", 170, 170, 170, 3);
                 } else {
                     drawcs(137, "Stage Completed!", 170, 170, 170, 3);
@@ -3749,7 +3756,8 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         } else {
             pin = 30;
             rd.drawImage(gameov, Utility.centeredImageX(gameov), 117, null);
-            drawcs(167, "Failed to Complete Stage " + checkpoints.stage + "!", 170, 170, 170, 3);
+            drawcs(167, CustomGame.on ? customPlace(checkpoints) : "Failed to Complete Stage " + checkpoints.stage + "!",
+                    170, 170, 170, 3);
             drawcs(184, "" + checkpoints.name + "", 128, 128, 128, 3);
         }
         rd.drawImage(contin[pcontin], Utility.centeredImageX(contin[pcontin]), post_game_continue_button_y, null);
