@@ -1,0 +1,13 @@
+C:\Users\barna\Desktop\nfm-lit-master\src\nfm\lit\audio\RadicalMod.java:93: warning: [removal] runFinalization() in System has been deprecated and marked for removal
+        System.runFinalization();
+              ^
+C:\Users\barna\Desktop\nfm-lit-master\src\nfm\lit\audio\RadicalMod.java:166: warning: [removal] runFinalization() in System has been deprecated and marked for removal
+            System.runFinalization();
+                  ^
+C:\Users\barna\Desktop\nfm-lit-master\src\nfm\lit\audio\RadicalMod.java:207: warning: [removal] runFinalization() in System has been deprecated and marked for removal
+            System.runFinalization();
+                  ^
+Note: Some input files use or override a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+3 warnings
+Picked up JAVA_TOOL_OPTIONS: -Djava.class.path=madness.jar -XX:+UseZGC -XX:+UseCompactObjectHeaders -XX:-DontCompileHugeMethods -XX:PerMethodTrapLimit=0 -XX:PerBytecodeTrapLimit=0 -XX:ZUncommitDelay=30 -XX:+DisableExplicitGC --enable-native-access=ALL-UNNAMED -Dnfm.debug=false -Dnfm.renderer=gpu -Dnfm.autotest=C:\Users\barna\AppData\Local\Temp\nfm-aot-training-22188 -XX:AOTCacheOutput=madness.aot -XX:AOTConfiguration=madness.aot.config -XX:AOTMode=create

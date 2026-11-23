@@ -1,0 +1,18 @@
+✓ spec/agent-workflow
+✓ spec/code-health
+✓ spec/controls
+✓ spec/distribution
+✓ spec/done-and-testing
+✓ spec/effects
+✓ spec/first-person
+✓ spec/handling
+✓ spec/performance
+✓ spec/picture
+✓ spec/powerups
+✓ spec/realism
+✓ spec/release-1-0
+✓ spec/settings
+✓ spec/sound
+✓ spec/split-screen
+Totals: 16 passed, 0 failed (16 items)
+spec check: 16 areas, 78 requirements, every one checked
