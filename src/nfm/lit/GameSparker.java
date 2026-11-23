@@ -5905,6 +5905,12 @@ public class GameSparker extends Panel implements Runnable {
                 car.grounded = r.mtouch;
                 car.fullPower = r.power == 98F;
             }
+            if (c != null) {
+                car.yaw = c.xz;
+                car.pitch = c.zy;
+                car.roll = c.xy;
+            }
+            FeatureBridge.soundCar(i, car, replay); // the rebuilt engine sound, when its extra is on
             m.cars[i] = car;
         }
         replayHeard = replay;

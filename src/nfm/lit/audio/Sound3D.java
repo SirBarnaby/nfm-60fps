@@ -103,6 +103,33 @@ public final class Sound3D implements Runnable {
         public boolean grounded;
         /** Full power (power 98), where the game plays the top recordings. */
         public boolean fullPower;
+        /**
+         * The rebuilt engine sound plays it (the enginesound extra): its
+         * recordings one engine cycle at a time, the engine and intake from
+         * its front, the exhaust from its back, a skid from each wheel that
+         * slides. False: the five recordings as before.
+         */
+        public boolean rebuilt;
+        /** How it is turned, degrees, as its model is (ContO's xz, zy and xy), for the rebuilt sound's places on it. */
+        public int yaw;
+        public int pitch;
+        public int roll;
+        /** How hard each wheel skids, 0 to 1, for the rebuilt sound (plain fields: nothing more is made a tick). */
+        public float skid0;
+        public float skid1;
+        public float skid2;
+        public float skid3;
+        /** A bit for each wheel on loose ground, whose skid is the dust skid. */
+        public int loose;
+
+        float skid(int wheel) {
+            return switch (wheel) {
+                case 0 -> skid0;
+                case 1 -> skid1;
+                case 2 -> skid2;
+                default -> skid3;
+            };
+        }
     }
 
     /** Where everything was at the end of a tick. */
@@ -228,6 +255,7 @@ public final class Sound3D implements Runnable {
                 && (System.getProperty("nfm.verify") != null || Boolean.getBoolean("nfm.sound.lockstep"));
         if (lockstep) {
             random.setSeed(1L);
+            grainRandom.setSeed(2L);
         }
     }
 
@@ -687,6 +715,27 @@ public final class Sound3D implements Runnable {
         }
     }
 
+    /* the rebuilt sound's places on each car, in its own frame: the front, the back, then each wheel's tread */
+    private static final int REBUILT_WHEELS = 4;
+    private static final int BODY_VALUES = 3 * (2 + REBUILT_WHEELS);
+    private static final float[][] bodies = new float[MAX_CARS][BODY_VALUES];
+
+    /**
+     * Car {@code car}'s points the rebuilt engine sound plays from, in its
+     * own frame (as its model has it: y down, z forward): {@code local}
+     * holds x, y and z of the front (the engine and intake), the back (the
+     * exhaust), then each of the four wheels' treads. From the game thread
+     * when a race starts; kept for the replays after it.
+     */
+    public static void carBody(int car, float[] local) {
+        if (car >= 0 && car < MAX_CARS) {
+            synchronized (bodies) {
+                Arrays.fill(bodies[car], 0F);
+                System.arraycopy(local, 0, bodies[car], 0, Math.min(local.length, BODY_VALUES));
+            }
+        }
+    }
+
     private static volatile SteamAcoustics.Stage stage;
 
     /** What a stage triangle is made of, for how it muffles and reflects sound. */
@@ -738,6 +787,8 @@ public final class Sound3D implements Runnable {
     private final Voice[] effects = new Voice[EFFECT_VOICES];
     private final CarEffects[] carEffects = new CarEffects[64];
     private final Random random = new Random();
+    /** The rebuilt sound's own random choices (which cycle next, the pops, the skid grains), apart from the crashes'. */
+    private final Random grainRandom = new Random();
     /** Steam Audio, when its library is there: null otherwise, and nothing is muffled. */
     private SteamAcoustics acoustics;
     private volatile boolean stageWanted = true;
@@ -2026,6 +2077,9 @@ public final class Sound3D implements Runnable {
         if (e == null || e.crashWait != 0 || e.skidWait != 0 || m == null || m.muted) {
             return;
         }
+        if (m.cars != null && car < m.cars.length && m.cars[car] != null && m.cars[car].rebuilt) {
+            return; // the rebuilt sound plays each wheel's skid itself
+        }
         if (surface == 0) {
             playAt(car, "skid" + e.skidTurn, 1F, variation());
             e.skidTurn = (e.skidTurn + 1) % 3;
@@ -2315,6 +2369,8 @@ public final class Sound3D implements Runnable {
         float appliedLf = -1F;
         final float[] position = new float[3];
         final float[] velocity = new float[3];
+        /** The rebuilt sound's voices for this car, made the first time the extra plays it. */
+        RebuiltVoices rebuilt;
 
         EngineVoices() {
             for (int i = 0; i < 5; i++) {
@@ -2331,6 +2387,9 @@ public final class Sound3D implements Runnable {
         void update(Car car, int index, float ahead, float dt, boolean muted) {
             if (car == null || car.bands == null) {
                 fadeOut(dt);
+                if (rebuilt != null) {
+                    rebuilt.quiet(dt);
+                }
                 return;
             }
             if (car.engine != engine) {
@@ -2357,8 +2416,29 @@ public final class Sound3D implements Runnable {
                 for (int s : sources) {
                     alSourcei(s, EXTEfx.AL_DIRECT_FILTER, filter);
                 }
+                if (rebuilt != null) {
+                    rebuilt.filter(filter);
+                }
                 appliedHf = hf;
                 appliedLf = lf;
+            }
+            if (car.rebuilt || rebuilt != null) {
+                if (rebuilt == null) {
+                    rebuilt = new RebuiltVoices(filter);
+                }
+                if (car.rebuilt) {
+                    // the same mix, played one cycle at a time: the five recordings fall silent
+                    for (int i = 0; i < 5; i++) {
+                        gain[i] += (targetGain[i] - gain[i]) * k;
+                        pitch[i] += (targetPitch[i] - pitch[i]) * k;
+                        if (alGetSourcei(sources[i], AL_SOURCE_STATE) == AL_PLAYING) {
+                            alSourcePause(sources[i]);
+                        }
+                    }
+                    rebuilt.play(car, index, dt, gain, pitch, throttle, position, velocity, muted);
+                    return;
+                }
+                rebuilt.quiet(dt);
             }
             for (int i = 0; i < 5; i++) {
                 gain[i] += (targetGain[i] - gain[i]) * k;
@@ -2488,15 +2568,480 @@ public final class Sound3D implements Runnable {
             for (int s : sources) {
                 alSourceStop(s);
             }
+            if (rebuilt != null) {
+                rebuilt.silence();
+            }
         }
 
         void delete() {
             for (int s : sources) {
                 alDeleteSources(s);
             }
+            if (rebuilt != null) {
+                rebuilt.delete();
+            }
             if (filter != 0) {
                 EXTEfx.alDeleteFilters(filter);
             }
+        }
+    }
+
+    /* -------------------------------------------------- rebuilt engines */
+
+    /**
+     * A block of the rebuilt sound, 20 ms; blocks each stream has, and how
+     * many are kept queued ahead: 80 ms, which rides out the sound thread
+     * cutting an engine's recordings when it is first heard.
+     */
+    private static final int REBUILT_BLOCK = EngineGrains.RATE / 50;
+    private static final int STREAM_BUFFERS = 6;
+    private static final int STREAM_AHEAD = 4;
+    /** The front's and the back's levels, the skids', and how fast a car fades in or out when the extra starts or stops playing it, seconds. */
+    private static final float FRONT_LEVEL = 0.6F;
+    private static final float BACK_LEVEL = 0.7F;
+    private static final float SKID_LEVEL = 0.55F;
+    private static final float REBUILT_FADE = 0.15F;
+    /** How fast a wheel's skid comes in and dies away, seconds. */
+    private static final float SKID_ATTACK = 0.02F;
+    private static final float SKID_RELEASE = 0.12F;
+    /** The game's skid recordings, a different one at each wheel. */
+    private static final String[] SKID_CLIPS = {"skid0", "skid1", "skid2"};
+    private static final String[] DUST_CLIPS = {"dustskid0", "dustskid1", "dustskid2"};
+
+    /* the recordings the rebuilt sound plays, read and cut once (the sound thread's) */
+    private final Map<String, EngineGrains.Cycles> cycleCache = new HashMap<>();
+    private final Map<String, float[]> skidCache = new HashMap<>();
+    private final Map<String, Integer> skidRates = new HashMap<>();
+    private final int[] readRate = new int[1];
+
+    /** Engine recording {@code name} cut into its cycles, or null while it is not there. */
+    private EngineGrains.Cycles cycles(String name) {
+        EngineGrains.Cycles c = cycleCache.get(name);
+        if (c == null && !cycleCache.containsKey(name)) {
+            float[] x = samples(name, readRate);
+            if (x != null) {
+                c = EngineGrains.cut(x, readRate[0]);
+                cycleCache.put(name, c);
+            }
+        }
+        return c;
+    }
+
+    /** Skid recording {@code name}'s samples (its rate in {@link #skidRates}), or null while it is not there. */
+    private float[] skidSamples(String name) {
+        float[] x = skidCache.get(name);
+        if (x == null && !skidCache.containsKey(name)) {
+            x = samples(name, readRate);
+            if (x != null) {
+                skidCache.put(name, x);
+                skidRates.put(name, readRate[0]);
+            }
+        }
+        return x;
+    }
+
+    /**
+     * Clip {@code name} as samples from -1 to 1 (its channels averaged), its
+     * rate into {@code rate[0]}; null if there is none. A clip that cannot
+     * be read is not tried again.
+     */
+    private float[] samples(String name, int[] rate) {
+        SoundClip clip = clips.clips().get(name);
+        byte[] data = clip == null ? null : clip.data();
+        if (data == null) {
+            return null;
+        }
+        try (AudioInputStream in = AudioSystem.getAudioInputStream(new ByteArrayInputStream(data))) {
+            AudioFormat f = in.getFormat();
+            AudioInputStream pcm = in;
+            if (f.getEncoding() != AudioFormat.Encoding.PCM_SIGNED || f.getSampleSizeInBits() != 16
+                    || f.isBigEndian()) {
+                pcm = AudioSystem.getAudioInputStream(new AudioFormat(f.getSampleRate(), 16, f.getChannels(), true,
+                        false), in);
+            }
+            byte[] b = pcm.readAllBytes();
+            int channels = Math.max(1, pcm.getFormat().getChannels());
+            int n = b.length / (2 * channels);
+            float[] x = new float[n];
+            for (int i = 0; i < n; i++) {
+                float sum = 0F;
+                for (int c = 0; c < channels; c++) {
+                    int at = 2 * (i * channels + c);
+                    sum += (short) ((b[at] & 0xff) | (b[at + 1] << 8));
+                }
+                x[i] = sum / (channels * 32768F);
+            }
+            rate[0] = (int) pcm.getFormat().getSampleRate();
+            return n > 0 ? x : null;
+        } catch (Exception ex) {
+            HLogger.warn("3D sound cannot read clip " + name + " for the rebuilt engine sound: " + ex);
+            cycleCache.put(name, null);
+            skidCache.put(name, null);
+            return null;
+        }
+    }
+
+    /** Where the car is in its speed band, 0 to 1, as {@link EngineVoices#mix} reckons it. */
+    private static float bandShare(Car car) {
+        float s = Math.abs(car.speed);
+        int[] b = car.bands;
+        if (s <= b[0]) {
+            return b[0] == 0 ? 0F : s / b[0];
+        }
+        if (s <= b[1]) {
+            return (s - b[0]) / Math.max(1F, b[1] - b[0]);
+        }
+        if (s <= b[2]) {
+            return (s - b[1]) / Math.max(1F, b[2] - b[1]);
+        }
+        return 1F;
+    }
+
+    /** A source fed blocks of samples as it plays them. */
+    private static final class Stream {
+        final int source;
+        private final int[] buffers = new int[STREAM_BUFFERS];
+        private final int[] spare = new int[STREAM_BUFFERS];
+        private int spares;
+
+        Stream() {
+            source = alGenSources();
+            alGenBuffers(buffers);
+            System.arraycopy(buffers, 0, spare, 0, STREAM_BUFFERS);
+            spares = STREAM_BUFFERS;
+        }
+
+        /** Blocks it has played or never had, ready to be filled. */
+        int free() {
+            for (int done = alGetSourcei(source, AL_BUFFERS_PROCESSED); done > 0 && spares < STREAM_BUFFERS; done--) {
+                spare[spares++] = alSourceUnqueueBuffers(source);
+            }
+            return spares;
+        }
+
+        /** Blocks still to play (as of the last {@link #free}). */
+        int queued() {
+            return STREAM_BUFFERS - spares;
+        }
+
+        void queue(ShortBuffer samples) {
+            int b = spare[--spares];
+            alBufferData(b, AL_FORMAT_MONO16, samples, EngineGrains.RATE);
+            alSourceQueueBuffers(source, b);
+        }
+
+        /** Plays on if it ran dry, or starts, when it has blocks. */
+        void keepPlaying() {
+            if (queued() > 0 && alGetSourcei(source, AL_SOURCE_STATE) != AL_PLAYING) {
+                alSourcePlay(source);
+            }
+        }
+
+        void stop() {
+            alSourceStop(source);
+            free();
+        }
+
+        void delete() {
+            alSourceStop(source);
+            alSourcei(source, AL_BUFFER, 0);
+            alDeleteSources(source);
+            alDeleteBuffers(buffers);
+        }
+    }
+
+    /**
+     * A car the rebuilt engine sound plays (the enginesound extra): its
+     * engine's five recordings, each one cycle at a time
+     * ({@link EngineGrains.Voice}), mixed as {@link EngineVoices} mixes them,
+     * made into the front and the back ({@link EngineGrains.Tone}) and
+     * streamed from two sources, the front at the car's nose and the back at
+     * its tail; and a skid streamed from each wheel while it slides
+     * ({@link EngineGrains.Skid}). Placed by the car's pose, carried on
+     * between ticks with the car, muffled and bent by Doppler as the
+     * engines are. Everything is made when the extra first plays the car.
+     */
+    private final class RebuiltVoices {
+        private final Stream front = new Stream();
+        private final Stream back = new Stream();
+        private final Stream[] wheels = new Stream[REBUILT_WHEELS];
+        private final EngineGrains.Voice[] voices = new EngineGrains.Voice[5];
+        private final EngineGrains.Tone tone = new EngineGrains.Tone();
+        private final EngineGrains.Skid[] skids = new EngineGrains.Skid[REBUILT_WHEELS];
+        private final float[] skidLevel = new float[REBUILT_WHEELS];
+        private final float[] body = new float[BODY_VALUES];
+        private final float[] mixed = new float[REBUILT_BLOCK];
+        private final float[] frontBlock = new float[REBUILT_BLOCK];
+        private final float[] backBlock = new float[REBUILT_BLOCK];
+        private final float[] wheelBlock = new float[REBUILT_BLOCK];
+        private final ShortBuffer pcm = MemoryUtil.memAllocShort(REBUILT_BLOCK);
+        private final float[] lastGain = new float[5];
+        private final float[] lastPitch = {1F, 1F, 1F, 1F, 1F};
+        private final float[] offset = new float[3];
+        private final float[] placed = new float[3];
+        private final int wheelFilter;
+        private float wheelLf = -1F;
+        private float wheelHf = -1F;
+        private int engine = -1;
+        /** How much of the car it plays: 1 while the extra plays it, fading to 0 when it stops. */
+        private float level;
+        private float lastThrottle;
+        private boolean wasOn;
+        /* the car's turn, for its points */
+        private float sy;
+        private float cy;
+        private float sp;
+        private float cp;
+        private float sr;
+        private float cr;
+
+        RebuiltVoices(int filter) {
+            world(front.source);
+            world(back.source);
+            for (int w = 0; w < REBUILT_WHEELS; w++) {
+                wheels[w] = new Stream();
+                world(wheels[w].source);
+                skids[w] = new EngineGrains.Skid();
+            }
+            for (int i = 0; i < 5; i++) {
+                voices[i] = new EngineGrains.Voice();
+            }
+            if (efx) {
+                filter(filter);
+                wheelFilter = EXTEfx.alGenFilters();
+                EXTEfx.alFilteri(wheelFilter, EXTEfx.AL_FILTER_TYPE, EXTEfx.AL_FILTER_LOWPASS);
+            } else {
+                wheelFilter = 0;
+            }
+        }
+
+        /** The engine's filter (dulled off the throttle, muffled by the stage) on the front and the back. */
+        void filter(int filter) {
+            if (efx && filter != 0) {
+                alSourcei(front.source, EXTEfx.AL_DIRECT_FILTER, filter);
+                alSourcei(back.source, EXTEfx.AL_DIRECT_FILTER, filter);
+            }
+        }
+
+        /**
+         * Plays the car for the next update: the five recordings' smoothed
+         * {@code gain} and {@code pitch} (the 3D sound's mix), the throttle
+         * smoothed, and where the car's middle is heard ({@code position},
+         * {@code velocity}, turned to the listener).
+         */
+        void play(Car car, int index, float dt, float[] gain, float[] pitch, float throttle, float[] position,
+                float[] velocity, boolean muted) {
+            if (car.engine != engine) {
+                setEngine(car.engine);
+            }
+            synchronized (bodies) {
+                if (index < MAX_CARS) {
+                    System.arraycopy(bodies[index], 0, body, 0, BODY_VALUES);
+                } else {
+                    Arrays.fill(body, 0F);
+                }
+            }
+            turnOf(car);
+            place(front.source, 0, position, velocity);
+            place(back.source, 3, position, velocity);
+            // a lift high in the band pops the exhaust; off the ground or stopped it does not
+            boolean on = car.throttle && car.running;
+            if (wasOn && !on && car.grounded && car.running && bandShare(car) > 0.5F) {
+                tone.lifted();
+            }
+            if (!car.grounded || !car.running || muted) {
+                tone.calm();
+            }
+            wasOn = on;
+            level = Math.min(1F, level + dt / REBUILT_FADE);
+            System.arraycopy(gain, 0, lastGain, 0, 5);
+            System.arraycopy(pitch, 0, lastPitch, 0, 5);
+            lastThrottle = throttle;
+            engineBlocks(gain, pitch, throttle);
+            wheelBlocks(car, index, dt, muted, position, velocity);
+        }
+
+        /** The extra no longer plays the car (or the car is gone): fades it out, then lets the streams run dry. */
+        void quiet(float dt) {
+            if (level <= 0F && !anyWheel()) {
+                return;
+            }
+            level = Math.max(0F, level - dt / REBUILT_FADE);
+            tone.calm();
+            engineBlocks(lastGain, lastPitch, lastThrottle);
+            float down = 1F - (float) Math.exp(-dt / SKID_RELEASE);
+            for (int w = 0; w < REBUILT_WHEELS; w++) {
+                skidLevel[w] -= skidLevel[w] * down;
+                if (skidLevel[w] < 0.002F) {
+                    skidLevel[w] = 0F;
+                }
+                topUp(w);
+            }
+        }
+
+        private boolean anyWheel() {
+            for (int w = 0; w < REBUILT_WHEELS; w++) {
+                if (skidLevel[w] > 0F || skids[w].sounding()) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private void setEngine(int type) {
+            boolean complete = true;
+            for (int i = 0; i < 5; i++) {
+                EngineGrains.Cycles c = cycles("engs" + type + i);
+                complete &= c != null;
+                voices[i].use(c);
+            }
+            engine = complete ? type : -1; // tried again next update while the game is still loading
+        }
+
+        /** Tops the front's and the back's queues up with blocks of the engine. */
+        private void engineBlocks(float[] gain, float[] pitch, float throttle) {
+            boolean sound = tone.popping();
+            for (int i = 0; i < 5; i++) {
+                sound |= level > 0F && gain[i] > 0.0005F || voices[i].sounding();
+            }
+            if (!sound) {
+                return; // what is queued plays out, then the sources stop
+            }
+            int ahead = lockstep ? STREAM_BUFFERS : STREAM_AHEAD;
+            int need = Math.min(front.free(), back.free()) - (STREAM_BUFFERS - ahead);
+            for (int b = 0; b < need; b++) {
+                Arrays.fill(mixed, 0F);
+                for (int i = 0; i < 5; i++) {
+                    voices[i].add(mixed, 0, REBUILT_BLOCK, pitch[i], gain[i] * level, grainRandom);
+                }
+                tone.shape(mixed, frontBlock, backBlock, REBUILT_BLOCK, throttle, grainRandom);
+                queue(front, frontBlock, FRONT_LEVEL);
+                queue(back, backBlock, BACK_LEVEL);
+            }
+            alSourcef(front.source, AL_GAIN, engineLevel);
+            alSourcef(back.source, AL_GAIN, engineLevel);
+            front.keepPlaying();
+            back.keepPlaying();
+        }
+
+        /** Each wheel's skid: up and down with how hard it slides, from the wheel, on road or loose ground. */
+        private void wheelBlocks(Car car, int index, float dt, boolean muted, float[] position, float[] velocity) {
+            float up = 1F - (float) Math.exp(-dt / SKID_ATTACK);
+            float down = 1F - (float) Math.exp(-dt / SKID_RELEASE);
+            if (wheelFilter != 0) {
+                float lf = throughGain(index);
+                float hf = throughTreble(index);
+                if (Math.abs(lf - wheelLf) > 0.01F || Math.abs(hf - wheelHf) > 0.01F) {
+                    EXTEfx.alFilterf(wheelFilter, EXTEfx.AL_LOWPASS_GAIN, lf);
+                    EXTEfx.alFilterf(wheelFilter, EXTEfx.AL_LOWPASS_GAINHF, hf);
+                    for (Stream s : wheels) {
+                        alSourcei(s.source, EXTEfx.AL_DIRECT_FILTER, wheelFilter);
+                    }
+                    wheelLf = lf;
+                    wheelHf = hf;
+                }
+            }
+            for (int w = 0; w < REBUILT_WHEELS; w++) {
+                float target = muted || !car.running ? 0F : Math.max(0F, Math.min(1F, car.skid(w)));
+                skidLevel[w] += (target - skidLevel[w]) * (target > skidLevel[w] ? up : down);
+                if (target == 0F && skidLevel[w] < 0.002F) {
+                    skidLevel[w] = 0F;
+                }
+                if (skidLevel[w] == 0F && !skids[w].sounding()) {
+                    continue;
+                }
+                String clip = ((car.loose >> w) & 1) != 0 ? DUST_CLIPS[w % 3] : SKID_CLIPS[w % 3];
+                float[] x = skidSamples(clip);
+                if (x != null) {
+                    skids[w].use(x, skidRates.get(clip));
+                }
+                place(wheels[w].source, 6 + 3 * w, position, velocity);
+                topUp(w);
+            }
+        }
+
+        /** Tops wheel {@code w}'s queue up with its skid, at its level now. */
+        private void topUp(int w) {
+            EngineGrains.Skid skid = skids[w];
+            if (skidLevel[w] == 0F && !skid.sounding()) {
+                return;
+            }
+            Stream s = wheels[w];
+            int ahead = lockstep ? STREAM_BUFFERS : STREAM_AHEAD;
+            int need = s.free() - (STREAM_BUFFERS - ahead);
+            for (int b = 0; b < need; b++) {
+                Arrays.fill(wheelBlock, 0F);
+                skid.add(wheelBlock, 0, REBUILT_BLOCK, 0.95F + 0.12F * skidLevel[w], skidLevel[w], grainRandom);
+                queue(s, wheelBlock, SKID_LEVEL);
+            }
+            alSourcef(s.source, AL_GAIN, everyday * bus[BUS_EFFECTS]);
+            s.keepPlaying();
+        }
+
+        private void queue(Stream s, float[] block, float gain) {
+            pcm.clear();
+            for (int i = 0; i < REBUILT_BLOCK; i++) {
+                float v = block[i] * gain * 32_767F;
+                pcm.put((short) Math.max(-32_768F, Math.min(32_767F, v)));
+            }
+            pcm.flip();
+            s.queue(pcm);
+        }
+
+        private void turnOf(Car car) {
+            double y = Math.toRadians(car.yaw);
+            double p = Math.toRadians(car.pitch);
+            double r = Math.toRadians(car.roll);
+            sy = (float) Math.sin(y);
+            cy = (float) Math.cos(y);
+            sp = (float) Math.sin(p);
+            cp = (float) Math.cos(p);
+            sr = (float) Math.sin(r);
+            cr = (float) Math.cos(r);
+        }
+
+        /**
+         * Puts {@code source} at the car's point {@code body[at..at+2]}: turned
+         * with the car as the game turns its points (roll, pitch, then yaw;
+         * RaceView#toWorld), then to the listener, beside its middle.
+         */
+        private void place(int source, int at, float[] position, float[] velocity) {
+            float lx = body[at];
+            float ly = body[at + 1];
+            float lz = body[at + 2];
+            float x1 = lx * cr - ly * sr;
+            float y1 = lx * sr + ly * cr;
+            float y2 = y1 * cp - lz * sp;
+            float z2 = y1 * sp + lz * cp;
+            turn(x1 * cy - z2 * sy, y2, x1 * sy + z2 * cy, placed);
+            alSource3f(source, AL_POSITION, position[0] + placed[0], position[1] + placed[1], position[2] + placed[2]);
+            alSource3f(source, AL_VELOCITY, velocity[0], velocity[1], velocity[2]);
+        }
+
+        void silence() {
+            front.stop();
+            back.stop();
+            for (int w = 0; w < REBUILT_WHEELS; w++) {
+                wheels[w].stop();
+                skidLevel[w] = 0F;
+                skids[w].use(null, 1);
+            }
+            level = 0F;
+            Arrays.fill(lastGain, 0F);
+            tone.clear();
+            engine = -1; // the voices start again from their first cycle
+        }
+
+        void delete() {
+            front.delete();
+            back.delete();
+            for (Stream s : wheels) {
+                s.delete();
+            }
+            if (wheelFilter != 0) {
+                EXTEfx.alDeleteFilters(wheelFilter);
+            }
+            MemoryUtil.memFree(pcm);
         }
     }
 

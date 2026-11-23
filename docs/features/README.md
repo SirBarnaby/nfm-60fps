@@ -27,3 +27,4 @@ One page per extra. Each lives in `src\nfm\lit\features\<feature>\`, has a switc
 - [The Radical One's wing trail](wingtrail.md)
 - [Damage and heat](realism.md), with [the car sheets](car-sheets.md)
 - [The helmet cam](helmetcam.md)
+- [The rebuilt engine sound](enginesound.md)

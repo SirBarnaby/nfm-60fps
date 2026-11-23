@@ -7,6 +7,7 @@ import nfm.lit.features.DrawQueue;
 import nfm.lit.features.Features;
 import nfm.lit.features.RaceView;
 import nfm.lit.features.FeatureSettings;
+import nfm.lit.features.enginesound.EngineSound;
 import nfm.lit.features.helmetcam.HelmetCam;
 
 /**
@@ -422,6 +423,22 @@ final class FeatureBridge {
     /** How dark player {@code player}'s helmet view is at its edges, 0 to 1, {@code share} of the way from the tick before. */
     static float helmetVignette(int player, float share) {
         return HelmetCam.FEATURE.vignette(player, share);
+    }
+
+    /* ------------------------------------------ the rebuilt engine sound */
+
+    /**
+     * Into the 3D sound's car {@code c}, about to be published after the
+     * extras' tick: whether the rebuilt engine sound plays it, and its
+     * wheels' skids (none in a replay, which keeps the cars' places but not
+     * their slides).
+     */
+    static void soundCar(int c, nfm.lit.audio.Sound3D.Car car, boolean replay) {
+        EngineSound sound = EngineSound.FEATURE;
+        car.rebuilt = sound.plays();
+        if (car.rebuilt && !replay) {
+            sound.skids(c, car);
+        }
     }
 
     /* ------------------------------------------------------------- drawing */

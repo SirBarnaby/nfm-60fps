@@ -24,9 +24,10 @@ import nfm.lit.features.RaceView;
  * <li>a wheel off the ground slides nothing.
  * </ul>
  * Plain arithmetic on the copy of the race; it keeps only the cars' last
- * headings.
+ * headings. The rebuilt engine sound plays each wheel's skid from the same
+ * slide.
  */
-final class SkidSlip {
+public final class SkidSlip {
 
     static final int NONE = 0;
     /** Locked or dragged: sliding along the mark. */
@@ -49,7 +50,7 @@ final class SkidSlip {
     float[] lateral = new float[0];
     float[] longitudinal = new float[0];
     /** The slide's size, units a tick. */
-    float[] slide = new float[0];
+    public float[] slide = new float[0];
     /** The slip: lengthwise as a share of the car's speed, sideways about the slip angle's sine twice over. */
     float[] ratio = new float[0];
     int[] kind = new int[0];
@@ -70,7 +71,7 @@ final class SkidSlip {
     /** A landing's first ticks, in which a wheel down marks more readily and the car's turn swings its tyres. */
     static final int LANDING = 2;
 
-    void reset() {
+    public void reset() {
         java.util.Arrays.fill(known, false);
         java.util.Arrays.fill(sinceLanding, 100);
         java.util.Arrays.fill(lastAir, 0);
@@ -86,7 +87,7 @@ final class SkidSlip {
     }
 
     /** Works out every wheel's slide after the tick {@code race} holds. */
-    void update(RaceView race) {
+    public void update(RaceView race) {
         int cars = race.cars;
         fit(cars);
         for (int c = 0; c < cars; c++) {
