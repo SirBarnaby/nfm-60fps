@@ -140,6 +140,11 @@ final class CustomGame {
         return b.toString();
     }
 
+    /** True if {@code text} is picks as {@link #picksText} writes them, adding up to at most MAX_RIVALS. */
+    static boolean readsAsPicks(String text) {
+        return parsePicks(text) != null;
+    }
+
     /** A count per car, comma separated, or null if it is not one that adds up to at most MAX_RIVALS. */
     private static int[] parsePicks(String text) {
         if (text == null) {

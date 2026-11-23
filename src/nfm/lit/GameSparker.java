@@ -5343,6 +5343,13 @@ public class GameSparker extends Panel implements Runnable {
         CustomGame.load(savedRivals,
                 lineup != null ? CustomGame.lineupNamed(lineup) : readcookie(CUSTOM_LINEUP_COOKIE),
                 picks != null ? picks : readcookieText(CUSTOM_PICKS_COOKIE));
+        if (lineup != null && CustomGame.lineupNamed(lineup) < 0) {
+            HLogger.error("nfm.custom.lineup is not default, novice, pro or custom: " + lineup);
+        }
+        if (picks != null && !CustomGame.readsAsPicks(picks)) {
+            HLogger.error("nfm.custom.picks wants " + GameFacts.numberOfCars
+                    + " counts, one per car, comma separated, adding up to at most " + CustomGame.MAX_RIVALS + ": " + picks);
+        }
     }
 
     private void saveCustomGameIfChanged() {
