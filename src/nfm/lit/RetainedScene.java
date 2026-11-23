@@ -328,6 +328,99 @@ final class RetainedScene {
         }
     }
 
+    /** A probe for {@link #probe}, made once. */
+    private Probe probe;
+
+    /**
+     * Places single points of the scene at the two ends of {@code span}'s
+     * frames, for the card's check of the polygons it cuts in bands: where
+     * they start, and as far on as they may carry the motion. Uses the
+     * scene's own placing, which is scratch once the scene is realized; good
+     * until the scene is realized, recorded or placed again.
+     */
+    Probe probe(PoseSpan span) {
+        if (probe == null) {
+            probe = new Probe();
+        }
+        probe.reset(span);
+        return probe;
+    }
+
+    /** See {@link #probe}: each end worked out once, each point placed when asked for. */
+    final class Probe implements nfm.lit.gpu.ScenePoints.Probe {
+        private final FramePose[] ends = { new FramePose(), new FramePose() };
+        private final float[][] moments = new float[2][MOMENT_FLOATS];
+        private int loaded = -1;
+
+        private void reset(PoseSpan span) {
+            span.at(0F, ends[0]);
+            span.at(1F + PoseSpan.MAX_CARRY_ON, ends[1]);
+            for (int e = 0; e < 2; e++) {
+                prepare(ends[e]);
+                saveMoment(moments[e], ends[e].slots);
+            }
+            loaded = -1;
+        }
+
+        @Override
+        public void place(int end, int id, float[] xy) {
+            if (loaded != end) {
+                loadMoment(moments[end], ends[end].slots);
+                loaded = end;
+            }
+            placeWithAnchor(id);
+            xy[0] = placedX[id];
+            xy[1] = placedY[id];
+        }
+
+        /** Places point {@code id}, and first the point a screen point is placed from. */
+        private void placeWithAnchor(int id) {
+            if (kinds[id] == SCREEN || kinds[id] == SCREEN_TRAIL) {
+                placeWithAnchor((int) points[id * STRIDE]);
+            }
+            placeOne(id);
+        }
+    }
+
+    /** Floats {@link #saveMoment} keeps: what all points share at a moment, then 13 for each car. */
+    private static final int MOMENT_FLOATS = 8 + 13 * FramePose.SLOTS;
+
+    /** Keeps what {@link #prepare} worked out for a moment with {@code slots} cars. */
+    private void saveMoment(float[] m, int slots) {
+        m[0] = trailShare;
+        m[1] = sinYaw;
+        m[2] = cosYaw;
+        m[3] = sinPitch;
+        m[4] = cosPitch;
+        m[5] = moveX;
+        m[6] = moveY;
+        m[7] = moveZ;
+        for (int s = 0, at = 8; s < slots; s++, at += 13) {
+            m[at] = carX[s];
+            m[at + 1] = carY[s];
+            m[at + 2] = carZ[s];
+            System.arraycopy(carTurn[s], 0, m, at + 3, 10);
+        }
+    }
+
+    /** Puts back what {@link #saveMoment} kept. */
+    private void loadMoment(float[] m, int slots) {
+        trailShare = m[0];
+        sinYaw = m[1];
+        cosYaw = m[2];
+        sinPitch = m[3];
+        cosPitch = m[4];
+        moveX = m[5];
+        moveY = m[6];
+        moveZ = m[7];
+        for (int s = 0, at = 8; s < slots; s++, at += 13) {
+            carX[s] = m[at];
+            carY[s] = m[at + 1];
+            carZ[s] = m[at + 2];
+            System.arraycopy(m, at + 3, carTurn[s], 0, 10);
+        }
+    }
+
     /** Works out what all points share at moment {@code pose}; the points are then placed in order. */
     private void prepare(FramePose pose) {
         trailShare = Math.max(0F, Math.min(1.25F, pose.alpha));

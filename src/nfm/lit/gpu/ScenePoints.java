@@ -45,4 +45,17 @@ public final class ScenePoints {
     public final float[] cars = new float[4 * CAR_VEC4S * CAR_SLOTS];
     /** Car slots in use this frame. */
     public int carCount;
+
+    /**
+     * Where single points are at the two ends of the moments a kept scene's
+     * frames are placed for, for the card's check that a polygon cut in bands
+     * stays as it was cut (see SceneGeometry); null for no check.
+     */
+    public Probe probe;
+
+    /** Places a kept scene's points at other moments than the one it was cut at. */
+    public interface Probe {
+        /** Point {@code id}'s x and y at end {@code end} (0 or 1) into {@code xy}. */
+        void place(int end, int id, float[] xy);
+    }
 }
