@@ -61,7 +61,7 @@ Frames are placed between two ticks by the clock: tick start plus alpha times th
 With frames drawn on their own thread, one frame a tick does more than the others: it sends the card the tick's scene (1-3 MB) and HUD. At 120 fps that frame took 12-14 ms instead of 8.3 and showed the race 4-6.7 ms behind the screen against 0.7 for the rest: one countdown frame in eight was off even by over 4 ms, evenly spread, with no tick late.
 
 - Seen as: in the frames CSV, `lag_ms` higher once a tick, on the frame after the tick's `kept_ms`; the "off" count flat across the part instead of in a burst.
-- Fix: keep how long a frame takes from being placed to reaching the screen, smoothed, apart for frames that send a new scene and the others, capped (16 ms) so one stall does not throw the next frames off, and place each frame for that moment (`Presenter.freshShowNanos`). Countdown at 120 fps: 82 of 793 frames off even → 14 of 815.
+- Fix: keep how long a frame takes from being placed to reaching the screen, smoothed, by the frame's place after a new scene (the one that sends it, the two after it, the rest), capped (16 ms) so one stall does not throw the next frames off, and place each frame for that moment (`Presenter.showNanos`). Countdown at 120 fps: 82 of 793 frames off even → 14 of 815. Split screen sends two panes' scenes, and there the two frames after also waited 3-5 ms on the card: 71 of 75 frames of a stretch off even, until they got places of their own.
 - New poses are still used the moment they come: placing for the screen moves no input later.
 
 ### 9. The live test plays the menus too: a resting mouse can choose
@@ -71,10 +71,28 @@ The split-screen live test ran out of time: its results screen took the item und
 - Fix: a menu takes the item under the mouse only when the mouse has moved since it last chose (`SplitScreens`, `hoverX`/`hoverY`); the first tick takes it where it is, as the pause menu does.
 - A live test that "times out" is worth a look at what was on the screen: here it was a real bug a player with a mouse at rest would have hit.
 
+### 10. Old image calls are slow when they run rarely: read the picture's buffer
+
+Split screen's results and the pause menu grey the race as it stopped, in their first tick. That tick took 56-98 ms (menu ticks are 40), so the results stood still 115-150 ms as they came up. Sampled, about half of it was `PixelGrabber` reading the 1920x1080 picture, and the rest the greying through two `Color` objects a pixel, the race replayed in software into the picture, and the box drawn. The grabber hands pixels over through the image producer and consumer interfaces, a call a row, and code that runs once a race never gets compiled: some 30 ms.
+
+- Fix: read a `TYPE_INT_RGB` picture with `Raster.getDataElements` (rows copied at once, fast even cold), any other with `getRGB`, and grey with whole numbers (`GameUi.grabScreen`, `pauseimage`). The readers take only red, green and blue, so the grabber's alpha byte does not matter. The countdown portrait's tint already read its picture that way.
+- Proved the same: a scratch harness greyed display-compatible, ARGB and byte pictures both ways (all pixels the same) and timed them in fresh runs: the first greying 59 → 20 ms, warm 9.6 → 6.7 ms. {AOT}
+- What is left of that tick is the race replayed in software into the picture (15-35 ms for split screen's two panes) and the HUD over it: the grey picture must show the race as it ended.
+
+### 11. A display that has gone to sleep makes every measurement wrong
+
+Windows turns the display off after 10 idle minutes here. With it off, the card held frames up 400-500 ms over and over, now and then 2 s, in every part of every run, in either build, menus included. No player sees that: they are at the keyboard. Runs while the owner was away overnight all had it.
+
+- Seen as: "the graphics card held a frame up" lines all through a run, at the same few hundred ms, in parts that never stall otherwise (main menu, settings).
+- Asking for the display (`SetThreadExecutionState` with `ES_DISPLAY_REQUIRED`) keeps a display on, but does not wake one that is already off. A mouse move by nothing (`SendInput`, 0,0) does, without moving the pointer.
+- In PowerShell 5.1, `0x80000003` is a negative `Int32` and a `uint` parameter refuses it: the watcher's hold threw and was never taken. Pass the flags in decimal as `[uint32]`.
+- The watcher now waits for 5 minutes with nobody at the keyboard and a quiet processor, holds the display, wakes it if the screen-off time may have passed, and lets it go at the end.
+
 ## How to find the next one
 
 - `-Dnfm.framelog.csv=true` also writes `ticks-NN-<part>.csv`: per tick, when it was due, how late it began, the race step, the run-ahead, when the poses were handed to the presenter, the kept scene, the card and when it was done. A tick whose `done_ms` passes 53 makes frames stand still; an empty `handed_ms` is a hand-over skipped to catch up.
 - `[framelog] <part> began at <time>` lines line the CSVs up with Java's own logs (`-Xlog:gc*`, `-Xlog:jit+compilation=debug,deoptimization=debug` with `time`).
+- Before believing a run, check it had the display on: card holds of a few hundred ms in menus that never stall say it slept (lesson 11).
 - The PC is noisy: judge a change by interleaved A/B runs, several rounds, on the spread, never on one pair. Wait for a quiet PC (processor under 15% for 30 s, no game running) before a hidden run that is to be judged, and repeat a once-seen stall before chasing it.
 - For one part's start, line its first ten ticks against its first two dozen frames (`shown`, `motion`, `lag`, `off`): a tick late at the start, a frame placed for a moment already gone, and a frame that took long to show each have their own look.
 - To make drawing code cheaper without changing the picture, build every scene twice in a scratch build, with the committed class copied under another name and with the new one, and compare the bytes; alternate which goes first to time both on the same scenes (the band code: the same bytes in 4,800 scenes, 8% quicker). `-Dnfm.retained=false` sends every frame down the processor's path, which the default run never takes.

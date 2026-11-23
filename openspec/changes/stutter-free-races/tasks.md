@@ -32,6 +32,7 @@
 - [x] 4.10 The warm-up's unseen draw with the HUD and the white flash, as a race frame draws it; split screen's both panes too (decision 11, 12febb0)
 - [x] 4.11 Frames placed for the screen by their place after a new kept scene: split screen's two frames after one waited on the card (decision 10, 12febb0)
 - [x] 4.12 Split screen's countdown portrait tint redrew both panes whole: a pane replays inside the clip it is given (decision 12, 12febb0)
+- [x] 4.13 Split screen's results and the pause menu came up with a 56-98 ms tick: the greyed race read from the picture's buffer, greyed with whole numbers (decision 13, ba816fd)
 
 ## 5. Gates
 

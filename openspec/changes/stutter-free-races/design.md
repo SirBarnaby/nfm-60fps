@@ -106,6 +106,13 @@
 - **Why.** Every split countdown had one tick of 54-78 ms (against 20-30), 4.95 s in, and the next tick late 13-25 ms: the tick that tints the countdown portrait with the picture behind it (decision 4). It redraws only the portrait's part of the picture in software, by clip; `SceneRecorder` replaced the clip with each pane's own at the pane's mark, so both panes were redrawn whole.
 - **What.** A pane's clip is put inside the clip the replay was given. Every other replay gives no clip or the whole picture, where this draws the same pixels as before.
 
+### 13. The greyed race behind the pause menu and split results read from the picture's buffer
+
+- **Why.** Split screen's results' first tick took 56-98 ms against a 40 ms menu tick, so the results stood still 115-150 ms as they came up; the pause menu's first, 42-48 ms. About half of it was the `PixelGrabber` reading the 1920x1080 picture, cold every time (it runs once a race), and the greying through two `Color` objects a pixel.
+- **What.** A `TYPE_INT_RGB` picture is read with `Raster.getDataElements`, any other with `getRGB` (the grabber stays for an image that is not a buffer), and greyed with whole numbers. The same pixels: the readers take only red, green and blue. The end-of-race fade and car select read their picture the same way.
+- **Result.** The first greying in a run 59 → 20 ms, warm 9.6 → 6.7 ms (scratch harness, all pixels the same on display-compatible, ARGB and byte pictures). {AOT}
+- *Left:* the race replayed in software into the picture first (15-35 ms in split screen): the grey must be of the race as it ended.
+
 ### 250+ fps and no stutter
 
 TODO after the live test.
