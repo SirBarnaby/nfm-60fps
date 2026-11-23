@@ -2870,10 +2870,11 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
      * the portrait.
      *
      * @param world the race, whose {@link World#ticksSinceGo} the start runs by
+     * @return true while the portrait is up, so captions keep clear of it
      */
-    private void launchCountdown(World world, int me) {
+    private boolean launchCountdown(World world, int me) {
         if (fase != Phase.INGAME) {
-            return;
+            return false;
         }
         int cars = GameFacts.numberOfPlayers;
         int gap = CustomGame.LAUNCH_GAP_TICKS;
@@ -2883,7 +2884,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                 drawcs(LAUNCH_CAPTION_Y, "Staggered start: " + groups + " groups, a second apart. You go last.", 0,
                         0, 100, 0);
             }
-            return;
+            return false;
         }
         int tick = world.ticksSinceGo - 1; // the tick just run, 0 at Go!
         int wait = CustomGame.launchGroup(0, cars) * gap - tick;
@@ -2891,10 +2892,10 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         if (number > 3) {
             drawcs(LAUNCH_CAPTION_Y, "Group " + CustomGame.groupsGone(cars, tick) + " of " + groups
                     + " is off. You go in " + number, 0, 0, 100, 0);
-            return;
+            return false;
         }
         if (wait < -LAUNCH_GO_TICKS) {
-            return;
+            return false;
         }
         if (wait == number * gap && !mutes && me == 0) {
             sm.play(switch (number) {
@@ -2905,6 +2906,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             });
         }
         drawCountdown(number, number == 0 ? 2 : wait > number * gap - 5 ? 1 : 0); // the portrait speaks each number
+        return true;
     }
 
     /** The countdown's portrait ({@code talking}: 0 still, 1 speaking, 2 at Go!) and its number, 0 for Go!. */
@@ -3114,9 +3116,9 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                 }
                 drawCountdown(gocnt, duds);
             }
-            if (split == null && drivers[me].world().staggered()) {
-                launchCountdown(drivers[me].world(), me);
-            }
+            // the cars ahead race on while the player waits, so a caption can come up during the player's countdown
+            int sayY = split == null && drivers[me].world().staggered() && launchCountdown(drivers[me].world(), me)
+                    ? LAUNCH_CAPTION_Y : 105;
             if (looped != 0 && drivers[me].loop == 2) {
                 looped = 0;
             }
@@ -3161,16 +3163,16 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                 if (tcnt < 30) {
                     if (tflk) {
                         if (!wasay) {
-                            drawcs(105, say, 0, 0, 0, 0);
+                            drawcs(sayY, say, 0, 0, 0, 0);
                         } else {
-                            drawcs(105, say, 0, 0, 0, 0);
+                            drawcs(sayY, say, 0, 0, 0, 0);
                         }
                         tflk = false;
                     } else {
                         if (!wasay) {
-                            drawcs(105, say, 0, 128, 255, 0);
+                            drawcs(sayY, say, 0, 128, 255, 0);
                         } else {
-                            drawcs(105, say, 255, 128, 0, 0);
+                            drawcs(sayY, say, 255, 128, 0, 0);
                         }
                         tflk = true;
                     }
