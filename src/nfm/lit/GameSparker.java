@@ -6825,9 +6825,11 @@ public class GameSparker extends Panel implements Runnable {
                 }
             }
         }
+        // unlike the other tests, a custom test that never got through counts as failed: a dead game thread leaves
+        // the game standing on one screen, and that should not pass for a finished run
         System.out.println("[autotest] custom test ran out of time in " + ui.fase);
         finishAutoTest(directory);
-        System.exit(0);
+        System.exit(1);
     }
 
     /** True if the player's car stands behind every computer car on the grid: for the custom test's log. */
