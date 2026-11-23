@@ -33,6 +33,8 @@
 - [x] 4.11 Frames placed for the screen by their place after a new kept scene: split screen's two frames after one waited on the card (decision 10, 12febb0)
 - [x] 4.12 Split screen's countdown portrait tint redrew both panes whole: a pane replays inside the clip it is given (decision 12, 12febb0)
 - [x] 4.13 Split screen's results and the pause menu came up with a 56-98 ms tick: the greyed race read from the picture's buffer, greyed with whole numbers (decision 13, ba816fd)
+- [x] 4.14 Blind review finding 1: a screenshot mid-race restarted the presenter and moved the tick clock; a race's first scene is now one after a menu's frame (decision 14)
+- [x] 4.15 Blind review finding 2: band crossings drifted apart on the card; placed where the edges cross in each frame (`ROLE_CROSS`, decision 15)
 
 ## 5. Gates
 
@@ -41,8 +43,10 @@
 - [x] 5.3 `test\verify-races.ps1`: 20 matched, golden frames 95 same; `-Rollback 50`: 20 matched, every rewind put back
 - [ ] 5.4 `test\perf.ps1` on a quiet PC with an interleaved A/B against afa93ec (baseline left as it is; at 17:20 the gate ran beside another game's test runs, 74% processor: 92-181 fps, not judged); `test\spec-check.ps1`: 11 passed
 - [ ] 5.5 `test\live.ps1` (no limit and 120 fps compared, supersampling off) and `test\live.ps1 -Split`, on a quiet PC, until no flag is left
-- [ ] 5.6 `test\blind-review.ps1 -Base afa93ec`
+- [x] 5.6 `test\blind-review.ps1 -Base afa93ec` (docs\reviews\2026-11-23-1533-ddc18c0.md, needs-attention): findings 1 and 2 fixed (4.14, 4.15); 3 is 5.4 and 5.5; 4 (split results and the pause menu drawn on the processor) was so before this change and is no stutter any more (4.13); 5 is the extras framework's specs, another change
 - [x] 5.7 Cleanup pass (four reviews: reuse, simpler code, wasted work, depth; applied where the behaviour stays, 13c3f7a): the card's bands built 8% quicker with the same bytes (every scene built both ways in the same hidden runs: 1,000+ for the card, 3,800 on the processor); again `build.ps1`, `verify-races.ps1` 20 matched and golden frames 95 same, `-Rollback 50` 20 matched with every rewind put back, `spec-check.ps1` 11 passed. The lessons in `docs\solutions\stutter-at-race-start.md`
+
+- [x] 5.8 After 4.14 and 4.15, on staging with the extras framework merged (8caf7b6): `build.ps1` (shaders baked, AOT trained), `verify-races.ps1` 20 matched and golden frames 95 same, `-Rollback 50` 20 matched with every rewind put back, `verify-sound.ps1` all 3 renders match, `spec-check.ps1` 16 areas, 78 requirements
 
 ## 6. Workflow follow-up
 

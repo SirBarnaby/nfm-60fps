@@ -76,7 +76,7 @@ The split-screen live test ran out of time: its results screen took the item und
 Split screen's results and the pause menu grey the race as it stopped, in their first tick. That tick took 56-98 ms (menu ticks are 40), so the results stood still 115-150 ms as they came up. Sampled, about half of it was `PixelGrabber` reading the 1920x1080 picture, and the rest the greying through two `Color` objects a pixel, the race replayed in software into the picture, and the box drawn. The grabber hands pixels over through the image producer and consumer interfaces, a call a row, and code that runs once a race never gets compiled: some 30 ms.
 
 - Fix: read a `TYPE_INT_RGB` picture with `Raster.getDataElements` (rows copied at once, fast even cold), any other with `getRGB`, and grey with whole numbers (`GameUi.grabScreen`, `pauseimage`). The readers take only red, green and blue, so the grabber's alpha byte does not matter. The countdown portrait's tint already read its picture that way.
-- Proved the same: a scratch harness greyed display-compatible, ARGB and byte pictures both ways (all pixels the same) and timed them in fresh runs: the first greying 59 → 20 ms, warm 9.6 → 6.7 ms. {AOT}
+- Proved the same: a scratch harness greyed display-compatible, ARGB and byte pictures both ways (all pixels the same) and timed them in fresh runs: the first greying 59 → 20 ms, warm 9.6 → 6.7 ms. In the game with its AOT cache (interleaved hidden split-screen runs, two each, every results screen in them, beside another game using the processor): the results' longest frame, median 200 → 89 ms (126-264 against 67-133).
 - What is left of that tick is the race replayed in software into the picture (15-35 ms for split screen's two panes) and the HUD over it: the grey picture must show the race as it ended.
 
 ### 11. A display that has gone to sleep makes every measurement wrong
@@ -87,6 +87,18 @@ Windows turns the display off after 10 idle minutes here. With it off, the card 
 - Asking for the display (`SetThreadExecutionState` with `ES_DISPLAY_REQUIRED`) keeps a display on, but does not wake one that is already off. A mouse move by nothing (`SendInput`, 0,0) does, without moving the pointer.
 - In PowerShell 5.1, `0x80000003` is a negative `Int32` and a `uint` parameter refuses it: the watcher's hold threw and was never taken. Pass the flags in decimal as `[uint32]`.
 - The watcher now waits for 5 minutes with nobody at the keyboard and a quiet processor, holds the display, wakes it if the screen-off time may have passed, and lets it go at the end.
+
+### 12. A presenter that starts again is not a race that starts
+
+- Decision 9's first scene was "the presenter draws nothing yet", and the presenter also stops for one frame mid-race (a screenshot, a scene that could not be recorded): each such frame moved the race's tick clock. Found by the blind review, not by a test: recorded races never use the presenter, and the live test leaves screenshot frames out of its counts.
+- Fix: say what you mean. A race's first scene is one after a frame that was not a race's (`raceOnScreen`).
+- Proved: a hidden run with screenshots on (`-Dnfm.autotest.shots=true` after the run script's own `false`): 90 screenshots in the race, its 1,999 ticks all due 53 ms apart (the ticks CSV's `due_ms`).
+
+### 13. Check a geometry change on the game's own polygons, followed by continuity
+
+- The band crossings (decision 15) looked better on random polygons only for small moves, and worse in the worst case for big ones. On the game's own polygons (`-Dnfm.motiontest` scenes: 49 moments between two ticks), the first count said the new code was worse.
+- That count matched polygons between moments by kind, corners and order, and a scenery polygon that came or went shifted every later one: different polygons were compared. Followed moment by moment from the middle, each corner moving at most 6 px a step, the new code was better in 108 placements and worse in 13 by a pixel (1,775 → 135 pixels wrong).
+- How: cut the polygon with the real `SceneGeometry.buildProjected` (a class in its package on the classpath, the recording's points as `CONSTANT` ones), place the vertices as `Shaders.PROJECTED_VS` does with the moved corners, and compare pixel centres with the even-odd fill.
 
 ## How to find the next one
 

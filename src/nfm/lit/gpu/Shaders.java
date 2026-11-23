@@ -301,6 +301,20 @@ final class Shaders {
                     float2 b = corner(i.refs.z, i.refs.w);
                     precise float2 d = b - a;
                     p = a + d * i.pos.x + 0.25;
+                } else if (role == 3) {
+                    // where edges a-b and c-d cross now (a polygon cut in bands): the bands either side meet there
+                    float2 a = corner(i.refs.x, i.refs.x);
+                    float2 b = corner(i.refs.y, i.refs.y);
+                    float2 c = corner(i.refs.z, i.refs.z);
+                    float2 d = corner(i.refs.w, i.refs.w);
+                    precise float2 ab = b - a;
+                    precise float2 cd = d - c;
+                    precise float2 ac = c - a;
+                    precise float den = ab.x * cd.y - ab.y * cd.x;
+                    // kept between where a-b meets the cuts either side (pos), so the bands cannot fold
+                    precise float share = den != 0.0 ? clamp((ac.x * cd.y - ac.y * cd.x) / den, i.pos.x, i.pos.y)
+                            : (i.pos.x + i.pos.y) * 0.5;
+                    p = a + ab * share + 0.25;
                 } else if (role >= 10) {
                     int k = role % 10;
                     float2 a = corner(i.refs.x, i.refs.y);

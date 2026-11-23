@@ -370,6 +370,14 @@ public class GameSparker extends Panel implements Runnable {
      * otherwise.
      */
     private long firstSceneNanos;
+    /**
+     * The last frame shown was a race's (replays and highlights count), the
+     * presenter's or one drawn on this thread: a scene handed over then is
+     * not a race's first, even if the presenter stopped for a frame drawn
+     * here (a screenshot, a scene that could not be recorded), so the ticks
+     * keep their times.
+     */
+    private boolean raceOnScreen;
 
     /** Set by the autotest thread; the next race tick jumps to the post-race highlight. */
     private volatile boolean autotestHighlightRequested;
@@ -2945,7 +2953,7 @@ public class GameSparker extends Panel implements Runnable {
      */
     private boolean handOverKept() {
         warmUpKept = null; // the presenter's own from here: a warm-up scene not drawn by now is not needed
-        boolean firstScene = !presenter.drawingRaces(); // nothing of this race on the screen yet
+        boolean firstScene = !raceOnScreen; // nothing of this race on the screen yet
         boolean ahead = aheadPossible();
         boolean stale = keptStale || keptAhead != ahead;
         long aheadNanos = 0L;
@@ -7868,7 +7876,9 @@ public class GameSparker extends Panel implements Runnable {
             if (presenter != null) {
                 presenter.drawRaces(presented);
             }
-            if (!presented) {
+            if (presented) {
+                raceOnScreen = true;
+            } else {
                 keptStale = true; // the presenter starts again from a scene handed over then
             }
             if (!unpaced && !presented && (scenePhase ? frameDue : ticked)) {
@@ -7965,6 +7975,7 @@ public class GameSparker extends Panel implements Runnable {
 
                 long presentStart = System.nanoTime();
                 presentFrame(capture);
+                raceOnScreen = scenePhase;
                 gpuSceneFrame = false;
                 if (capture) {
                     captureRequested = false; // after presenting: the GPU read-back comes from there
