@@ -39,6 +39,9 @@ public final class ExtrasCheck {
         if (wants(only, "skidmarks")) {
             nfm.lit.features.skidmarks.SkidmarkCheck.run();
         }
+        if (wants(only, "wingtrail")) {
+            nfm.lit.features.wingtrail.WingTrailCheck.run();
+        }
         System.out.println("[extras] checks: " + passed + " passed, " + failed + " failed");
         System.exit(failed == 0 && passed > 0 ? 0 : 1);
     }

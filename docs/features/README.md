@@ -21,3 +21,4 @@ One page per extra. Each lives in `src\nfm\lit\features\<feature>\`, has a switc
 ## Pages
 
 - [Skidmarks and last race's skid zones](skidmarks.md)
+- [The Radical One's wing trail](wingtrail.md)
