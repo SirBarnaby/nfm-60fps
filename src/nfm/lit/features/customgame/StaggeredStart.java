@@ -141,11 +141,12 @@ public final class StaggeredStart {
 
     /**
      * True if computer car {@code car}'s driving is worked out after this
-     * tick's drive, as the game does for every computer car: not while its
-     * group waits, so it sets off as a car does at the start.
+     * tick's drive, as the game does for every computer car: its controls
+     * are for the next tick, so they are worked out from the tick before its
+     * group starts, and it sets off on its group's start, as the player does.
      */
     public static boolean drivesNext(World world, int car, int cars) {
-        return !world.staggered() || !held(car, cars, world.ticksSinceGo);
+        return !world.staggered() || !held(car, cars, world.ticksSinceGo + 1);
     }
 
     /** After the cars drive: the staggered start's clock goes on. */
