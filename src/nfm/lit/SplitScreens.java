@@ -526,7 +526,7 @@ final class SplitScreens {
         for (int i = 0; i < rows; i++) {
             boolean human = standingCar[i] < 2;
             rd.setColor(human ? new Color(255, 200, 80) : new Color(220, 220, 220));
-            String place = (i + 1) + suffix(i + 1);
+            String place = GameUi.ordinal(i + 1);
             rd.drawString(place, x + 60, rowY + i * 22);
             rd.drawString(standing[i], x + 110, rowY + i * 22);
             if (standingWasted[i]) {
@@ -616,15 +616,6 @@ final class SplitScreens {
             }
             default -> ui.fase = Phase.MAINMENU;
         }
-    }
-
-    private static String suffix(int place) {
-        return switch (place) {
-            case 1 -> "st";
-            case 2 -> "nd";
-            case 3 -> "rd";
-            default -> "th";
-        };
     }
 
     /* ================================================================ text */

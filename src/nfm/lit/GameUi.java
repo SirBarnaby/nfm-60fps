@@ -268,26 +268,32 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
     static final int MENU_PLAY = 0;
     static final int MENU_INSTRUCTIONS = 1;
     static final int MENU_CREDITS = 2;
-    static final int MENU_SPLIT = 3;
-    static final int MENU_SETTINGS = 4;
-    static final int MENU_EXIT = 5;
-    private static final int MENU_ITEMS = 6;
+    static final int MENU_CUSTOM = 3;
+    static final int MENU_SPLIT = 4;
+    static final int MENU_SETTINGS = 5;
+    static final int MENU_EXIT = 6;
+    private static final int MENU_ITEMS = 7;
     /** Each item's box: how wide, and where it is at the top (see fitScreen), 31 pixels apart give or take. */
-    private static final int[] MENU_WIDTH = {110, 196, 85, 140, 100, 110};
-    private static final int[] MENU_TOP = {246, 275, 306, 337, 368, 399};
+    private static final int[] MENU_WIDTH = {110, 196, 85, 150, 140, 100, 110};
+    private static final int[] MENU_TOP = {246, 275, 306, 337, 368, 399, 430};
     /** The colour each item's box flickers to while chosen. */
     private static final Color[] MENU_FLICKER = {new Color(200, 255, 0), new Color(200, 128, 0), new Color(200, 0, 0),
-        new Color(0, 160, 220), new Color(200, 0, 128), new Color(128, 0, 200)};
+        new Color(255, 200, 0), new Color(0, 160, 220), new Color(200, 0, 128), new Color(128, 0, 200)};
     private final int[] menuY = new int[MENU_ITEMS]; // see fitScreen
     /** Where the menu's brown backdrop is opened up for the items under its picture, and by how much (its rows stay whole). */
     private static final int OPBACK_GAP_AT = 90;
-    private static final int OPBACK_GAP = 69;
+    private static final int OPBACK_GAP = 100;
 
     /** The settings screen, made when first opened (the menu font is registered by then). */
     private SettingsScreen settingsScreen;
 
     /** Split screen's car select and results. */
     final SplitScreens splitScreens = new SplitScreens(this);
+
+    /** The custom game's page (see {@link SettingsScreen#customGame}), made when first opened. */
+    private SettingsScreen customGameScreen;
+    /** Race! was chosen on the custom game's page: off to the car select once its frame is done. */
+    private boolean customRaceChosen;
 
     /** Race Again after a split-screen race: the stage select goes on with the same stage at once. */
     boolean raceAgain;
@@ -706,6 +712,8 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
 
             if (SplitRace.on) {
                 GameFacts.numberOfPlayers = 2 + SplitRace.rivals; // both players and the computer cars chosen
+            } else if (CustomGame.on) {
+                GameFacts.numberOfPlayers = 1 + CustomGame.rivalsNow(); // the player and the computer cars chosen
             } else if (!nplayers_debug) {
                 switch (checkpoints.stage) {
                     // case 2:
@@ -843,6 +851,49 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         fase = Phase.SETTINGS;
     }
 
+    /**
+     * Opens the custom game's page: from the main menu, which turns the
+     * custom game on, and again after each of its races.
+     */
+    void openCustomGame() {
+        if (customGameScreen == null) {
+            customGameScreen = SettingsScreen.customGame(back, names, () -> customRaceChosen = true);
+        }
+        CustomGame.on = true;
+        customRaceChosen = false;
+        customGameScreen.open(-1);
+        fase = Phase.CUSTOMGAME;
+    }
+
+    /**
+     * One tick of the custom game's page, over the main menu's moving
+     * background: Race! goes on to the car select, Back or Escape to the
+     * main menu.
+     */
+    void customGame(Control control) {
+        scrollBackdrop(20);
+        boolean leave = customGameScreen.frame(rd, control);
+        if (customRaceChosen) {
+            customRaceChosen = false;
+            fase = Phase.CARSELECTTRIGGER;
+        } else if (leave) {
+            opselect = MENU_CUSTOM;
+            fase = Phase.MAINMENU;
+        }
+    }
+
+    /** The race is over (won, lost or wasted), its banner up until Enter: for the hidden test run. */
+    boolean raceOver() {
+        return holdit;
+    }
+
+    /** For the hidden test run: chooses a row of the custom game's page by its name. */
+    void selectCustomGameRow(String label) {
+        if (customGameScreen != null) {
+            customGameScreen.select(label);
+        }
+    }
+
     /** For the smoke test: chooses a setting on the open settings screen by its name. */
     void selectSetting(String label) {
         if (settingsScreen != null) {
@@ -873,7 +924,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         }
         if (screen.frame(rd, control)) {
             fase = screen.backTo;
-            opselect = screen.backTo == Phase.PAUSEMENU ? PAUSE_SETTINGS : 3;
+            opselect = screen.backTo == Phase.PAUSEMENU ? PAUSE_SETTINGS : MENU_SETTINGS;
         }
     }
 
@@ -2641,6 +2692,257 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         }
     }
 
+    /** The most rows the standings show; a bigger race (a custom game's) shows a few of its cars, see {@link #compactStandings}. */
+    static final int BOARD_ROWS = 10;
+    /** The cars still in the race in standing order, and which of them the compact standings show. */
+    private final int[] boardOrder = new int[51];
+    private final boolean[] boardShown = new boolean[51];
+
+    /**
+     * One row of the standings, {@code row} rows down: the car's place
+     * ({@code rank}, 0 for 1st), its name, its power or damage bar, and the
+     * frame around the car the arrow points at. {@code mine} writes the name
+     * in the places' blue: the player's own row on the compact standings.
+     */
+    private void standingRow(int row, int rank, int car, int me, Madness[] drivers, boolean mine) {
+        int y_value = 30; // use to move status up or down
+        int x_value = GameFacts.screenWidth - 700; // use to move status left or right
+
+        rd.setColor(new Color(0, 0, 100));
+        rd.drawString(ordinal(rank + 1), (rank == 0 ? 543 : 541) + x_value, 76 + y_value + 30 * row);
+        rd.setColor(mine ? new Color(0, 0, 100) : new Color(0, 0, 0));
+        rd.drawString(names[sc[car]], 600 - ((FontHandler.fMetrics.stringWidth(names[sc[car]])) / 2) + x_value,
+                70 + y_value + 30 * row);
+        if (drivers[me].im == car) {
+            int red = (int) (159.0F + (159.0F * ((float) Medium.snap[0] / 100.0F)));
+            if (red > 255)
+                red = 255;
+            if (red < 0)
+                red = 0;
+            int green = (int) (207.0F + (207.0F * ((float) Medium.snap[1] / 100.0F)));
+            if (green > 255)
+                green = 255;
+            if (green < 0)
+                green = 0;
+            int blue = (int) (255.0F + (255.0F * ((float) Medium.snap[2] / 100.0F)));
+            if (blue > 255)
+                blue = 255;
+            if (blue < 0)
+                blue = 0;
+            rd.setColor(new Color(red, green, blue));
+            rd.drawRect(531 + x_value, 58 + y_value + 30 * row, 114, 25);
+            rd.drawRect(532 + x_value, 59 + y_value + 30 * row, 112, 23);
+        }
+        if (arrace) {
+            int dmg = (int) (60F * ((float) drivers[car].hitmag / (float) drivers[car].stat.maxmag));
+
+            int red = 244;
+            int green = 244;
+            int blue = 11;
+
+            if (dmg > 20)
+                green = (int) (244F - 233F * ((float) (dmg - 20) / 40F));
+
+            red = (int) ((float) red + (float) red * ((float) Medium.snap[0] / 100F));
+            if (dmg > 60)
+                dmg = 60;
+            if (red > 255)
+                red = 255;
+            if (red < 0)
+                red = 0;
+
+            green = (int) ((float) green + (float) green * ((float) Medium.snap[1] / 100F));
+            if (green > 255)
+                green = 255;
+            if (green < 0)
+                green = 0;
+
+            blue = (int) ((float) blue + (float) blue * ((float) Medium.snap[2] / 100F));
+            if (blue > 255)
+                blue = 255;
+            if (blue < 0)
+                blue = 0;
+
+            rd.setColor(new Color(red, green, blue));
+            rd.fillRect(565 + x_value, 75 + y_value + 30 * row, dmg, 5);
+        } else {
+            int pwr = (int) (60F * (drivers[car].power / 98F));
+            if (pwr > 98) {
+                pwr = 98;
+            }
+            rd.setColor(new Color(45, 150, 255));
+            rd.fillRect(565 + x_value, 75 + y_value + 30 * row, pwr, 5);
+        }
+        rd.setColor(new Color(0, 0, 0));
+        rd.drawRect(565 + x_value, 75 + y_value + 30 * row, 60, 5);
+    }
+
+    /**
+     * The standings of a race with more cars than {@link #BOARD_ROWS}: the
+     * top three, the car the arrow points at, and the player with the cars
+     * nearest them, ahead first, in {@link #BOARD_ROWS} rows. Three dots
+     * between two rows mark the cars left out there, and after the last row
+     * the cars behind it.
+     */
+    private void compactStandings(int me, Madness[] drivers, CheckPoints checkpoints) {
+        int cars = GameFacts.numberOfPlayers;
+        int alive = 0;
+        int mine = 0;
+        int target = -1;
+        for (int rank = 0; rank < cars; rank++) {
+            for (int car = 0; car < cars; car++) {
+                if (checkpoints.pos[car] == rank && checkpoints.dested[car] == 0) {
+                    if (car == me) {
+                        mine = alive;
+                    }
+                    if (car == drivers[me].im) {
+                        target = alive;
+                    }
+                    boardOrder[alive++] = car;
+                    break;
+                }
+            }
+        }
+        java.util.Arrays.fill(boardShown, 0, alive, false);
+        int rows = Math.min(BOARD_ROWS, alive);
+        int shown = 0;
+        for (int i = 0; i < Math.min(3, alive); i++) {
+            shown += showOnBoard(i);
+        }
+        if (target >= 0) {
+            shown += showOnBoard(target);
+        }
+        for (int d = 0; shown < rows; d++) {
+            if (mine - d >= 0) {
+                shown += showOnBoard(mine - d);
+            }
+            if (shown < rows && mine + d < alive) {
+                shown += showOnBoard(mine + d);
+            }
+        }
+        int row = 0;
+        int last = -1;
+        for (int i = 0; i < alive; i++) {
+            if (boardShown[i]) {
+                if (i > last + 1 && last >= 0) {
+                    boardGap(row - 1);
+                }
+                int car = boardOrder[i];
+                standingRow(row++, checkpoints.pos[car], car, me, drivers, car == me);
+                last = i;
+            }
+        }
+        if (last < alive - 1 && row > 0) {
+            boardGap(row - 1);
+        }
+    }
+
+    /** Puts entry {@code i} of the standing order on the compact standings: 1 if it was not on yet. */
+    private int showOnBoard(int i) {
+        if (boardShown[i]) {
+            return 0;
+        }
+        boardShown[i] = true;
+        return 1;
+    }
+
+    /** Three dots under row {@code row} of the standings: cars are left out there. */
+    private void boardGap(int row) {
+        int x = GameFacts.screenWidth - 700 + 582;
+        int y = 30 + 85 + 30 * row;
+        rd.setColor(new Color(0, 0, 100));
+        for (int dot = 0; dot < 3; dot++) {
+            rd.fillRect(x + dot * 5, y, 2, 2);
+        }
+    }
+
+    /** Where the staggered start's captions go: under the countdown. */
+    private static final int LAUNCH_CAPTION_Y = 150;
+
+    /**
+     * A staggered start's own countdown (see {@link CustomGame#staggered}):
+     * under the classic countdown, which starts the front group, a line on
+     * how the start goes; then, while the player waits, which group is off
+     * and the seconds left, and for the last three the classic countdown's
+     * numbers, voice and Go! once more, for the player's own start.
+     *
+     * @param world the race, whose {@link World#ticksSinceGo} the start runs by
+     */
+    private void launchCountdown(World world, int me) {
+        int cars = GameFacts.numberOfPlayers;
+        int gap = CustomGame.LAUNCH_GAP_TICKS;
+        int groups = world.startGroups;
+        if (starcnt != 0) {
+            if (starcnt <= 35) {
+                drawcs(LAUNCH_CAPTION_Y, "Staggered start: " + groups + " groups, a second apart. You go last.", 0,
+                        0, 100, 0);
+            }
+            return;
+        }
+        int tick = world.ticksSinceGo - 1; // the tick just run, 0 at Go!
+        int wait = CustomGame.launchGroup(0, cars) * gap - tick;
+        int number = wait <= 0 ? 0 : (wait + gap - 1) / gap; // the seconds left; 0 is Go!
+        if (number > 3) {
+            drawcs(LAUNCH_CAPTION_Y, "Group " + CustomGame.groupsGone(cars, tick) + " of " + groups
+                    + " is off. You go in " + number, 0, 0, 100, 0);
+            return;
+        }
+        if (wait < -LAUNCH_GO_TICKS) {
+            return;
+        }
+        if (wait == number * gap && !mutes && me == 0) {
+            sm.play(switch (number) {
+                case 3 -> "three";
+                case 2 -> "two";
+                case 1 -> "one";
+                default -> "go";
+            });
+        }
+        drawCountdown(number, number == 0 ? 2 : wait > number * gap - 5 ? 1 : 0); // the portrait speaks each number
+    }
+
+    /** The countdown's portrait ({@code talking}: 0 still, 1 speaking, 2 at Go!) and its number, 0 for Go!. */
+    private void drawCountdown(int number, int talking) {
+        if (dudo != -1) {
+            rd.drawImage(dudeb[talking], Utility.centeredImageX(dudeb[talking]) - 50, 0, null);
+        }
+        if (number != 0) {
+            rd.drawImage(cntdn[number], Utility.centeredImageX(dudeb[talking]) + 50, 50, null);
+        } else {
+            rd.drawImage(cntdn[number], Utility.centeredImageX(dudeb[talking]) + 60, 50, null);
+        }
+    }
+
+    /** How long the player's own Go! stays up: about half a second. */
+    private static final int LAUNCH_GO_TICKS = 10;
+
+    /** The places a race can have, written out once: {@link #ordinal}. */
+    private static final String[] ORDINALS = new String[52];
+
+    static {
+        for (int n = 0; n < ORDINALS.length; n++) {
+            ORDINALS[n] = spellOrdinal(n);
+        }
+    }
+
+    /** 1st, 2nd, 3rd, 4th ... 11th, 12th, 13th ... 21st, 22nd. */
+    static String ordinal(int n) {
+        return n >= 0 && n < ORDINALS.length ? ORDINALS[n] : spellOrdinal(n);
+    }
+
+    private static String spellOrdinal(int n) {
+        int tens = n % 100;
+        if (tens >= 11 && tens <= 13) {
+            return n + "th";
+        }
+        return switch (n % 10) {
+            case 1 -> n + "st";
+            case 2 -> n + "nd";
+            case 3 -> n + "rd";
+            default -> n + "th";
+        };
+    }
+
     /**
      * One player's HUD for a tick: the arrow, the standings, the bars, the
      * countdown, the captions and the stunts, and the sounds that go with
@@ -2681,92 +2983,15 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
 
                 if (!opstatusDisabled) {
                     int num_cars = GameFacts.numberOfPlayers;
-                    for (int array_one = 0; array_one < num_cars; array_one++) {
-                        boolean flag_status = false;
-                        for (int array_two = 0; array_two < num_cars; array_two++) {
-                            if (checkpoints.pos[array_two] == array_one && checkpoints.dested[array_two] == 0
-                                    && !flag_status) {
-                                int y_value = 30; // use to move status up or down
-                                int x_value = GameFacts.screenWidth - 700; // use to move status left or right
-
-                                rd.setColor(new Color(0, 0, 100));
-                                if (array_one == 0)
-                                    rd.drawString("1st", 543 + x_value, 76 + 30 + y_value * array_one);
-                                if (array_one == 1)
-                                    rd.drawString("2nd", 541 + x_value, 76 + 30 + y_value * array_one);
-                                if (array_one == 2)
-                                    rd.drawString("3rd", 541 + x_value, 76 + 30 + y_value * array_one);
-                                if (array_one >= 3)
-                                    rd.drawString((array_one + 1) + "th", 541 + x_value, 76 + y_value + 30 * array_one);
-                                rd.setColor(new Color(0, 0, 0));
-                                rd.drawString(names[sc[array_two]],
-                                        600 - ((FontHandler.fMetrics.stringWidth(names[sc[array_two]])) / 2) + x_value,
-                                        70 + y_value + 30 * array_one);
-                                if (drivers[me].im == array_two) {
-                                    int red = (int) (159.0F + (159.0F * ((float) Medium.snap[0] / 100.0F)));
-                                    if (red > 255)
-                                        red = 255;
-                                    if (red < 0)
-                                        red = 0;
-                                    int green = (int) (207.0F + (207.0F * ((float) Medium.snap[1] / 100.0F)));
-                                    if (green > 255)
-                                        green = 255;
-                                    if (green < 0)
-                                        green = 0;
-                                    int blue = (int) (255.0F + (255.0F * ((float) Medium.snap[2] / 100.0F)));
-                                    if (blue > 255)
-                                        blue = 255;
-                                    if (blue < 0)
-                                        blue = 0;
-                                    rd.setColor(new Color(red, green, blue));
-                                    rd.drawRect(531 + x_value, 58 + y_value + 30 * array_one, 114, 25);
-                                    rd.drawRect(532 + x_value, 59 + y_value + 30 * array_one, 112, 23);
+                    if (num_cars > BOARD_ROWS) {
+                        compactStandings(me, drivers, checkpoints);
+                    } else {
+                        for (int array_one = 0; array_one < num_cars; array_one++) {
+                            for (int array_two = 0; array_two < num_cars; array_two++) {
+                                if (checkpoints.pos[array_two] == array_one && checkpoints.dested[array_two] == 0) {
+                                    standingRow(array_one, array_one, array_two, me, drivers, false);
+                                    break;
                                 }
-                                if (arrace) {
-                                    int dmg = (int) (60F * ((float) drivers[array_two].hitmag
-                                            / (float) drivers[array_two].stat.maxmag));
-
-                                    int red = 244;
-                                    int green = 244;
-                                    int blue = 11;
-
-                                    if (dmg > 20)
-                                        green = (int) (244F - 233F * ((float) (dmg - 20) / 40F));
-
-                                    red = (int) ((float) red + (float) red * ((float) Medium.snap[0] / 100F));
-                                    if (dmg > 60)
-                                        dmg = 60;
-                                    if (red > 255)
-                                        red = 255;
-                                    if (red < 0)
-                                        red = 0;
-
-                                    green = (int) ((float) green + (float) green * ((float) Medium.snap[1] / 100F));
-                                    if (green > 255)
-                                        green = 255;
-                                    if (green < 0)
-                                        green = 0;
-
-                                    blue = (int) ((float) blue + (float) blue * ((float) Medium.snap[2] / 100F));
-                                    if (blue > 255)
-                                        blue = 255;
-                                    if (blue < 0)
-                                        blue = 0;
-
-                                    rd.setColor(new Color(red, green, blue));
-                                    rd.fillRect(565 + x_value, 75 + y_value + 30 * array_one, dmg, 5);
-                                } else {
-                                    int pwr = (int) (60F * (drivers[array_two].power / 98F));
-                                    if (pwr > 98) {
-                                        pwr = 98;
-                                    }
-                                    rd.setColor(new Color(45, 150, 255));
-                                    rd.fillRect(565 + x_value, 75 + y_value + 30 * array_one, pwr, 5);
-                                }
-                                rd.setColor(new Color(0, 0, 0));
-                                rd.drawRect(565 + x_value, 75 + y_value + 30 * array_one, 60, 5);
-
-                                flag_status = true;
                             }
                         }
                     }
@@ -2820,22 +3045,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                 rd.drawImage(pos, 42, 27, null);
                 rd.setFont(new Font("SansSerif", 1, 15));
                 FontHandler.fMetrics = rd.getFontMetrics();
-                String suffix = "";
-                int position = checkpoints.pos[me] + 1;
-                if ((position - 1) % 10 == 0 && position != 11) {
-                    suffix = "st";
-                }
-                if ((position - 2) % 10 == 0 && position != 12) {
-                    suffix = "nd";
-                }
-                if ((position - 3) % 10 == 0 && position != 13) {
-                    suffix = "rd";
-                }
-                if (position % 10 == 0 || position % 10 >= 4 || position == 11 || position == 12
-                        || position == 13) {
-                    suffix = "th";
-                }
-                rd.drawString("" + position + suffix + "", 110, 43);
+                rd.drawString(ordinal(checkpoints.pos[me] + 1), 110, 43);
                 if (split != null) {
                     rd.setFont(new Font("SansSerif", 1, 11));
                     rd.setColor(new Color(0, 0, 100));
@@ -2896,14 +3106,10 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                     duds = 2;
                     Medium.flex = 0;
                 }
-                if (dudo != -1) {
-                    rd.drawImage(dudeb[duds], Utility.centeredImageX(dudeb[duds]) - 50, 0, null);
-                }
-                if (gocnt != 0) {
-                    rd.drawImage(cntdn[gocnt], Utility.centeredImageX(dudeb[duds]) + 50, 50, null);
-                } else {
-                    rd.drawImage(cntdn[gocnt], Utility.centeredImageX(dudeb[duds]) + 60, 50, null);
-                }
+                drawCountdown(gocnt, duds);
+            }
+            if (split == null && drivers[me].world().staggered()) {
+                launchCountdown(drivers[me].world(), me);
             }
             if (looped != 0 && drivers[me].loop == 2) {
                 looped = 0;
@@ -3327,7 +3533,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
     public void finish(CheckPoints checkpoints, ContO models[], Control control) {
         rd.drawImage(fleximg, 0, 0, null);
         if (winner) {
-            if (checkpoints.stage == unlocked) {
+            if (checkpoints.stage == unlocked && !CustomGame.on) { // a custom game unlocks nothing
                 if (checkpoints.stage != GameFacts.numberOfStages) {
                     rd.drawImage(congrd, Utility.centeredImageX(congrd), 30, null);
                     if (checkpoints.stage != -1) {
@@ -3544,7 +3750,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                 strack.setPaused(true);
                 strack.unload();
             }
-            if (checkpoints.stage == unlocked && winner && unlocked != GameFacts.numberOfStages) {
+            if (checkpoints.stage == unlocked && winner && unlocked != GameFacts.numberOfStages && !CustomGame.on) {
                 checkpoints.stage++;
                 unlocked++;
                 HLogger.info(unlocked);
@@ -3562,6 +3768,20 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
      * @param stage checkpoints.stage
      * @author rafa
      */
+    /** The boss car a stage brings to a race of {@code players} cars: the computer car at the front. */
+    static int stageBoss(int stage, int players) {
+        return Math.min(players + (stage + 1) / 2, GameFacts.numberOfCars - 1);
+    }
+
+    /**
+     * The stage whose span of the car list the computer cars come from
+     * (half of it on, as many cars as the race has): the stage itself, or the
+     * last one for a stage loaded from a file and once every stage is unlocked.
+     */
+    static int carSpanStage(int stage, int unlocked) {
+        return stage == -1 || unlocked == GameFacts.numberOfStages ? GameFacts.numberOfStages : stage;
+    }
+
     private void sortcars(int stage) {
         // split screen: both players' cars are theirs, the computer cars come after
         boolean split = SplitRace.on;
@@ -3570,6 +3790,12 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             sc[0] = SplitRace.cars[0];
             sc[1] = SplitRace.cars[1];
         }
+        if (CustomGame.on && !CustomGame.classicPicks() && GameFacts.numberOfPlayers > 1) {
+            // a custom game's lineup, shuffled from the race seed as the classic cars are
+            Random deck = new Random(RaceRandom.derive(Medium.raceSeed(), RaceRandom.STREAM_OPPONENTS));
+            CustomGame.pickCars(sc, GameFacts.numberOfPlayers, stage, unlocked, deck);
+            return;
+        }
         if (stage != 0) {
             int lastcar = GameFacts.numberOfPlayers;
 
@@ -3577,10 +3803,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                 return; // if there's only 1 car (the player), don't sort anything
             }
 
-            int maxId = GameFacts.numberOfPlayers + (stage + 1) / 2;
-            if (maxId > GameFacts.numberOfCars - 1) {
-                maxId = GameFacts.numberOfCars - 1;
-            }
+            int maxId = stageBoss(stage, GameFacts.numberOfPlayers);
 
             if (sc[0] != maxId && (!split || sc[1] != maxId)) {
                 if (stage != -1) {
@@ -3594,10 +3817,8 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             // cd.names[nplayers + ((i - 1) / 2)] + ", therefore: " + (((i - 1) / 2) -
             // (nplayers + ((i - 1) / 2))) + " car difference");
 
-            if (stage == -1 || unlocked == GameFacts.numberOfStages) {
-                stage = GameFacts.numberOfStages;
-                // double boss cars can appear if game is unlocked and player is playing on regular stages cba to account for this rn
-            }
+            // double boss cars can appear if game is unlocked and player is playing on regular stages cba to account for this rn
+            stage = carSpanStage(stage, unlocked);
 
             // create a list of car ids, each item completely unique
             ArrayList<Integer> list = new ArrayList<>();
@@ -4510,6 +4731,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             rd.drawRoundRect(x, menuY[item], MENU_WIDTH[item], main_menu_button_height, 7, 20);
         }
         rd.drawImage(opti, Utility.centeredImageX(opti), 250 + main_menu_height_origin, null);
+        SettingsScreen.drawMenuItem(rd, "Custom Game", GameFacts.screenWidth / 2F, menuY[MENU_CUSTOM] + 18);
         SettingsScreen.drawMenuItem(rd, "Split Screen", GameFacts.screenWidth / 2F, menuY[MENU_SPLIT] + 18);
         SettingsScreen.drawMenuItem(rd, "Settings", GameFacts.screenWidth / 2F, menuY[MENU_SETTINGS] + 18);
         SettingsScreen.drawMenuItem(rd, "Exit Game", GameFacts.screenWidth / 2F, menuY[MENU_EXIT] + 18);
@@ -4529,6 +4751,9 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             }
             if (opselect == MENU_CREDITS) {
                 fase = Phase.CREDITS;
+            }
+            if (opselect == MENU_CUSTOM) {
+                openCustomGame();
             }
             if (opselect == MENU_SPLIT) {
                 SplitRace.on = true;
@@ -5571,6 +5796,9 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         }
         if (fase == Phase.SETTINGS && settingsScreen != null) {
             settingsScreen.mouse(mouseX, mouseY, mouseState, control);
+        }
+        if (fase == Phase.CUSTOMGAME && customGameScreen != null) {
+            customGameScreen.mouse(mouseX, mouseY, mouseState, control);
         }
         if (fase == Phase.MAINMENU) {
             int over = -1;

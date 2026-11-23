@@ -139,7 +139,12 @@ public enum Phase {
      */
     SPLITCARSELECT(9100),
     /** 9101 - after a split-screen race: who won, and race again, another stage, other cars or the main menu */
-    SPLITRESULTS(9101);
+    SPLITRESULTS(9101),
+    /**
+     * 9102 - the custom game's screen: how many computer cars and whose
+     * cars they drive, then the car select; back here after each race
+     */
+    CUSTOMGAME(9102);
 
     public final int value;
     

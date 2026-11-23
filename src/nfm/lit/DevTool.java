@@ -671,6 +671,9 @@ public class DevTool {
             case "split":
                 print(split(args));
                 break;
+            case "custom":
+                print(custom(args, xt.names));
+                break;
             case "clear":
                 textArea.setText("");
                 break;
@@ -760,6 +763,63 @@ public class DevTool {
         return said + " (saved).";
     }
 
+    /**
+     * The custom command: shows the custom game's choices, or changes one
+     * (saved as its page saves them). Cars are picked by their number in the
+     * car select, 1 for the first.
+     */
+    private static String custom(String[] args, String[] names) {
+        String usage = "Usage: custom cars <0-" + CustomGame.MAX_RIVALS + ">, custom lineup <default|novice|pro|custom>,"
+                + " custom pick <car 1-" + GameFacts.numberOfCars + "> <how many>, custom pick clear";
+        String what = args.length > 0 ? args[0].toLowerCase(java.util.Locale.ROOT) : "";
+        String to = args.length > 1 ? args[1].toLowerCase(java.util.Locale.ROOT) : "";
+        String said = null;
+        switch (what) {
+            case "cars" -> {
+                int n = parse(to);
+                if (n >= 0 && n <= CustomGame.MAX_RIVALS) {
+                    CustomGame.setRivals(n);
+                    said = "Computer cars: " + CustomGame.rivalsText(n);
+                }
+            }
+            case "lineup" -> {
+                int l = CustomGame.lineupNamed(to);
+                if (l >= 0) {
+                    CustomGame.setLineup(l);
+                    said = "Their cars: " + CustomGame.lineupText(l) + " (" + CustomGame.lineupHelp(l, names) + ")";
+                }
+            }
+            case "pick" -> {
+                if (to.equals("clear")) {
+                    CustomGame.clearPicks();
+                    said = "No cars picked";
+                } else {
+                    int car = parse(to) - 1;
+                    int count = args.length > 2 ? parse(args[2]) : -1;
+                    if (car >= 0 && car < GameFacts.numberOfCars && CustomGame.setPick(car, count)) {
+                        said = names[car] + ": " + count + " (picked: " + CustomGame.picked() + " of "
+                                + CustomGame.MAX_RIVALS + "; their cars: Custom)";
+                    }
+                }
+            }
+            default -> {
+                return describeCustom(names) + "\n" + usage;
+            }
+        }
+        return said == null ? usage : said + " (saved).";
+    }
+
+    private static String describeCustom(String[] names) {
+        StringBuilder picks = new StringBuilder();
+        for (int car = 0; car < GameFacts.numberOfCars; car++) {
+            if (CustomGame.picks[car] > 0) {
+                picks.append(picks.isEmpty() ? "" : ", ").append(CustomGame.picks[car]).append(" ").append(names[car]);
+            }
+        }
+        return "Custom game: computer cars: " + CustomGame.rivalsText(CustomGame.rivalsNow()) + "; their cars: "
+                + CustomGame.lineupText(CustomGame.lineup) + "; picked: " + (picks.isEmpty() ? "none" : picks) + ".";
+    }
+
     private static String splitKeys(String[] args, String usage) {
         if (args.length == 2 && args[1].equalsIgnoreCase("reset")) {
             SplitKeys.reset();
@@ -816,6 +876,10 @@ public class DevTool {
         commandDescriptions.put("stagesubdir", "Sets the stage subdirectory. Usage: stagesubdir <subdir>");
         commandDescriptions.put("status", "Displays the current game state.");
         commandDescriptions.put("hdr", "HDR output on a monitor that has HDR turned on in Windows: the game looks as it does in SDR, at the brightness Windows shows SDR white at, and flames, lamps, sparks, stars and lightning shine brighter than white, rolling off smoothly into the display's peak. hdr white sets how bright the game's white is in nits (auto: Windows' SDR content brightness); hdr peak sets the display's peak in nits (auto: what the monitor tells Windows). Needs the gpu renderer. Usage: hdr <auto|off>, hdr white <auto|80-500>, hdr peak <auto|200-10000>");
+        commandDescriptions.put("custom", "The custom game's choices, as on its page (Custom Game in the main menu):"
+                + " how many computer cars, up to 32, and their cars (Default, Novice, Pro, or Custom: picked one by"
+                + " one). Usage: custom, custom cars <0-32>, custom lineup <default|novice|pro|custom>,"
+                + " custom pick <car 1-16> <how many>, custom pick clear");
         commandDescriptions.put("split", "Split screen's choices, as on its Settings tab: how the window is shared,"
                 + " the computer cars, where the players are heard, each player's controller and keys. Usage: split,"
                 + " split view <auto|side|stacked>, split cars <0-5>, split sound <one|events|each>,"

@@ -1991,21 +1991,26 @@ public class GameSparker extends Panel implements Runnable {
         gameUi.resetstat(checkpoints.stage);
         // split screen: the players side by side on the second row, a computer car on the first
         boolean split = SplitRace.on;
+        world.startGroups = CustomGame.staggered(GameFacts.numberOfPlayers) ? CustomGame.groups(GameFacts.numberOfPlayers)
+                : 0;
         racer = 0;
         do {
             int slot = split && racer < 3 ? (racer + 1) % 3 : racer;
-            if (slot % 3 == 0) {
-                scene[racer] = new ContO(models[gameUi.sc[racer]], 0, 250 - models[gameUi.sc[racer]].grat,
-                        -760 + ((slot / 3) * 760), 0);
+            int x;
+            int z;
+            if (world.staggered()) {
+                // a big custom game: the computer cars in groups of six across, the player behind them
+                int[] place = CustomGame.gridPlace(racer, GameFacts.numberOfPlayers);
+                x = place[0];
+                z = place[1];
+            } else if (slot % 3 == 0) {
+                x = 0;
+                z = -760 + slot / 3 * 760;
+            } else {
+                x = slot % 3 == 1 ? -350 : 350;
+                z = -380 + slot / 3 * 760;
             }
-            if (slot % 3 == 1) {
-                scene[racer] = new ContO(models[gameUi.sc[racer]], -350, 250 - models[gameUi.sc[racer]].grat,
-                        -380 + ((int) (slot / 3) * 760), 0);
-            }
-            if (slot % 3 == 2) {
-                scene[racer] = new ContO(models[gameUi.sc[racer]], 350, 250 - models[gameUi.sc[racer]].grat,
-                        -380 + ((int) (slot / 3) * 760), 0);
-            }
+            scene[racer] = new ContO(models[gameUi.sc[racer]], x, 250 - models[gameUi.sc[racer]].grat, z, 0);
             drivers[racer].reseto(gameUi.sc[racer], scene[racer], checkpoints);
         } while (++racer < GameFacts.numberOfPlayers);
         if (split) {
@@ -2678,6 +2683,13 @@ public class GameSparker extends Panel implements Runnable {
         drawSimulationStep();
 
         if (ui.starcnt == 0) {
+            // a big custom game's staggered start: the groups not yet gone stand still on the grid
+            int cars = GameFacts.numberOfPlayers;
+            boolean staggered = world.staggered();
+            int sinceGo = world.ticksSinceGo;
+            if (staggered) {
+                CustomGame.holdWaiting(u, cars, sinceGo);
+            }
             int car = 0;
             do {
                 int other = 0;
@@ -2702,10 +2714,15 @@ public class GameSparker extends Panel implements Runnable {
             GameFacts.paceCar = paceCar();
             car = GameFacts.humans;
             if (car == 1 || car < GameFacts.numberOfPlayers) {
-                do
-                    u[car].preform(racers[car], sceneObjects[car], raceCheckpoints, raceTrackers,
-                            GameFacts.numberOfPlayers);
-                while (++car < GameFacts.numberOfPlayers);
+                do {
+                    if (!staggered || !CustomGame.held(car, cars, sinceGo)) {
+                        u[car].preform(racers[car], sceneObjects[car], raceCheckpoints, raceTrackers,
+                                GameFacts.numberOfPlayers);
+                    }
+                } while (++car < GameFacts.numberOfPlayers);
+            }
+            if (staggered) {
+                world.ticksSinceGo++;
             }
         } else {
             if (ui.starcnt == 130) {
@@ -2756,7 +2773,9 @@ public class GameSparker extends Panel implements Runnable {
                 ui.blendude((BufferedImage) pictureAtGameSize());
             }
         } else {
-            if (GameFacts.numberOfPlayers < 5)
+            if (world.staggered())
+                Medium.around(sceneObjects[CustomGame.flybyCar(GameFacts.numberOfPlayers)], true);
+            else if (GameFacts.numberOfPlayers < 5)
                 Medium.around(sceneObjects[0], true);
             else
                 Medium.around(sceneObjects[3], true);
@@ -5298,6 +5317,43 @@ public class GameSparker extends Panel implements Runnable {
         }
     }
 
+    /* The custom game's choices; "custompicks" holds how many of each car the Custom lineup brings, comma separated. */
+    private static final String CUSTOM_RIVALS_COOKIE = "customrivals";
+    private static final String CUSTOM_LINEUP_COOKIE = "customlineup";
+    private static final String CUSTOM_PICKS_COOKIE = "custompicks";
+
+    /**
+     * The custom game's saved choices (none in hidden runs), each replaced by
+     * -Dnfm.custom.rivals (0 to 32), -Dnfm.custom.lineup (default, novice,
+     * pro or custom) and -Dnfm.custom.picks (a count per car, comma
+     * separated) when given.
+     */
+    private void loadCustomGame() {
+        String rivals = System.getProperty("nfm.custom.rivals");
+        String lineup = System.getProperty("nfm.custom.lineup");
+        String picks = System.getProperty("nfm.custom.picks");
+        int savedRivals = readcookie(CUSTOM_RIVALS_COOKIE);
+        if (rivals != null) {
+            try {
+                savedRivals = Integer.parseInt(rivals.trim());
+            } catch (NumberFormatException e) {
+                HLogger.error("nfm.custom.rivals is not a number: " + rivals);
+            }
+        }
+        CustomGame.load(savedRivals,
+                lineup != null ? CustomGame.lineupNamed(lineup) : readcookie(CUSTOM_LINEUP_COOKIE),
+                picks != null ? picks : readcookieText(CUSTOM_PICKS_COOKIE));
+    }
+
+    private void saveCustomGameIfChanged() {
+        if (CustomGame.changed) {
+            CustomGame.changed = false;
+            savecookie(CUSTOM_RIVALS_COOKIE, String.valueOf(CustomGame.rivals));
+            savecookie(CUSTOM_LINEUP_COOKIE, String.valueOf(CustomGame.lineup));
+            savecookie(CUSTOM_PICKS_COOKIE, CustomGame.picksText());
+        }
+    }
+
     private void saveKeysIfChanged() {
         if (KeyBindings.takeChanged()) {
             for (int a = 0; a < KeyBindings.COUNT; a++) {
@@ -6958,6 +7014,7 @@ public class GameSparker extends Panel implements Runnable {
         loadAudioEffects();
         loadKeys();
         loadSplit();
+        loadCustomGame();
         loadRunAhead();
         loadFullscreenResolution();
         loadRenderer();
@@ -7054,6 +7111,7 @@ public class GameSparker extends Panel implements Runnable {
                 saveVsyncIfChanged();
                 saveKeysIfChanged();
                 saveSplitIfChanged();
+                saveCustomGameIfChanged();
                 saveAudioEffectsIfChanged();
                 fitPicture(now);
                 ticksRun++;
@@ -7206,7 +7264,16 @@ public class GameSparker extends Panel implements Runnable {
                 if (SplitRace.on) {
                     endSplit();
                 }
+                CustomGame.on = false; // back from a custom game: the next race is the classic one
                 gameUi.maini(u[0], checkpoints, drivers, models, scene);
+                gameUi.ctachm(xm, ym, mouses, u[0]);
+                if (mouses == 2)
+                    mouses = 0;
+                if (mouses == 1)
+                    mouses = 2;
+            }
+            if (gameUi.fase == Phase.CUSTOMGAME) {
+                gameUi.customGame(u[0]);
                 gameUi.ctachm(xm, ym, mouses, u[0]);
                 if (mouses == 2)
                     mouses = 0;
@@ -7244,12 +7311,16 @@ public class GameSparker extends Panel implements Runnable {
             if (gameUi.fase == Phase.SAVEGAME) { // save the fucking game properly
 
                 if (checkpoints.stage == gameUi.unlocked && gameUi.winner
-                        && gameUi.unlocked != GameFacts.numberOfStages + 1)
+                        && gameUi.unlocked != GameFacts.numberOfStages + 1 && !CustomGame.on)
                     savecookie("unlocked", "" + gameUi.unlocked);
                 savecookie("gameprfact", "" + (int) perfFactor);
                 savecookie("usercar", "" + gameUi.sc[0]);
 
-                gameUi.fase = Phase.MAINMENU;
+                if (CustomGame.on) {
+                    gameUi.openCustomGame(); // after a custom race, its page again: race again or change it
+                } else {
+                    gameUi.fase = Phase.MAINMENU;
+                }
             }
             if (gameUi.fase == Phase.POSTGAME) {
                 gameUi.finish(checkpoints, models, u[0]);

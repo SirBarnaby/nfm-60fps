@@ -153,15 +153,34 @@ final class SettingsScreen {
     private int lastMouseX = -1;
     private int lastMouseY = -1;
     private int backPressed;
+    /** The lettering over the box: "Settings", or the custom game's own page. */
+    private final String title;
 
     SettingsScreen(Image[] back) {
+        this(back, "Settings");
+        build();
+        layout();
+    }
+
+    private SettingsScreen(Image[] back, String title) {
         this.back = back;
+        this.title = title;
         Map<TextAttribute, Object> letters = Map.of(TextAttribute.TRACKING, 0.06F);
         font = new Font("Adventure", Font.PLAIN, 18).deriveFont(letters);
         smallFont = new Font("Adventure", Font.PLAIN, 15).deriveFont(letters);
         titleFont = new Font("Adventure", Font.PLAIN, 21).deriveFont(Map.of(TextAttribute.TRACKING, 0.04F));
-        build();
-        layout();
+    }
+
+    /**
+     * The custom game's page, in the settings' own box, rows and keys: how
+     * many computer cars race and whose cars they drive, with Race! to go
+     * on to the car select ({@code race}). Back, or Escape, leaves it.
+     */
+    static SettingsScreen customGame(Image[] back, String[] carNames, Runnable race) {
+        SettingsScreen page = new SettingsScreen(back, "Custom Game");
+        page.buildCustomGame(carNames, race);
+        page.layout();
+        return page;
     }
 
     /** Stacks each tab's rows, with room for the headings, and notes how tall each list is. */
@@ -598,6 +617,54 @@ final class SettingsScreen {
     /* the tab and the heading the next rows go under, while building */
     private int buildingTab = -1;
     private String nextHeading;
+
+    /**
+     * The custom game's rows: Race!, the computer cars and their lineup on
+     * the first tab; how many of each car the Custom lineup brings on the
+     * second. Picking a car there makes the lineup Custom.
+     */
+    private void buildCustomGame(String[] carNames, Runnable race) {
+        int[] counts = new int[CustomGame.MAX_RIVALS + 1];
+        for (int i = 0; i < counts.length; i++) {
+            counts[i] = i;
+        }
+        tab("Race", "How many computer cars race you, and whose cars they drive.");
+        group("Race");
+        add(new Button("Race!", "Go", "Off to the car select, then the stage select, with the computer cars set"
+                + " below. After the race you are back here.", race));
+        add(new Choice("Computer cars",
+                "How many computer cars race you, up to " + CustomGame.MAX_RIVALS + ". Over "
+                        + CustomGame.STAGGER_ABOVE + " they start in groups of " + CustomGame.GROUP
+                        + ", one group a second, the front first. You always start last.",
+                () -> CustomGame.rivalsNow() > CustomGame.STAGGER_ABOVE
+                        ? "Now: " + CustomGame.groups(CustomGame.rivalsNow() + 1) + " groups, and you go with the last."
+                        : "Now: everyone starts at once.",
+                counts, CustomGame::rivalsText, CustomGame::rivalsNow, CustomGame::setRivals).when(() -> CustomGame.lineup != CustomGame.LINEUP_CUSTOM,
+                        "With the Custom lineup, the cars picked on the Pick cars tab are the computer cars."));
+        add(new Choice("Their cars",
+                "Default: the cars the stage brings in the classic game. Novice: " + carNames[0] + " up to "
+                        + carNames[CustomGame.LAST_NOVICE] + ". Pro: the pro cars only, "
+                        + carNames[GameFacts.numberOfCars - 1] + " first, then down from there. Custom: you pick"
+                        + " them, on the Pick cars tab.",
+                () -> CustomGame.lineupHelp(CustomGame.lineup, carNames) + ".",
+                new int[] {CustomGame.LINEUP_DEFAULT, CustomGame.LINEUP_NOVICE, CustomGame.LINEUP_PRO,
+                    CustomGame.LINEUP_CUSTOM},
+                CustomGame::lineupText, () -> CustomGame.lineup, CustomGame::setLineup));
+
+        tab("Pick cars", "The Custom lineup: how many of each car race you, up to " + CustomGame.MAX_RIVALS
+                + " in all.");
+        group("Cars");
+        for (int c = 0; c < GameFacts.numberOfCars; c++) {
+            final int car = c;
+            add(new Choice(carNames[car],
+                    "How many " + carNames[car] + "s race you. Picking a car makes the lineup Custom (Race tab);"
+                            + " up to " + CustomGame.MAX_RIVALS + " cars in all.",
+                    () -> "Picked: " + CustomGame.picked() + " of " + CustomGame.MAX_RIVALS + ".",
+                    counts, String::valueOf, () -> CustomGame.picks[car], v -> CustomGame.setPick(car, v)));
+        }
+        add(new Button("Clear the picks", "Clear", "Takes every car out of the Custom lineup.",
+                CustomGame::clearPicks).when(() -> CustomGame.picked() > 0, "No car is picked."));
+    }
 
     private void tab(String name, String help) {
         tabNames.add(name);
@@ -1065,7 +1132,7 @@ final class SettingsScreen {
         Shape clip = rd.getClip();
         drawBox(rd);
         rd.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        drawTitle(rd, "Settings", GameFacts.GAME_WIDTH / 2F, BOX_Y + 38);
+        drawTitle(rd, title, GameFacts.GAME_WIDTH / 2F, BOX_Y + 38);
         flash = !flash;
         drawTabs(rd);
         rd.clipRect(LIST_X - 2, LIST_TOP - 2, LIST_W + 4, LIST_BOTTOM - LIST_TOP + 4);
