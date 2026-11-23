@@ -256,6 +256,7 @@ Each extra lives in its own folder under `src\nfm\lit\features\` behind one smal
 | `-Dnfm.gpuscene=<false or picture>` | `false` draws races in software even with the GPU renderer, which then only puts frames on screen; `picture` draws them on the card at 1280x720 rather than the window's resolution. |
 | `-Dnfm.window=<width>x<height>` | Size of the window's inside at start, for example `1920x1080` (default: the size it was left at, else 1280x720). Also sets the size of hidden test runs, which then save each screenshot twice when the size is not 1280x720: the picture itself and `<name>-window.png`, the window as shown. |
 | `-Dnfm.custom.rivals=<0-32>`, `-Dnfm.custom.lineup=<default, novice, pro or custom>`, `-Dnfm.custom.picks=<16 counts, comma separated>` | The custom game's computer cars, their cars and the Custom lineup's picks for this run (default: as saved; hidden test runs: 6 and Default). |
+| `-Dnfm.autotest.custom=<computer cars or saved>[,<default, novice, pro or custom>]` | With `-Dnfm.autotest`: plays a custom game instead, from the main menu through its page, the car and stage select, a race (screenshots every second through a staggered start, each group's start logged) that ends in the post-race highlight 30 seconds after your start, the results and the page again; `saved` keeps your custom game's choices. |
 | `-Dnfm.autotest.split=<auto, side, stacked or saved>[,<computer cars>]` | With `-Dnfm.autotest`: plays split screen instead, from the main menu through its car select and settings tab, a race driven by both players (paused for an instant replay), its results, Race Again and a second race, with screenshots throughout; `saved` keeps the split screen settings as you left them. `-Dnfm.autotest.resize` resizes the window during the first race. |
 | `-Dnfm.autotest.shots=false` | With `-Dnfm.autotest`: take no screenshots. Each screenshot holds the frames up for a moment, so this is how to time every frame of a run. |
 | `-Dnfm.live=true` | With `-Dnfm.autotest`: play it your way, with your saved settings and mods, fullscreen switched off and on again as F11 does, but still off screen, silent and saving nothing (see the live test below). |
@@ -359,6 +360,7 @@ It lists each part with its frames a second, the frame times half and 99% of fra
 | Option | Meaning |
 | --- | --- |
 | `-Split` | Split screen with your split screen settings instead. |
+| `-Custom <cars>[,<lineup>]` | A custom game instead (`32,pro` is the biggest field), or `saved` for your custom game's choices. |
 | `-AsSaved` | At your saved window or fullscreen resolution instead of 1920x1080 fullscreen. The 250 frames a second are then not judged unless that is 1920x1080 fullscreen. |
 | `-MinFps <n>` | The frames a second a race part must reach (default 250; 0 turns it off). |
 | `-Set '<name=value> ...'` | One run more on top of yours with these `-D` settings, to compare: `-Set 'nfm.overlay=off','nfm.msaa=off'` makes two. The report then compares the races. |

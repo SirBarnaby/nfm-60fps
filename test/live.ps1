@@ -4,6 +4,8 @@
 #   .\test\live.ps1                                  one run with your settings, at 1920x1080 fullscreen
 #   .\test\live.ps1 -AsSaved                         at your saved window or fullscreen resolution instead
 #   .\test\live.ps1 -Split                           split screen instead
+#   .\test\live.ps1 -Custom 32,pro                   a custom game instead: computer cars and their cars
+#                                                    (default, novice, pro or custom), or 'saved' for yours
 #   .\test\live.ps1 -Set 'nfm.overlay=off'           one run more for each entry,
 #   .\test\live.ps1 -Set 'nfm.overlay=off','nfm.smootheffects=false nfm.runahead=false'
 #                                                    each entry's -D settings on top of yours
@@ -39,7 +41,8 @@
 # screen, car and stage select, a race, the pause menu, the instant replay, the
 # race again and the post-race highlight; with -Split, a split screen race, the
 # instant replay, the race again, the results and a race again from them (split
-# screen has no highlight). It reads your settings as the game
+# screen has no highlight); with -Custom, the custom game's page, a custom race
+# (its staggered start with more than nine computer cars) and the highlight. It reads your settings as the game
 # does (window or fullscreen and its resolution, the picture's shape, renderer,
 # frame limit, vsync, MSAA, supersampling, dynamic resolution, HDR, smooth
 # effects, run-ahead, the overlay, sound and its effects, mods, game
@@ -92,6 +95,7 @@
 
 param(
     [switch]$Split,
+    [string]$Custom,
     [switch]$AsSaved,
     [switch]$NoShots,
     [string[]]$Set = @(),
@@ -142,6 +146,7 @@ $raceParts = @('countdown', 'race', 'split countdown', 'split race', 'instantrep
 # its own, never added to another: a run missing one, or with one too short to judge (the 100 frames over 2
 # seconds that unevenness needs), did not show what it was meant to.
 $expectedParts = if ($Split) { @('split countdown', 'split race', 'instantreplay', 'split race', 'split countdown', 'split race') }
+elseif ($Custom) { @('countdown', 'race', 'gamehighlight') }
 else { @('countdown', 'race', 'instantreplay', 'race', 'gamehighlight') }
 $enoughFrames = 100
 $enoughSeconds = 2
@@ -189,6 +194,7 @@ function Invoke-Run([string]$name, [string]$extra) {
     # Java's own account of the startup cache, as it starts (Get-StartupCacheProblem)
     if ($aotCache) { $arguments += "-Xlog:aot=info,cds=info:file=$dir\aot.log" }
     if ($Split) { $arguments += '-Dnfm.autotest.split=saved' }
+    elseif ($Custom) { $arguments += "-Dnfm.autotest.custom=$Custom" }
     if ($NoShots) { $arguments += '-Dnfm.autotest.shots=false' }
     $arguments += @($extra -split ' ' | Where-Object { $_ } | ForEach-Object { "-D$_" })
     $arguments += @('-jar', $jar)
@@ -241,7 +247,7 @@ function Invoke-Run([string]$name, [string]$extra) {
     $seeds = @(Get-RaceSeeds $log)
     $settings['race seed'] = if ($seeds.Count -gt 0) { "$($seeds -join ', ') (-Seed $Seed)" }
     else { "-Seed $Seed, but the game's log names no race seed" }
-    $finished = @($log | Where-Object { $_ -match '^\[autotest\] (split test )?done' }).Count -gt 0
+    $finished = @($log | Where-Object { $_ -match '^\[autotest\] (split test |custom test )?done' }).Count -gt 0
     $ending = @($log | Where-Object { $_ -match '^\[autotest\] .*ran out of time' } | Select-Object -Last 1)
     [pscustomobject]@{
         name = $name
@@ -327,6 +333,7 @@ function Write-Manifest([string]$dir, [string]$extra) {
         } else { $null }
         buildInfo = $buildInfo
         split = [bool]$Split
+        custom = if ($Custom) { $Custom } else { $null }
         set = $extra
         resolution = Get-ResolutionText
     }
