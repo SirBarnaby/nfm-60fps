@@ -618,6 +618,15 @@ public class ContO {
         return keys;
     }
 
+    /**
+     * A flat road piece: its model counts it ten times as far or more
+     * ({@code grounded}), so the game draws it before everything else, as
+     * ground (the extras put what lies on the road right after these).
+     */
+    boolean flat() {
+        return grounded >= 10F;
+    }
+
     public void d(Graphics2D rd) {
         if (dist != 0) {
             dist = 0;

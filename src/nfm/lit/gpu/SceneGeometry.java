@@ -81,6 +81,8 @@ final class SceneGeometry {
     private float[] px = new float[16];
     private float[] py = new float[16];
     private int abgr;
+    /** How much of each pixel the polygons being built cover, see {@link SceneList#DITHER}. */
+    private int coverage = 255;
     /** How much the polygons being built glow, see {@link SceneList#GLOW}. */
     private int glow;
     private int evenOddPolygons;
@@ -161,6 +163,7 @@ final class SceneGeometry {
         scaleX = 2F / width;
         scaleY = 2F / height;
         abgr = 0xff000000;
+        coverage = 255;
         glow = 0;
         paneCount = 0;
         pane = -1;
@@ -173,7 +176,13 @@ final class SceneGeometry {
             switch (data[i]) {
                 case SceneList.SET_COLOR -> {
                     int rgb = data[i + 1];
-                    abgr = 0xff000000 | (rgb & 0xff) << 16 | (rgb & 0xff00) | (rgb >> 16 & 0xff);
+                    abgr = coverage << 24 | (rgb & 0xff) << 16 | (rgb & 0xff00) | (rgb >> 16 & 0xff);
+                    i += 2;
+                }
+                case SceneList.DITHER -> {
+                    // the coverage rides in the vertices' alpha: the fragment shader drops pixels below it
+                    coverage = data[i + 1];
+                    abgr = coverage << 24 | (abgr & 0xffffff);
                     i += 2;
                 }
                 case SceneList.ANTIALIAS -> {

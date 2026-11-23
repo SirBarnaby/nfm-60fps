@@ -16,6 +16,11 @@
 # can reach must be back as it was, and the race must still match: this proves
 # the whole race state can be captured and put back.
 #
+# -Features <list> plays the races with those extras on (looks, races, all, or
+# ids such as skidmarks,wingtrail; see -Dnfm.features in the README). Look and
+# sound extras only read the race, so every race must still match; use it with
+# -NoGolden, as the extras change the picture.
+#
 # Run it after any change that could touch gameplay or drawing. Exit code 0
 # means every race played out exactly as recorded and every frame looked the
 # same, 1 that a race or a frame differed (the first differing tick, car and
@@ -29,7 +34,8 @@ param(
     [string]$Golden,
     [switch]$NoGolden,
     [switch]$UpdateGolden,
-    [int]$Rollback = 0
+    [int]$Rollback = 0,
+    [string]$Features
 )
 
 $ErrorActionPreference = 'Stop'
@@ -53,6 +59,7 @@ function Invoke-Verify([string]$target) {
     $arguments = @('-Dnfm.debug=false', "-Dnfm.verify=$target")
     if ($CanonicalOnly) { $arguments += '-Dnfm.verify.canonical=true' }
     if ($Rollback -gt 0) { $arguments += "-Dnfm.verify.rollback=$Rollback" }
+    if ($Features) { $arguments += "-Dnfm.features=$Features" }
     if ($Golden) {
         $arguments += "-Dnfm.verify.golden=$Golden"
         if ($UpdateGolden) { $arguments += '-Dnfm.verify.golden.update=true' }

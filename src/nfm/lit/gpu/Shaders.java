@@ -141,12 +141,23 @@ final class Shaders {
     /**
      * Solid colour; on an antialiased line, edge.x runs -1 to 1 across it and
      * edge.y is its half width in pixels, so a pixel at distance d from its
-     * middle is covered by half width - d.
+     * middle is covered by half width - d. The colour's alpha is how much of
+     * the polygon's pixels it covers (SceneList.DITHER): below 1 only the
+     * pixels whose place in a 4x4 ordered (Bayer) pattern is under it are
+     * drawn, so an extra's see-through smoke keeps the scene opaque.
      */
     static final String COLOR_FS = """
+            static const float BAYER[16] = { 0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0,
+                                             3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0 };
             float4 main(float4 pos : SV_POSITION, float4 col : COLOR0, float2 edge : TEXCOORD0) : SV_TARGET
             {
-                return float4(col.rgb, col.a * saturate(edge.y * (1.0 - abs(edge.x))));
+                if (col.a < 0.999) {
+                    uint2 cell = uint2(pos.xy) & 3u;
+                    if (col.a * 16.0 <= BAYER[cell.y * 4u + cell.x] + 0.5) {
+                        discard;
+                    }
+                }
+                return float4(col.rgb, saturate(edge.y * (1.0 - abs(edge.x))));
             }
             """;
 
@@ -238,6 +249,11 @@ final class Shaders {
                     precise float zy = max(z, 10.0);
                     precise float screen = (zy - u_cam[0].w) * (cy - y) / zy + y;
                     return float3(0.0, clamp(screen, u_cam[3].x, u_cam[3].y), z);
+                }
+                if (kind == 7) {
+                    // an extra's particle: where it is at the frame's moment, from the last real tick
+                    precise float s = u_cam[2].w - b.w;
+                    return project(a.yzw + b.xyz * s + u_cam[2].xyz, cz);
                 }
                 return float3(a.y, a.z, 0.0); // a value the game worked out itself
             }

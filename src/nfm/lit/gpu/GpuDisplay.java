@@ -947,11 +947,12 @@ public final class GpuDisplay {
             ByteBuffer v = white.data().order(ByteOrder.LITTLE_ENDIAN);
             float[][] corners = {{-1F, 1F}, {1F, 1F}, {-1F, -1F}, {1F, -1F}};
             for (float[] c : corners) {
-                // white, and nothing glows under the flash: its alpha is 0
-                v.putFloat(c[0]).putFloat(c[1]).putInt(0x00ffffff).putFloat(0F).putFloat(1F);
+                // white over every pixel (an alpha below 255 would be dithered, see Shaders.COLOR_FS)
+                v.putFloat(c[0]).putFloat(c[1]).putInt(0xffffffff).putFloat(0F).putFloat(1F);
             }
             bgfx_set_transient_vertex_buffer(0, white, 0, 4);
-            bgfx_set_state(OPAQUE | BGFX_STATE_PT_TRISTRIP, 0);
+            // and nothing glows under the flash: the blend factor 0 makes its alpha 0
+            bgfx_set_state(OPAQUE | COVER_BLEND | BGFX_STATE_PT_TRISTRIP, 0);
             bgfx_submit(SCENE_VIEW, colorProgram, 0, BGFX_DISCARD_ALL);
         } finally {
             white.free();

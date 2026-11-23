@@ -46,6 +46,17 @@ public final class Colors {
         return color;
     }
 
+    /** As {@code new Color(argb, true)}: alpha in the top 8 bits (the extras' see-through colours in software). */
+    public static Color ofArgb(int argb) {
+        int slot = (argb * 0x9E3779B1) >>> (32 - Integer.numberOfTrailingZeros(SLOTS));
+        Color color = MADE[slot];
+        if (color == null || color.getRGB() != argb) {
+            color = new Color(argb, true);
+            MADE[slot] = color;
+        }
+        return color;
+    }
+
     /** As {@link Color#getHSBColor}, the same colour, from hue, saturation and brightness. */
     public static Color ofHsb(float hue, float saturation, float brightness) {
         return ofRgb(Color.HSBtoRGB(hue, saturation, brightness));

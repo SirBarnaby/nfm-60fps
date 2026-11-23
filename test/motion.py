@@ -45,7 +45,7 @@ def polygons(data):
         elif op == 1:
             color = int(data[i + 1])
             i += 2
-        elif op in (5, 9):
+        elif op in (5, 9, 11):  # antialias, glow, dither
             i += 2
         elif op == 4:
             i += 5

@@ -41,6 +41,13 @@ public final class SceneList {
      * top left) and clipped to it, the pane being at x, y of the picture.
      */
     public static final int PANE = 10;
+    /**
+     * coverage 0-255: how much of each pixel the next polygons cover, until
+     * the next DITHER; below 255 a polygon is drawn in a fixed 4x4 pattern
+     * of its pixels (an extra's smoke or fading mark), so the scene stays
+     * opaque. Software draws it see-through instead.
+     */
+    public static final int DITHER = 11;
 
     private int[] data = new int[1 << 16];
     private int size;
@@ -113,6 +120,12 @@ public final class SceneList {
         ensure(2);
         data[size++] = GLOW;
         data[size++] = Math.max(0, Math.min(255, level));
+    }
+
+    public void dither(int coverage) {
+        ensure(2);
+        data[size++] = DITHER;
+        data[size++] = Math.max(0, Math.min(255, coverage));
     }
 
     /** The commands from now on draw split-screen pane {@code x, y, width, height}, see {@link #PANE}. */

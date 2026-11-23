@@ -43,6 +43,8 @@ final class SceneRecorder extends NullGraphics {
     private float[] screenY = new float[16];
     /** The glow of the polygons being recorded, see {@link #glow}. */
     private int glow;
+    /** How much of each pixel the polygons being recorded cover, see {@link #dither}. */
+    private int coverage = 255;
 
     /** Starts recording a frame that would have been drawn into {@code target}. */
     SceneRecorder begin(Graphics2D target) {
@@ -51,6 +53,7 @@ final class SceneRecorder extends NullGraphics {
         unsupported = false;
         unbind();
         glow = 0;
+        coverage = 255;
         startColor = target.getColor();
         startAntialias = target.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
         super.setColor(startColor);
@@ -121,6 +124,8 @@ final class SceneRecorder extends NullGraphics {
         int size = list.size();
         int[] xs = new int[16];
         int[] ys = new int[16];
+        int rgb = -1;
+        int cover = 255;
         Rectangle area = reachable(g);
         for (int i = 0; i < size;) {
             switch (data[i]) {
@@ -134,7 +139,16 @@ final class SceneRecorder extends NullGraphics {
                     i += 5;
                 }
                 case SceneList.SET_COLOR -> {
-                    g.setColor(new Color(data[i + 1]));
+                    rgb = data[i + 1];
+                    g.setColor(cover == 255 ? new Color(rgb) : Colors.ofArgb(cover << 24 | rgb));
+                    i += 2;
+                }
+                case SceneList.DITHER -> {
+                    // software draws a dithered polygon see-through: the share of its pixels as its alpha
+                    cover = data[i + 1];
+                    if (rgb >= 0) {
+                        g.setColor(cover == 255 ? new Color(rgb) : Colors.ofArgb(cover << 24 | rgb));
+                    }
                     i += 2;
                 }
                 case SceneList.ANTIALIAS -> {
@@ -291,6 +305,18 @@ final class SceneRecorder extends NullGraphics {
         if (level != glow) {
             glow = level;
             list.glow(level);
+        }
+    }
+
+    /**
+     * How much of each pixel the polygons from now on cover, 255 (all) down
+     * to 0: below 255 the graphics card draws them in a fixed pattern of
+     * their pixels (see SceneList#DITHER), and software see-through.
+     */
+    void dither(int level) {
+        if (level != coverage) {
+            coverage = level;
+            list.dither(level);
         }
     }
 

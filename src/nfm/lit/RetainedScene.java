@@ -26,7 +26,9 @@ import java.util.Arrays;
  * <li>{@link #SHADOW}: a corner of a car's shadow on the ground;
  * <li>{@link #HORIZON}: the edge of a sky or ground band;
  * <li>{@link #SCREEN}: a corner the game worked out on screen only (dust,
- * sparks, a car breaking up), moved and scaled with the point it belongs to.
+ * sparks, a car breaking up), moved and scaled with the point it belongs to;
+ * <li>{@link #MOVING}: a point moving through the world (an extra's
+ * particle), placed where it is at the frame's moment.
  * </ul>
  * Points are named in the recorded corners by {@link #handle} values, which
  * no real corner can have. Built on the game thread; once built, read by
@@ -41,6 +43,8 @@ final class RetainedScene {
     static final int SCREEN = 4;
     /** A SCREEN corner that also knows where it was shown a tick ago (smooth effects). */
     static final int SCREEN_TRAIL = 5;
+    /** A point moving through the world at a steady speed (an extra's particle), see {@link #moving}. */
+    static final int MOVING = 7;
 
     private static final int STRIDE = 8;
     /* handles are floats near -1.3e30, the point's number in the low 23 bits */
@@ -180,6 +184,17 @@ final class RetainedScene {
      */
     int horizon(float height, int depth, boolean follows) {
         return add(HORIZON, height, depth, follows ? 1F : 0F, 0F, 0F, 0F, 0F);
+    }
+
+    /**
+     * A point at {@code (x, y, z)} from the camera as recorded where it is
+     * after the last real tick, moving {@code (vx, vy, vz)} a tick: each
+     * frame puts it at its place at that moment, {@code base} being where
+     * the last real tick is among the frames' shares (1, or 0 when the tick
+     * ahead is shown, see GameSparker#renderAheadScene).
+     */
+    int moving(float x, float y, float z, float vx, float vy, float vz, float base) {
+        return add(MOVING, x, y, z, vx, vy, vz, base);
     }
 
     /**
@@ -425,6 +440,11 @@ final class RetainedScene {
                 placedX[id] = 0F;
                 placedY[id] = Math.max(top, Math.min(bottom, screen));
                 placedZ[id] = z;
+            }
+            case MOVING -> {
+                float s = trailShare - p[at + 6];
+                project(id, p[at] + p[at + 3] * s + moveX, p[at + 1] + p[at + 4] * s + moveY,
+                        p[at + 2] + p[at + 5] * s + moveZ, cz);
             }
             case SCREEN, SCREEN_TRAIL -> {
                 int anchor = (int) p[at];

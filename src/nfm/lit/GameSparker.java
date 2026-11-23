@@ -2008,6 +2008,7 @@ public class GameSparker extends Panel implements Runnable {
         }
         record.reset(scene);
         sendSoundStage(scene);
+        FeatureBridge.stageLoaded(seed, checkpoints, !HIDDEN_RUN && (session == null || !session.keepsCookies()));
         if (session != null) {
             session.stageLoaded();
         }
@@ -2214,6 +2215,7 @@ public class GameSparker extends Panel implements Runnable {
             drawKeys = new long[nob];
         }
         int count = 0;
+        boolean extras = FeatureBridge.drawing; // the extras' polygons go in among the objects
         for (int i = 0; i < nob; i++) {
             int dist = sceneObjects[i].dist;
             if (dist != 0) {
@@ -2221,12 +2223,17 @@ public class GameSparker extends Panel implements Runnable {
                 drawKeys[count++] = ((long) dist << 32) | i;
             } else {
                 sceneObjects[i].d(g);
+                if (extras) FeatureBridge.afterObject(i, sceneObjects[i]);
             }
         }
         Arrays.sort(drawKeys, 0, count);
         for (int k = count - 1; k >= 0; k--) {
-            sceneObjects[(int) drawKeys[k]].d(g);
+            int i = (int) drawKeys[k];
+            if (extras) FeatureBridge.beforeObject((int) (drawKeys[k] >>> 32), sceneObjects[i]);
+            sceneObjects[i].d(g);
+            if (extras) FeatureBridge.afterObject(i, sceneObjects[i]);
         }
+        if (extras) FeatureBridge.endObjects();
     }
 
     /**
@@ -2604,8 +2611,10 @@ public class GameSparker extends Panel implements Runnable {
             Precise.cameraAngles();
             Medium.d(target);
             Precise.cameraAngles();
+            FeatureBridge.beginScene(target, prevFrameValid ? Math.min(alpha, 1.25F) : 1F, sceneObjects);
             drawWorldObjects(target);
         } finally {
+            FeatureBridge.endScene();
             if (canvasBefore != null) {
                 rd.setTransform(canvasBefore);
             }
@@ -3971,9 +3980,11 @@ public class GameSparker extends Panel implements Runnable {
         prevPoses.takePrev(np);
         nowPoses.putPrev(np);
         aheadPoses.putLive(np);
+        FeatureBridge.ahead = true; // the extras' last real tick is at share 0 here
         try {
             renderIngameScene(alpha);
         } finally {
+            FeatureBridge.ahead = false;
             nowPoses.putLive(np);
             prevPoses.putPrev(np);
         }
@@ -6952,6 +6963,7 @@ public class GameSparker extends Panel implements Runnable {
         loadVolumes();
         loadSpeakers();
         loadSmoothEffects();
+        nfm.lit.features.FeatureSettings.load(GameSparker::readcookie);
         loadPerfOverlay();
         // every session sums up how its frames went in the log; test runs keep every part for their report
         FrameLog.start(System.getProperty("nfm.autotest") != null);
@@ -7049,6 +7061,7 @@ public class GameSparker extends Panel implements Runnable {
                 saveSpeakersIfChanged();
                 saveGamepadIfChanged();
                 saveSmoothEffectsIfChanged();
+                nfm.lit.features.FeatureSettings.saveIfChanged(this::savecookie);
                 if (PerfOverlay.takeChanged()) {
                     savecookie(PERF_OVERLAY_COOKIE, String.valueOf(PerfOverlay.saved()));
                 }
@@ -7422,6 +7435,7 @@ public class GameSparker extends Panel implements Runnable {
                 autotestRepairRequested = false;
                 scene[0].fix = true;
             }
+            FeatureBridge.phase(gameUi.fase); // out of the race, its extras end
             if (gameUi.fase == Phase.INGAME) {
                 latchRaceInput();
                 if (session != null) {
@@ -7456,6 +7470,7 @@ public class GameSparker extends Panel implements Runnable {
                     }
                 }
                 raceTicks++;
+                FeatureBridge.afterTick(racers, u, sceneObjects, raceTrackers, raceTicks); // real ticks only
 
                 if (session != null) {
                     session.ingameTickEnded();

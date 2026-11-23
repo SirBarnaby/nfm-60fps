@@ -19,6 +19,8 @@ public final class ScenePoints {
     public static final int SCREEN = 4;
     public static final int SCREEN_TRAIL = 5;
     public static final int CONSTANT = 6;
+    /** An extra's particle, moving through the world at a steady speed. */
+    public static final int MOVING = 7;
     /** Floats per point in {@link #points}. */
     public static final int STRIDE = 8;
     /** Car slots the shader has constants for: as many as a race can have. */

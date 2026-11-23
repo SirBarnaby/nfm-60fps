@@ -122,6 +122,7 @@ class Madness {
             if (pitchSide * rollSide == 0)
                 shakedam = (int) ((Math.abs(force) + shakedam) / 2.0F);
             nfm.lit.audio.Sound3D.carCrash(im, force, rollSide * pitchSide);
+            FeatureBridge.hit(im, wheel, 1, force); // the extras see the hit (damage looks, marks)
             crashEvent(force, rollSide * pitchSide);
             if (rollSide * pitchSide == 0 || mtouch) {
                 for (int poly = 0; poly < car.npl; poly++) {
@@ -297,6 +298,7 @@ class Madness {
                 force += 100F;
             shakedam = (int) ((Math.abs(force) + shakedam) / 2.0F);
             nfm.lit.audio.Sound3D.carCrash(im, force, 0); // heard from every car with the 3D sound
+            FeatureBridge.hit(im, wheel, 2, force);
             crashEvent(force, 0);
             for (int poly = 0; poly < car.npl; poly++) {
                 float dent = 0.0F;
@@ -598,6 +600,7 @@ class Madness {
                 force += 100F;
             shakedam = (int) ((Math.abs(force) + shakedam) / 2.0F);
             nfm.lit.audio.Sound3D.carCrash(im, force, 0); // heard from every car with the 3D sound
+            FeatureBridge.hit(im, wheel, 0, force);
             crashEvent(force, 0);
             for (int poly = 0; poly < car.npl; poly++) {
                 float dent = 0.0F;

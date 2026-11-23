@@ -32,6 +32,8 @@ import java.util.function.Supplier;
 
 import nfm.lit.audio.Sound3D;
 import nfm.lit.audio.StreamMusic;
+import nfm.lit.features.FeatureSettings;
+import nfm.lit.features.Features;
 import nfm.lit.gpu.GpuDisplay;
 
 import javax.imageio.ImageIO;
@@ -512,6 +514,8 @@ final class SettingsScreen {
                 "Player 1 on W A S D with Space for the handbrake, Player 2 on the arrows with Right Ctrl.",
                 SplitKeys::reset).when(() -> !SplitKeys.isDefault(), "The keys are the game's own."));
 
+        extrasTab();
+
         tab("Advanced", "For tinkering: how the game draws, and readouts of how fast it runs.");
         group("Drawing");
         add(new Choice("Dynamic resolution",
@@ -546,6 +550,48 @@ final class SettingsScreen {
             add(new Choice(readouts[r][0], readouts[r][1], null, new int[] {0, 1}, SettingsScreen::onOff,
                     () -> PerfOverlay.shows(bit) ? 1 : 0, v -> PerfOverlay.setShows(bit, v == 1))
                     .when(overlay, overlayOnly));
+        }
+    }
+
+    /**
+     * The extras' switches (see {@code nfm.lit.features}): a row for each
+     * feature there is, its details only while it is on. No tab while there
+     * is no feature.
+     */
+    private void extrasTab() {
+        FeatureSettings.Switch[] switches = FeatureSettings.all();
+        boolean any = false;
+        for (FeatureSettings.Switch s : switches) {
+            any |= Features.registered(s.owner);
+        }
+        if (!any) {
+            return;
+        }
+        tab("Extras", "Additions to the original game. Each changes the look, the sound or the races, so until"
+                + " 1.0 each is off by default.");
+        FeatureSettings.Kind heading = null;
+        for (FeatureSettings.Switch s : switches) {
+            if (!Features.registered(s.owner)) {
+                continue;
+            }
+            FeatureSettings.Switch owner = FeatureSettings.find(s.owner);
+            if (owner.kind != heading) {
+                heading = owner.kind;
+                group(switch (heading) {
+                    case LOOK -> "Look";
+                    case SOUND -> "Sound";
+                    case RACE -> "Races";
+                });
+            }
+            Choice row = new Choice(s.label, s.help, null, s.values(), s::name, s::value,
+                    v -> FeatureSettings.set(s.id, v));
+            if (s.kind == FeatureSettings.Kind.SOUND) {
+                row.when(GameSparker::isNewSound, "Only with Steam Audio (Audio, Sound system).");
+            }
+            if (owner != s) {
+                row.when(owner::on, "Only with " + owner.label + " on.");
+            }
+            add(row);
         }
     }
 
@@ -975,7 +1021,12 @@ final class SettingsScreen {
     }
 
     private float tabCentre(int t) {
-        return GameFacts.GAME_WIDTH / 2F + (t - (tabNames.size() - 1) / 2F) * TAB_SPACING;
+        return GameFacts.GAME_WIDTH / 2F + (t - (tabNames.size() - 1) / 2F) * tabSpacing();
+    }
+
+    /** How far apart the tabs stand: as far as five fit in the box, closer with more. */
+    private float tabSpacing() {
+        return Math.min(TAB_SPACING, (BOX_W - 40F) / Math.max(1, tabNames.size()));
     }
 
     private int tabAt(int x, int y) {
@@ -983,7 +1034,7 @@ final class SettingsScreen {
             return -1;
         }
         for (int t = 0; t < tabNames.size(); t++) {
-            if (Math.abs(x - tabCentre(t)) < TAB_SPACING / 2F - 8) {
+            if (Math.abs(x - tabCentre(t)) < tabSpacing() / 2F - 8) {
                 return t;
             }
         }

@@ -410,6 +410,175 @@ final class Precise {
         return anchorPoint;
     }
 
+    /* ------------------------------------------------------------ extras */
+
+    /** Points nearer than this to the camera's plane are behind it: a polygon with one is not drawn. */
+    private static final float FEATURE_NEAR = 10F;
+
+    /**
+     * An extra's polygon fixed in the world at {@code x/y/z}: its whole
+     * pixels into {@code sx/sy} for software, and while a frame is recorded
+     * for the card its exact corners bound (kept points in a kept scene).
+     * False if it is behind the camera or out of the picture: then it is
+     * not drawn.
+     */
+    static boolean featureWorld(float[] x, float[] y, float[] z, int n, int[] sx, int[] sy) {
+        fit(n);
+        for (int v = 0; v < n; v++) {
+            xs[v] = x[v] - Medium.x - camX;
+            ys[v] = y[v] - Medium.y - camY;
+            zs[v] = z[v] - Medium.z - camZ;
+        }
+        if (!featurePixels(n, sx, sy)) {
+            return false;
+        }
+        if (on) {
+            if (retained != null) {
+                for (int v = 0; v < n; v++) {
+                    outX[v] = outY[v] = RetainedScene.handle(retained.camera(xs[v], ys[v], zs[v], 1, Medium.cz));
+                }
+            }
+            recorder.bind(sx, sy, outX, outY, n);
+        }
+        return true;
+    }
+
+    /**
+     * An extra's polygon moving through the world: at {@code x/y/z} after
+     * the last real tick, moving {@code vx/vy/vz} a tick. Drawn where it is
+     * at {@code share} of the way between the ticks, {@code base} being
+     * where the last real tick is (1, or 0 when the tick ahead is shown);
+     * a kept scene keeps it as moving points, placed for every frame.
+     */
+    static boolean featureMoving(float[] x, float[] y, float[] z, float vx, float vy, float vz, int n, float share,
+            float base, int[] sx, int[] sy) {
+        fit(n);
+        float s = share - base;
+        float baseX = -Medium.x - camX;
+        float baseY = -Medium.y - camY;
+        float baseZ = -Medium.z - camZ;
+        for (int v = 0; v < n; v++) {
+            xs[v] = x[v] + baseX + vx * s;
+            ys[v] = y[v] + baseY + vy * s;
+            zs[v] = z[v] + baseZ + vz * s;
+        }
+        if (!featurePixels(n, sx, sy)) {
+            return false;
+        }
+        if (on) {
+            if (retained != null) {
+                for (int v = 0; v < n; v++) {
+                    int point = retained.moving(x[v] + baseX, y[v] + baseY, z[v] + baseZ, vx, vy, vz, base);
+                    outX[v] = outY[v] = RetainedScene.handle(point);
+                }
+            }
+            recorder.bind(sx, sy, outX, outY, n);
+        }
+        return true;
+    }
+
+    /**
+     * An extra's polygon on car {@code car}, in the car's own frame at
+     * {@code x/y/z}: turned and placed as the car is in this frame, and in a
+     * kept scene kept as the car's own points, which follow it.
+     */
+    static boolean featureOnCar(ContO car, float[] x, float[] y, float[] z, int n, int[] sx, int[] sy) {
+        fit(n);
+        object(car);
+        int slot = objectSlot;
+        float fi = car.x - Medium.x + objX;
+        float fj = car.y - Medium.y + objY;
+        float fk = car.z - Medium.z + objZ;
+        float roll = car.xy + objXY;
+        float pitch = car.zy + objZY;
+        float yaw = car.xz + objXZ;
+        objectNone();
+        for (int v = 0; v < n; v++) {
+            xs[v] = x[v] + fi;
+            ys[v] = y[v] + fj;
+            zs[v] = z[v] + fk;
+        }
+        rotate(xs, ys, fi, fj, roll, n);
+        rotate(ys, zs, fj, fk, pitch, n);
+        rotate(xs, zs, fi, fk, yaw, n);
+        if (!featurePixels(n, sx, sy)) {
+            return false;
+        }
+        if (on) {
+            if (retained != null) {
+                for (int v = 0; v < n; v++) {
+                    int point = slot >= 0
+                            ? retained.car(slot, x[v], y[v], z[v], 0, 0, 0)
+                            : retained.camera(xs[v], ys[v], zs[v], 1, Medium.cz);
+                    outX[v] = outY[v] = RetainedScene.handle(point);
+                }
+            }
+            recorder.bind(sx, sy, outX, outY, n);
+        }
+        return true;
+    }
+
+    /**
+     * How far world point {@code (x, y, z)} is from the eye, as {@code Plane}
+     * measures a polygon to fade it into the stage's fog.
+     */
+    static float featureDistance(float x, float y, float z) {
+        int cx = Medium.cx;
+        int cy = Medium.cy;
+        int cz = Medium.cz;
+        float dx = x - Medium.x - camX - cx;
+        float dz = z - Medium.z - camZ - cz;
+        float px = cx + dx * camCosXZ - dz * camSinXZ;
+        float pz = cz + dx * camSinXZ + dz * camCosXZ;
+        float dy = y - Medium.y - camY - cy;
+        dz = pz - cz;
+        float py = cy + dy * camCosZY - dz * camSinZY;
+        pz = cz + dy * camSinZY + dz * camCosZY;
+        return (float) Math.sqrt((cy - py) * (cy - py) + (cx - px) * (cx - px) + pz * pz);
+    }
+
+    /**
+     * Projects the corners in {@link #xs}/{@link #ys}/{@link #zs} (from the
+     * camera's whole position) into {@link #outX}/{@link #outY} and their
+     * whole pixels into {@code sx/sy}; false if one is behind the camera or
+     * all are out of the picture's widened edges.
+     */
+    private static boolean featurePixels(int n, int[] sx, int[] sy) {
+        int cx = Medium.cx;
+        int cy = Medium.cy;
+        int cz = Medium.cz;
+        float focus = Medium.focus_point;
+        int left = 0;
+        int right = 0;
+        int above = 0;
+        int below = 0;
+        for (int v = 0; v < n; v++) {
+            float dx = xs[v] - cx;
+            float dz = zs[v] - cz;
+            float px = cx + dx * camCosXZ - dz * camSinXZ;
+            float pz = cz + dx * camSinXZ + dz * camCosXZ;
+            float dy = ys[v] - cy;
+            dz = pz - cz;
+            float py = cy + dy * camCosZY - dz * camSinZY;
+            pz = cz + dy * camSinZY + dz * camCosZY;
+            if (pz < FEATURE_NEAR) {
+                return false;
+            }
+            float zx = Math.max(pz, cz);
+            float ex = (zx - focus) * (cx - px) / zx + px;
+            float ey = (zx - focus) * (cy - py) / zx + py;
+            outX[v] = ex;
+            outY[v] = ey;
+            sx[v] = Math.round(ex);
+            sy[v] = Math.round(ey);
+            left += ex < -Medium.cullX ? 1 : 0;
+            right += ex > Medium.w + Medium.cullX ? 1 : 0;
+            above += ey < -Medium.cullY ? 1 : 0;
+            below += ey > Medium.h + Medium.cullY ? 1 : 0;
+        }
+        return left < n && right < n && above < n && below < n;
+    }
+
     /** Turns by the camera and projects like Utility.xs/ys, into {@code ex/ey}. */
     private static void project(int n, int nearZ, float[] ex, float[] ey) {
         int cx = Medium.cx;
