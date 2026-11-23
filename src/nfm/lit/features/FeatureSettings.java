@@ -118,8 +118,8 @@ public final class FeatureSettings {
                         + " through, with smoke, dust or sparks." + LOOK_1_0,
                 "xtramarks", Kind.LOOK, 0, "Off", "On"),
         new Switch("skiddetail", "skidmarks", "Skidmark detail",
-                "Full: the marks' darker outer edges, wavy marks from a bent wheel, and every particle. Simple:"
-                        + " plain marks and fewer particles, for a slower computer.",
+                "Full: streaks along a locked wheel's mark, fine striations from a tyre sliding sideways, and"
+                        + " every particle. Simple: plain marks and half the particles, for a slower computer.",
                 "xtradetail", Kind.LOOK, 1, "Simple", "Full"),
         new Switch("skidzones", "Last race's skid zones",
                 "The road is a little darker where the cars slid most the last time you raced this stage."

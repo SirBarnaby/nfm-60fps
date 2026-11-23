@@ -44,6 +44,14 @@ public interface Canvas {
      */
     void moving(float[] x, float[] y, float[] z, float vx, float vy, float vz, int n);
 
+    /**
+     * A polygon whose corners each move their own way: corner {@code v}
+     * after the last real tick and how far it moves in a tick (zero for a
+     * corner fixed in the world), so a trail can start at a moving car and
+     * end where it was left in the air.
+     */
+    void moving(float[] x, float[] y, float[] z, float[] vx, float[] vy, float[] vz, int n);
+
     /** A polygon on car {@code car}, in the car's own frame (as its model's corners are): it moves with the car. */
     void onCar(int car, float[] x, float[] y, float[] z, int n);
 }

@@ -140,6 +140,13 @@ final class FeatureCanvas implements Canvas {
     }
 
     @Override
+    public void moving(float[] x, float[] y, float[] z, float[] vx, float[] vy, float[] vz, int n) {
+        if (n >= 3 && n <= MAX_CORNERS && Precise.featureMoving(x, y, z, vx, vy, vz, n, share, base, sx, sy)) {
+            g.fillPolygon(sx, sy, n);
+        }
+    }
+
+    @Override
     public void onCar(int car, float[] x, float[] y, float[] z, int n) {
         if (car >= 0 && car < cars && n >= 3 && n <= MAX_CORNERS
                 && Precise.featureOnCar(scene[car], x, y, z, n, sx, sy)) {

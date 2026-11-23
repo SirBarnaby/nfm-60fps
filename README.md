@@ -205,6 +205,9 @@ Additions to the original, each with a switch in the **Extras** tab of the setti
 
 Each extra lives in its own folder under `src\nfm\lit\features\` behind one small `Feature` interface; `docs\features\` has a page for each. They read the race through `RaceView`, a copy filled after every real tick, draw through `Canvas` into the scene the graphics card draws (smooth between ticks, see-through by dithering), and take their place in the game's back-to-front order through `DrawQueue`. Race extras keep their state in the race state, so run-ahead and the recorded races cover them.
 
+- **Skidmarks** (`skidmarks`, with **Detail** `skiddetail`): each wheel that touches the ground and slides leaves its own mark, darker for a locked wheel than for one sliding sideways, ending where the wheel rolls cleanly again; understeer scrubs the fronts, a power slide or a handbrake turn the rear, a stationary burnout darkens two spots, a car shoved from the side scrubs all four, a car on two wheels marks only that side and a body on the road scrapes a metal mark and sparks. Tyres coming off loose ground carry its colour onto the road for 10 to 30 m. Sliding throws smoke on the road and dust and clods off it. The full detail adds streaks to locked marks and fine striations to sideways ones; the simple one throws half the particles. Puffs of smoke and dust are low-poly hexagons that turn as they grow, clods tumble. The newest 4,096 pieces of mark stay. `test\extras-check.ps1 skidmarks` plays each maneuver and measures the marks.
+- **Last race's skid zones** (`skidzones`): while you race, a grid of 4 m squares adds up how much the wheels slid where, kept in `cache\skid-heat` when the race ends; the next race on that stage shows the squares that saw the most as a faint darker tone on the road. Test runs keep no file.
+
 ## Developer options
 
 | Property | Meaning |
@@ -246,6 +249,9 @@ Each extra lives in its own folder under `src\nfm\lit\features\` behind one smal
 | `-Dnfm.autotest.shots=false` | With `-Dnfm.autotest`: take no screenshots. Each screenshot holds the frames up for a moment, so this is how to time every frame of a run. |
 | `-Dnfm.live=true` | With `-Dnfm.autotest`: play it your way, with your saved settings and mods, fullscreen switched off and on again as F11 does, but still off screen, silent and saving nothing (see the live test below). |
 | `-Dnfm.features=<looks, races, all, none or switches>` | Extras for this run, see Extras: `looks` the look and sound ones, `races` the ones that change races, or switches by name separated by commas (`skidmarks,wingtrail`). A switch's own `-Dnfm.<switch>=<on, off or a value>` wins over it. Hidden test runs: off unless asked. |
+| `-Dnfm.skidmarks=<on or off>` | Skidmarks for this run, see Extras (hidden test runs: off unless asked). |
+| `-Dnfm.skiddetail=<simple or full>` | How much the skidmarks show for this run: `full` adds streaks and striations and throws every particle, `simple` half of them (default full). |
+| `-Dnfm.skidzones=<on or off>` | Last race's skid zones for this run, see Extras (hidden test runs: off, and they keep no file). |
 | `-Dnfm.seed=<number>` | Every race of this run starts from this seed, so two runs race alike: the same opponents, effects and camera shake. The live test gives all its runs one. Without it each race gets a fresh random seed; a recorded race always replays its own. The game's log names each race's seed (`Race seed ...`). |
 | `-Dnfm.autotest=<dir>` | Run the scripted smoke test and write screenshots to `<dir>`. The window is never shown and the test drives the game through its own controls, so it is safe to run while using the machine. |
 

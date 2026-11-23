@@ -184,12 +184,14 @@ final class FeatureBridge {
             float ground = 250F;
             boolean sloped = false;
             int surface = 1; // off every piece: the stage's own ground, as the game has it
+            int rgb = view.groundColor;
             for (int p = 0; p < t.nt; p++) {
                 if (Math.abs(wx - t.x[p]) >= t.radx[p] || Math.abs(wz - t.z[p]) >= t.radz[p]
                         || Math.abs(t.zy[p]) == 90 || Math.abs(t.xy[p]) == 90) {
                     continue;
                 }
                 surface = t.skd[p];
+                rgb = t.c[p][0] << 16 | t.c[p][1] << 8 | t.c[p][2];
                 if (wy < t.y[p] - t.rady[p] - CONTACT || wy > t.y[p] + t.rady[p]) {
                     continue;
                 }
@@ -203,7 +205,9 @@ final class FeatureBridge {
             }
             boolean touching = m.wtouch && (sloped || wy > ground - CONTACT);
             view.contact[at] = touching;
+            view.onRamp[at] = touching && sloped;
             view.surface[at] = surface;
+            view.groundRgb[at] = rgb & 0xffffff;
             any |= touching;
             float vx = m.scx[w];
             float vy = m.scy[w];

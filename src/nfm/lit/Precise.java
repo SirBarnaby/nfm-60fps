@@ -452,15 +452,36 @@ final class Precise {
      */
     static boolean featureMoving(float[] x, float[] y, float[] z, float vx, float vy, float vz, int n, float share,
             float base, int[] sx, int[] sy) {
+        java.util.Arrays.fill(sameVX, 0, n, vx);
+        java.util.Arrays.fill(sameVY, 0, n, vy);
+        java.util.Arrays.fill(sameVZ, 0, n, vz);
+        return featureMoving(x, y, z, sameVX, sameVY, sameVZ, n, share, base, sx, sy);
+    }
+
+    /* one velocity for every corner, for the call above */
+    private static final float[] sameVX = new float[nfm.lit.features.Canvas.MAX_CORNERS];
+    private static final float[] sameVY = new float[nfm.lit.features.Canvas.MAX_CORNERS];
+    private static final float[] sameVZ = new float[nfm.lit.features.Canvas.MAX_CORNERS];
+
+    /**
+     * An extra's polygon whose corners each move their own way: corner
+     * {@code v} is at {@code (x, y, z)[v]} after the last real tick and moves
+     * {@code (vx, vy, vz)[v]} a tick (zero: fixed in the world). Placed
+     * {@code share} of the way between the ticks shown, the last real tick
+     * at {@code base}; in a kept scene kept as moving points, which the card
+     * places again for every frame.
+     */
+    static boolean featureMoving(float[] x, float[] y, float[] z, float[] vx, float[] vy, float[] vz, int n,
+            float share, float base, int[] sx, int[] sy) {
         fit(n);
         float s = share - base;
         float baseX = -Medium.x - camX;
         float baseY = -Medium.y - camY;
         float baseZ = -Medium.z - camZ;
         for (int v = 0; v < n; v++) {
-            xs[v] = x[v] + baseX + vx * s;
-            ys[v] = y[v] + baseY + vy * s;
-            zs[v] = z[v] + baseZ + vz * s;
+            xs[v] = x[v] + baseX + vx[v] * s;
+            ys[v] = y[v] + baseY + vy[v] * s;
+            zs[v] = z[v] + baseZ + vz[v] * s;
         }
         if (!featurePixels(n, sx, sy)) {
             return false;
@@ -468,7 +489,7 @@ final class Precise {
         if (on) {
             if (retained != null) {
                 for (int v = 0; v < n; v++) {
-                    int point = retained.moving(x[v] + baseX, y[v] + baseY, z[v] + baseZ, vx, vy, vz, base);
+                    int point = retained.moving(x[v] + baseX, y[v] + baseY, z[v] + baseZ, vx[v], vy[v], vz[v], base);
                     outX[v] = outY[v] = RetainedScene.handle(point);
                 }
             }

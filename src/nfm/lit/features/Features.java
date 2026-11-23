@@ -18,6 +18,8 @@ public final class Features {
 
     /** Every feature, one line each. */
     private static final Feature[] ALL = {
+        new nfm.lit.features.skidmarks.SkidmarksFeature(),
+        new nfm.lit.features.skidmarks.SkidZonesFeature(),
     };
 
     private static final boolean[] active = new boolean[ALL.length];

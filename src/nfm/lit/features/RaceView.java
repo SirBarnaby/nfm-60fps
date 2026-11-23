@@ -94,8 +94,12 @@ public final class RaceView {
     public float[] wheelZ = new float[0];
     /** The wheel touches the ground. */
     public boolean[] contact = new boolean[0];
+    /** The wheel touches a sloped piece (a ramp), which the game draws among its objects rather than as road. */
+    public boolean[] onRamp = new boolean[0];
     /** The ground under it: 0 road, 1 and 2 loose, 3 and 4 bumpy (the stage's surfaces). */
     public int[] surface = new int[0];
+    /** The colour of the ground under it, 0xRRGGBB: the piece's, or the stage's ground off every piece. */
+    public int[] groundRgb = new int[0];
     /** The wheel's velocity (the game's {@code scx}, {@code scz}), per tick. */
     public float[] wheelVX = new float[0];
     public float[] wheelVZ = new float[0];
@@ -154,7 +158,9 @@ public final class RaceView {
         wheelY = new float[w];
         wheelZ = new float[w];
         contact = new boolean[w];
+        onRamp = new boolean[w];
         surface = new int[w];
+        groundRgb = new int[w];
         wheelVX = new float[w];
         wheelVZ = new float[w];
         slipSide = new float[w];

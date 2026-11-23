@@ -4,14 +4,25 @@ package nfm.lit.features;
  * A fixed pool of particles the extras share the code of: smoke, dust, clods
  * of earth, sparks, vapour. Each moves on its own once a tick (drag,
  * gravity or lift, the wind, the ground) and is drawn smoothly between the
- * ticks ({@link Canvas#moving}), as a dithered square facing the camera or,
- * for a fast spark, a short glowing streak along its path. When the pool is
- * full the oldest particle makes way. Nothing is allocated after it is made.
+ * ticks ({@link Canvas#moving}). A puff of smoke, dust or vapour is a
+ * dithered hexagon facing the camera that turns slowly as it grows; a clod
+ * is a small tumbling square; a fast spark is a short glowing streak along
+ * its path. Each corner is given its own move to the next tick, so growing
+ * and turning are as smooth as the flight. When the pool is full the oldest
+ * particle makes way. Nothing is allocated after it is made.
  */
 public final class Particles {
 
     /** The ground's height where a particle falls onto it (the flat ground). */
     private static final float GROUND = 250F;
+    /** Corners of a puff and of a clod. */
+    private static final int PUFF = 6;
+    private static final int CLOD = 4;
+    /** How far a puff and a clod turn a tick, radians. */
+    private static final float PUFF_TURN = 0.05F;
+    private static final float CLOD_TURN = 0.45F;
+    /** Spreads the particles' first angles evenly (the golden angle). */
+    private static final float GOLDEN = 2.3999631F;
 
     private final int capacity;
     private final float[] x;
@@ -30,17 +41,22 @@ public final class Particles {
     private final int[] rgb;
     private final boolean[] streak;
     private final boolean[] alive;
+    private final float[] spin;
+    private final float[] turn;
     private int next;
     private int count;
 
-    /* the camera's eye for the frame being queued, for squares that face it */
+    /* the camera's eye for the frame being queued, for the shapes that face it */
     private float eyeX;
     private float eyeY;
     private float eyeZ;
 
-    private final float[] cx = new float[4];
-    private final float[] cy = new float[4];
-    private final float[] cz = new float[4];
+    private final float[] cx = new float[PUFF];
+    private final float[] cy = new float[PUFF];
+    private final float[] cz = new float[PUFF];
+    private final float[] mx = new float[PUFF];
+    private final float[] my = new float[PUFF];
+    private final float[] mz = new float[PUFF];
 
     public Particles(int capacity) {
         this.capacity = capacity;
@@ -60,6 +76,8 @@ public final class Particles {
         rgb = new int[capacity];
         streak = new boolean[capacity];
         alive = new boolean[capacity];
+        spin = new float[capacity];
+        turn = new float[capacity];
     }
 
     /** Forgets every particle. */
@@ -72,6 +90,27 @@ public final class Particles {
     /** Particles alive now. */
     public int count() {
         return count;
+    }
+
+    /** How many particles the pool holds at most. */
+    public int capacity() {
+        return capacity;
+    }
+
+    /** Particle {@code i}'s place into {@code out[0..2]}; false if it is not alive. */
+    public boolean position(int i, float[] out) {
+        if (i < 0 || i >= capacity || !alive[i]) {
+            return false;
+        }
+        out[0] = x[i];
+        out[1] = y[i];
+        out[2] = z[i];
+        return true;
+    }
+
+    /** True if particle {@code i} is alive and drawn as a glowing streak (a spark). */
+    public boolean isSpark(int i) {
+        return i >= 0 && i < capacity && alive[i] && streak[i];
     }
 
     /**
@@ -106,6 +145,10 @@ public final class Particles {
         drag[i] = friction;
         lift[i] = rise;
         streak[i] = spark;
+        // a first angle and a way of turning from the slot alone: no random needed, and the same every run
+        spin[i] = i * GOLDEN;
+        float way = (i & 1) == 0 ? 1F : -1F;
+        turn[i] = spark ? 0F : way * (rise < 0F ? CLOD_TURN : PUFF_TURN);
         return i;
     }
 
@@ -126,6 +169,7 @@ public final class Particles {
             x[i] += vx[i];
             y[i] += vy[i];
             z[i] += vz[i];
+            spin[i] += turn[i];
             float keep = 1F - drag[i];
             vx[i] = vx[i] * keep + (streak[i] ? 0F : windX * drag[i]);
             vz[i] = vz[i] * keep + (streak[i] ? 0F : windZ * drag[i]);
@@ -172,14 +216,22 @@ public final class Particles {
         if (streak[i]) {
             canvas.glow(1F);
             streak(i, s);
+            canvas.moving(cx, cy, cz, vx[i], vy[i], vz[i], 4);
         } else {
-            square(i, s);
+            float next = size0[i] + (size1[i] - size0[i]) * Math.min(1F, (age[i] + 1F) / life[i]);
+            int n = lift[i] < 0F ? CLOD : PUFF;
+            facing(i, s, next, n);
+            canvas.moving(cx, cy, cz, mx, my, mz, n);
         }
-        canvas.moving(cx, cy, cz, vx[i], vy[i], vz[i], 4);
     }
 
-    /** A square of half size {@code s} facing the eye. */
-    private void square(int i, float s) {
+    /**
+     * A polygon of {@code n} corners, radius {@code s}, facing the eye and
+     * turned by the particle's spin; each corner's move takes it to where it
+     * is at the next tick (radius {@code next}, turned a tick on, the
+     * particle moved on), so the shape grows and turns smoothly.
+     */
+    private void facing(int i, float s, float next, int n) {
         float dx = x[i] - eyeX;
         float dy = y[i] - eyeY;
         float dz = z[i] - eyeZ;
@@ -204,18 +256,21 @@ public final class Particles {
         float ux = dy * az;
         float uy = dz * ax - dx * az;
         float uz = -dy * ax;
-        cx[0] = x[i] - ax * s - ux * s;
-        cy[0] = y[i] - uy * s;
-        cz[0] = z[i] - az * s - uz * s;
-        cx[1] = x[i] + ax * s - ux * s;
-        cy[1] = y[i] - uy * s;
-        cz[1] = z[i] + az * s - uz * s;
-        cx[2] = x[i] + ax * s + ux * s;
-        cy[2] = y[i] + uy * s;
-        cz[2] = z[i] + az * s + uz * s;
-        cx[3] = x[i] - ax * s + ux * s;
-        cy[3] = y[i] + uy * s;
-        cz[3] = z[i] - az * s + uz * s;
+        float step = (float) (2D * Math.PI / n);
+        for (int k = 0; k < n; k++) {
+            float a = spin[i] + k * step;
+            float across = (float) Math.cos(a) * s;
+            float up = (float) Math.sin(a) * s;
+            float b = a + turn[i];
+            float acrossNext = (float) Math.cos(b) * next;
+            float upNext = (float) Math.sin(b) * next;
+            cx[k] = x[i] + ax * across + ux * up;
+            cy[k] = y[i] + uy * up;
+            cz[k] = z[i] + az * across + uz * up;
+            mx[k] = vx[i] + ax * (acrossNext - across) + ux * (upNext - up);
+            my[k] = vy[i] + uy * (upNext - up);
+            mz[k] = vz[i] + az * (acrossNext - across) + uz * (upNext - up);
+        }
     }
 
     /** A streak from the particle back along its path, {@code w} wide. */
