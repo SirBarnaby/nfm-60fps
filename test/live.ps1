@@ -95,7 +95,7 @@
 
 param(
     [switch]$Split,
-    [string]$Custom,
+    [string[]]$Custom,
     [switch]$AsSaved,
     [switch]$NoShots,
     [string[]]$Set = @(),
@@ -106,6 +106,18 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# -Custom 32,pro is one string through powershell -File and two through & or -Command: the same either way
+$Custom = ($Custom | Where-Object { $_ }) -join ','
+# the computer cars -Custom asks for; -1 for none, 'saved' or the custom lineup (its picks decide, as saved)
+$customRivals = -1
+if ($Custom -and $Custom -ne 'saved') {
+    $customParts = @($Custom -split ',' | ForEach-Object { $_.Trim() })
+    if ($customParts[0] -notmatch '^\d+$' -or [int]$customParts[0] -gt 32 -or $customParts.Count -gt 2 -or
+        ($customParts.Count -eq 2 -and $customParts[1] -notin 'default', 'novice', 'pro', 'custom')) {
+        throw "-Custom wants the computer cars, 0 to 32, then optionally default, novice, pro or custom (32,pro), or saved: $Custom"
+    }
+    if ($customParts.Count -eq 1 -or $customParts[1] -ne 'custom') { $customRivals = [int]$customParts[0] }
+}
 $root = Split-Path $PSScriptRoot -Parent
 $java = Join-Path $root 'runtime\bin\java.exe'
 $jar = Join-Path $root 'madness.jar'
@@ -139,13 +151,16 @@ $aotCache = [string]($launcher | Where-Object { $_ -like '-XX:AOTCache=*' } | Se
 Add-Type -AssemblyName System.IO.Compression
 
 # parts of a race, which should go at the frame limit; the rest are menus, drawn once a tick
-$raceParts = @('countdown', 'race', 'split countdown', 'split race', 'instantreplay', 'gamehighlight')
+$raceParts = @('countdown', 'staggered start', 'race', 'split countdown', 'split race', 'instantreplay', 'gamehighlight')
 # the race parts the test plays, in order (GameSparker.runAutoTest, runSplitTest): one player races, pauses for the
 # instant replay, races on and ends in the post-race highlight; split screen races, pauses for the instant replay,
-# races on, then races again from the results (it has no highlight). Each time a part comes up it is graded on
+# races on, then races again from the results (it has no highlight). A custom game with 19 or more computer cars
+# (four groups or more, so the player waits 3 seconds or more after the countdown) shows its staggered start as a
+# part of its own; a shorter wait is too short to judge, so it is not asked for. Each time a part comes up it is graded on
 # its own, never added to another: a run missing one, or with one too short to judge (the 100 frames over 2
 # seconds that unevenness needs), did not show what it was meant to.
 $expectedParts = if ($Split) { @('split countdown', 'split race', 'instantreplay', 'split race', 'split countdown', 'split race') }
+elseif ($Custom -and $customRivals -ge 19) { @('countdown', 'staggered start', 'race', 'gamehighlight') }
 elseif ($Custom) { @('countdown', 'race', 'gamehighlight') }
 else { @('countdown', 'race', 'instantreplay', 'race', 'gamehighlight') }
 $enoughFrames = 100

@@ -6380,23 +6380,28 @@ public class GameSparker extends Panel implements Runnable {
     /* what the frame log's part was named for, game thread only (see followFrameLog) */
     private Phase framePhase;
     private boolean frameCountdown;
+    private boolean frameWaiting;
     private boolean frameSplit;
     private String framePart = "start";
 
     /**
      * Keeps the frame log's part with the game, every frame: one for each
-     * phase, a race's countdown apart from the race, and split screen's
-     * races apart from the others. Game thread.
+     * phase, a race's countdown apart from the race, a big custom game's
+     * staggered start (the player waiting for their group) apart from both,
+     * and split screen's races apart from the others. Game thread.
      */
     private void followFrameLog() {
         Phase phase = ui.fase;
         boolean countdown = phase == Phase.INGAME && ui.starcnt > 0;
+        boolean waiting = phase == Phase.INGAME && !countdown
+                && StaggeredStart.playerWaiting(world, GameFacts.numberOfPlayers);
         boolean split = SplitRace.active != null;
-        if (phase != framePhase || countdown != frameCountdown || split != frameSplit) {
+        if (phase != framePhase || countdown != frameCountdown || waiting != frameWaiting || split != frameSplit) {
             framePhase = phase;
             frameCountdown = countdown;
+            frameWaiting = waiting;
             frameSplit = split;
-            String name = phase == Phase.INGAME ? countdown ? "countdown" : "race"
+            String name = phase == Phase.INGAME ? countdown ? "countdown" : waiting ? "staggered start" : "race"
                     : phase.name().toLowerCase(java.util.Locale.ROOT);
             framePart = split && phase == Phase.INGAME ? "split " + name : name;
         }
