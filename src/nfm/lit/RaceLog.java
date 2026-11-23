@@ -35,7 +35,9 @@ import java.util.zip.GZIPOutputStream;
 final class RaceLog {
 
     private static final int MAGIC = 0x4E464D52; // "NFMR"
-    private static final int VERSION = 5;
+    private static final int VERSION = 6;
+    /** The last format without a custom game's choices; still read, as a classic race. */
+    private static final int VERSION_WITHOUT_CUSTOM = 5;
     /** The last format without the player's car per tick; still read, without a ghost. */
     private static final int VERSION_WITHOUT_POSES = 4;
     /** The last format without sound commands; still read, without the sound check. */
@@ -114,6 +116,8 @@ final class RaceLog {
     End end = End.CLOSED;
     /** The tick on which the player passed the last checkpoint of the last lap, or -1. */
     int finishTick = -1;
+    /** A custom game's choices, see {@link CustomGame#recorded}: empty for any other race. */
+    String custom = "";
 
     /* Ticks. */
     private int ticks;
@@ -375,6 +379,7 @@ final class RaceLog {
                     previousValue = v;
                 }
             }
+            out.writeUTF(custom);
         }
         Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
     }
@@ -386,7 +391,7 @@ final class RaceLog {
                 throw new IOException(file + " is not a recorded race");
             }
             int version = in.readInt();
-            if (version != VERSION && version != VERSION_WITHOUT_POSES && version != VERSION_WITHOUT_SOUND) {
+            if (version < VERSION_WITHOUT_SOUND || version > VERSION) {
                 throw new IOException(file + " was recorded by format " + version + ", this build reads " + VERSION);
             }
             RaceLog log = new RaceLog();
@@ -458,7 +463,7 @@ final class RaceLog {
                 log.canonicalDumps.add(previousCanonical);
             }
 
-            if (version >= VERSION) {
+            if (version > VERSION_WITHOUT_POSES) {
                 log.finishTick = in.readInt();
                 int count = in.readInt();
                 if (count < 0 || count > n) {
@@ -473,6 +478,9 @@ final class RaceLog {
                         log.poses[t * POSE + k] = last;
                     }
                 }
+            }
+            if (version > VERSION_WITHOUT_CUSTOM) {
+                log.custom = in.readUTF();
             }
             return log;
         }
