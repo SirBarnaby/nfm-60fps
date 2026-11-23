@@ -3007,7 +3007,7 @@ public class GameSparker extends Panel implements Runnable {
         if (card != null && card.projecting()) {
             // made ready for the card here, once, so no frame of the presenter's pays for it
             long projectStart = System.nanoTime();
-            projectKept(kept);
+            projectKept(kept, first);
             cardNanos = System.nanoTime() - projectStart;
             profileProjectNanos += cardNanos;
             profileProjects++;
@@ -3061,13 +3061,21 @@ public class GameSparker extends Panel implements Runnable {
      * Makes {@code scene}, kept in {@code recorder}, ready for the card to
      * place (see ProjectedScene): placed for the moment it was recorded,
      * which decides how its polygons are cut, in split-screen pane
-     * {@code pane}'s coordinates if it has one.
+     * {@code pane}'s coordinates if it has one; {@code span} is the moments
+     * its frames are placed for.
      */
     private static void project(RetainedScene scene, SceneRecorder recorder, nfm.lit.gpu.ProjectedScene into,
-            Rectangle pane) {
+            Rectangle pane, PoseSpan span) {
         scene.realize(scene.recorded, recorder.list().data());
-        scene.export(into.points());
-        into.build(recorder.list(), pane);
+        nfm.lit.gpu.ScenePoints points = into.points();
+        scene.export(points);
+        // where its frames start and stop, for the polygons cut in bands to be checked against
+        points.probe = scene.probe(span);
+        try {
+            into.build(recorder.list(), pane);
+        } finally {
+            points.probe = null;
+        }
     }
 
     /** True if the presenter can draw this race's frames on its own thread now. */
@@ -3927,14 +3935,18 @@ public class GameSparker extends Panel implements Runnable {
         }
     }
 
-    /** Makes a recorded kept scene ready for the card to place: the scene, or each split-screen pane. */
-    private void projectKept(Presenter.Kept kept) {
+    /**
+     * Makes a recorded kept scene ready for the card to place: the scene,
+     * whose frames are placed for {@code span}, or each split-screen pane.
+     */
+    private static void projectKept(Presenter.Kept kept, PoseSpan span) {
         if (kept.split) {
             for (int p = 0; p < 2; p++) {
-                project(kept.panes.scenes[p], kept.panes.recorders[p], kept.projected[p], kept.panes.areas[p]);
+                project(kept.panes.scenes[p], kept.panes.recorders[p], kept.projected[p], kept.panes.areas[p],
+                        kept.panes.spans[p]);
             }
         } else {
-            project(kept.scene, kept.recorder, kept.projected[0], null);
+            project(kept.scene, kept.recorder, kept.projected[0], null, span);
         }
     }
 
@@ -3975,7 +3987,7 @@ public class GameSparker extends Panel implements Runnable {
             recorded = recordKept(false, k.recorder, k.scene, spanScratch, 0, null);
         }
         if (recorded) {
-            projectKept(k);
+            projectKept(k, spanScratch);
             keepHud(k); // what it shows does not matter: the card makes its texture at the HUD's size
             warmUpKept = k;
         }

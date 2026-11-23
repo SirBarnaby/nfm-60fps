@@ -24,7 +24,7 @@
 - [x] 4.2 `PoseSpan.MAX_CARRY_ON` 0.25 to 0.5 after an A/B
 - [x] 4.3 The stall about 1.7 s in: `Plane.d` compiled before `EffectTrails` was initialized (JIT log: `uninitialized` trap at the debris path); `Plane` initializes `EffectTrails` and `Glow`
 - [x] 4.4 Temporary A/B and check code removed (`nfm.warmup`, `[warmup]` lines, `portraitCheck`); a log line when a race begins before the warm-up is done
-- [x] 4.5 The countdown's frame rate: polygons that cross or touch themselves cut in bands for the card (`bandsOnCard`, `ROLE_ALONG`), no stencil; flat ones keep it. Projection test as before (worst 0.0129% against 0.0103%); draw calls a scene 1-3 against 130-387
+- [x] 4.5 The countdown's frame rate: polygons that cross or touch themselves cut in bands for the card (`cutLines`, `bandPieces`, `ROLE_ALONG`), no stencil; flat ones keep it. Projection test as before (worst 0.0129% against 0.0103%); draw calls a scene 1-3 against 130-387
 - [x] 4.6 The countdown's start: a race's frames timed from its first scene, the ticks due from there (decision 9, 3a8fab1)
 - [x] 4.7 The countdown at 120 fps: frames placed for the moment they reach the screen, apart for frames that send the card a new scene (decision 10, 3a8fab1)
 - [x] 4.8 No warm-up ticks in the countdown; up to 500 ms while the music loads, once a run (decision 2, 3a8fab1)
@@ -35,6 +35,7 @@
 - [x] 4.13 Split screen's results and the pause menu came up with a 56-98 ms tick: the greyed race read from the picture's buffer, greyed with whole numbers (decision 13, ba816fd)
 - [x] 4.14 Blind review finding 1: a screenshot mid-race restarted the presenter and moved the tick clock; a race's first scene is now one after a menu's frame (decision 14)
 - [x] 4.15 Blind review finding 2: band crossings drifted apart on the card; placed where the edges cross in each frame (`ROLE_CROSS`, decision 15)
+- [x] 4.16 Second blind review finding 1: a crossing that left its band punched holes, and a piece could fold; a polygon whose bands would not hold until the next tick goes to the stencil, pieces in strips (decision 16), checked by `test\geometry-check.ps1`
 
 ## 5. Gates
 
@@ -43,10 +44,10 @@
 - [x] 5.3 `test\verify-races.ps1`: 20 matched, golden frames 95 same; `-Rollback 50`: 20 matched, every rewind put back
 - [ ] 5.4 `test\perf.ps1` on a quiet PC with an interleaved A/B against afa93ec (baseline left as it is; at 17:20 the gate ran beside another game's test runs, 74% processor: 92-181 fps, not judged); `test\spec-check.ps1`: 11 passed
 - [ ] 5.5 `test\live.ps1` (no limit and 120 fps compared, supersampling off) and `test\live.ps1 -Split`, on a quiet PC, until no flag is left
-- [x] 5.6 `test\blind-review.ps1 -Base afa93ec` (docs\reviews\2026-11-23-1533-ddc18c0.md, needs-attention): findings 1 and 2 fixed (4.14, 4.15); 3 is 5.4 and 5.5; 4 (split results and the pause menu drawn on the processor) was so before this change and is no stutter any more (4.13); 5 is the extras framework's specs, another change
+- [x] 5.6 `test\blind-review.ps1 -Base afa93ec` (docs\reviews\2026-11-23-1533-ddc18c0.md, needs-attention): findings 1 and 2 fixed (4.14, 4.15); 3 is 5.4 and 5.5; 4 (split results and the pause menu drawn on the processor) was so before this change and is no stutter any more (4.13); 5 is the extras framework's specs, another change. Again at 1098c71 (docs\reviews\2026-11-23-1629-1098c71.md, needs-attention): finding 1 fixed (4.16); 2 is 5.4 and 5.5; 3 is the first review's 4; 4 (outputs not tied to the source) is answered by 5.9
 - [x] 5.7 Cleanup pass (four reviews: reuse, simpler code, wasted work, depth; applied where the behaviour stays, 13c3f7a): the card's bands built 8% quicker with the same bytes (every scene built both ways in the same hidden runs: 1,000+ for the card, 3,800 on the processor); again `build.ps1`, `verify-races.ps1` 20 matched and golden frames 95 same, `-Rollback 50` 20 matched with every rewind put back, `spec-check.ps1` 11 passed. The lessons in `docs\solutions\stutter-at-race-start.md`
-
-- [x] 5.8 After 4.14 and 4.15, on staging with the extras framework merged (8caf7b6): `build.ps1` (shaders baked, AOT trained), `verify-races.ps1` 20 matched and golden frames 95 same, `-Rollback 50` 20 matched with every rewind put back, `verify-sound.ps1` all 3 renders match, `spec-check.ps1` 16 areas, 78 requirements
+- [x] 5.8 After 4.14 and 4.15, from the working tree then committed as 1098c71 (the record named 8caf7b6, which lacks them): `build.ps1` (shaders baked, AOT trained), `verify-races.ps1` 20 matched and golden frames 95 same, `-Rollback 50` 20 matched with every rewind put back, `verify-sound.ps1` all 3 renders match, `spec-check.ps1` 16 areas, 78 requirements. Their outputs were not kept (the second review's finding 4)
+- [ ] 5.9 After 4.16, from its commit with nothing changed beside it: `build.ps1`, `verify-races.ps1`, `-Rollback 50`, `verify-sound.ps1`, `spec-check.ps1` and `geometry-check.ps1`, their whole outputs kept in `evidence\<commit>\` with `build-info.json`
 
 ## 6. Workflow follow-up
 

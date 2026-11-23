@@ -44,7 +44,7 @@ C2 cannot compile a use of a class that is not initialized yet; it puts a trap t
 
 The countdown was the slowest part in every run (216 fps with no limit) though its ticks were lighter than the race's. The presenter, not the game thread, was slow: handing the card a frame took 5.3 ms against 4.3. The `[draw]` line's "last scene N draws, ... even-odd" said why: 216-387 draw calls against 130-160, because polygons that cross or touch themselves (wheels drawn as rings, faces seen edge-on, track pieces near the camera) went through the stencil, two draw calls each, and broke the batches around them.
 
-- Fix: cut them in bands for the card too (`SceneGeometry.bandsOnCard`), with the points where bands meet edges placed by the card along the edge (`ROLE_ALONG`). 1-3 draw calls a scene.
+- Fix: cut them in bands for the card too (`SceneGeometry.cutLines`, `bandPieces`), with the points where bands meet edges placed by the card along the edge (`ROLE_ALONG`). 1-3 draw calls a scene.
 - A cut fixed for a tick while the card moves its corners each frame must have no T-junction: every piece runs through every point on its cuts, or a corner of the next band comes off the cut and the picture cracks for a frame. The projection test (`-Dnfm.projectiontest=60`) caught the first version's crack; compare its worst frame against a run of the build before.
 - A temporary count of why polygons took the stencil (crossing, touching, flat) in a scratch build pointed at the fix in one hidden run.
 
@@ -100,9 +100,16 @@ Windows turns the display off after 10 idle minutes here. With it off, the card 
 - That count matched polygons between moments by kind, corners and order, and a scenery polygon that came or went shifted every later one: different polygons were compared. Followed moment by moment from the middle, each corner moving at most 6 px a step, the new code was better in 108 placements and worse in 13 by a pixel (1,775 → 135 pixels wrong).
 - How: cut the polygon with the real `SceneGeometry.buildProjected` (a class in its package on the classpath, the recording's points as `CONSTANT` ones), place the vertices as `Shaders.PROJECTED_VS` does with the moved corners, and compare pixel centres with the even-odd fill.
 
+### 14. Check that a guess holds where it is used, and count both ways it can be wrong
+
+- Decision 15's crossing was clamped to its band, which bounded how wrong it could be but not whether it was: the second blind review moved one edge of a bow-tie 2 px and found holes. A limit worked out where the polygon is cut (how far an edge may move) flagged 43% of the game's polygons below a quarter pixel. Asking the scene where the corners actually go at both ends of a tick sends 8% to the stencil and leaves nothing wrong.
+- Counted as one number, the fix looked nearly done; counted as filled outside and missed inside, the holes were gone and something still filled outside. One dumped case showed why: a fan triangle flat where it was cut, left out of the check, folding over the tip of a notch. A check with exceptions has holes: the pieces went to strips, whose triangles are never flat, and the check needed none.
+- How: `test\geometry-check.ps1` (random polygons, and with `-Motion` the game's own from `-Dnfm.motiontest` scenes) fails on any sample wrong away from the outline; with `-NoProbe` it shows the card before the check.
+
 ## How to find the next one
 
 - `-Dnfm.framelog.csv=true` also writes `ticks-NN-<part>.csv`: per tick, when it was due, how late it began, the race step, the run-ahead, when the poses were handed to the presenter, the kept scene, the card and when it was done. A tick whose `done_ms` passes 53 makes frames stand still; an empty `handed_ms` is a hand-over skipped to catch up.
+- `test\geometry-check.ps1` checks the card's bands away from the game, with the game's own polygons from `-Dnfm.motiontest` scenes; run it after any change to `SceneGeometry` or the projected vertex shader.
 - `[framelog] <part> began at <time>` lines line the CSVs up with Java's own logs (`-Xlog:gc*`, `-Xlog:jit+compilation=debug,deoptimization=debug` with `time`).
 - Before believing a run, check it had the display on: card holds of a few hundred ms in menus that never stall say it slept (lesson 11).
 - The PC is noisy: judge a change by interleaved A/B runs, several rounds, on the spread, never on one pair. Wait for a quiet PC (processor under 15% for 30 s, no game running) before a hidden run that is to be judged, and repeat a once-seen stall before chasing it.

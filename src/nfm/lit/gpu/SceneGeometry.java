@@ -548,14 +548,15 @@ final class SceneGeometry {
      * fourth and so on, two triangles each. With the stencil each such
      * polygon was two draw calls of its own, and the few hundred a split-screen
      * frame has cost the card several times the rest of the scene. For the
-     * card the bands are cut once a tick ({@link #bandsOnCard}): the
+     * card the bands are cut once a tick ({@link #bandPieces}): the
      * countdown's scenes had 140-200 such polygons (wheels, faces seen
      * edge-on), and their 400-600 draw calls held the presenter under 250
      * frames a second.
      *
      * @return false if it has too many corners, or, for the card, if it is
-     *         flat (the stencil then fills it from its corners in each
-     *         frame); nothing has been drawn then
+     *         flat or its bands would not stay as cut until the next tick
+     *         ({@link #bandsHold}; the stencil then fills it from its corners
+     *         in each frame); nothing has been drawn then
      */
     private boolean bandFill(int n) {
         if (n > MOST_BAND_CORNERS) {
@@ -571,11 +572,18 @@ final class SceneGeometry {
             // flat now, it may not be by the next tick: the stencil fills what its corners cover in each frame
             return false;
         }
-        begin(PLAIN);
         if (projecting) {
-            bandsOnCard(n, count);
+            int cuts = makeCuts(count);
+            crossingBounds(n, cuts);
+            cutLines(n, cuts);
+            if (!bandsHold(n, cuts)) {
+                return false; // the stencil fills it from its corners in each frame
+            }
+            begin(PLAIN);
+            bandPieces(n, cuts, false);
             return true;
         }
+        begin(PLAIN);
         double top = levels[0];
         for (int l = 1; l < count; l++) {
             double bottom = levels[l];
@@ -669,8 +677,9 @@ final class SceneGeometry {
     private float[] edgeHigh = new float[16];
 
     /**
-     * {@link #bandFill}'s bands for the card, which places the corners anew
-     * each frame until the next tick. A point where a cut meets an edge is
+     * The cuts of {@link #bandFill}'s bands for the card (see
+     * {@link #bandPieces}), the {@code cuts} heights in {@link #lineY}: each
+     * one's points, in order. A point where a cut meets an edge is
      * placed there as a share of the way along the edge, so it stays on it.
      * Each band piece runs along its cuts through every point on them
      * between its two edges (the corners and edge crossings of the bands
@@ -691,18 +700,10 @@ final class SceneGeometry {
      * almost parallel, which slides a long way as they move, cannot fold
      * the pieces either side over each other.
      */
-    private void bandsOnCard(int n, int count) {
-        if (lineY.length < count) {
-            lineY = new double[count];
-            lineStart = new int[count];
-            lineCount = new int[count];
-        }
-        int cuts = 0;
-        lineY[cuts++] = levels[0];
-        for (int l = 1; l < count; l++) {
-            if ((float) levels[l] != (float) lineY[cuts - 1]) { // a thinner band rounds to nothing, as on the processor
-                lineY[cuts++] = levels[l];
-            }
+    private void cutLines(int n, int cuts) {
+        if (lineStart.length < cuts) {
+            lineStart = new int[cuts];
+            lineCount = new int[cuts];
         }
         if (edgeLow.length < n) {
             edgeLow = new float[n];
@@ -737,10 +738,29 @@ final class SceneGeometry {
                 }
             }
             lineCount[c] = points - lineStart[c];
-            markCrossings(n, c, cuts);
+            markCrossings(n, c);
         }
+    }
+
+    /**
+     * {@link #bandFill}'s bands for the card, which places the corners anew
+     * each frame until the next tick, in pieces between two edges along the
+     * {@link #cutLines}. A piece is convex where it was cut, and goes in a
+     * strip of triangles each with points on both its cuts, none flat. With
+     * {@code check}, draws nothing and returns false if one of them would
+     * turn over at the corners in {@link #endX}/{@link #endY}: the triangles
+     * then fill past the outline. A long thin piece whose side lies almost
+     * along a cut does, as its corner moves a pixel across it, and so does
+     * one with a corner on its cut where the outline turns back, the tip of
+     * a notch, as it moves into the piece. As long as none turns over, the
+     * triangles cover what the even-odd rule fills, as they did where they
+     * were cut: no more, no less.
+     */
+    private boolean bandPieces(int n, int cuts, boolean check) {
         if (piece.length < 2 * n) { // up to n points on each of its two cuts
             piece = new int[2 * n];
+            pieceX = new float[2 * n];
+            pieceY = new float[2 * n];
         }
         for (int c = 0; c + 1 < cuts; c++) {
             double top = lineY[c];
@@ -749,17 +769,210 @@ final class SceneGeometry {
             for (int e = 0; e + 1 < m; e += 2) {
                 int left = spans[e];
                 int right = spans[e + 1];
-                int size = 0;
-                size = addRun(c, pointCode(n, left, top), pointCode(n, right, top), size);
-                size = addRun(c + 1, pointCode(n, right, bottom), pointCode(n, left, bottom), size);
-                // the piece is convex now (a band's part between two edges, with points along its top and bottom)
-                for (int k = 1; k + 1 < size; k++) {
-                    pointVertex(n, piece[0]);
-                    pointVertex(n, piece[k]);
-                    pointVertex(n, piece[k + 1]);
+                int topSize = addRun(c, pointCode(n, left, top), pointCode(n, right, top), 0);
+                int size = addRun(c + 1, pointCode(n, right, bottom), pointCode(n, left, bottom), topSize);
+                if (check) {
+                    for (int k = 0; k < size; k++) {
+                        pointAtEnd(n, piece[k], k);
+                    }
+                }
+                // from the left: the top's points from 0 on, the bottom's from size - 1 down (it runs right to left)
+                int i = 0;
+                int j = size - 1;
+                while (i + 1 < topSize || j - 1 >= topSize) {
+                    // the next triangle along the top or along the bottom, whichever's next point is further left
+                    int b;
+                    int a = i;
+                    int d = j;
+                    if (j - 1 < topSize || i + 1 < topSize && lineX[piece[i + 1]] <= lineX[piece[j - 1]]) {
+                        b = ++i;
+                    } else {
+                        b = --j;
+                    }
+                    if (!check) {
+                        pointVertex(n, piece[a]);
+                        pointVertex(n, piece[b]);
+                        pointVertex(n, piece[d]);
+                    } else if (side(pieceX[a], pieceY[a], pieceX[b], pieceY[b], pieceX[d], pieceY[d]) < 0D) {
+                        return false;
+                    }
                 }
             }
         }
+        return true;
+    }
+
+    /* the points of the piece being checked, at an end (see bandPieces) */
+    private float[] pieceX = new float[32];
+    private float[] pieceY = new float[32];
+
+    /**
+     * Where the card places the point at place {@code q} on a cut (see
+     * {@link #pointVertex}) for the corners in {@link #endX}/{@link #endY},
+     * into {@link #pieceX}/{@link #pieceY} at {@code to}.
+     */
+    private void pointAtEnd(int n, int q, int to) {
+        int code = linePoint[q];
+        if (code < n) {
+            pieceX[to] = endX[code];
+            pieceY[to] = endY[code];
+            return;
+        }
+        int a = code - n;
+        float along = lineAlong[q];
+        if (atCrossing(n, q)) {
+            int other = linePoint[lineCross[q]] - n;
+            int second = Math.max(a, other);
+            int secondNext = second + 1 < n ? second + 1 : 0;
+            a = Math.min(a, other);
+            int b = a + 1 < n ? a + 1 : 0;
+            double sa = side(endX[second], endY[second], endX[secondNext], endY[secondNext], endX[a], endY[a]);
+            double sb = side(endX[second], endY[second], endX[secondNext], endY[secondNext], endX[b], endY[b]);
+            along = sa != sb ? Math.max(lineLow[q], Math.min(lineHigh[q], (float) (sa / (sa - sb))))
+                    : (lineLow[q] + lineHigh[q]) * 0.5F;
+        }
+        int b = a + 1 < n ? a + 1 : 0;
+        pieceX[to] = endX[a] + (endX[b] - endX[a]) * along;
+        pieceY[to] = endY[a] + (endY[b] - endY[a]) * along;
+    }
+
+    /**
+     * The heights of the cuts from the sorted {@link #levels} (count of
+     * them) into {@link #lineY}, but one of those that round to the same
+     * float; returns how many.
+     */
+    private int makeCuts(int count) {
+        if (lineY.length < count) {
+            lineY = new double[count];
+        }
+        int cuts = 0;
+        lineY[cuts++] = levels[0];
+        for (int l = 1; l < count; l++) {
+            if ((float) levels[l] != (float) lineY[cuts - 1]) { // a thinner band rounds to nothing, as on the processor
+                lineY[cuts++] = levels[l];
+            }
+        }
+        return cuts;
+    }
+
+    /* the corners of the polygon being cut, at an end of the moments its frames are placed for (see bandsHold) */
+    private float[] endX = new float[16];
+    private float[] endY = new float[16];
+    private final float[] probed = new float[2];
+    /*
+     * per crossing (see scanEdges), how far along each of its two edges it may go: the shares where the edge meets
+     * the cuts either side of it, the lower and the higher, four floats a crossing
+     */
+    private float[] crossBounds = new float[128];
+
+    /** Fills {@link #crossBounds} from the {@code cuts} cuts in {@link #lineY}. */
+    private void crossingBounds(int n, int cuts) {
+        if (crossBounds.length < 4 * crossCount) {
+            crossBounds = new float[4 * crossCount];
+        }
+        for (int t = 0; t < crossCount; t++) {
+            float y = (float) crossY[t];
+            int c = 0;
+            while (c + 1 < cuts && (float) lineY[c] != y) {
+                c++; // the cut it rounds to: one always does, the cuts being every level but those that round alike
+            }
+            for (int e = 0; e < 2; e++) {
+                int k = crossEdges[2 * t + e];
+                float above = c > 0 ? share(n, k, lineY[c - 1]) : 0F;
+                float below = c + 1 < cuts ? share(n, k, lineY[c + 1]) : 1F;
+                crossBounds[4 * t + 2 * e] = Math.min(above, below);
+                crossBounds[4 * t + 2 * e + 1] = Math.max(above, below);
+            }
+        }
+    }
+
+    /**
+     * True if the bands {@link #bandPieces} cuts the polygon in stay as cut
+     * at both ends of the moments its frames are placed for
+     * ({@link ScenePoints#probe}): the same edges cross, each where the card
+     * places both pieces' points (see {@link #pointVertex}) and between where
+     * its two edges meet the cuts either side of it, and no piece folds.
+     * Otherwise the stencil fills it, from its corners in each frame: once
+     * two edges cross outside the band the crossing was cut in, the point
+     * the pieces either side share comes off one of them, and they leave a
+     * hole or fold over each other (the blind review of 1098c71); edges that
+     * start or stop crossing are not in the bands at all.
+     */
+    private boolean bandsHold(int n, int cuts) {
+        ScenePoints.Probe probe = scenePoints.probe;
+        if (probe == null) {
+            return true;
+        }
+        int paired = 0;
+        for (int q = 0, end = lineStart[cuts - 1] + lineCount[cuts - 1]; q < end; q++) {
+            if (lineCross[q] >= 0) {
+                if (!atCrossing(n, q)) {
+                    return false; // placed along its edge, it drifts off the other as the corners move
+                }
+                paired++;
+            }
+        }
+        if (paired != 2 * crossCount) {
+            return false; // a crossing on no cut's points (at a corner's height): nothing places it where they cross
+        }
+        if (endX.length < n) {
+            endX = new float[n];
+            endY = new float[n];
+        }
+        for (int end = 0; end < 2; end++) {
+            for (int k = 0; k < n; k++) {
+                endX[k] = probedAt(probe, end, refX[k], 0);
+                // most corners take both from one point, placed once
+                endY[k] = onePoint(k) && refX[k] < scenePoints.pointCount ? probed[1] : probedAt(probe, end, refY[k], 1);
+            }
+            if (!crossingsHold(n) || !bandPieces(n, cuts, true)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Point {@code id}'s x (axis 0) or y (axis 1) at an end; one made here for a value the game worked out stays. */
+    private float probedAt(ScenePoints.Probe probe, int end, int id, int axis) {
+        if (id >= scenePoints.pointCount) {
+            return extra[(id - scenePoints.pointCount) * ScenePoints.STRIDE + axis];
+        }
+        probe.place(end, id, probed);
+        return probed[axis];
+    }
+
+    /** {@link #bandsHold} for the corners in {@link #endX}/{@link #endY}. */
+    private boolean crossingsHold(int n) {
+        for (int i = 0; i < n; i++) {
+            int i1 = i + 1 < n ? i + 1 : 0;
+            for (int j = i + 2; j < n; j++) {
+                int j1 = j + 1 < n ? j + 1 : 0;
+                if (j1 == i) {
+                    continue; // the edge before i: they share corner i
+                }
+                double sa = side(endX[j], endY[j], endX[j1], endY[j1], endX[i], endY[i]);
+                double sb = side(endX[j], endY[j], endX[j1], endY[j1], endX[i1], endY[i1]);
+                double sc = side(endX[i], endY[i], endX[i1], endY[i1], endX[j], endY[j]);
+                double sd = side(endX[i], endY[i], endX[i1], endY[i1], endX[j1], endY[j1]);
+                boolean crosses = crosses(sa, sb, sc, sd);
+                int t = crossCount - 1;
+                while (t >= 0 && !(crossEdges[2 * t] == i && crossEdges[2 * t + 1] == j)) {
+                    t--;
+                }
+                if (crosses != t >= 0) {
+                    return false; // edges that start or stop crossing
+                }
+                if (crosses && !(inBand(sa / (sa - sb), t, 0) && inBand(sc / (sc - sd), t, 1))) {
+                    return false; // the crossing out of its band
+                }
+            }
+        }
+        return true;
+    }
+
+    /** True if {@code share} along edge {@code e} (0 or 1) of crossing t is within its {@link #crossBounds}. */
+    private boolean inBand(double share, int t, int e) {
+        return share >= crossBounds[4 * t + 2 * e] && share <= crossBounds[4 * t + 2 * e + 1];
     }
 
     /**
@@ -786,7 +999,7 @@ final class SceneGeometry {
      * to place both where the edges cross, along the first between where it
      * meets the cuts either side.
      */
-    private void markCrossings(int n, int c, int cuts) {
+    private void markCrossings(int n, int c) {
         int start = lineStart[c];
         int end = start + lineCount[c];
         Arrays.fill(lineCross, start, end, -1);
@@ -795,16 +1008,14 @@ final class SceneGeometry {
             if ((float) crossY[t] != y) {
                 continue;
             }
-            int first = crossEdges[2 * t]; // the lower numbered: scanEdges pairs edge i with a later j
-            int a = place(start, end, n + first);
+            // the first is the lower numbered (scanEdges pairs edge i with a later j), as pointVertex orders them
+            int a = place(start, end, n + crossEdges[2 * t]);
             int b = place(start, end, n + crossEdges[2 * t + 1]);
             if (a >= 0 && b >= 0 && lineCross[a] < 0 && lineCross[b] < 0) {
                 lineCross[a] = b;
                 lineCross[b] = a;
-                float above = c > 0 ? share(n, first, lineY[c - 1]) : 0F;
-                float below = c + 1 < cuts ? share(n, first, lineY[c + 1]) : 1F;
-                lineLow[a] = lineLow[b] = Math.min(above, below);
-                lineHigh[a] = lineHigh[b] = Math.max(above, below);
+                lineLow[a] = lineLow[b] = crossBounds[4 * t];
+                lineHigh[a] = lineHigh[b] = crossBounds[4 * t + 1];
             }
         }
     }
@@ -899,7 +1110,7 @@ final class SceneGeometry {
         }
     }
 
-    /** The point at place {@code q} on a cut (see {@link #bandsOnCard}), placed on the card. */
+    /** The point at place {@code q} on a cut (see {@link #cutLines}), placed on the card. */
     private void pointVertex(int n, int q) {
         int code = linePoint[q];
         if (code < n) {
@@ -907,21 +1118,34 @@ final class SceneGeometry {
             return;
         }
         int a = code - n;
-        int b = a + 1 < n ? a + 1 : 0;
-        int other = lineCross[q];
-        if (other >= 0) {
+        if (atCrossing(n, q)) {
             // both edges' points here as one: the first edge's corners, then the second's, in the same order for both
-            int first = Math.min(a, linePoint[other] - n);
-            int second = Math.max(a, linePoint[other] - n);
+            int other = linePoint[lineCross[q]] - n;
+            int first = Math.min(a, other);
+            int second = Math.max(a, other);
             int firstNext = first + 1 < n ? first + 1 : 0;
             int secondNext = second + 1 < n ? second + 1 : 0;
-            if (onePoint(first) && onePoint(firstNext) && onePoint(second) && onePoint(secondNext)) {
-                projectedVertex(lineLow[q], lineHigh[q], refX[first], refX[firstNext], refX[second], refX[secondNext],
-                        ROLE_CROSS);
-                return;
-            }
+            projectedVertex(lineLow[q], lineHigh[q], refX[first], refX[firstNext], refX[second], refX[secondNext],
+                    ROLE_CROSS);
+            return;
         }
+        int b = a + 1 < n ? a + 1 : 0;
         projectedVertex(lineAlong[q], 0F, refX[a], refY[a], refX[b], refY[b], ROLE_ALONG);
+    }
+
+    /**
+     * True if the point at place {@code q} is one of a crossing's two the
+     * card places where the edges cross ({@link #ROLE_CROSS}): all four
+     * corners take x and y from one point each.
+     */
+    private boolean atCrossing(int n, int q) {
+        int other = lineCross[q];
+        if (other < 0) {
+            return false;
+        }
+        int a = linePoint[q] - n;
+        int b = linePoint[other] - n;
+        return onePoint(a) && onePoint(a + 1 < n ? a + 1 : 0) && onePoint(b) && onePoint(b + 1 < n ? b + 1 : 0);
     }
 
     /** True if corner k takes its x and y from the same point, as {@link #ROLE_CROSS} needs. */
@@ -1261,7 +1485,7 @@ final class SceneGeometry {
      * the frame being drawn): a flat polygon seen from in front keeps how it
      * was cut while it moves, as {@link #reuseCut} relies on too, and one
      * crossing itself is cut in bands whose cuts the card places along the
-     * edges ({@link #bandsOnCard}); only a flat one, or one with very many
+     * edges ({@link #bandPieces}); only a flat one, or one with very many
      * corners, is filled with the stencil, wherever its corners go.
      */
     void buildProjected(SceneList list, ScenePoints points, int width, int height) {
