@@ -1,0 +1,35 @@
+# Need For Madness: LIT, the extras' car sheets (realism, "Each car has a short sheet").
+# The Damage and heat extra reads them: where steam and smoke come from, how hot
+# the brakes run, how the exhaust behaves.
+#
+# One line per car: its model name, then
+#   engine    the engine's layout: I4, I6, V6, V8, V10, V12, flat4, flat6, rotary
+#   sits      where the engine sits: front, mid or rear
+#   cooling   radiator at the front, radiators in the side pods, or air-cooled: front, sides, air
+#   turbo     yes or no (a supercharger counts as yes)
+#   brakes    drum, disc or carbon
+#   exhausts  1 or 2 pipes at the back, or stacks (upright pipes behind the cab)
+#
+# Suggested by Claude from each car's look, 23 Nov 2026, for the owner to correct.
+# Once the owner has looked them over and put them right, the next line says yes
+# (test\extras-check.ps1 reports the sheets as waiting for the owner until then).
+# Looked over by the owner: no
+# A mod can replace this file with its own at the same place in its folder.
+#
+# car          engine  sits   cooling  turbo  brakes  exhausts
+2000tornados   V6      front  front    no     disc    2
+formula7       V10     mid    sides    no     carbon  1
+canyenaro      V8      front  front    no     disc    2
+lescrab        V12     mid    sides    no     disc    2
+nimi           I4      front  front    no     drum    1
+maxrevenge     V8      front  front    yes    disc    2
+leadoxide      V8      front  front    yes    drum    2
+koolkat        V8      front  front    no     drum    2
+drifter        I6      front  front    yes    disc    1
+policecops     V8      front  front    no     disc    2
+mustang        V8      front  front    no     disc    2
+king           V8      front  front    yes    disc    stacks
+audir8         V8      mid    sides    no     carbon  2
+masheen        V8      rear   air      yes    disc    stacks
+radicalone     V12     mid    sides    yes    carbon  2
+drmonster      V8      front  front    yes    disc    stacks

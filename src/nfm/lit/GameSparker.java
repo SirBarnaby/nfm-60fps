@@ -65,6 +65,11 @@ public class GameSparker extends Panel implements Runnable {
             "policecops", "mustang", "king", "audir8", "masheen", "radicalone", "drmonster"
     };
 
+    /** Car model {@code cn}'s file name (such as {@code radicalone}), or "" if there is none. */
+    static String carModel(int cn) {
+        return cn >= 0 && cn < carModels.length ? carModels[cn] : "";
+    }
+
     private static final String[] trackModels = {
             "road", "froad", "twister2", "twister1", "turn", "offroad", "bumproad", "offturn", "nroad", "nturn",
             "roblend", "noblend", "rnblend", "roadend", "offroadend", "hpground", "ramp30", "cramp35", "dramp15",

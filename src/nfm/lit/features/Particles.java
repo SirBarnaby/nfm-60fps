@@ -43,6 +43,10 @@ public final class Particles {
     private final boolean[] alive;
     private final float[] spin;
     private final float[] turn;
+    /** The height a particle lands at (the flat ground unless told otherwise). */
+    private final float[] floor;
+    /** Stays as debris where it lands ({@link CarLooks#debris}), if something keeps debris. */
+    private final boolean[] stays;
     private int next;
     private int count;
 
@@ -78,6 +82,8 @@ public final class Particles {
         alive = new boolean[capacity];
         spin = new float[capacity];
         turn = new float[capacity];
+        floor = new float[capacity];
+        stays = new boolean[capacity];
     }
 
     /** Forgets every particle. */
@@ -105,6 +111,22 @@ public final class Particles {
         out[0] = x[i];
         out[1] = y[i];
         out[2] = z[i];
+        return true;
+    }
+
+    /** Particle {@code i}'s colour, 0xRRGGBB, or -1 if it is not alive. */
+    public int color(int i) {
+        return i >= 0 && i < capacity && alive[i] ? rgb[i] : -1;
+    }
+
+    /** Particle {@code i}'s move a tick into {@code out[0..2]}; false if it is not alive. */
+    public boolean velocity(int i, float[] out) {
+        if (i < 0 || i >= capacity || !alive[i]) {
+            return false;
+        }
+        out[0] = vx[i];
+        out[1] = vy[i];
+        out[2] = vz[i];
         return true;
     }
 
@@ -149,7 +171,23 @@ public final class Particles {
         spin[i] = i * GOLDEN;
         float way = (i & 1) == 0 ? 1F : -1F;
         turn[i] = spark ? 0F : way * (rise < 0F ? CLOD_TURN : PUFF_TURN);
+        floor[i] = GROUND;
+        stays[i] = false;
         return i;
+    }
+
+    /** Particle {@code i} lands at height {@code y} rather than the flat ground. */
+    public void floor(int i, float y) {
+        if (i >= 0 && i < capacity) {
+            floor[i] = y;
+        }
+    }
+
+    /** Particle {@code i} stays where it lands, as debris, while something keeps debris. */
+    public void keep(int i) {
+        if (i >= 0 && i < capacity) {
+            stays[i] = true;
+        }
     }
 
     /** One tick: every particle moves, ages, and those whose time is up go; {@code windX/Z} pushes the light ones. */
@@ -174,9 +212,17 @@ public final class Particles {
             vx[i] = vx[i] * keep + (streak[i] ? 0F : windX * drag[i]);
             vz[i] = vz[i] * keep + (streak[i] ? 0F : windZ * drag[i]);
             vy[i] = vy[i] * keep - lift[i];
-            if (y[i] > GROUND && vy[i] > 0F) {
+            if (y[i] > floor[i] && vy[i] > 0F) {
+                Debris debris = stays[i] ? CarLooks.debris() : null;
+                if (debris != null) {
+                    // it stays where it fell
+                    debris.drop(x[i], floor[i], z[i], size0[i] * 2F, rgb[i], lift[i] < 0F ? CLOD : 3, spin[i]);
+                    alive[i] = false;
+                    count--;
+                    continue;
+                }
                 // on the ground: a falling clod or spark bounces a little and skids
-                y[i] = GROUND;
+                y[i] = floor[i];
                 vy[i] = -vy[i] * 0.3F;
                 vx[i] *= 0.6F;
                 vz[i] *= 0.6F;

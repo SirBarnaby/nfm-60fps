@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.stream.Stream;
+import nfm.lit.features.CarLooks;
 import nfm.lit.features.CheckCanvas;
 import nfm.lit.features.FeatureSettings;
 import nfm.lit.features.Features;
@@ -54,6 +55,7 @@ public final class SkidmarkCheck {
         c.landingBackwards();
         c.twoWheels();
         c.mudOntoTarmac();
+        c.bentWheelWavy();
         c.particlesMove();
         c.draws();
         c.zones();
@@ -663,6 +665,43 @@ public final class SkidmarkCheck {
     }
 
     /** Particles come off the sliding wheels and move on their own. */
+    /** A bent wheel's marks are wavy (realism, "A bent wheel wobbles"): they swing from side to side, the others' run straight. */
+    private void bentWheelWavy() {
+        start();
+        CarLooks.clear(1);
+        CarLooks.bend(0, FL, 9F, 12F);
+        for (int t = 0; t < 40; t++) {
+            place(0F, 30F * t, 0F, 0F, 30F, 30F, 0);
+            if (t >= 3) {
+                v.slipLong[FL] = -24F;
+                v.slipLong[FR] = -24F;
+            }
+            tick();
+        }
+        float bent = sway(FL);
+        float straight = sway(FR);
+        CarLooks.clear(1);
+        check(F, "a bent wheel's marks are wavy", pieces(FL) > 4 && bent > 1.5F && straight < 0.3F,
+                "bent wheel's mark swings " + n(bent) + " across, the true wheel's " + n(straight));
+    }
+
+    /** How far from side to side wheel {@code wheel}'s mark swings: the spread of its pieces' middles across. */
+    private float sway(int wheel) {
+        float lo = Float.MAX_VALUE;
+        float hi = -Float.MAX_VALUE;
+        for (int i = 0; i < ring().count; i++) {
+            int q = ring().slot(i);
+            if (ring().wheel[q] != wheel) {
+                continue;
+            }
+            float x = (ring().cornerX[q * 4] + ring().cornerX[q * 4 + 1] + ring().cornerX[q * 4 + 2]
+                    + ring().cornerX[q * 4 + 3]) / 4F;
+            lo = Math.min(lo, x);
+            hi = Math.max(hi, x);
+        }
+        return hi < lo ? 0F : hi - lo;
+    }
+
     private void particlesMove() {
         backwardsLanding();
         int live = -1;

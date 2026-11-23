@@ -54,4 +54,13 @@ public interface Canvas {
 
     /** A polygon on car {@code car}, in the car's own frame (as its model's corners are): it moves with the car. */
     void onCar(int car, float[] x, float[] y, float[] z, int n);
+
+    /**
+     * A polygon on one of car {@code car}'s wheels, in the car's own frame:
+     * it moves with the car, spins with the wheels about the hub
+     * {@code (hubY, hubZ)} and, on a front wheel ({@code steerX} not 0, as
+     * {@link CarShape#steerX}), steers about {@code (steerX, hubZ)}, as the
+     * wheel's own polygons do.
+     */
+    void onWheel(int car, float[] x, float[] y, float[] z, int n, int steerX, int hubY, int hubZ);
 }

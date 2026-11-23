@@ -113,7 +113,7 @@ final class Precise {
     }
 
     /* the cars placed between two ticks, and how far past their whole values each really is */
-    private static final int MAX_CARS = 16;
+    static final int MAX_CARS = 16;
     private static final ContO[] cars = new ContO[MAX_CARS];
     private static final int[] carSlots = new int[MAX_CARS];
     private static final float[][] fractions = new float[MAX_CARS][8];
@@ -504,6 +504,18 @@ final class Precise {
      * kept scene kept as the car's own points, which follow it.
      */
     static boolean featureOnCar(ContO car, float[] x, float[] y, float[] z, int n, int[] sx, int[] sy) {
+        return featureOnWheel(car, x, y, z, n, 0, 0, 0, sx, sy);
+    }
+
+    /**
+     * An extra's polygon on one of car {@code car}'s wheels, in the car's own
+     * frame: as {@link #featureOnCar}, but first spun with the wheels about
+     * the hub {@code (wy, wz)} and, for a front wheel ({@code wx} not 0),
+     * steered about {@code (wx, wz)}, as the game turns the wheel's own
+     * polygons; with all three 0 it is on the body.
+     */
+    static boolean featureOnWheel(ContO car, float[] x, float[] y, float[] z, int n, int wx, int wy, int wz,
+            int[] sx, int[] sy) {
         fit(n);
         object(car);
         int slot = objectSlot;
@@ -515,9 +527,20 @@ final class Precise {
         float yaw = car.xz + objXZ;
         objectNone();
         for (int v = 0; v < n; v++) {
-            xs[v] = x[v] + fi;
-            ys[v] = y[v] + fj;
-            zs[v] = z[v] + fk;
+            xs[v] = x[v];
+            ys[v] = y[v];
+            zs[v] = z[v];
+        }
+        if (wz != 0) {
+            rotate(ys, zs, wy, wz, car.wzy, n); // the wheel's spin about its axle
+        }
+        if (wx != 0) {
+            rotate(xs, zs, wx, wz, car.wxz, n); // steering
+        }
+        for (int v = 0; v < n; v++) {
+            xs[v] += fi;
+            ys[v] += fj;
+            zs[v] += fk;
         }
         rotate(xs, ys, fi, fj, roll, n);
         rotate(ys, zs, fj, fk, pitch, n);
@@ -529,7 +552,7 @@ final class Precise {
             if (retained != null) {
                 for (int v = 0; v < n; v++) {
                     int point = slot >= 0
-                            ? retained.car(slot, x[v], y[v], z[v], 0, 0, 0)
+                            ? retained.car(slot, x[v], y[v], z[v], wx, wy, wz)
                             : retained.camera(xs[v], ys[v], zs[v], 1, Medium.cz);
                     outX[v] = outY[v] = RetainedScene.handle(point);
                 }

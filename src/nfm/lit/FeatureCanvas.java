@@ -153,4 +153,12 @@ final class FeatureCanvas implements Canvas {
             g.fillPolygon(sx, sy, n);
         }
     }
+
+    @Override
+    public void onWheel(int car, float[] x, float[] y, float[] z, int n, int steerX, int hubY, int hubZ) {
+        if (car >= 0 && car < cars && n >= 3 && n <= MAX_CORNERS
+                && Precise.featureOnWheel(scene[car], x, y, z, n, steerX, hubY, hubZ, sx, sy)) {
+            g.fillPolygon(sx, sy, n);
+        }
+    }
 }

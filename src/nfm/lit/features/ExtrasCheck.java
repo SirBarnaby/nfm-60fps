@@ -15,6 +15,7 @@ public final class ExtrasCheck {
 
     private static int passed;
     private static int failed;
+    private static int waiting;
 
     private ExtrasCheck() {
     }
@@ -27,6 +28,17 @@ public final class ExtrasCheck {
             failed++;
         }
         System.out.println("[extras] " + feature + ": " + name + ": " + (ok ? "ok" : "FAILED") + " (" + measured + ")");
+    }
+
+    /**
+     * A check of {@code feature} only the owner can pass ({@code name}, such
+     * as looking values over): reported on every run as waiting, with what
+     * is measured, and counted apart. It is no pass: the requirement stays
+     * unmet until the owner has done it.
+     */
+    public static void waiting(String feature, String name, String measured) {
+        waiting++;
+        System.out.println("[extras] " + feature + ": " + name + ": WAITING FOR THE OWNER (" + measured + ")");
     }
 
     /** Formats a number for a check's line. */
@@ -42,7 +54,11 @@ public final class ExtrasCheck {
         if (wants(only, "wingtrail")) {
             nfm.lit.features.wingtrail.WingTrailCheck.run();
         }
-        System.out.println("[extras] checks: " + passed + " passed, " + failed + " failed");
+        if (wants(only, "realism")) {
+            nfm.lit.features.realism.RealismCheck.run();
+        }
+        System.out.println("[extras] checks: " + passed + " passed, " + failed + " failed"
+                + (waiting > 0 ? ", " + waiting + " waiting for the owner" : ""));
         System.exit(failed == 0 && passed > 0 ? 0 : 1);
     }
 

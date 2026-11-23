@@ -21,6 +21,7 @@ public final class Features {
         new nfm.lit.features.skidmarks.SkidmarksFeature(),
         new nfm.lit.features.skidmarks.SkidZonesFeature(),
         new nfm.lit.features.wingtrail.WingTrailFeature(),
+        new nfm.lit.features.realism.RealismFeature(),
     };
 
     private static final boolean[] active = new boolean[ALL.length];
@@ -30,6 +31,9 @@ public final class Features {
     private static boolean racing;
     private static int seenVersion = -1;
     private static RaceView lastView;
+    /** The feature that recolours and reshapes the cars' polygons, and its place in {@link #ALL}; null and -1 if none is on. */
+    private static CarLook look;
+    private static int lookOwner = -1;
 
     private Features() {
     }
@@ -92,6 +96,7 @@ public final class Features {
                 start(f, race);
             }
         }
+        relook();
     }
 
     /** A real race tick has ended. */
@@ -134,6 +139,7 @@ public final class Features {
                 stop(f, race);
             }
         }
+        relook();
     }
 
     /** The race has ended or been left. */
@@ -148,6 +154,7 @@ public final class Features {
             }
         }
         activeCount = 0;
+        relook();
     }
 
     /** The race in play ended (the game left it), if one was. */
@@ -181,6 +188,59 @@ public final class Features {
         }
     }
 
+    /** The feature that recolours the cars' polygons in the race being played, or null: the game asks it for each. */
+    public static CarLook carLook() {
+        return look;
+    }
+
+    /** {@link CarLook#color} of the feature that recolours the cars; a feature that throws is switched off. */
+    public static int carColor(int car, int plane, int rgb) {
+        CarLook l = look;
+        if (l == null) {
+            return rgb;
+        }
+        try {
+            return l.color(car, plane, rgb);
+        } catch (RuntimeException e) {
+            fail(lookOwner, e);
+            return rgb;
+        }
+    }
+
+    /** {@link CarLook#lamp} after {@link #carColor}; -1 when no feature recolours the cars. */
+    public static int carLamp() {
+        CarLook l = look;
+        return l == null ? -1 : l.lamp();
+    }
+
+    /** {@link CarLook#bend}; false when no feature reshapes the cars (or it threw, and is off). */
+    public static boolean carBend(int car, int plane, int[] x, int[] y, int[] z, int n, int[] outX, int[] outY,
+            int[] outZ) {
+        CarLook l = look;
+        if (l == null) {
+            return false;
+        }
+        try {
+            return l.bend(car, plane, x, y, z, n, outX, outY, outZ);
+        } catch (RuntimeException e) {
+            fail(lookOwner, e);
+            return false;
+        }
+    }
+
+    /** Finds the feature on now that recolours the cars, if any. */
+    private static void relook() {
+        look = null;
+        lookOwner = -1;
+        for (int f = 0; f < ALL.length; f++) {
+            if (active[f] && ALL[f] instanceof CarLook l) {
+                look = l;
+                lookOwner = f;
+                return;
+            }
+        }
+    }
+
     private static void start(int f, RaceView race) {
         try {
             ALL[f].raceStarted(race);
@@ -207,5 +267,6 @@ public final class Features {
             active[f] = false;
             activeCount--;
         }
+        relook();
     }
 }

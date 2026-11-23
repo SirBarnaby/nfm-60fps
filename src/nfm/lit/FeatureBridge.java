@@ -2,6 +2,7 @@ package nfm.lit;
 
 import java.awt.Graphics2D;
 import nfm.lit.audio.SoundManager;
+import nfm.lit.features.CarShape;
 import nfm.lit.features.DrawQueue;
 import nfm.lit.features.Features;
 import nfm.lit.features.RaceView;
@@ -34,12 +35,32 @@ final class FeatureBridge {
     static boolean ahead;
     private static int cars;
 
+    /*
+     * The cars' own polygons, recoloured and reshaped by an extra while one
+     * is on (Features.carLook): ContO says which race car and polygon it
+     * draws, Plane asks for the colour and, for a bent wheel, the corners.
+     */
+    /** The race car whose polygons are being drawn ({@link ContO#carSlot}), or -1. */
+    static int lookCar = -1;
+    /** Which of its polygons. */
+    static int lookPlane;
+    /** After {@link #look}: -1 lit as the game would, 0 dark, 1 lit as a lamp. */
+    static int lookLamp = -1;
+    /** A bent polygon's corners after {@link #bend}. */
+    static final int[] bentX = new int[64];
+    static final int[] bentY = new int[64];
+    static final int[] bentZ = new int[64];
+
     /* hits of the tick being played, handed over with the view */
     private static int hits;
     private static final int[] hitCar = new int[RaceView.MAX_HITS];
     private static final int[] hitWheel = new int[RaceView.MAX_HITS];
     private static final int[] hitAxis = new int[RaceView.MAX_HITS];
     private static final float[] hitForce = new float[RaceView.MAX_HITS];
+
+    /* every touch of the tick (a wall, another car), the strongest push along each world axis per corner */
+    private static final float[] touchX = new float[Precise.MAX_CARS * RaceView.WHEELS];
+    private static final float[] touchZ = new float[Precise.MAX_CARS * RaceView.WHEELS];
 
     private FeatureBridge() {
     }
@@ -84,19 +105,47 @@ final class FeatureBridge {
         hitForce[hits++] = force;
     }
 
+    /**
+     * Car {@code car}'s corner {@code wheel} touched a wall or a car, pushed
+     * {@code force} along world axis {@code axis} (0 x, 2 z): every touch,
+     * however light, as the game measures it before deciding on a hit.
+     */
+    static void touch(int car, int wheel, int axis, float force) {
+        int at = car * RaceView.WHEELS + wheel;
+        if (at < 0 || at >= touchX.length || SoundManager.isDiscarding()) {
+            return;
+        }
+        float[] pushes = axis == 0 ? touchX : touchZ;
+        if (Math.abs(force) > Math.abs(pushes[at])) {
+            pushes[at] = force;
+        }
+    }
+
     /** A real race tick has ended: the view is filled and handed to the extras. */
     static void afterTick(Madness[] racers, Control[] controls, ContO[] scene, Trackers trackers, int ticks) {
         if (!starting && !Features.anyActive() && !Features.anySwitchedOn()) {
             hits = 0;
+            java.util.Arrays.fill(touchX, 0F);
+            java.util.Arrays.fill(touchZ, 0F);
             return;
         }
         fill(racers, controls, scene, trackers, ticks);
         if (starting) {
             starting = false;
+            view.dataFile = GameFiles::file;
+            for (int c = 0; c < cars; c++) {
+                shape(view.shape[c], scene[c]);
+            }
             Features.raceStarted(view);
+        }
+        boolean looking = Features.carLook() != null;
+        for (int c = 0; c < cars; c++) {
+            scene[c].carSlot = looking ? c : -1;
         }
         Features.afterTick(view);
         hits = 0;
+        java.util.Arrays.fill(touchX, 0F);
+        java.util.Arrays.fill(touchZ, 0F);
     }
 
     private static void fill(Madness[] racers, Control[] controls, ContO[] scene, Trackers trackers, int ticks) {
@@ -111,6 +160,7 @@ final class FeatureBridge {
             ContO o = scene[c];
             Control k = controls[c];
             view.model[c] = m.cn;
+            view.modelName[c] = GameSparker.carModel(m.cn);
             view.x[c] = o.x;
             view.y[c] = o.y;
             view.z[c] = o.z;
@@ -140,6 +190,11 @@ final class FeatureBridge {
             }
             view.airTicks[c] = view.grounded[c] ? 0 : view.airTicks[c] + 1;
         }
+        int touched = Math.min(n * RaceView.WHEELS, touchX.length);
+        java.util.Arrays.fill(view.touchX, 0F);
+        java.util.Arrays.fill(view.touchZ, 0F);
+        System.arraycopy(touchX, 0, view.touchX, 0, touched);
+        System.arraycopy(touchZ, 0, view.touchZ, 0, touched);
         view.hits = hits;
         System.arraycopy(hitCar, 0, view.hitCar, 0, hits);
         System.arraycopy(hitWheel, 0, view.hitWheel, 0, hits);
@@ -218,6 +273,92 @@ final class FeatureBridge {
             view.slipLong[at] = m.speed - (vx * hx + vy * hy + vz * hz);
         }
         view.grounded[c] = any;
+    }
+
+    /** Car model {@code o}'s polygons into {@code s}: corners, colours, glass, lights, wheels; the body's extent. */
+    private static void shape(CarShape s, ContO o) {
+        int corners = 0;
+        for (int i = 0; i < o.npl; i++) {
+            corners += o.p[i].n;
+        }
+        s.fit(o.npl, corners);
+        float[] sumX = new float[RaceView.WHEELS];
+        int[] pointsOf = new int[RaceView.WHEELS];
+        float[] lowX = {Float.MAX_VALUE, Float.MAX_VALUE, Float.MAX_VALUE, Float.MAX_VALUE};
+        float[] highX = {-Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE};
+        java.util.Arrays.fill(s.wheelRadius, 0F);
+        java.util.Arrays.fill(s.steerX, 0);
+        s.minX = s.minY = s.minZ = Float.MAX_VALUE;
+        s.maxX = s.maxY = s.maxZ = -Float.MAX_VALUE;
+        int at = 0;
+        for (int i = 0; i < o.npl; i++) {
+            Plane p = o.p[i];
+            s.first[i] = at;
+            s.count[i] = p.n;
+            s.rgb[i] = (p.c[0] & 0xff) << 16 | (p.c[1] & 0xff) << 8 | p.c[2] & 0xff;
+            s.glass[i] = p.glass;
+            s.light[i] = p.light;
+            int wheel = p.wz != 0 ? nearestWheel(o, p) : -1;
+            s.wheel[i] = wheel;
+            for (int k = 0; k < p.n; k++, at++) {
+                s.x[at] = p.ox[k];
+                s.y[at] = p.oy[k];
+                s.z[at] = p.oz[k];
+                if (wheel >= 0) {
+                    sumX[wheel] += p.ox[k];
+                    pointsOf[wheel]++;
+                    lowX[wheel] = Math.min(lowX[wheel], p.ox[k]);
+                    highX[wheel] = Math.max(highX[wheel], p.ox[k]);
+                    s.hubY[wheel] = p.wy;
+                    s.hubZ[wheel] = p.wz;
+                    s.steerX[wheel] = p.wx;
+                    s.wheelRadius[wheel] = Math.max(s.wheelRadius[wheel],
+                            (float) Math.hypot(p.oy[k] - p.wy, p.oz[k] - p.wz));
+                } else {
+                    s.minX = Math.min(s.minX, p.ox[k]);
+                    s.maxX = Math.max(s.maxX, p.ox[k]);
+                    s.minY = Math.min(s.minY, p.oy[k]);
+                    s.maxY = Math.max(s.maxY, p.oy[k]);
+                    s.minZ = Math.min(s.minZ, p.oz[k]);
+                    s.maxZ = Math.max(s.maxZ, p.oz[k]);
+                }
+            }
+        }
+        for (int w = 0; w < RaceView.WHEELS; w++) {
+            s.hubX[w] = pointsOf[w] > 0 ? sumX[w] / pointsOf[w] : o.keyx[w];
+            s.wheelHalfWidth[w] = pointsOf[w] > 0 ? (highX[w] - lowX[w]) / 2F : 0F;
+        }
+    }
+
+    /** Which of {@code o}'s wheels wheel polygon {@code p} belongs to: the nearest to its hub. */
+    private static int nearestWheel(ContO o, Plane p) {
+        float mx = 0F;
+        for (int k = 0; k < p.n; k++) {
+            mx += p.ox[k];
+        }
+        mx /= Math.max(1, p.n);
+        int best = 0;
+        float bestDistance = Float.MAX_VALUE;
+        for (int w = 0; w < RaceView.WHEELS; w++) {
+            float d = Math.abs(o.keyx[w] - mx) + Math.abs(o.keyz[w] - p.wz);
+            if (d < bestDistance) {
+                bestDistance = d;
+                best = w;
+            }
+        }
+        return best;
+    }
+
+    /** The colour {@link #lookCar}'s polygon {@link #lookPlane} is drawn in (Plane.d, before the fog); sets {@link #lookLamp}. */
+    static int look(int red, int green, int blue) {
+        int rgb = Features.carColor(lookCar, lookPlane, red << 16 | green << 8 | blue);
+        lookLamp = Features.carLamp();
+        return rgb;
+    }
+
+    /** True if {@link #lookCar}'s polygon {@link #lookPlane} is drawn from other corners, then in {@link #bentX} etc. */
+    static boolean bend(int[] x, int[] y, int[] z, int n) {
+        return n <= bentX.length && Features.carBend(lookCar, lookPlane, x, y, z, n, bentX, bentY, bentZ);
     }
 
     /* ------------------------------------------------------------- drawing */

@@ -13,13 +13,23 @@ public final class CheckCanvas implements Canvas {
     public float maxGlow;
     public int moving;
     public int onCar;
+    public int onWheel;
+    /** Polygons drawn in each colour since the last reset. */
+    public final java.util.Map<Integer, Integer> colors = new java.util.HashMap<>();
 
     public void reset() {
         polygons = 0;
         corners = 0;
         moving = 0;
         onCar = 0;
+        onWheel = 0;
         maxGlow = 0F;
+        colors.clear();
+    }
+
+    /** Polygons drawn in colour {@code rgb} since the last reset. */
+    public int drawn(int rgb) {
+        return colors.getOrDefault(rgb, 0);
     }
 
     @Override
@@ -44,29 +54,37 @@ public final class CheckCanvas implements Canvas {
 
     @Override
     public void world(float[] x, float[] y, float[] z, int n) {
-        polygons++;
-        corners += n;
+        count(n);
     }
 
     @Override
     public void moving(float[] x, float[] y, float[] z, float vx, float vy, float vz, int n) {
-        polygons++;
-        corners += n;
+        count(n);
         moving++;
     }
 
     @Override
     public void moving(float[] x, float[] y, float[] z, float[] vx, float[] vy, float[] vz, int n) {
-        polygons++;
-        corners += n;
+        count(n);
         moving++;
     }
 
     @Override
     public void onCar(int car, float[] x, float[] y, float[] z, int n) {
+        count(n);
+        onCar++;
+    }
+
+    @Override
+    public void onWheel(int car, float[] x, float[] y, float[] z, int n, int steerX, int hubY, int hubZ) {
+        count(n);
+        onWheel++;
+    }
+
+    private void count(int n) {
         polygons++;
         corners += n;
-        onCar++;
+        colors.merge(lastColor, 1, Integer::sum);
     }
 
     /** Queues and draws everything {@code feature} draws in a frame seen from {@code (x, y, z)}; returns the polygons. */

@@ -199,6 +199,8 @@ public final class Sound3D implements Runnable {
     static final int MUSIC_UNLOAD = 9;
     /** A sound that is not the original's, for the second speaker only (see {@link #event}). */
     private static final int EVENT = 10;
+    /** An extra's own clip, played at a car (see {@link #carSound}). */
+    private static final int EXTRA = 11;
 
     private final ConcurrentLinkedQueue<Command> commands = new ConcurrentLinkedQueue<>();
     private volatile Moment latest;
@@ -643,6 +645,37 @@ public final class Sound3D implements Runnable {
         Sound3D sound = instance;
         if (sound != null && !SoundManager.isDiscarding()) {
             sound.post(new Command(CRASH, null, car, force, kind));
+        }
+    }
+
+    /*
+     * The extras' own sounds (nfm.lit.features): clips they make from a few
+     * lines of synthesis, registered by name and played at a car. Only the
+     * 3D sound plays them, so Classic sound stays exactly the original's.
+     */
+    private static final Map<String, short[]> extraClips = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final Map<String, Integer> extraRates = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** An extra's clip {@code name}: 16-bit mono samples at {@code rate} a second, kept for the rest of the game. */
+    public static void extraClip(String name, short[] pcm, int rate) {
+        extraClips.put(name, pcm.clone());
+        extraRates.put(name, rate);
+    }
+
+    /** True if an extra's clip {@code name} has been made. */
+    public static boolean hasExtraClip(String name) {
+        return extraClips.containsKey(name);
+    }
+
+    /**
+     * Plays the extra's clip {@code name} at car {@code car}, at {@code gain}
+     * (1 as loud as the game's own effects) and {@code pitch}; only with the
+     * 3D sound, and never for a run-ahead tick.
+     */
+    public static void carSound(int car, String name, float gain, float pitch) {
+        Sound3D sound = instance;
+        if (sound != null && !SoundManager.isDiscarding() && extraClips.containsKey(name)) {
+            sound.post(new Command(EXTRA, name, car, gain, pitch));
         }
     }
 
@@ -1413,7 +1446,7 @@ public final class Sound3D implements Runnable {
         SoundClip clip = clips.clips().get(name);
         byte[] data = clip == null ? null : clip.data();
         if (data == null) {
-            return 0;
+            return extraBuffer(name, buffers);
         }
         int buffer = 0;
         try (AudioInputStream in = AudioSystem.getAudioInputStream(new ByteArrayInputStream(data))) {
@@ -1441,6 +1474,26 @@ public final class Sound3D implements Runnable {
         return buffer;
     }
 
+    /** An extra's clip {@code name} as a buffer of the device current now; 0 if there is none. */
+    private int extraBuffer(String name, Map<String, Integer> buffers) {
+        short[] pcm = extraClips.get(name);
+        Integer rate = extraRates.get(name);
+        if (pcm == null || rate == null) {
+            return 0;
+        }
+        ShortBuffer direct = MemoryUtil.memAllocShort(pcm.length);
+        int buffer;
+        try {
+            direct.put(pcm).flip();
+            buffer = alGenBuffers();
+            alBufferData(buffer, AL_FORMAT_MONO16, direct, rate);
+        } finally {
+            MemoryUtil.memFree(direct);
+        }
+        buffers.put(name, buffer);
+        return buffer;
+    }
+
     /* -------------------------------------------------------- commands */
 
     private void handleCommands() {
@@ -1465,6 +1518,12 @@ public final class Sound3D implements Runnable {
             }
             case CRASH -> crash(c.car, c.a, (int) c.b);
             case SKID -> skid(c.car, (int) c.a);
+            case EXTRA -> {
+                Moment m = current;
+                if (m != null && !m.muted && effectsOf(c.car) != null) {
+                    playAt(c.car, c.clip, c.a, c.b);
+                }
+            }
             case STOP_ALL -> stopEverything();
             case MUSIC_PLAY -> startMusic(c.music);
             case MUSIC_PAUSE, MUSIC_RESUME -> pauseMusic(c.music, c.kind == MUSIC_PAUSE);

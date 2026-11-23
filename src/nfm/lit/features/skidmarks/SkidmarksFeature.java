@@ -3,6 +3,7 @@ package nfm.lit.features.skidmarks;
 import fallk.logmaster.HLogger;
 import java.util.Arrays;
 import nfm.lit.features.Canvas;
+import nfm.lit.features.CarLooks;
 import nfm.lit.features.Dice;
 import nfm.lit.features.DrawQueue;
 import nfm.lit.features.Feature;
@@ -28,6 +29,14 @@ public final class SkidmarksFeature implements Feature {
     public static final String ID = "skidmarks";
     /** The detail switch: 0 simple, 1 full (streaks and striations). */
     static final String DETAIL = "skiddetail";
+    /** How much wider than the tread's own swing a bent wheel's wavy mark is drawn, so it reads at a distance. */
+    private static final float WAVE = 2.5F;
+    /**
+     * How many times longer the wave is than one turn of the wheel: marks are
+     * laid once a tick, a wheel turns nearly half a turn in one at speed, and
+     * a wave that short would show as a zigzag.
+     */
+    private static final float WAVE_LENGTH = 2.5F;
 
     /** Item: every piece of mark on the road. Below it, the slot of a piece on a ramp; from {@link #PARTICLE}, a particle. */
     static final int GROUND_ITEM = MarkRing.CAPACITY;
@@ -70,6 +79,8 @@ public final class SkidmarksFeature implements Feature {
     int[] mudRgb = new int[0];
     /** Ticks of sideways scrub left after a shove. */
     int[] scrub = new int[0];
+    /** How far each wheel has turned, radians: where a bent wheel's wobble is (realism, "A bent wheel wobbles"). */
+    float[] rolled = new float[0];
 
     private final float[] point = new float[3];
     private final float[] other = new float[3];
@@ -96,10 +107,12 @@ public final class SkidmarksFeature implements Feature {
             mud = new float[wheels];
             mudRgb = new int[wheels];
             scrub = new int[wheels];
+            rolled = new float[wheels];
         }
         Arrays.fill(intensity, 0F);
         Arrays.fill(mud, 0F);
         Arrays.fill(scrub, 0);
+        Arrays.fill(rolled, 0F);
         // each car's four wheels, then a body scrape per car
         ring.fit(wheels + cars);
         ring.clear();
@@ -167,6 +180,10 @@ public final class SkidmarksFeature implements Feature {
                 mud[at] *= (float) Math.exp(-speed / MUD_FADE);
             }
         }
+        float radius = CarLooks.radius(c, at % RaceView.WHEELS);
+        if (radius > 0F) {
+            rolled[at] = (rolled[at] + speed / (radius * WAVE_LENGTH)) % (float) (2D * Math.PI);
+        }
         float s = slip.slide[at];
         int kind = slip.kind[at];
         boolean shoved = scrub[at] > 0;
@@ -220,8 +237,21 @@ public final class SkidmarksFeature implements Feature {
         if (!race.onRamp[at] && Math.abs(y - GROUND) < NEAR_GROUND) {
             y = GROUND;
         }
-        ring.mark(at, race.wheelX[at], y, race.wheelZ[at], hx, hz, TYRE, color, cover, kind, race.onRamp[at], tick);
+        // a bent wheel's tread swings from side to side once a turn: its mark is wavy
+        float sway = wobble(c, at);
+        ring.mark(at, race.wheelX[at] + hz * sway, y, race.wheelZ[at] - hx * sway, hx, hz, TYRE, color, cover, kind,
+                race.onRamp[at], tick);
         throwFrom(race, c, at, s, loose, y);
+    }
+
+    /** How far wheel {@code at}'s tread is to the side of its hub now, from how bent it is and how far it has turned. */
+    float wobble(int c, int at) {
+        float bent = CarLooks.bent(c, at % RaceView.WHEELS);
+        if (bent == 0F) {
+            return 0F;
+        }
+        float reach = CarLooks.radius(c, at % RaceView.WHEELS) * (float) Math.sin(Math.toRadians(bent)) * WAVE;
+        return reach * (float) Math.sin(rolled[at]);
     }
 
     /** What a sliding wheel throws: smoke from the road, dust and clods from loose ground. */
@@ -247,9 +277,11 @@ public final class SkidmarksFeature implements Feature {
         }
         if (dice.next() < level * 0.5F) {
             int clod = MarkRing.darker(race.groundRgb[at], 0.6F);
-            particles.add(x, y - 3F, z, vx * 0.5F + dice.between(-3F, 3F), -dice.between(4F, 9F),
+            int slot = particles.add(x, y - 3F, z, vx * 0.5F + dice.between(-3F, 3F), -dice.between(4F, 9F),
                     vz * 0.5F + dice.between(-3F, 3F), dice.between(12F, 20F), 2.5F, 2.5F, clod, 1F, 0.02F, -0.9F,
                     false);
+            particles.floor(slot, y);
+            particles.keep(slot); // with the damage extra on, a clod stays where it falls
         }
     }
 

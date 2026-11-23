@@ -398,6 +398,15 @@ public class Plane {
 
     public void d(Graphics2D rd, int x, int y, int z, int yaw, int roll, int pitch, int wheelTurn, int wheelSpin, boolean noOutline, int objectSize, boolean blackout) {
         int[][] slots = SCRATCH.get();
+        // the corners drawn: the model's, or an extra's (a bent wheel's, tilted); never written back
+        int[] ox = this.ox;
+        int[] oy = this.oy;
+        int[] oz = this.oz;
+        if (FeatureBridge.lookCar >= 0 && wz != 0 && FeatureBridge.bend(ox, oy, oz, n)) {
+            ox = FeatureBridge.bentX;
+            oy = FeatureBridge.bentY;
+            oz = FeatureBridge.bentZ;
+        }
         // for the graphics card, the corners again without rounding (not while the plane is breaking up)
         boolean exact = Precise.on && embos == 0;
         boolean mirrored = (gr == -11 || gr == -13) && Medium.lastmaf == 1;
@@ -1155,6 +1164,15 @@ public class Plane {
                     blue = 0;
                 }
             }
+            int lamp = -1;
+            if (FeatureBridge.lookCar >= 0) {
+                // an extra's dirt, lights, glass or open bonnet, before the fog is laid over
+                int look = FeatureBridge.look(red, green, blue);
+                red = look >> 16 & 0xff;
+                green = look >> 8 & 0xff;
+                blue = look & 0xff;
+                lamp = FeatureBridge.lookLamp;
+            }
             if (!Medium.trk) {
                 int band = 0;
                 do {
@@ -1173,8 +1191,8 @@ public class Plane {
             if (exact) {
                 Precise.plane(ox, oy, oz, mirrored, n, x, y, z, yaw, roll, pitch, wheelTurn, wheelSpin, wx, wy, wz, screenX, screenY);
             }
-            boolean lamp = Medium.lightson && light != 0 && !blackout;
-            if (lamp) {
+            boolean lit = lamp < 0 ? Medium.lightson && light != 0 && !blackout : lamp == 1 && !blackout;
+            if (lit) {
                 Glow.set(Glow.LAMP);
             }
             rd.fillPolygon(screenX, screenY, n);

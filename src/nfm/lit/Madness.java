@@ -290,6 +290,7 @@ class Madness {
 
     private void regz(int wheel, float force, ContO car) {
         force *= stat.dammult;
+        FeatureBridge.touch(im, wheel, 2, force); // the extras see every touch, a hit or not (scratches)
         if (Math.abs(force) > 100F) {
             rpd.recz(wheel, force, im);
             if (force > 100F)
@@ -592,6 +593,7 @@ class Madness {
 
     private void regx(int wheel, float force, ContO car) {
         force *= stat.dammult;
+        FeatureBridge.touch(im, wheel, 0, force);
         if (Math.abs(force) > 100F) {
             rpd.recx(wheel, force, im);
             if (force > 100F)

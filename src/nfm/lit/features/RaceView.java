@@ -45,6 +45,8 @@ public final class RaceView {
 
     /** The car's model number (its place in the car list). */
     public int[] model = new int[0];
+    /** The car's model's file name (such as {@code radicalone}), or "" for one not in the list. */
+    public String[] modelName = new String[0];
     public float[] x = new float[0];
     public float[] y = new float[0];
     public float[] z = new float[0];
@@ -82,6 +84,16 @@ public final class RaceView {
     public int[] radius = new int[0];
     /** How far below the car's centre its wheels touch the ground. */
     public int[] wheelDrop = new int[0];
+    /** Nitrous burns in the car's engine (the powerups' nitrous). */
+    public boolean[] nitrous = new boolean[0];
+    /** Each car's model as loaded (its polygons), filled when the race starts. */
+    public CarShape[] shape = new CarShape[0];
+    /**
+     * The file at {@code path} under the game's folder (such as
+     * {@code data/extras/car-sheets.txt}), or the last mod's file at the same
+     * place: data is read through the game's files, so mods apply.
+     */
+    public java.util.function.Function<String, java.io.File> dataFile = java.io.File::new;
 
     /* ---------------------------------------------------------- per wheel */
 
@@ -111,6 +123,15 @@ public final class RaceView {
      */
     public float[] slipLong = new float[0];
 
+    /**
+     * The strongest push on the wheel's corner from a touch this tick (a
+     * wall, another car), along the world's x and z, as the game measures
+     * it before deciding on a hit: 0 if nothing touched it. Light touches
+     * that never make a hit show here: a scrape along a wall.
+     */
+    public float[] touchX = new float[0];
+    public float[] touchZ = new float[0];
+
     /* ---------------------------------------------------------- the hits */
 
     /** Hits in the last tick, each a car, a wheel (the corner hit), an axis (0 x, 1 y, 2 z) and a force. */
@@ -126,6 +147,8 @@ public final class RaceView {
             return;
         }
         model = new int[n];
+        modelName = new String[n];
+        java.util.Arrays.fill(modelName, "");
         x = new float[n];
         y = new float[n];
         z = new float[n];
@@ -151,6 +174,12 @@ public final class RaceView {
         power = new float[n];
         radius = new int[n];
         wheelDrop = new int[n];
+        nitrous = new boolean[n];
+        CarShape[] shapes = new CarShape[n];
+        for (int c = 0; c < n; c++) {
+            shapes[c] = c < shape.length ? shape[c] : new CarShape();
+        }
+        shape = shapes;
         int w = n * WHEELS;
         keyX = new int[w];
         keyZ = new int[w];
@@ -165,6 +194,8 @@ public final class RaceView {
         wheelVZ = new float[w];
         slipSide = new float[w];
         slipLong = new float[w];
+        touchX = new float[w];
+        touchZ = new float[w];
     }
 
     /**
