@@ -47,6 +47,13 @@ if ($LASTEXITCODE -ne 0) { throw 'Compilation failed.' }
 
 # Images loaded with getResource() live next to the classes
 Copy-Item src\nfm\lit\aimg "$classes\nfm\lit\aimg" -Recurse
+# So do the extras' own data files (such as the realism car sheets), each next to its feature's classes
+$srcRoot = (Resolve-Path src).Path
+Get-ChildItem src\nfm\lit\features -Recurse -File | Where-Object { $_.Extension -ne '.java' } | ForEach-Object {
+    $to = Join-Path $classes $_.FullName.Substring($srcRoot.Length + 1)
+    New-Item -ItemType Directory -Force (Split-Path $to) | Out-Null
+    Copy-Item $_.FullName $to
+}
 
 # The renderer's shaders, compiled now by Windows' shader compiler so the game
 # does not compile them at every start (it still can, if one is missing)

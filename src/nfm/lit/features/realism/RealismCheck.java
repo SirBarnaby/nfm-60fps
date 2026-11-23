@@ -4,10 +4,6 @@ import static nfm.lit.features.ExtrasCheck.check;
 import static nfm.lit.features.ExtrasCheck.n;
 import static nfm.lit.features.ExtrasCheck.waiting;
 
-import java.io.File;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -184,7 +180,6 @@ public final class RealismCheck {
         v.wheelDrop[0] = DROP;
         v.radius[0] = 60;
         v.shape[0] = box(rearLights);
-        v.dataFile = File::new;
         for (int w = 0; w < RaceView.WHEELS; w++) {
             v.keyX[w] = KEY_X[w];
             v.keyZ[w] = KEY_Z[w];
@@ -793,15 +788,13 @@ public final class RealismCheck {
 
     /** Each car has a short sheet; the owner looks the values over. */
     private void sheets() {
-        File file = sheetsFile();
-        List<String> lines;
-        try {
-            lines = Files.readAllLines(file.toPath(), StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            check(F, "each car has a short sheet", false, "cannot read " + file + ": " + e);
+        String file = CarSheets.SOURCE;
+        List<String> lines = CarSheets.lines();
+        if (lines == null) {
+            check(F, "each car has a short sheet", false, "no " + CarSheets.RESOURCE + " next to the extra's classes");
             return;
         }
-        Map<String, CarSheet> sheets = CarSheets.parse(lines, file.getPath());
+        Map<String, CarSheet> sheets = CarSheets.parse(lines, file);
         List<String> missing = new ArrayList<>();
         for (String car : CARS) {
             if (!sheets.containsKey(car)) {
@@ -830,20 +823,6 @@ public final class RealismCheck {
                 && parts.low[LEFT_SIDE] > parts.low[ROOF];
         check(F, "car parts found", ok, "bonnet from z " + n(parts.hingeZ) + " to " + n(parts.bonnetFront)
                 + ", windscreen polygon " + parts.screen + ", engine at z " + n(parts.engine[2]));
-    }
-
-    /** The sheets: the game's own file, from the folder the check runs in or the jar's. */
-    private static File sheetsFile() {
-        File here = new File(CarSheets.PATH);
-        if (here.isFile()) {
-            return here;
-        }
-        try {
-            File jar = new File(RealismCheck.class.getProtectionDomain().getCodeSource().getLocation().toURI());
-            return new File(jar.getParentFile(), CarSheets.PATH);
-        } catch (java.net.URISyntaxException | SecurityException e) {
-            return here;
-        }
     }
 
     private static float light(int rgb) {

@@ -96,7 +96,7 @@ public final class RealismFeature implements Feature, CarLook {
         CarLooks.keepDebris(debris);
         for (int c = 0; c < cars; c++) {
             CarState s = states[c];
-            s.parts.build(race.shape[c], CarSheets.of(race.dataFile, race.modelName[c]), race.wheelDrop[c]);
+            s.parts.build(race.shape[c], CarSheets.of(race.modelName[c]), race.wheelDrop[c]);
             s.reset(race.groundColor);
             s.pose(race, c, p);
         }

@@ -88,12 +88,6 @@ public final class RaceView {
     public boolean[] nitrous = new boolean[0];
     /** Each car's model as loaded (its polygons), filled when the race starts. */
     public CarShape[] shape = new CarShape[0];
-    /**
-     * The file at {@code path} under the game's folder (such as
-     * {@code data/extras/car-sheets.txt}), or the last mod's file at the same
-     * place: data is read through the game's files, so mods apply.
-     */
-    public java.util.function.Function<String, java.io.File> dataFile = java.io.File::new;
 
     /* ---------------------------------------------------------- per wheel */
 

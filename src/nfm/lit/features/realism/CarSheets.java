@@ -1,57 +1,60 @@
 package nfm.lit.features.realism;
 
 import fallk.logmaster.HLogger;
-import java.io.File;
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.function.Function;
 
 /**
- * The cars' sheets, read from {@code data\extras\car-sheets.txt} through the
- * game's files (so a mod's own file wins). Read when a race starts, again
- * only if the file changed. A line that cannot be read is logged and left
- * out; a car with no line gets {@link CarSheet#DEFAULT}.
+ * The cars' sheets, {@code car-sheets.txt} next to this class: a class-path
+ * resource that goes into madness.jar with the extra (not one of the game's
+ * data files, so no mod replaces it). Read once, the first time a race asks.
+ * A line that cannot be read is logged and left out; a car with no line gets
+ * {@link CarSheet#DEFAULT}.
  */
 final class CarSheets {
 
-    static final String PATH = "data/extras/car-sheets.txt";
+    /** The resource's name, next to this class. */
+    static final String RESOURCE = "car-sheets.txt";
+    /** Where it is kept in the source, for messages. */
+    static final String SOURCE = "src\\nfm\\lit\\features\\realism\\" + RESOURCE;
 
-    private static String readPath;
-    private static long readStamp = Long.MIN_VALUE;
-    private static Map<String, CarSheet> sheets = Map.of();
+    private static Map<String, CarSheet> sheets;
 
     private CarSheets() {
     }
 
     /** The sheet of car model {@code model} (its file name, such as {@code radicalone}). */
-    static synchronized CarSheet of(Function<String, File> files, String model) {
-        File file = files.apply(PATH);
-        long stamp = file.isFile() ? file.lastModified() : -1L;
-        if (!file.getPath().equals(readPath) || stamp != readStamp) {
-            readPath = file.getPath();
-            readStamp = stamp;
-            sheets = read(file);
+    static synchronized CarSheet of(String model) {
+        if (sheets == null) {
+            List<String> lines = lines();
+            sheets = lines == null ? Map.of() : parse(lines, SOURCE);
         }
         CarSheet sheet = sheets.get(model.toLowerCase(Locale.ROOT));
         return sheet != null ? sheet : CarSheet.DEFAULT;
     }
 
-    /** Every sheet in {@code file}, by car. */
-    static Map<String, CarSheet> read(File file) {
-        if (!file.isFile()) {
-            HLogger.warn("[extras] realism: no car sheets at " + file + "; every car gets the default sheet");
-            return Map.of();
-        }
-        try {
-            return parse(Files.readAllLines(file.toPath(), StandardCharsets.UTF_8), file.getPath());
-        } catch (IOException e) {
-            HLogger.warn("[extras] realism: cannot read the car sheets at " + file + ": " + e);
-            return Map.of();
+    /** The resource's lines, or null (logged) if it is missing or cannot be read. */
+    static List<String> lines() {
+        try (InputStream in = CarSheets.class.getResourceAsStream(RESOURCE)) {
+            if (in == null) {
+                HLogger.warn("[extras] realism: no " + RESOURCE + " next to the extra's classes; every car gets"
+                        + " the default sheet");
+                return null;
+            }
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
+                return reader.lines().toList();
+            }
+        } catch (IOException | UncheckedIOException e) {
+            HLogger.warn("[extras] realism: cannot read " + RESOURCE + ": " + e);
+            return null;
         }
     }
 

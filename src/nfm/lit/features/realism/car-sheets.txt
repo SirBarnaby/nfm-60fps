@@ -14,7 +14,7 @@
 # Once the owner has looked them over and put them right, the next line says yes
 # (test\extras-check.ps1 reports the sheets as waiting for the owner until then).
 # Looked over by the owner: no
-# A mod can replace this file with its own at the same place in its folder.
+# It goes into madness.jar next to the extra's classes; no mod replaces it.
 #
 # car          engine  sits   cooling  turbo  brakes  exhausts
 2000tornados   V6      front  front    no     disc    2

@@ -2,8 +2,9 @@
 
 Requirement: `openspec\specs\realism`, "Each car has a short sheet". The
 values are Claude's suggestions from each car's look; the owner corrects them.
-They live in `data\extras\car-sheets.txt` (a mod can replace the file with its
-own at the same place). When they are right, change the file's line
+They live in `src\nfm\lit\features\realism\car-sheets.txt`, next to the extra's
+code, and go into `madness.jar` with it: read as a class-path resource, not
+through the game's files, so no mod replaces them. When they are right, change the file's line
 `# Looked over by the owner: no` to `yes`: until then `test\extras-check.ps1`
 reports the sheets as waiting for the owner.
 

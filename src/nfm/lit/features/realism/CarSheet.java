@@ -7,7 +7,7 @@ import java.util.Locale;
  * layout, where the engine sits, its cooling, turbo or not, its brakes and
  * exhausts. The effects read it: where steam and smoke come from, how hot
  * the brakes run, how the exhaust behaves. Kept in
- * {@code data\extras\car-sheets.txt} ({@link CarSheets}).
+ * {@code car-sheets.txt} next to this class ({@link CarSheets}).
  */
 final class CarSheet {
 

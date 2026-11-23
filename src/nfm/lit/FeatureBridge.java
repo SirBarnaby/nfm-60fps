@@ -132,7 +132,6 @@ final class FeatureBridge {
         fill(racers, controls, scene, trackers, ticks);
         if (starting) {
             starting = false;
-            view.dataFile = GameFiles::file;
             for (int c = 0; c < cars; c++) {
                 shape(view.shape[c], scene[c]);
             }
