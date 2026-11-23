@@ -109,14 +109,14 @@ final class SceneRecorder extends NullGraphics {
         AffineTransform base = g.getTransform();
         Shape baseClip = g.getClip();
         try {
-            replayCommands(g, base);
+            replayCommands(g, base, baseClip);
         } finally {
             g.setTransform(base);
             g.setClip(baseClip);
         }
     }
 
-    private void replayCommands(Graphics2D g, AffineTransform base) {
+    private void replayCommands(Graphics2D g, AffineTransform base, Shape baseClip) {
         int[] data = list.data();
         int size = list.size();
         int[] xs = new int[16];
@@ -125,9 +125,11 @@ final class SceneRecorder extends NullGraphics {
         for (int i = 0; i < size;) {
             switch (data[i]) {
                 case SceneList.PANE -> {
+                    // the pane within the clip the replay was given (the countdown portrait's, say), not over it
                     g.setTransform(base);
+                    g.setClip(baseClip);
                     g.translate(data[i + 1], data[i + 2]);
-                    g.setClip(0, 0, data[i + 3], data[i + 4]);
+                    g.clipRect(0, 0, data[i + 3], data[i + 4]);
                     area = reachable(g);
                     i += 5;
                 }

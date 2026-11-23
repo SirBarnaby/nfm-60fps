@@ -148,8 +148,14 @@ public class GameSparker extends Panel implements Runnable {
      */
     private static final int MAX_TICKS_PER_FRAME = 5;
     private static final long MAX_TICK_LAG_NS = 500_000_000L;
-    /** The most a frame's placing may count on reaching the screen after it (see Presenter#freshShowNanos). */
+    /** The most a frame's placing may count on reaching the screen after it (see Presenter#showNanos). */
     private static final long MAX_SHOW_GUESS_NANOS = 16_000_000L;
+    /**
+     * How many places after a new kept scene the presenter tells apart in
+     * placing frames for the screen (see Presenter#showNanos): the frame that
+     * sends the card the scene, the two after it, and the rest.
+     */
+    private static final int SHOW_PLACES = 4;
     /** A car or camera that moves further than this in one tick was teleported. */
     private static final int TELEPORT_DISTANCE = 2500;
     private static final boolean PROFILE_LOOP = Boolean.getBoolean("nfm.profile");
@@ -2979,13 +2985,7 @@ public class GameSparker extends Panel implements Runnable {
         if (card != null && card.projecting()) {
             // made ready for the card here, once, so no frame of the presenter's pays for it
             long projectStart = System.nanoTime();
-            if (kept.split) {
-                for (int p = 0; p < 2; p++) {
-                    project(kept.panes.scenes[p], kept.panes.recorders[p], kept.projected[p], kept.panes.areas[p]);
-                }
-            } else {
-                project(kept.scene, kept.recorder, kept.projected[0], null);
-            }
+            projectKept(kept);
             cardNanos = System.nanoTime() - projectStart;
             profileProjectNanos += cardNanos;
             profileProjects++;
@@ -2994,16 +2994,7 @@ public class GameSparker extends Panel implements Runnable {
                 projected.clear();
             }
         }
-        if (hudImage instanceof BufferedImage hud) {
-            if (kept.hud == null || kept.hud.getWidth() != hud.getWidth() || kept.hud.getHeight() != hud.getHeight()) {
-                kept.hud = new BufferedImage(hud.getWidth(), hud.getHeight(), BufferedImage.TYPE_INT_ARGB);
-            }
-            int[] from = ((DataBufferInt) hud.getRaster().getDataBuffer()).getData();
-            int[] to = ((DataBufferInt) kept.hud.getRaster().getDataBuffer()).getData();
-            System.arraycopy(from, 0, to, 0, Math.min(from.length, to.length));
-        } else {
-            kept.hud = null;
-        }
+        keepHud(kept);
         kept.flash = pendingWhiteFlash;
         if (pendingWhiteFlash) {
             rd.setColor(new Color(255, 255, 255)); // as the software frame would leave it
@@ -3304,14 +3295,19 @@ public class GameSparker extends Panel implements Runnable {
         private long lastShownNanos;
         /**
          * How long a frame takes from being placed to reaching the screen,
-         * smoothed: one that sends the card a new scene (a tick's, 1-3 MB, and
-         * its HUD) takes 4-6 ms longer than the others. Each frame is placed
-         * for that moment, or the ones with a new scene show the race that
-         * much earlier than the frames around them: at 120 fps about one in
-         * eight frames of the countdown was off even by over 4 ms.
+         * smoothed, by its place after the card got a new kept scene (0 for
+         * the frame that sends it, up to {@link #SHOW_PLACES} - 1 for all from
+         * there on): the frame that sends a tick's scene (1-3 MB) and HUD takes
+         * 4-6 ms longer than the others, and in split screen, with two panes
+         * to send, the two frames after it wait 3-5 ms more on the card still
+         * busy with it. Each frame is placed for that moment, or the ones
+         * around a new scene show the race that much earlier than the rest: at
+         * 120 fps about one countdown frame in eight was off even by over
+         * 4 ms, in split screen one in eleven after that.
          */
-        private long freshShowNanos;
-        private long sameShowNanos;
+        private final long[] showNanos = new long[SHOW_PLACES];
+        /** The last frame's place after a new kept scene, see {@link #showNanos}. */
+        private int shownPlace;
         /** The kept scene the last frame showed, to tell a frame with a new one. */
         private long shownVersion = -1L;
 
@@ -3501,8 +3497,9 @@ public class GameSparker extends Panel implements Runnable {
         /** Places the kept scene for now, shows it and waits for the next frame. */
         private void drawFrame(Kept k) {
             long start = System.nanoTime();
-            boolean fresh = k.version != shownVersion; // the card gets this scene with this frame
-            long showAt = start + (fresh ? freshShowNanos : sameShowNanos);
+            // 0: the card gets this scene with this frame
+            int place = k.version != shownVersion ? 0 : Math.min(shownPlace + 1, SHOW_PLACES - 1);
+            long showAt = start + showNanos[place];
             float alpha = span.alphaAt(showAt, true);
             if (alpha > 1F) {
                 statCarried++;
@@ -3553,11 +3550,9 @@ public class GameSparker extends Panel implements Runnable {
             }
             // a stall (the card held the frame up, the thread waited) is not what the next frame will take
             long reached = Math.min(end - start, MAX_SHOW_GUESS_NANOS);
-            if (fresh) {
-                freshShowNanos += (reached - freshShowNanos) / 4L;
-            } else {
-                sameShowNanos += (reached - sameShowNanos) / 16L;
-            }
+            // a place near the new scene comes once a tick; the last one, for all the rest, several times
+            showNanos[place] += (reached - showNanos[place]) / (place < SHOW_PLACES - 1 ? 4L : 16L);
+            shownPlace = place;
             shownVersion = k.version;
             if (span.keysNanos != keysShown) {
                 long took = end - span.keysNanos;
@@ -3809,13 +3804,19 @@ public class GameSparker extends Panel implements Runnable {
      * Gets the race ready to run smoothly from its first frame, while the
      * music for it loads (the screen holds still then anyway):
      * <ul>
-     * <li>Once a stage, records the scene the countdown's frames place, makes
-     * it ready for the card and has the card draw it once, unseen, behind the
-     * next picture shown (see {@link #showOnGpu}): the card then has its
-     * buffers, its target and its shaders when the countdown's first frame
-     * comes, and Java has run the code that records and places a scene.</li>
-     * <li>Once a run of the game, plays the race's first tick ahead and puts
-     * the race back ({@link #playAndPutBack}), for up to
+     * <li>Once a stage, records the scene the countdown's frames place (in
+     * split screen both panes), makes it ready for the card and has the card
+     * draw it once, unseen, behind the next picture shown, with the HUD over
+     * it and the start's white flash
+     * (see {@link #showOnGpu}): the card then has its buffers, its targets,
+     * the HUD's texture and its shaders and blends when the countdown's
+     * first frame comes, and Java has run the code that records and places a
+     * scene. Without the HUD the countdown's third frame took 38-48 ms in
+     * hidden runs (30-34 with it), its swap waiting on the card for the
+     * first two; split screen, with none of it, had the card hold its first
+     * countdown frame up 101 ms in the live test.</li>
+     * <li>Once a run of the game, not in split screen, plays the race's first
+     * tick ahead and puts the race back ({@link #playAndPutBack}), for up to
      * {@link #WARM_UP_LOADING_NANOS}: the first ticks are the slowest, as
      * nothing of the physics, the AI or the collisions has run before (not in
      * the countdown either), and Java runs code slowly until it has compiled
@@ -3829,12 +3830,15 @@ public class GameSparker extends Panel implements Runnable {
      * checked to have left the race exactly as it found it.
      */
     private void warmUpWhileLoading() {
-        if (!warmingUp()) {
+        if (ui.fase != Phase.PREGAME) {
             return;
         }
         if (!sceneWarmedUp) {
             sceneWarmedUp = true;
-            warmUpScene();
+            warmUpScene(); // split screen's too: only its ticks are never played ahead
+        }
+        if (!warmingUp()) {
+            return;
         }
         boolean all = RaceSession.checksWarmUp(); // the self-test checks every tick
         long until = System.nanoTime() + WARM_UP_LOADING_NANOS;
@@ -3901,10 +3905,36 @@ public class GameSparker extends Panel implements Runnable {
         }
     }
 
+    /** Makes a recorded kept scene ready for the card to place: the scene, or each split-screen pane. */
+    private void projectKept(Presenter.Kept kept) {
+        if (kept.split) {
+            for (int p = 0; p < 2; p++) {
+                project(kept.panes.scenes[p], kept.panes.recorders[p], kept.projected[p], kept.panes.areas[p]);
+            }
+        } else {
+            project(kept.scene, kept.recorder, kept.projected[0], null);
+        }
+    }
+
+    /** Keeps a copy of the HUD layer as it stands in {@code kept}, for its frames; none without one. */
+    private void keepHud(Presenter.Kept kept) {
+        if (hudImage instanceof BufferedImage hud) {
+            if (kept.hud == null || kept.hud.getWidth() != hud.getWidth() || kept.hud.getHeight() != hud.getHeight()) {
+                kept.hud = new BufferedImage(hud.getWidth(), hud.getHeight(), BufferedImage.TYPE_INT_ARGB);
+            }
+            int[] from = ((DataBufferInt) hud.getRaster().getDataBuffer()).getData();
+            int[] to = ((DataBufferInt) kept.hud.getRaster().getDataBuffer()).getData();
+            System.arraycopy(from, 0, to, 0, Math.min(from.length, to.length));
+        } else {
+            kept.hud = null;
+        }
+    }
+
     /**
-     * Records the scene kept for the countdown's first frames and makes it
-     * ready for the card, for the next picture shown to draw unseen (see
-     * {@link #warmUpWhileLoading}).
+     * Records the scene kept for the countdown's first frames (in split
+     * screen both panes, as its frames record them), with the HUD layer as it
+     * stands, and makes it ready for the card, for the next picture shown to
+     * draw unseen (see {@link #warmUpWhileLoading}).
      */
     private void warmUpScene() {
         GpuDisplay card = gpu;
@@ -3912,10 +3942,19 @@ public class GameSparker extends Panel implements Runnable {
             return;
         }
         Presenter.Kept k = presenter.free();
-        k.split = false;
-        poseSpan(false, spanScratch);
-        if (recordKept(false, k.recorder, k.scene, spanScratch, 0, null)) {
-            project(k.scene, k.recorder, k.projected[0], null);
+        SplitRace split = SplitRace.inPicture();
+        k.split = split != null;
+        boolean recorded;
+        if (k.split) {
+            measurePanes(split, k.panes());
+            recorded = recordPanes(split, k.panes);
+        } else {
+            poseSpan(false, spanScratch);
+            recorded = recordKept(false, k.recorder, k.scene, spanScratch, 0, null);
+        }
+        if (recorded) {
+            projectKept(k);
+            keepHud(k); // what it shows does not matter: the card makes its texture at the HUD's size
             warmUpKept = k;
         }
     }
@@ -4327,8 +4366,9 @@ public class GameSparker extends Panel implements Runnable {
                     warmUpKept = null;
                     gpu.setMultisample(multisample);
                     Rectangle scenePlace = places.scene();
-                    gpu.drawScene(warm.shown().list(), warm.cardScenes(), null, Long.MAX_VALUE, -1L, false, false,
-                            sceneTargetSize(drawnPlace(scenePlace, width), gpu.maxTextureSize()), 1F, null);
+                    gpu.drawScene(warm.shown().list(), warm.cardScenes(), warm.hud, Long.MAX_VALUE, -1L, true, false,
+                            sceneTargetSize(drawnPlace(scenePlace, width), gpu.maxTextureSize()), 1F,
+                            hudArea(places.canvas(), scenePlace));
                 }
                 if (scene != null) {
                     picture = null; // show the scene drawn on the card
@@ -4336,11 +4376,8 @@ public class GameSparker extends Panel implements Runnable {
                     float scale = dynamicResolution == 0 ? 1F : resolution.scale();
                     Rectangle drawnPlace = drawnPlace(place, width);
                     Dimension target = sceneTargetSize(drawnPlace, gpu.maxTextureSize());
-                    Rectangle c = places.canvas();
-                    float[] hudArea = {(c.x - place.x) / (float) place.width, (c.y - place.y) / (float) place.height,
-                        c.width / (float) place.width, c.height / (float) place.height};
                     boolean drawn = gpu.drawScene(scene, projected, hud, version, hudVersion, flash, capture, target,
-                            scale, hudArea);
+                            scale, hudArea(places.canvas(), place));
                     multisampleInUse = gpu.multisample();
                     float across = supersample > 1 ? target.width / (float) Math.max(GameFacts.sceneWidth, drawnPlace.width) : 1F;
                     supersampleInUse = across;
@@ -4392,6 +4429,12 @@ public class GameSparker extends Panel implements Runnable {
             }
             return shown;
         }
+    }
+
+    /** Where the HUD ({@code canvas}) goes on a scene shown at {@code place}, as GpuDisplay#drawScene takes it. */
+    private static float[] hudArea(Rectangle canvas, Rectangle place) {
+        return new float[] {(canvas.x - place.x) / (float) place.width, (canvas.y - place.y) / (float) place.height,
+            canvas.width / (float) place.width, canvas.height / (float) place.height};
     }
 
     /**
