@@ -148,8 +148,8 @@ public final class FeatureSettings {
                         + RACE_1_0,
                 "xtraboxes", Kind.RACE, 0, "Off", "On"),
         new Switch("flash", "powerups", "Explosion flash",
-                "With powerups: the screen flashes for two frames when dynamite goes off. Off for anyone the"
-                        + " flash bothers.",
+                "With powerups: the screen flashes white for a frame when dynamite goes off near you. Off for"
+                        + " anyone the flash bothers.",
                 "xtraflash", Kind.LOOK, 1, "Off", "On"),
         new Switch("handling", "Suspension handling",
                 "Each wheel on its own spring, grip that runs out in a circle, weight moving under braking and in"

@@ -791,6 +791,7 @@ class Madness {
                         boost = (float) (boost * 0.76000000000000001D);
                     else if (checkpoints.stage != 6)
                         boost = (float) (boost * 0.90000000000000002D);
+                boost += FeatureBridge.raceBoost(im); // a race extra's (the powerups' nitrous, magnet): 0 without one
                 if (control.down)
                     if (speed > 0.0F) {
                         speed -= stat.handb / 2;

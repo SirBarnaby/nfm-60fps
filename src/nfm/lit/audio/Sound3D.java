@@ -121,6 +121,8 @@ public final class Sound3D implements Runnable {
         public float skid3;
         /** A bit for each wheel on loose ground, whose skid is the dust skid. */
         public int loose;
+        /** The hum of the powerup the car holds (the powerups extra): 1 to 3, 0 for none. */
+        public int hum;
 
         float skid(int wheel) {
             return switch (wheel) {
@@ -208,9 +210,14 @@ public final class Sound3D implements Runnable {
     private static volatile String status = "off";
 
     /** What the game asks for, in order. */
-    private record Command(int kind, String clip, int car, float a, float b, StreamMusic music) {
+    private record Command(int kind, String clip, int car, float a, float b, StreamMusic music, float x, float y,
+            float z) {
         Command(int kind, String clip, int car, float a, float b) {
-            this(kind, clip, car, a, b, null);
+            this(kind, clip, car, a, b, null, 0F, 0F, 0F);
+        }
+
+        Command(int kind, String clip, int car, float a, float b, StreamMusic music) {
+            this(kind, clip, car, a, b, music, 0F, 0F, 0F);
         }
     }
 
@@ -228,6 +235,8 @@ public final class Sound3D implements Runnable {
     private static final int EVENT = 10;
     /** An extra's own clip, played at a car (see {@link #carSound}). */
     private static final int EXTRA = 11;
+    /** An extra's own clip, played at a place in the world (see {@link #pointSound}). */
+    private static final int EXTRA_AT = 12;
 
     private final ConcurrentLinkedQueue<Command> commands = new ConcurrentLinkedQueue<>();
     private volatile Moment latest;
@@ -704,6 +713,18 @@ public final class Sound3D implements Runnable {
         Sound3D sound = instance;
         if (sound != null && !SoundManager.isDiscarding() && extraClips.containsKey(name)) {
             sound.post(new Command(EXTRA, name, car, gain, pitch));
+        }
+    }
+
+    /**
+     * Plays the extra's clip {@code name} at world point {@code (x, y, z)}
+     * (a blast), held there while it lasts, at {@code gain} and
+     * {@code pitch}; only with the 3D sound, and never for a run-ahead tick.
+     */
+    public static void pointSound(float x, float y, float z, String name, float gain, float pitch) {
+        Sound3D sound = instance;
+        if (sound != null && !SoundManager.isDiscarding() && extraClips.containsKey(name)) {
+            sound.post(new Command(EXTRA_AT, name, -1, gain, pitch, null, x, y, z));
         }
     }
 
@@ -1575,6 +1596,12 @@ public final class Sound3D implements Runnable {
                     playAt(c.car, c.clip, c.a, c.b);
                 }
             }
+            case EXTRA_AT -> {
+                Moment m = current;
+                if (m != null && !m.muted) {
+                    playAtPoint(c.x, c.y, c.z, c.clip, c.a, c.b);
+                }
+            }
             case STOP_ALL -> stopEverything();
             case MUSIC_PLAY -> startMusic(c.music);
             case MUSIC_PAUSE, MUSIC_RESUME -> pauseMusic(c.music, c.kind == MUSIC_PAUSE);
@@ -2012,6 +2039,7 @@ public final class Sound3D implements Runnable {
             if (v != null) {
                 alSourceStop(v.source);
                 v.car = -1;
+                v.fixed = false;
             }
         }
         for (EngineVoices e : engines) {
@@ -2095,13 +2123,18 @@ public final class Sound3D implements Runnable {
         return 0.96F + random.nextFloat() * 0.08F;
     }
 
-    /** One effect voice: a source, and the car it follows (-1 for none). */
+    /** One effect voice: a source, and the car it follows (-1 for none) or the place it is held at. */
     private static final class Voice {
         final int source;
         /** Muffles the voice as its car is muffled; 0 without EFX. */
         final int filter;
         int car = -1;
         float gain;
+        /** Held at a place in the world (px, py, pz) rather than following a car. */
+        boolean fixed;
+        float px;
+        float py;
+        float pz;
 
         Voice(int source, int filter) {
             this.source = source;
@@ -2127,22 +2160,11 @@ public final class Sound3D implements Runnable {
         if (buffer == 0) {
             return;
         }
-        Voice voice = null;
-        float weakest = Float.MAX_VALUE;
-        for (Voice v : effects) {
-            if (alGetSourcei(v.source, AL_SOURCE_STATE) != AL_PLAYING) {
-                voice = v;
-                break;
-            }
-            float heard = v.gain / Math.max(1F, distanceToCar(v.car) / FULL_VOLUME_DISTANCE);
-            if (heard < weakest) {
-                weakest = heard;
-                voice = v;
-            }
-        }
+        Voice voice = freeVoice();
         if (voice == null) {
             return;
         }
+        voice.fixed = false;
         alSourceStop(voice.source);
         alSourcei(voice.source, AL_BUFFER, buffer);
         world(voice.source);
@@ -2154,6 +2176,67 @@ public final class Sound3D implements Runnable {
         muffle(voice);
         placeAtCar(voice.source, car);
         alSourcePlay(voice.source);
+    }
+
+    /** A free effect voice, or the one heard least. */
+    private Voice freeVoice() {
+        Voice voice = null;
+        float weakest = Float.MAX_VALUE;
+        for (Voice v : effects) {
+            if (alGetSourcei(v.source, AL_SOURCE_STATE) != AL_PLAYING) {
+                return v;
+            }
+            float distance = v.fixed ? distanceTo(v.px, v.py, v.pz) : distanceToCar(v.car);
+            float heard = v.gain / Math.max(1F, distance / FULL_VOLUME_DISTANCE);
+            if (heard < weakest) {
+                weakest = heard;
+                voice = v;
+            }
+        }
+        return voice;
+    }
+
+    /** Plays a clip held at a place in the world (an extra's blast), taking a free voice or the one heard least. */
+    private void playAtPoint(float x, float y, float z, String name, float gain, float pitch) {
+        int buffer = buffer(name);
+        if (buffer == 0) {
+            return;
+        }
+        Voice voice = freeVoice();
+        if (voice == null) {
+            return;
+        }
+        alSourceStop(voice.source);
+        alSourcei(voice.source, AL_BUFFER, buffer);
+        world(voice.source);
+        gain *= everyday;
+        alSourcef(voice.source, AL_GAIN, gain * bus[BUS_EFFECTS]);
+        alSourcef(voice.source, AL_PITCH, pitch);
+        if (voice.filter != 0) {
+            alSourcei(voice.source, EXTEfx.AL_DIRECT_FILTER, EXTEfx.AL_FILTER_NULL); // not muffled as a car was
+        }
+        voice.car = -1;
+        voice.gain = gain;
+        voice.fixed = true;
+        voice.px = x;
+        voice.py = y;
+        voice.pz = z;
+        placeAtPoint(voice);
+        alSourcePlay(voice.source);
+    }
+
+    /** Places a voice held at a place in the world, from where the camera is now. */
+    private void placeAtPoint(Voice v) {
+        turn(v.px - camX, v.py - camY, v.pz - camZ, where);
+        alSource3f(v.source, AL_POSITION, where[0], where[1], where[2]);
+        alSource3f(v.source, AL_VELOCITY, 0F, 0F, 0F);
+    }
+
+    private float distanceTo(float x, float y, float z) {
+        float dx = x - camX;
+        float dy = y - camY;
+        float dz = z - camZ;
+        return (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
     /* ---------------------------------------------------------- update */
@@ -2187,6 +2270,8 @@ public final class Sound3D implements Runnable {
             if (v.car >= 0 && alGetSourcei(v.source, AL_SOURCE_STATE) == AL_PLAYING) {
                 placeAtCar(v.source, v.car);
                 muffle(v);
+            } else if (v.fixed && alGetSourcei(v.source, AL_SOURCE_STATE) == AL_PLAYING) {
+                placeAtPoint(v); // the camera moves past it
             }
         }
         for (int source : namedAtPlayer.values()) {
@@ -2352,6 +2437,69 @@ public final class Sound3D implements Runnable {
 
     /* ---------------------------------------------------------- engines */
 
+    /** How loud a held powerup hums, against the game's effects, and how quickly it fades in and out, in seconds. */
+    private static final float HUM_LEVEL = 0.45F;
+    private static final float HUM_SMOOTHING = 0.15F;
+
+    /**
+     * The hum of the powerup a car holds (the powerups extra): one looping
+     * source of its own that follows the car, fading in when the car picks a
+     * powerup up and out when it uses it.
+     */
+    private final class HumVoice {
+        final int source;
+        /** The hum whose clip is on the source: 1 to 3, 0 for none yet. */
+        int playing;
+        float gain;
+
+        HumVoice() {
+            source = alGenSources();
+            world(source);
+            alSourcei(source, AL_LOOPING, AL_TRUE);
+        }
+
+        /** Hums {@code kind} (0 for none) from {@code position}, moving at {@code velocity}; null keeps the place. */
+        void update(int kind, float[] position, float[] velocity, float dt) {
+            if (kind != 0 && kind != playing) {
+                int buffer = buffer("pwr-hum" + kind);
+                if (buffer == 0) {
+                    kind = 0;
+                } else {
+                    alSourceStop(source);
+                    alSourcei(source, AL_BUFFER, buffer);
+                    playing = kind;
+                    gain = 0F;
+                }
+            }
+            float target = kind != 0 ? 1F : 0F;
+            gain += (target - gain) * (1F - (float) Math.exp(-dt / HUM_SMOOTHING));
+            boolean on = alGetSourcei(source, AL_SOURCE_STATE) == AL_PLAYING;
+            if (target == 0F && gain < 0.002F) {
+                if (on) {
+                    alSourcePause(source);
+                }
+                return;
+            }
+            alSourcef(source, AL_GAIN, gain * HUM_LEVEL * bus[BUS_EFFECTS] * everyday);
+            if (position != null) {
+                alSource3f(source, AL_POSITION, position[0], position[1], position[2]);
+                alSource3f(source, AL_VELOCITY, velocity[0], velocity[1], velocity[2]);
+            }
+            if (!on) {
+                alSourcePlay(source);
+            }
+        }
+
+        void silence() {
+            gain = 0F;
+            alSourceStop(source);
+        }
+
+        void delete() {
+            alDeleteSources(source);
+        }
+    }
+
     /**
      * One car's engine: its five recordings, all looping, mixed by gain and
      * bent by pitch, and a low-pass filter that dulls them off the throttle.
@@ -2371,6 +2519,8 @@ public final class Sound3D implements Runnable {
         final float[] velocity = new float[3];
         /** The rebuilt sound's voices for this car, made the first time the extra plays it. */
         RebuiltVoices rebuilt;
+        /** The hum of the powerup the car holds, made the first time it holds one. */
+        HumVoice hum;
 
         EngineVoices() {
             for (int i = 0; i < 5; i++) {
@@ -2390,6 +2540,9 @@ public final class Sound3D implements Runnable {
                 if (rebuilt != null) {
                     rebuilt.quiet(dt);
                 }
+                if (hum != null) {
+                    hum.update(0, null, null, dt);
+                }
                 return;
             }
             if (car.engine != engine) {
@@ -2403,6 +2556,12 @@ public final class Sound3D implements Runnable {
                     + position[2] * position[2]);
             if (distance > ENGINE_DETAIL_DISTANCE) {
                 loudestOnly();
+            }
+            if (car.hum != 0 || hum != null) {
+                if (hum == null) {
+                    hum = new HumVoice();
+                }
+                hum.update(muted || !car.running ? 0 : car.hum, position, velocity, dt);
             }
             float k = 1F - (float) Math.exp(-dt / ENGINE_SMOOTHING);
             float kt = 1F - (float) Math.exp(-dt / THROTTLE_SMOOTHING);
@@ -2571,6 +2730,9 @@ public final class Sound3D implements Runnable {
             if (rebuilt != null) {
                 rebuilt.silence();
             }
+            if (hum != null) {
+                hum.silence();
+            }
         }
 
         void delete() {
@@ -2579,6 +2741,9 @@ public final class Sound3D implements Runnable {
             }
             if (rebuilt != null) {
                 rebuilt.delete();
+            }
+            if (hum != null) {
+                hum.delete();
             }
             if (filter != 0) {
                 EXTEfx.alDeleteFilters(filter);

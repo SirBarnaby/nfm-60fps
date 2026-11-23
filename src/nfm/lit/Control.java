@@ -19,6 +19,8 @@ public class Control {
     public int lookback;
     public boolean enter;
     public boolean arrace;
+    /** The player's Use powerup key, latched with the driving keys (the powerups extra; never set for a computer car). */
+    public boolean power;
     private int pan;
     private int attack;
     private int acr;

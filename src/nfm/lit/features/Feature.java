@@ -24,6 +24,30 @@ public interface Feature {
         return false;
     }
 
+    /*
+     * A race extra (changesRaces) is also called inside the race: set up when
+     * the stage loads, ticked in every race tick (run-ahead's and the
+     * verifier's too), its state saved, restored and hashed with the race's.
+     * Its look and sound still come from the calls below, after real ticks.
+     */
+
+    /** A race extra: the stage has loaded for a race started from {@code seed}; forget the last race. */
+    default void raceSetUp(RaceTick race, long seed) {
+    }
+
+    /** A race extra: one tick of the race proper, after every car has driven. */
+    default void raceTick(RaceTick race) {
+    }
+
+    /** A race extra: saves, restores or visits everything {@link #raceTick} changes, always in the same order. */
+    default void sync(RaceInts state) {
+    }
+
+    /** A race extra: what it adds to car {@code car}'s boost this tick (the stunt power's, which sets its pull and top speed). */
+    default float boost(int car) {
+        return 0F;
+    }
+
     /** A race starts (or the feature was switched on during one): forget the last race, read the cars. */
     default void raceStarted(RaceView race) {
     }

@@ -28,3 +28,4 @@ One page per extra. Each lives in `src\nfm\lit\features\<feature>\`, has a switc
 - [Damage and heat](realism.md), with [the car sheets](car-sheets.md)
 - [The helmet cam](helmetcam.md)
 - [The rebuilt engine sound](enginesound.md)
+- [Powerups](powerups.md)

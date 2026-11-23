@@ -78,8 +78,10 @@ final class Gamepads {
     private static final int LOOK_Z = 122;
     private static final int LOOK_X = 120;
     private static final int VIEW = 118;
+    /** Use powerup ({@link KeyBindings#USE_POWERUP}), on the right stick's button. */
+    private static final int POWER = 99;
     /** Every key a pad can press, one bit each in {@link #held}. */
-    private static final int[] KEYS = {UP, DOWN, LEFT, RIGHT, ENTER, ESCAPE, SPACE, LOOK_Z, LOOK_X, VIEW};
+    private static final int[] KEYS = {UP, DOWN, LEFT, RIGHT, ENTER, ESCAPE, SPACE, LOOK_Z, LOOK_X, VIEW, POWER};
 
     private static final int POLL_MILLIS = 4;
     /** How far a stick goes before it counts, of 32767: a worn stick rests well inside this. */
@@ -332,6 +334,7 @@ final class Gamepads {
                     | bit(LOOK_Z, button(pad, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER))
                     | bit(LOOK_X, button(pad, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER))
                     | bit(VIEW, button(pad, SDL_GAMEPAD_BUTTON_NORTH))
+                    | bit(POWER, button(pad, SDL_GAMEPAD_BUTTON_RIGHT_STICK))
                     | bit(ENTER, start)
                     | bit(ESCAPE, button(pad, SDL_GAMEPAD_BUTTON_BACK));
         } else {

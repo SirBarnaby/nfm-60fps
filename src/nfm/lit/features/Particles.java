@@ -183,6 +183,15 @@ public final class Particles {
         }
     }
 
+    /** Adds {@code (dx, dy, dz)} to particle {@code i}'s move a tick: a car driving through smoke shoves it. */
+    public void push(int i, float dx, float dy, float dz) {
+        if (i >= 0 && i < capacity && alive[i]) {
+            vx[i] += dx;
+            vy[i] += dy;
+            vz[i] += dz;
+        }
+    }
+
     /** Particle {@code i} stays where it lands, as debris, while something keeps debris. */
     public void keep(int i) {
         if (i >= 0 && i < capacity) {

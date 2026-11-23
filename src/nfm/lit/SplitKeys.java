@@ -24,7 +24,9 @@ public final class SplitKeys {
     /** The actions each player has, as {@link KeyBindings} numbers them. */
     static final int[] ACTIONS = {KeyBindings.ACCELERATE, KeyBindings.BRAKE, KeyBindings.STEER_LEFT,
         KeyBindings.STEER_RIGHT, KeyBindings.HANDBRAKE, KeyBindings.LOOK_BACK, KeyBindings.LOOK_BACK_OTHER,
-        KeyBindings.CHANGE_VIEW, KeyBindings.ARROW};
+        KeyBindings.CHANGE_VIEW, KeyBindings.ARROW, KeyBindings.USE_POWERUP};
+    /** The actions saved before Use powerup came: their keys keep their places in the save, the newer ones follow. */
+    private static final int FIRST = 9;
     public static final int SLOTS = KeyBindings.SLOTS;
     /** Added to a key's code for the right one of Shift, Ctrl or Alt. */
     public static final int RIGHT = 1 << 16;
@@ -35,16 +37,17 @@ public final class SplitKeys {
     /** The game's own split keys, {@code [player][action][slot]}: WASD for Player 1, the arrows for Player 2. */
     private static final int[][][] DEFAULTS = {
         {{KeyEvent.VK_W}, {KeyEvent.VK_S}, {KeyEvent.VK_A}, {KeyEvent.VK_D}, {KeyEvent.VK_SPACE, KeyEvent.VK_SHIFT},
-            {KeyEvent.VK_Q}, {KeyEvent.VK_E}, {KeyEvent.VK_C}, {KeyEvent.VK_F}},
+            {KeyEvent.VK_Q}, {KeyEvent.VK_E}, {KeyEvent.VK_C}, {KeyEvent.VK_F}, {KeyEvent.VK_R}},
         {{KeyEvent.VK_UP}, {KeyEvent.VK_DOWN}, {KeyEvent.VK_LEFT}, {KeyEvent.VK_RIGHT},
             {KeyEvent.VK_CONTROL | RIGHT, KeyEvent.VK_NUMPAD0 | NUMPAD},
             {KeyEvent.VK_SHIFT | RIGHT, KeyEvent.VK_NUMPAD1 | NUMPAD},
             {KeyEvent.VK_SLASH, KeyEvent.VK_NUMPAD3 | NUMPAD},
             {KeyEvent.VK_PERIOD, KeyEvent.VK_DECIMAL | NUMPAD},
-            {KeyEvent.VK_COMMA, KeyEvent.VK_ADD | NUMPAD}},
+            {KeyEvent.VK_COMMA, KeyEvent.VK_ADD | NUMPAD},
+            {KeyEvent.VK_L, KeyEvent.VK_NUMPAD2 | NUMPAD}},
     };
 
-    /** Each player's keys, {@code [(player * ACTIONS.length + action) * SLOTS + slot]}, 0 for none. */
+    /** Each player's keys, in the places {@link #at} gives, 0 for none. */
     private static volatile int[] keys = defaults();
     private static volatile boolean changed;
 
@@ -56,8 +59,28 @@ public final class SplitKeys {
         return PLAYERS * ACTIONS.length * SLOTS;
     }
 
+    /**
+     * Where a player's key for an action is kept: the first actions' as
+     * {@code (player * FIRST + action) * SLOTS + slot}, as they were always
+     * saved, then each newer action's for both players.
+     */
     private static int at(int player, int action, int slot) {
-        return (player * ACTIONS.length + action) * SLOTS + slot;
+        if (action < FIRST) {
+            return (player * FIRST + action) * SLOTS + slot;
+        }
+        return (PLAYERS * FIRST + (action - FIRST) * PLAYERS + player) * SLOTS + slot;
+    }
+
+    /** The player whose key place {@code i} is ({@link #at}). */
+    private static int playerAt(int i) {
+        int k = i / SLOTS;
+        return k < PLAYERS * FIRST ? k / FIRST : (k - PLAYERS * FIRST) % PLAYERS;
+    }
+
+    /** The action, by place in {@link #ACTIONS}, of key place {@code i} ({@link #at}). */
+    private static int actionAt(int i) {
+        int k = i / SLOTS;
+        return k < PLAYERS * FIRST ? k % FIRST : FIRST + (k - PLAYERS * FIRST) / PLAYERS;
     }
 
     private static int[] defaults() {
@@ -113,8 +136,7 @@ public final class SplitKeys {
         int[] k = keys;
         for (int i = 0; i < k.length; i++) {
             if (k[i] == id) {
-                int player = i / SLOTS / ACTIONS.length;
-                return player << 8 | ACTIONS[i / SLOTS % ACTIONS.length];
+                return playerAt(i) << 8 | ACTIONS[actionAt(i)];
             }
         }
         return -1;
@@ -158,7 +180,7 @@ public final class SplitKeys {
             for (int i = 0; i < k.length; i++) {
                 if (k[i] == id && i != here) {
                     k[i] = 0;
-                    from = (i / SLOTS / ACTIONS.length) << 8 | i / SLOTS % ACTIONS.length;
+                    from = playerAt(i) << 8 | actionAt(i);
                 }
             }
         }
@@ -199,6 +221,17 @@ public final class SplitKeys {
         for (int i = 0; i < k.length && i < saved.length; i++) {
             if (saved[i] >= 0) {
                 k[i] = saved[i];
+            }
+        }
+        // a key newer than the save gives way if the player has put it on another action
+        for (int i = 0; i < k.length; i++) {
+            if ((i >= saved.length || saved[i] < 0) && k[i] != 0) {
+                for (int j = 0; j < k.length; j++) {
+                    if (j != i && k[j] == k[i]) {
+                        k[i] = 0;
+                        break;
+                    }
+                }
             }
         }
         for (int i = 0; i < k.length; i++) {

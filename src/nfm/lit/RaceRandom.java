@@ -157,6 +157,8 @@ public final class RaceRandom {
     static final int STREAM_SHAPES = 5;
     /** Player 2's race camera in split screen. */
     static final int STREAM_CAMERA2 = 6;
+    /** The race extras' dice (powerups), see {@link nfm.lit.features.Feature#raceSetUp}. */
+    static final int STREAM_EXTRAS = 7;
 
     /** Derives an independent seed for a second stream from a race seed. */
     static long derive(long seed, long stream) {

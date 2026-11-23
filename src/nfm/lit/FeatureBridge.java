@@ -7,8 +7,11 @@ import nfm.lit.features.DrawQueue;
 import nfm.lit.features.Features;
 import nfm.lit.features.RaceView;
 import nfm.lit.features.FeatureSettings;
+import nfm.lit.features.GameHooks;
+import nfm.lit.features.RaceTick;
 import nfm.lit.features.enginesound.EngineSound;
 import nfm.lit.features.helmetcam.HelmetCam;
+import nfm.lit.features.powerups.PowerupsFeature;
 
 /**
  * Where the game meets its extras ({@link Features}): the race copied into a
@@ -65,6 +68,17 @@ final class FeatureBridge {
     private static final float[] touchX = new float[Precise.MAX_CARS * RaceView.WHEELS];
     private static final float[] touchZ = new float[Precise.MAX_CARS * RaceView.WHEELS];
 
+    /* the race extras (powerups): the race itself, read and moved inside the race tick */
+    private static final RaceAccess TICK = new RaceAccess();
+    /** The HUD, for an extra's message line; set when a stage loads. */
+    private static GameUi ui;
+    /** An extra asked for the white flash after this tick. */
+    private static boolean flashWanted;
+
+    static {
+        Features.setHooks(new Hooks());
+    }
+
     private FeatureBridge() {
     }
 
@@ -73,10 +87,16 @@ final class FeatureBridge {
     /**
      * A stage has been loaded for a race started from {@code seed};
      * {@code keepsFiles} if the extras may write their files (never in test
-     * runs, recording or verifying).
+     * runs, recording or verifying). The race extras whose switches are on
+     * (or the recording's) are set up over the race's own objects.
      */
-    static void stageLoaded(long seed, CheckPoints checkpoints, boolean keepsFiles) {
+    static void stageLoaded(long seed, CheckPoints checkpoints, boolean keepsFiles, Madness[] racers,
+            Control[] controls, ContO[] scene, Trackers trackers, GameUi gameUi) {
         Features.leftRace();
+        TICK.use(racers, controls, scene, trackers, checkpoints);
+        ui = gameUi;
+        flashWanted = false;
+        Features.raceStarting(TICK, RaceRandom.derive(seed, RaceRandom.STREAM_EXTRAS));
         view.keepsFiles = keepsFiles;
         starting = true;
         hits = 0;
@@ -85,6 +105,23 @@ final class FeatureBridge {
         view.stage = checkpoints.stage;
         view.stageName = checkpoints.name == null ? "" : checkpoints.name;
         view.groundColor = Medium.cgrnd[0] << 16 | Medium.cgrnd[1] << 8 | Medium.cgrnd[2];
+    }
+
+    /** One race tick of the race extras (powerups), after every car drove; run-ahead's and the verifier's too. */
+    static void raceTick() {
+        Features.raceTick(TICK);
+    }
+
+    /** What the race extras add to car {@code car}'s boost this tick: 0 without one. */
+    static float raceBoost(int car) {
+        return Features.raceBoost(car);
+    }
+
+    /** True once if an extra asked for the white flash since the last call (a blast near a player). */
+    static boolean takeFlash() {
+        boolean wanted = flashWanted;
+        flashWanted = false;
+        return wanted;
     }
 
     /** The game is in {@code phase}: out of the race (results, menus), the race's extras end. */
@@ -185,6 +222,7 @@ final class FeatureBridge {
             view.right[c] = k.right;
             view.handbrake[c] = k.handb;
             view.power[c] = m.power;
+            view.nitrous[c] = PowerupsFeature.FEATURE.nitrous(c);
             view.radius[c] = o.maxR;
             view.wheelDrop[c] = o.grat;
             wheels(c, m, o, trackers);
@@ -439,6 +477,7 @@ final class FeatureBridge {
         if (car.rebuilt && !replay) {
             sound.skids(c, car);
         }
+        car.hum = replay ? 0 : PowerupsFeature.FEATURE.hum(c); // the powerup the car holds hums
     }
 
     /* ------------------------------------------------------------- drawing */
@@ -494,5 +533,279 @@ final class FeatureBridge {
         canvas.startItem();
         Features.draw(feature, item, canvas);
         canvas.endItem();
+    }
+
+    /* ------------------------------------------------- the race extras */
+
+    /**
+     * The race itself as a race extra reads and moves it, inside the race
+     * tick ({@link RaceTick}): the cars' physics, models and keys, the
+     * checkpoints and the track's collision boxes. It holds only the
+     * references, which a stage load sets, so it is no state of its own:
+     * run-ahead and the verifier find nothing here to save.
+     */
+    private static final class RaceAccess implements RaceTick {
+        private Madness[] racers = new Madness[0];
+        private Control[] controls = new Control[0];
+        private ContO[] scene = new ContO[0];
+        private Trackers trackers;
+        private CheckPoints checkpoints;
+
+        void use(Madness[] racers, Control[] controls, ContO[] scene, Trackers trackers, CheckPoints checkpoints) {
+            this.racers = racers;
+            this.controls = controls;
+            this.scene = scene;
+            this.trackers = trackers;
+            this.checkpoints = checkpoints;
+        }
+
+        @Override
+        public int cars() {
+            return Math.min(GameFacts.numberOfPlayers, racers.length);
+        }
+
+        @Override
+        public int humans() {
+            return GameFacts.humans;
+        }
+
+        @Override
+        public float x(int car) {
+            return scene[car].x;
+        }
+
+        @Override
+        public float y(int car) {
+            return scene[car].y;
+        }
+
+        @Override
+        public float z(int car) {
+            return scene[car].z;
+        }
+
+        @Override
+        public int yaw(int car) {
+            return scene[car].xz;
+        }
+
+        @Override
+        public float speed(int car) {
+            return racers[car].speed;
+        }
+
+        @Override
+        public float topSpeed(int car) {
+            return racers[car].stat.swits[2];
+        }
+
+        @Override
+        public float vx(int car) {
+            float[] v = racers[car].scx;
+            return (v[0] + v[1] + v[2] + v[3]) / 4F;
+        }
+
+        @Override
+        public float vy(int car) {
+            float[] v = racers[car].scy;
+            return (v[0] + v[1] + v[2] + v[3]) / 4F;
+        }
+
+        @Override
+        public float vz(int car) {
+            float[] v = racers[car].scz;
+            return (v[0] + v[1] + v[2] + v[3]) / 4F;
+        }
+
+        @Override
+        public int radius(int car) {
+            return scene[car].maxR;
+        }
+
+        @Override
+        public float wheelX(int car, int wheel) {
+            ContO o = scene[car];
+            return o.x + o.keyx[wheel] * RadicalMath.cos(o.xz) - o.keyz[wheel] * RadicalMath.sin(o.xz);
+        }
+
+        @Override
+        public float wheelZ(int car, int wheel) {
+            ContO o = scene[car];
+            return o.z + o.keyx[wheel] * RadicalMath.sin(o.xz) + o.keyz[wheel] * RadicalMath.cos(o.xz);
+        }
+
+        @Override
+        public boolean grounded(int car) {
+            return racers[car].mtouch;
+        }
+
+        @Override
+        public boolean wasted(int car) {
+            return racers[car].dest;
+        }
+
+        @Override
+        public boolean throttle(int car) {
+            return controls[car].up;
+        }
+
+        @Override
+        public boolean steering(int car) {
+            return controls[car].left || controls[car].right;
+        }
+
+        @Override
+        public boolean useKey(int car) {
+            return car < GameFacts.humans && controls[car].power;
+        }
+
+        @Override
+        public int place(int car) {
+            return checkpoints.pos[car];
+        }
+
+        @Override
+        public int points() {
+            return checkpoints.n;
+        }
+
+        @Override
+        public float pointX(int point) {
+            return checkpoints.x[point];
+        }
+
+        @Override
+        public float pointY(int point) {
+            return checkpoints.y[point];
+        }
+
+        @Override
+        public float pointZ(int point) {
+            return checkpoints.z[point];
+        }
+
+        @Override
+        public int pointKind(int point) {
+            return checkpoints.typ[point];
+        }
+
+        @Override
+        public float ground(float x, float y, float z) {
+            float ground = 250F;
+            Trackers t = trackers;
+            if (t == null) {
+                return ground;
+            }
+            for (int p = 0; p < t.nt; p++) {
+                if (t.xy[p] != 0 || t.zy[p] != 0 || t.y[p] == 250 || t.y[p] < y
+                        || Math.abs(x - t.x[p]) >= t.radx[p] || Math.abs(z - t.z[p]) >= t.radz[p]) {
+                    continue; // a wall, a slope, the flat ground, above the point or beside it
+                }
+                ground = Math.min(ground, t.y[p]);
+            }
+            return ground;
+        }
+
+        @Override
+        public void push(int car, int wheel, float vx, float vy, float vz) {
+            Madness m = racers[car];
+            m.scx[wheel] += vx;
+            m.scy[wheel] += vy;
+            m.scz[wheel] += vz;
+        }
+
+        @Override
+        public void move(int car, int dx, int dz) {
+            scene[car].x += dx;
+            scene[car].z += dz;
+        }
+
+        @Override
+        public void damage(int car, int wheel, float share) {
+            Madness m = racers[car];
+            float force = share * m.stat.maxmag;
+            m.hitmag += (int) force;
+            m.shakedam = (int) Math.max(m.shakedam, Math.min(250F, force));
+            hit(car, wheel, 1, force); // the extras' damage looks see it as a hit from below
+        }
+    }
+
+    /** The game's own things the extras' look and sound use ({@link GameHooks}), after real ticks only. */
+    private static final class Hooks implements GameHooks {
+        /** Classic sound's clips of the extras, played straight, so the game's own sound commands stay as they were. */
+        private final java.util.Map<String, nfm.lit.audio.SoundClipUnthreaded> classic = new java.util.HashMap<>();
+
+        @Override
+        public void say(int player, String text) {
+            GameUi u = ui;
+            if (u != null && player < GameFacts.humans) {
+                u.extraSay(player, text);
+            }
+        }
+
+        @Override
+        public void flash() {
+            flashWanted = true;
+        }
+
+        @Override
+        public void rumble(int player, float force) {
+            if (!SoundManager.isDiscarding()) {
+                Gamepads.hit(SplitRace.active == null ? -1 : player, force);
+            }
+        }
+
+        @Override
+        public String useKey(int player) {
+            if (SplitRace.active != null) {
+                return SplitKeys.name(SplitKeys.key(player, KeyBindings.USE_POWERUP, 0));
+            }
+            return KeyBindings.name(KeyBindings.key(KeyBindings.USE_POWERUP, 0));
+        }
+
+        @Override
+        public boolean sound3d() {
+            return nfm.lit.audio.Sound3D.isActive();
+        }
+
+        @Override
+        public void classic(int player, String clip, int command) {
+            GameUi u = ui;
+            nfm.lit.audio.SoundClipUnthreaded c = classic.get(clip);
+            if (c == null || u == null || SoundManager.isSilenced() || SoundManager.isDiscarding()) {
+                return;
+            }
+            if (command == STOP) {
+                c.stop();
+            } else if (!u.mutes && !nfm.lit.audio.Sound3D.isActive()) {
+                if (command == LOOP) {
+                    c.loop();
+                } else {
+                    c.play();
+                }
+            }
+        }
+
+        @Override
+        public void classicClip(String name, short[] pcm, int rate) {
+            if (!SoundManager.isSilenced() && !classic.containsKey(name)) {
+                classic.put(name, new nfm.lit.audio.SoundClipUnthreaded(wav(pcm, rate)));
+            }
+        }
+
+        /** 16-bit mono samples as a WAV file, as the game's own clips are read. */
+        private static byte[] wav(short[] pcm, int rate) {
+            int bytes = pcm.length * 2;
+            java.nio.ByteBuffer b = java.nio.ByteBuffer.allocate(44 + bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+            b.put("RIFF".getBytes(java.nio.charset.StandardCharsets.US_ASCII)).putInt(36 + bytes);
+            b.put("WAVEfmt ".getBytes(java.nio.charset.StandardCharsets.US_ASCII)).putInt(16);
+            b.putShort((short) 1).putShort((short) 1).putInt(rate).putInt(rate * 2).putShort((short) 2)
+                    .putShort((short) 16);
+            b.put("data".getBytes(java.nio.charset.StandardCharsets.US_ASCII)).putInt(bytes);
+            for (short v : pcm) {
+                b.putShort(v);
+            }
+            return b.array();
+        }
     }
 }

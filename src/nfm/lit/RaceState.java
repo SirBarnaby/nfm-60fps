@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BiConsumer;
+import nfm.lit.features.Features;
+import nfm.lit.features.RaceInts;
 
 /**
  * Reads, hashes and restores everything a race depends on, for recorded races
@@ -31,8 +33,15 @@ import java.util.function.BiConsumer;
  */
 final class RaceState {
 
-    /** Control's menu and HUD switches, which are not race state. */
-    private static final Set<String> CONTROL_SKIP = Set.of("enter", "arrace");
+    /**
+     * Control's menu and HUD switches, which are not race state, and the
+     * Use powerup key, which is only while a race extra plays: visited with
+     * the extras then.
+     */
+    private static final Set<String> CONTROL_SKIP = Set.of("enter", "arrace", "power");
+
+    /** Walks the race extras' state (visiting stores nothing, so one serves every walk; game thread only). */
+    private static final RaceInts EXTRAS = new RaceInts();
 
     /** The parts of a car model the race reads or moves. */
     private static final List<String> CAR_FIELDS = List.of("x", "y", "z", "xz", "xy", "zy", "wxz", "wzy", "dist",
@@ -124,9 +133,9 @@ final class RaceState {
         return out;
     }
 
-    /** Number of per-tick hashes: one per car, the race, the camera and the random streams. */
+    /** Number of per-tick hashes: one per car, the race, the camera, the random streams and, while one plays, the race extras. */
     static int groupCount(int players) {
-        return players + 3;
+        return players + 3 + (Features.raceExtras() ? 1 : 0);
     }
 
     static String groupName(int group, int players) {
@@ -136,14 +145,37 @@ final class RaceState {
         return switch (group - players) {
             case 0 -> "race";
             case 1 -> "camera";
-            default -> "random";
+            case 2 -> "random";
+            default -> "extras";
         };
     }
 
-    /** Walks every value: the restorable state, then the random streams' fingerprints. */
+    /**
+     * Walks every value: the restorable state, then the random streams'
+     * fingerprints, then the race extras' state while one plays.
+     */
     static void visit(View v, Sink sink) {
         visitRestorable(v, sink);
         visitRandom(v, sink);
+        visitExtras(v, sink);
+    }
+
+    /**
+     * The race extras' state (powerups), in a group of their own, only while
+     * one plays: a race without them walks exactly the values it always did.
+     * The players' Use powerup keys come first.
+     */
+    private static void visitExtras(View v, Sink sink) {
+        if (!Features.raceExtras()) {
+            return;
+        }
+        sink.group("extras");
+        for (int i = 0; i < v.players(); i++) {
+            sink.value("extras.power", null, i, v.drivers()[i].power ? 1 : 0);
+        }
+        EXTRAS.startVisiting((index, bits) -> sink.value("extras", null, index, bits));
+        Features.syncRace(EXTRAS);
+        EXTRAS.endVisiting();
     }
 
     /** The random streams' fingerprints, in a group of their own. */
@@ -275,7 +307,7 @@ final class RaceState {
             put(sink, car + "heading", m.mxz);
             put(sink, car + "cameraHeading", m.cxz);
             put(sink, car + "loop", m.loop);
-            put(sink, car + "input", RaceLog.keyBits(c) & ~RaceLog.KEY_ENTER);
+            put(sink, car + "input", RaceLog.keyBits(c) & ~(RaceLog.KEY_ENTER | RaceLog.KEY_POWER));
         }
         CheckPoints cp = v.checkpoints();
         sink.group("race");
@@ -299,6 +331,7 @@ final class RaceState {
         long r = v.world().random.fingerprint();
         put(sink, "random.race.low", (int) r);
         put(sink, "random.race.high", (int) (r >>> 32));
+        visitExtras(v, sink);
     }
 
     /** GameUi keeps "the race is over and the result is on screen" private. */

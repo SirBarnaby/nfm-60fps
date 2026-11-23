@@ -354,9 +354,11 @@ public class GameSparker extends Panel implements Runnable {
         int view;
         /** The helmet cam is chosen (view is then 0, the chase view the race keeps). */
         boolean helmet;
+        /** Use powerup is held. */
+        boolean power;
 
         void letGo() {
-            up = down = left = right = handb = enter = false;
+            up = down = left = right = handb = enter = power = false;
             lookback = 0;
         }
     }
@@ -838,7 +840,7 @@ public class GameSparker extends Panel implements Runnable {
     /** Under {@link #inputLock}: the driving keys held, from every key down (two keys can share an action). */
     private void heldFromKeys() {
         for (LiveKeys keys : live) {
-            keys.up = keys.down = keys.left = keys.right = keys.handb = false;
+            keys.up = keys.down = keys.left = keys.right = keys.handb = keys.power = false;
         }
         for (int down : keysDown.values()) {
             LiveKeys keys = live[down >> 8];
@@ -848,6 +850,7 @@ public class GameSparker extends Panel implements Runnable {
             keys.left |= action == KeyBindings.STEER_LEFT;
             keys.right |= action == KeyBindings.STEER_RIGHT;
             keys.handb |= action == KeyBindings.HANDBRAKE;
+            keys.power |= action == KeyBindings.USE_POWERUP;
         }
     }
 
@@ -899,6 +902,7 @@ public class GameSparker extends Panel implements Runnable {
             c.right = keys.right;
             c.handb = keys.handb;
             c.lookback = keys.lookback;
+            c.power = keys.power && nfm.lit.features.Features.raceExtras(); // a race without extras records the same keys
         }
     }
 
@@ -2055,7 +2059,8 @@ public class GameSparker extends Panel implements Runnable {
         }
         record.reset(scene);
         sendSoundStage(scene);
-        FeatureBridge.stageLoaded(seed, checkpoints, !HIDDEN_RUN && (session == null || !session.keepsCookies()));
+        FeatureBridge.stageLoaded(seed, checkpoints, !HIDDEN_RUN && (session == null || !session.keepsCookies()),
+                drivers, u, scene, trackers, gameUi);
         if (session != null) {
             session.stageLoaded();
         }
@@ -2764,6 +2769,7 @@ public class GameSparker extends Panel implements Runnable {
             do
                 racers[car].drive(u[car], sceneObjects[car], raceTrackers, raceCheckpoints);
             while (++car < GameFacts.numberOfPlayers);
+            FeatureBridge.raceTick(); // the race extras (powerups), after every car drove
             car = 0;
             do
                 raceRecord.rec(sceneObjects[car], car, racers[car].squash, racers[car].lastcolido,
@@ -3891,7 +3897,8 @@ public class GameSparker extends Panel implements Runnable {
     private int heldKeys() {
         LiveKeys k = live[0];
         return (k.up ? 1 : 0) | (k.down ? 2 : 0) | (k.left ? 4 : 0) | (k.right ? 8 : 0)
-                | (k.handb ? 16 : 0) | ((k.lookback + 1) << 5) | (k.view << 7);
+                | (k.handb ? 16 : 0) | ((k.lookback + 1) << 5) | (k.view << 7)
+                | (k.power && nfm.lit.features.Features.raceExtras() ? 512 : 0);
     }
 
     /**
@@ -7761,6 +7768,9 @@ public class GameSparker extends Panel implements Runnable {
                 }
                 raceTicks++;
                 FeatureBridge.afterTick(racers, u, sceneObjects, raceTrackers, raceTicks); // real ticks only
+                if (FeatureBridge.takeFlash()) {
+                    pendingWhiteFlash = true; // an extra's flash (a dynamite blast near a player)
+                }
 
                 if (session != null) {
                     session.ingameTickEnded();

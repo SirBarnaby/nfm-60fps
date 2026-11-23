@@ -8,6 +8,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import nfm.lit.features.Features;
+import nfm.lit.features.RaceInts;
 
 /**
  * Everything a race tick reads and writes, captured at one tick so the race
@@ -70,6 +72,8 @@ final class RaceSnapshot {
 
     /** The track objects, their polygons and the replay buffer; null in a complete snapshot. */
     private final StateBuffer buffer;
+    /** The race extras' state (powerups), while one plays: nothing otherwise. */
+    private final RaceInts extras = new RaceInts();
     private StateCopy copy;
     private Record record;
     private ContO[] scene;
@@ -112,6 +116,14 @@ final class RaceSnapshot {
         buffer.startSaving();
         sync();
         buffer.endSaving();
+        saveExtras(extras);
+    }
+
+    /** Saves the race extras' state into {@code into}. */
+    private static void saveExtras(RaceInts into) {
+        into.startSaving();
+        Features.syncRace(into);
+        into.endSaving();
     }
 
     /**
@@ -128,7 +140,9 @@ final class RaceSnapshot {
         copy.capture(v.track());
         copy.captureStatics(Medium.class);
         captureOtherStatics(copy);
-        return new RaceSnapshot(copy, v, sceneRefs);
+        RaceSnapshot complete = new RaceSnapshot(copy, v, sceneRefs);
+        saveExtras(complete.extras);
+        return complete;
     }
 
     /** Puts the race back exactly as it was captured. */
@@ -140,6 +154,9 @@ final class RaceSnapshot {
             sync();
             buffer.endRestoring();
         }
+        extras.startRestoring();
+        Features.syncRace(extras);
+        extras.endRestoring();
     }
 
     /**
@@ -152,6 +169,11 @@ final class RaceSnapshot {
             if (scene[i] != sceneRefs[i]) {
                 out.merge("scene object", 1, Integer::sum);
             }
+        }
+        RaceInts now = new RaceInts();
+        saveExtras(now);
+        if (!now.sameAs(extras)) {
+            out.merge("race extras", 1, Integer::sum);
         }
         return out;
     }

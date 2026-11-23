@@ -35,13 +35,15 @@ public final class KeyBindings {
     public static final int ARROW = 9;
     public static final int MUSIC = 10;
     public static final int SOUNDS = 11;
-    public static final int COUNT = 12;
+    /** Uses the powerup the car holds (the powerups extra); added after the game's own actions, so theirs keep their numbers. */
+    public static final int USE_POWERUP = 12;
+    public static final int COUNT = 13;
     /** Keys each action can have. */
     public static final int SLOTS = 2;
 
     private static final String[] LABELS = {"Accelerate", "Brake and reverse", "Steer left", "Steer right",
         "Handbrake", "Look back", "Look back, other side", "Change view", "Pause", "Arrow: track or cars",
-        "Music on or off", "Sounds on or off"};
+        "Music on or off", "Sounds on or off", "Use powerup"};
     private static final String[] HELP = {
         "Speeds the car up. In the air, the four driving keys turn the car for stunts.",
         "Brakes, and once the car has stopped, reverses.",
@@ -55,11 +57,12 @@ public final class KeyBindings {
         "Points the arrow at the top along the track, or at the nearest car.",
         "Switches the music off and on again.",
         "Switches the race's sounds off and on again.",
+        "With Powerups on (Extras tab): fires the nitrous or the magnet the car holds. Dynamite throws itself.",
     };
     /** The game's own keys: the first of each action's. */
     private static final int[] DEFAULTS = {KeyEvent.VK_UP, KeyEvent.VK_DOWN, KeyEvent.VK_LEFT, KeyEvent.VK_RIGHT,
         KeyEvent.VK_SPACE, KeyEvent.VK_Z, KeyEvent.VK_X, KeyEvent.VK_V, KeyEvent.VK_P, KeyEvent.VK_A,
-        KeyEvent.VK_M, KeyEvent.VK_N};
+        KeyEvent.VK_M, KeyEvent.VK_N, KeyEvent.VK_CONTROL};
     /** The keys that are not the player's to give away. */
     private static final int[] RESERVED = {KeyEvent.VK_ESCAPE, KeyEvent.VK_ENTER, KeyEvent.VK_F3, KeyEvent.VK_F11,
         KeyEvent.VK_PAGE_UP, KeyEvent.VK_PAGE_DOWN, KeyEvent.VK_TAB, KeyEvent.VK_WINDOWS, KeyEvent.VK_CONTEXT_MENU,
@@ -177,6 +180,12 @@ public final class KeyBindings {
                 k[a * SLOTS + 1] = saved[a] >>> 16 & 0xFFFF;
             }
         }
+        // an action newer than the save gives up its own key if the player has put it on another
+        for (int a = 0; a < COUNT; a++) {
+            if ((a >= saved.length || saved[a] < 0) && takenElsewhere(k, a)) {
+                k[a * SLOTS] = 0;
+            }
+        }
         for (int i = 0; i < k.length; i++) {
             if (k[i] != 0 && reserved(k[i])) {
                 k = defaults();
@@ -192,6 +201,17 @@ public final class KeyBindings {
         }
         keys = k;
         changed = false;
+    }
+
+    /** True if action {@code a}'s first key in {@code k} is one of another action's. */
+    private static boolean takenElsewhere(int[] k, int a) {
+        int key = k[a * SLOTS];
+        for (int i = 0; i < k.length && key != 0; i++) {
+            if (i / SLOTS != a && k[i] == key) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** A key's name for the screen: "Space", "W", "Up", "Num 8", or a dash for none. */
@@ -280,6 +300,7 @@ public final class KeyBindings {
             case 97, 65 -> ARROW;
             case 109, 77 -> MUSIC;
             case 110, 78 -> SOUNDS;
+            case 99, 67 -> USE_POWERUP;
             default -> NONE;
         };
     }

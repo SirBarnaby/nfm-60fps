@@ -343,6 +343,7 @@ final class RaceSession {
         log.note = (autopilot != null ? "autopilot " + autopilot.describe() : "played")
                 + (unpaced ? ", unpaced" : ", real time") + ", " + timestamp()
                 + (GameFiles.names().isEmpty() ? "" : ", mods: " + GameFiles.names());
+        log.extras = nfm.lit.features.Features.raceIds(); // the race extras set up for this race, if any
     }
 
     /** A sound command, from any thread; only the in-game tick's are kept. */
@@ -807,6 +808,7 @@ final class RaceSession {
             soundMismatch = null;
             System.out.println(TAG_VERIFY + file.getName() + ": stage " + log.stage + ", " + log.players + " cars, "
                     + log.ticks() + " ticks, " + log.end.name().toLowerCase(Locale.ROOT) + " (" + log.note + ")");
+            nfm.lit.features.Features.playRecorded(log.extras); // the race extras it was recorded with, whatever the switches
             setUpRace(host, log.stage, log.nfmmode, log.players, log.unlocked, log.carsBefore);
         }
 

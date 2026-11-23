@@ -1743,6 +1743,20 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         }
     }
 
+    /**
+     * An extra's news for player {@code car} (a powerup picked up), in their
+     * message line as "Checkpoint!" is shown, for about two seconds; never
+     * over a car wasted.
+     */
+    void extraSay(int car, String text) {
+        asPlayer(car, () -> {
+            if (!wasay) {
+                say = text;
+                tcnt = -10;
+            }
+        });
+    }
+
     /** Runs {@code event} as split-screen player {@code car} (0 or 1), that player's HUD state swapped in. */
     void asPlayer(int car, Runnable event) {
         SplitRace split = SplitRace.active;

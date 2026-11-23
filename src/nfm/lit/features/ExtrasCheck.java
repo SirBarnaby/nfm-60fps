@@ -63,6 +63,9 @@ public final class ExtrasCheck {
         if (wants(only, "enginesound")) {
             nfm.lit.features.enginesound.EngineCheck.run();
         }
+        if (wants(only, "powerups")) {
+            nfm.lit.features.powerups.PowerupsCheck.run();
+        }
         System.out.println("[extras] checks: " + passed + " passed, " + failed + " failed"
                 + (waiting > 0 ? ", " + waiting + " waiting for the owner" : ""));
         System.exit(failed == 0 && passed > 0 ? 0 : 1);
