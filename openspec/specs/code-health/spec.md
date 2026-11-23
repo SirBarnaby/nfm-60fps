@@ -36,3 +36,14 @@ What is learned while working on the game (gotchas, causes of bugs, what worked)
 #### Scenario: Check: after a hard bug
 - **WHEN** a bug took real digging to find
 - **THEN** its cause and fix are written into `docs\solutions\` in the same commit as the fix
+
+### Requirement: Each feature lives in its own folder
+Each new feature SHALL keep its code in its own folder, `src\nfm\lit\features\<feature>\`, behind one small `Feature` interface and one `Features` list that the game calls, with one on/off switch per feature (`FeatureSettings`). The big existing files only get one-line hooks. Features that change only the look or the sound read the race and never write it; features that change races keep their state in the race state. (Owner, 2026-11-23: extras brief "separate files", then "Keep those in also".)
+
+#### Scenario: Check: a new feature
+- **WHEN** a new feature is added
+- **THEN** its code is in its own folder under `src\nfm\lit\features\`, it has its own switch, and the existing files gained only the calls into it
+
+#### Scenario: Check: look and sound features leave races alone
+- **WHEN** the recorded races are played again with every look and sound feature switched on
+- **THEN** every race still matches tick for tick
