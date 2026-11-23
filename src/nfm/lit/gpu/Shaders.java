@@ -352,6 +352,23 @@ final class Shaders {
             }
             """;
 
+    /**
+     * The helmet cam's darkened edges (see GpuDisplay#setVignette), drawn
+     * with COLOR_VS over one area of the scene: edge runs -1 to 1 across it
+     * each way, the colour's alpha is how dark it gets at most. Clear in the
+     * middle, darkening from VIGNETTE_CLEAR of the way out to the corners, so
+     * the edges' middles take part of it and the corners all of it.
+     */
+    static final String VIGNETTE_FS = """
+            static const float VIGNETTE_CLEAR = 0.55;
+            static const float VIGNETTE_DARK = 1.4;
+            float4 main(float4 pos : SV_POSITION, float4 col : COLOR0, float2 edge : TEXCOORD0) : SV_TARGET
+            {
+                float outward = smoothstep(VIGNETTE_CLEAR, VIGNETTE_DARK, length(edge));
+                return float4(0.0, 0.0, 0.0, col.a * outward);
+            }
+            """;
+
     static final Source PICTURE_VERTEX = new Source("picture_vs", PICTURE_VS, "vs_5_0");
     static final Source PICTURE_FRAGMENT = new Source("picture_fs", PICTURE_FS, "ps_5_0");
     static final Source OVERLAY_FRAGMENT = new Source("overlay_fs", OVERLAY_FS, "ps_5_0");
@@ -359,8 +376,9 @@ final class Shaders {
     static final Source COLOR_FRAGMENT = new Source("color_fs", COLOR_FS, "ps_5_0");
     static final Source HDR_FRAGMENT = new Source("hdr_fs", HDR_FS, "ps_5_0");
     static final Source PROJECTED_VERTEX = new Source("projected_vs", PROJECTED_VS, "vs_5_0");
+    static final Source VIGNETTE_FRAGMENT = new Source("vignette_fs", VIGNETTE_FS, "ps_5_0");
 
     /** Every shader, for baking. */
     static final List<Source> ALL = List.of(PICTURE_VERTEX, PICTURE_FRAGMENT, OVERLAY_FRAGMENT, COLOR_VERTEX,
-            COLOR_FRAGMENT, HDR_FRAGMENT, PROJECTED_VERTEX);
+            COLOR_FRAGMENT, HDR_FRAGMENT, PROJECTED_VERTEX, VIGNETTE_FRAGMENT);
 }

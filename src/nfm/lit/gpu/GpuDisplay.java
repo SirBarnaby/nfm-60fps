@@ -86,6 +86,11 @@ public final class GpuDisplay {
     private short overlayProgram = BGFX_INVALID_HANDLE;
     private short colorProgram = BGFX_INVALID_HANDLE;
     private short hdrProgram = BGFX_INVALID_HANDLE;
+    /* the helmet cam's darkened edges: see setVignette and Shaders.VIGNETTE_FS */
+    private short vignetteProgram = BGFX_INVALID_HANDLE;
+    private BGFXTransientVertexBuffer vignetteQuad;
+    /** Per area of the next scene: x, y, width, height (shares of the scene) and how dark; null for none. */
+    private float[] vignette;
     /* placing kept scenes on the card: see Shaders.PROJECTED_VS and SceneGeometry#buildProjected */
     private final boolean projectionWanted = !"off".equalsIgnoreCase(System.getProperty("nfm.projection"));
     private short projectedProgram = BGFX_INVALID_HANDLE;
@@ -318,6 +323,7 @@ public final class GpuDisplay {
         byte[] colorVs = hlsl.bytecode(Shaders.COLOR_VERTEX);
         byte[] colorFs = hlsl.bytecode(Shaders.COLOR_FRAGMENT);
         byte[] hdrFs = hlsl.bytecode(Shaders.HDR_FRAGMENT);
+        byte[] vignetteFs = hlsl.bytecode(Shaders.VIGNETTE_FRAGMENT);
         byte[] projectedVs = null;
         if (projectionWanted) {
             try {
@@ -372,6 +378,10 @@ public final class GpuDisplay {
                 BgfxShaderBinary.vertex(colorVs, BgfxShaderBinary.ATTRIB_POSITION, BgfxShaderBinary.ATTRIB_COLOR0,
                         BgfxShaderBinary.ATTRIB_TEXCOORD0),
                 BgfxShaderBinary.fragment(colorFs, null));
+        vignetteProgram = program(
+                BgfxShaderBinary.vertex(colorVs, BgfxShaderBinary.ATTRIB_POSITION, BgfxShaderBinary.ATTRIB_COLOR0,
+                        BgfxShaderBinary.ATTRIB_TEXCOORD0),
+                BgfxShaderBinary.fragment(vignetteFs, null));
         sampler = bgfx_create_uniform("s_picture", BGFX_UNIFORM_TYPE_SAMPLER, 1);
         if (projectedVs != null) {
             startProjection(projectedVs, colorFs);
@@ -401,6 +411,7 @@ public final class GpuDisplay {
         pictureTextureHeight = pictureHeight;
         upload = MemoryUtil.memAllocInt(pictureWidth * pictureHeight);
         transientBuffer = BGFXTransientVertexBuffer.calloc();
+        vignetteQuad = BGFXTransientVertexBuffer.calloc();
         bgfx_set_view_clear(SCREEN_VIEW, BGFX_CLEAR_COLOR, BLACK, 1F, 0);
         bgfx_set_view_clear(CAPTURE_VIEW, BGFX_CLEAR_COLOR, BLACK, 1F, 0);
     }
@@ -561,6 +572,7 @@ public final class GpuDisplay {
                 submitScene(geometry, null, null);
             }
         }
+        drawVignette();
         if (hudImage != null) {
             Rectangle area = hudArea == null ? new Rectangle(0, 0, sceneWidth, sceneHeight)
                     : new Rectangle(Math.round(sceneWidth * hudArea[0]), Math.round(sceneHeight * hudArea[1]),
@@ -934,6 +946,49 @@ public final class GpuDisplay {
         } else {
             bgfx_set_dynamic_vertex_buffer(0, held.buffer, start, count);
             bgfx_set_texture(0, pointsSampler, held.pointsTexture, (int) (CLAMP | BGFX_SAMPLER_POINT));
+        }
+    }
+
+    /**
+     * Darkens the edges of areas of the next scene {@link #drawScene} draws,
+     * over the scene and under the HUD (the helmet cam under g-force): per
+     * area five values, x, y, width and height as shares of the scene and
+     * how dark the corners get, 0 to 1 (0 draws nothing). Null for none.
+     * Only that one scene; the array is read there, not kept.
+     */
+    public void setVignette(float[] areas) {
+        vignette = areas;
+    }
+
+    private void drawVignette() {
+        float[] v = vignette;
+        vignette = null;
+        if (v == null || !isValid(vignetteProgram) || vignetteQuad == null) {
+            return;
+        }
+        for (int at = 0; at + 4 < v.length; at += 5) {
+            float strength = Math.min(1F, v[at + 4]);
+            if (!(strength > 0F)) {
+                continue;
+            }
+            if (bgfx_get_avail_transient_vertex_buffer(4, colorLayout) < 4) {
+                return;
+            }
+            bgfx_alloc_transient_vertex_buffer(vignetteQuad, 4, colorLayout);
+            ByteBuffer quad = vignetteQuad.data().order(ByteOrder.LITTLE_ENDIAN);
+            float left = 2F * v[at] - 1F;
+            float right = 2F * (v[at] + v[at + 2]) - 1F;
+            float top = 1F - 2F * v[at + 1];
+            float bottom = 1F - 2F * (v[at + 1] + v[at + 3]);
+            int black = Math.round(strength * 255F) << 24; // black, at most this dark (ABGR)
+            quad.putFloat(left).putFloat(top).putInt(black).putFloat(-1F).putFloat(-1F);
+            quad.putFloat(right).putFloat(top).putInt(black).putFloat(1F).putFloat(-1F);
+            quad.putFloat(left).putFloat(bottom).putInt(black).putFloat(-1F).putFloat(1F);
+            quad.putFloat(right).putFloat(bottom).putInt(black).putFloat(1F).putFloat(1F);
+            bgfx_set_transient_vertex_buffer(0, vignetteQuad, 0, 4);
+            // over the scene as the HUD is, its glow dimmed with it
+            bgfx_set_state(OPAQUE | HUD_BLEND | BGFX_STATE_PT_TRISTRIP, 0);
+            bgfx_submit(SCENE_VIEW, vignetteProgram, 0, BGFX_DISCARD_ALL);
         }
     }
 
@@ -1403,7 +1458,7 @@ public final class GpuDisplay {
                 }
             }
             for (short program : new short[] {pictureProgram, overlayProgram, colorProgram, hdrProgram,
-                    projectedProgram}) {
+                    projectedProgram, vignetteProgram}) {
                 if (isValid(program)) {
                     bgfx_destroy_program(program);
                 }
@@ -1423,6 +1478,7 @@ public final class GpuDisplay {
         pictureProgram = BGFX_INVALID_HANDLE;
         overlayProgram = BGFX_INVALID_HANDLE;
         colorProgram = BGFX_INVALID_HANDLE;
+        vignetteProgram = BGFX_INVALID_HANDLE;
         projectedProgram = BGFX_INVALID_HANDLE;
         cameraUniform = BGFX_INVALID_HANDLE;
         carUniform = BGFX_INVALID_HANDLE;
@@ -1445,6 +1501,10 @@ public final class GpuDisplay {
         if (transientBuffer != null) {
             transientBuffer.free();
             transientBuffer = null;
+        }
+        if (vignetteQuad != null) {
+            vignetteQuad.free();
+            vignetteQuad = null;
         }
         upload = free(upload);
         hudUpload = free(hudUpload);

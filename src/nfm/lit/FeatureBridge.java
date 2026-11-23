@@ -6,6 +6,8 @@ import nfm.lit.features.CarShape;
 import nfm.lit.features.DrawQueue;
 import nfm.lit.features.Features;
 import nfm.lit.features.RaceView;
+import nfm.lit.features.FeatureSettings;
+import nfm.lit.features.helmetcam.HelmetCam;
 
 /**
  * Where the game meets its extras ({@link Features}): the race copied into a
@@ -138,8 +140,9 @@ final class FeatureBridge {
             Features.raceStarted(view);
         }
         boolean looking = Features.carLook() != null;
+        boolean helmet = HelmetCam.FEATURE.ready(0); // the players' cars say which polygons the eyes see
         for (int c = 0; c < cars; c++) {
-            scene[c].carSlot = looking ? c : -1;
+            scene[c].carSlot = looking || helmet && c < view.humans ? c : -1;
         }
         Features.afterTick(view);
         hits = 0;
@@ -360,6 +363,67 @@ final class FeatureBridge {
         return n <= bentX.length && Features.carBend(lookCar, lookPlane, x, y, z, n, bentX, bentY, bentZ);
     }
 
+    /* ----------------------------------------------------- the helmet cam */
+
+    /** The player whose frame is being drawn from the helmet cam, or -1: their car's polygons by the eyes are left out. */
+    static int helmetFrame = -1;
+    private static final double[] helmetPlace = new double[5];
+
+    /**
+     * The view after {@code view} (0 chase, 1 around, 2 watch) with the
+     * helmet cam {@code helmet} on the view key, as {@code view << 1 | helmet}:
+     * the helmet cam comes after watch while its extra is on, then the chase
+     * view again. With the helmet the race's own view is the chase view.
+     */
+    static int changeView(int view, boolean helmet) {
+        boolean extra = FeatureSettings.on(HelmetCam.ID);
+        if (helmet) {
+            return extra ? 0 : 1 << 1; // switched off while shown: as from the chase view
+        }
+        if (view == 2 && extra) {
+            return 1;
+        }
+        return ((view + 1) % 3) << 1;
+    }
+
+    /** True if a race starts in the helmet cam: a test run's {@code -Dnfm.helmetview=on}, with the extra on. */
+    static boolean helmetAtStart() {
+        String v = System.getProperty("nfm.helmetview");
+        return ("on".equalsIgnoreCase(v) || "true".equalsIgnoreCase(v)) && FeatureSettings.on(HelmetCam.ID);
+    }
+
+    /** True if player {@code player} has a head in this race (the helmet cam is on). */
+    static boolean helmetReady(int player) {
+        return HelmetCam.FEATURE.ready(player);
+    }
+
+    /**
+     * Player {@code player}'s helmet camera on their car posed {@code x ...
+     * zy}, the head as after the tick before ({@code before}) or the last
+     * one: the camera as Medium holds it into {@code into} (whole values)
+     * and how far past each it really is into {@code fraction}.
+     */
+    static void helmetCamera(int player, boolean before, int x, int y, int z, int xz, int xy, int zy, int lookback,
+            int[] into, float[] fraction) {
+        double[] at = helmetPlace;
+        HelmetCam.FEATURE.camera(player, before, x, y, z, xz, xy, zy, lookback, Medium.cx, Medium.cy, Medium.cz, at);
+        for (int k = 0; k < 5; k++) {
+            long whole = Math.round(at[k]);
+            into[k] = (int) whole;
+            fraction[k] = (float) (at[k] - whole);
+        }
+    }
+
+    /** True if {@link #lookCar}'s polygon {@link #lookPlane} is left out of a helmet frame (behind or by the eyes). */
+    static boolean hidden() {
+        return helmetFrame >= 0 && lookCar == helmetFrame && !HelmetCam.FEATURE.shows(helmetFrame, lookPlane);
+    }
+
+    /** How dark player {@code player}'s helmet view is at its edges, 0 to 1, {@code share} of the way from the tick before. */
+    static float helmetVignette(int player, float share) {
+        return HelmetCam.FEATURE.vignette(player, share);
+    }
+
     /* ------------------------------------------------------------- drawing */
 
     /**
@@ -374,6 +438,7 @@ final class FeatureBridge {
         }
         queue.begin(Medium.x + Medium.cx + Precise.camX, Medium.y + Medium.cy + Precise.camY,
                 Medium.z + Precise.camZ, view.tick);
+        HelmetCam.FEATURE.drawingFor(helmetFrame); // from the helmet: its dashboard
         Features.queue(queue);
         if (queue.isEmpty()) {
             return;

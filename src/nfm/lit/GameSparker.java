@@ -122,6 +122,12 @@ public class GameSparker extends Panel implements Runnable {
     private int view;
     /** Player 2's camera in a split-screen race, as {@link #view} is Player 1's. */
     private int view2;
+    /**
+     * Each player's frames are drawn from the helmet cam (the extra's view
+     * after the game's three, see FeatureBridge#changeView): drawing only, the
+     * race's own view is then the chase view. Latched with the views.
+     */
+    private final boolean[] helmetView = new boolean[2];
 
     /* ------------------------------------------------------------------
      * Frame loop / presentation.
@@ -346,6 +352,8 @@ public class GameSparker extends Panel implements Runnable {
         int lookback;
         boolean enter;
         int view;
+        /** The helmet cam is chosen (view is then 0, the chase view the race keeps). */
+        boolean helmet;
 
         void letGo() {
             up = down = left = right = handb = enter = false;
@@ -564,6 +572,23 @@ public class GameSparker extends Panel implements Runnable {
     private final FramePose framePose2 = new FramePose();
     /** Where a player's camera was at the last tick: x, y, z, xz, zy. */
     private final int[] cameraFrom = new int[5];
+    /** The helmet cam's camera for a frame (see renderScene): at whole values, and how far past them it really is. */
+    private final int[] cameraTo = new int[5];
+    private final float[] helmetTo = new float[5];
+    private final float[] helmetFrom = new float[5];
+    /** The helmet cam's own drawing depths per player: its frames look from elsewhere than the race's camera. */
+    private final PaneDepths[] helmetDepths = {new PaneDepths(), new PaneDepths()};
+    /** Values per player in a frame's vignette (see GpuDisplay#setVignette): x, y, width, height (shares of the race's picture), how dark. */
+    private static final int VIGNETTE_VALUES = 5;
+    /** How many shades of darkness the software vignette is drawn in. */
+    private static final int VIGNETTE_SHADES = 64;
+    /** The helmet cam's darkened edges in the frame being drawn on the game thread, a slot per player (0: none). */
+    private final float[] frameVignette = new float[2 * VIGNETTE_VALUES];
+    /** Those of the last scene the card was given (a kept scene's as recorded), for syncBackBuffer. */
+    private final float[] gpuSceneVignette = new float[2 * VIGNETTE_VALUES];
+    /** The software vignette's picture, made when first needed, and its shades of darkness. */
+    private BufferedImage vignetteImage;
+    private final AlphaComposite[] vignetteShades = new AlphaComposite[VIGNETTE_SHADES + 1];
 
     /**
      * Split screen's two panes kept for a tick (see RetainedScene): each
@@ -759,7 +784,11 @@ public class GameSparker extends Panel implements Runnable {
                 switch (action) {
                     case KeyBindings.LOOK_BACK -> keys.lookback = 1;
                     case KeyBindings.LOOK_BACK_OTHER -> keys.lookback = -1;
-                    case KeyBindings.CHANGE_VIEW -> keys.view = (keys.view + 1) % 3;
+                    case KeyBindings.CHANGE_VIEW -> {
+                        int next = FeatureBridge.changeView(keys.view, keys.helmet);
+                        keys.view = next >> 1;
+                        keys.helmet = (next & 1) != 0;
+                    }
                     case KeyBindings.PAUSE -> {
                         keys.enter = true;
                         pausedBy = player;
@@ -855,6 +884,8 @@ public class GameSparker extends Panel implements Runnable {
         }
         view = live[0].view;
         view2 = live[1].view;
+        helmetView[0] = live[0].helmet;
+        helmetView[1] = live[1].helmet;
     }
 
     /** Only the keys held down: a consumed Enter press must not come back on release. */
@@ -897,6 +928,9 @@ public class GameSparker extends Panel implements Runnable {
             live[1].view = 0;
             view = 0;
             view2 = 0;
+            boolean helmet = FeatureBridge.helmetAtStart(); // a test run may start in it
+            live[0].helmet = live[1].helmet = helmet;
+            helmetView[0] = helmetView[1] = helmet;
         }
     }
 
@@ -2545,6 +2579,19 @@ public class GameSparker extends Panel implements Runnable {
         // a frame for the graphics card also gets the exact positions between the whole ones
         Precise.begin(retainedRecording ? recordingRecorder : gpuSceneFrame ? sceneRecorder : null,
                 retainedRecording ? recordingScene : null);
+        // drawn from the helmet cam: its camera on the car now (below, at the tick before), exactly; the race's is put back
+        boolean helmet = player < np && helmetShown(player);
+        if (helmet) {
+            FeatureBridge.helmetCamera(player, false, savedCarX[player], savedCarY[player], savedCarZ[player],
+                    savedCarXZ[player], savedCarXY[player], savedCarZY[player], u[player].lookback, cameraTo,
+                    helmetTo);
+            placeExactly(cameraTo, helmetTo);
+        }
+        int toX = Medium.x;
+        int toY = Medium.y;
+        int toZ = Medium.z;
+        int toXZ = Medium.xz;
+        int toZY = Medium.zy;
 
         if (prevFrameValid && alpha < 1F) {
             for (int i = 0; i < np; i++) {
@@ -2575,33 +2622,53 @@ public class GameSparker extends Panel implements Runnable {
                 }
             }
             lastCamera(player, cameraFrom); // Player 2's camera came from its own last tick
+            if (helmet) {
+                // from the car where it is drawn from: its pose a tick ago, or now if it was replaced or jumped
+                boolean moves = sceneObjects[player] == prevCarRef[player] && !teleported(
+                        savedCarX[player] - prevCarX[player], savedCarY[player] - prevCarY[player],
+                        savedCarZ[player] - prevCarZ[player]);
+                if (moves) {
+                    FeatureBridge.helmetCamera(player, true, prevCarX[player], prevCarY[player], prevCarZ[player],
+                            prevCarXZ[player], prevCarXY[player], prevCarZY[player], u[player].lookback,
+                            cameraFrom, helmetFrom);
+                } else {
+                    FeatureBridge.helmetCamera(player, true, savedCarX[player], savedCarY[player],
+                            savedCarZ[player], savedCarXZ[player], savedCarXY[player], savedCarZY[player],
+                            u[player].lookback, cameraFrom, helmetFrom);
+                }
+            }
             int fromX = cameraFrom[0];
             int fromY = cameraFrom[1];
             int fromZ = cameraFrom[2];
             int fromXZ = cameraFrom[3];
             int fromZY = cameraFrom[4];
-            if (!teleported(camX - fromX, camY - fromY, camZ - fromZ)) {
-                Medium.x = mix(fromX, camX, alpha);
-                Medium.y = mix(fromY, camY, alpha);
-                Medium.z = mix(fromZ, camZ, alpha);
-                Medium.xz = mixAngle(fromXZ, camXZ, alpha);
-                Medium.zy = mixAngle(fromZY, camZY, alpha);
+            if (!teleported(toX - fromX, toY - fromY, toZ - fromZ)) {
+                Medium.x = mix(fromX, toX, alpha);
+                Medium.y = mix(fromY, toY, alpha);
+                Medium.z = mix(fromZ, toZ, alpha);
+                Medium.xz = mixAngle(fromXZ, toXZ, alpha);
+                Medium.zy = mixAngle(fromZY, toZY, alpha);
                 if (Precise.on) {
-                    Precise.camX = fraction(fromX, camX, alpha);
-                    Precise.camY = fraction(fromY, camY, alpha);
-                    Precise.camZ = fraction(fromZ, camZ, alpha);
-                    Precise.camXZ = periodicFraction(fromXZ, camXZ, alpha, 360);
-                    Precise.camZY = periodicFraction(fromZY, camZY, alpha, 360);
+                    Precise.camX = fraction(fromX, toX, alpha) + helmetShare(helmet, 0, alpha);
+                    Precise.camY = fraction(fromY, toY, alpha) + helmetShare(helmet, 1, alpha);
+                    Precise.camZ = fraction(fromZ, toZ, alpha) + helmetShare(helmet, 2, alpha);
+                    Precise.camXZ = periodicFraction(fromXZ, toXZ, alpha, 360) + helmetShare(helmet, 3, alpha);
+                    Precise.camZY = periodicFraction(fromZY, toZY, alpha, 360) + helmetShare(helmet, 4, alpha);
                 }
             }
         }
 
         saveSceneDrawState();
         // a split-screen pane sorts by its own last depths, not the other player's; Player 1's distances
-        // are the race's own, measured from their camera this tick
-        PaneDepths depths = pane != null ? paneDepths[player] : null;
+        // are the race's own, measured from their camera this tick; the helmet's frames sort by their own
+        PaneDepths depths = helmet ? helmetDepths[player] : pane != null ? paneDepths[player] : null;
         if (depths != null) {
-            depths.putIn(sceneObjects, nob, player == 1);
+            depths.putIn(sceneObjects, nob, helmet || player == 1);
+        }
+        FeatureBridge.helmetFrame = helmet ? player : -1; // its own car's polygons behind the eyes are not drawn
+        if (helmet && !retainedRecording) {
+            vignetteArea(frameVignette, player, pane,
+                    FeatureBridge.helmetVignette(player, prevFrameValid ? Math.min(alpha, 1F) : 1F));
         }
         // smooth effects: where dust and debris are drawn between the ticks (the kept scene moves them itself)
         EffectTrails.begin(smoothEffects, retainedRecording ? Float.NaN : prevFrameValid ? alpha : 1F);
@@ -2628,6 +2695,7 @@ public class GameSparker extends Panel implements Runnable {
             drawWorldObjects(target);
         } finally {
             FeatureBridge.endScene();
+            FeatureBridge.helmetFrame = -1;
             if (canvasBefore != null) {
                 rd.setTransform(canvasBefore);
             }
@@ -2831,6 +2899,8 @@ public class GameSparker extends Panel implements Runnable {
             retainedScene.realize(framePose, retainedRecorder.list().data());
             shownRecorder = retainedRecorder;
         }
+        helmetVignettes(split != null ? keptPanes.areas : null, prevFrameValid ? Math.min(alpha, 1F) : 1F,
+                frameVignette);
         gpuSceneVersion = keptVersion;
         profilePlaceNanos += System.nanoTime() - start;
         profilePlaces++;
@@ -3017,6 +3087,7 @@ public class GameSparker extends Panel implements Runnable {
             }
         }
         keepHud(kept);
+        keepVignette(kept);
         kept.flash = pendingWhiteFlash;
         if (pendingWhiteFlash) {
             rd.setColor(new Color(255, 255, 255)); // as the software frame would leave it
@@ -3116,6 +3187,7 @@ public class GameSparker extends Panel implements Runnable {
             lastCamera(0, out.cameraStart);
             currentCamera(out.cameraEnd);
         }
+        helmetSpan(0, out);
         // placed as frames are drawn: in the picture as it is shown (see Medium.showView)
         placeCamera(out, -GameFacts.sceneMarginX(), -GameFacts.sceneMarginY());
     }
@@ -3164,8 +3236,64 @@ public class GameSparker extends Panel implements Runnable {
         poseCars(false, out);
         lastCamera(player, out.cameraStart);
         currentCamera(out.cameraEnd);
+        helmetSpan(player, out);
         // placed as the pane is drawn (see Medium.paneView)
         placeCamera(out, GameFacts.GAME_WIDTH / 2 - pane.width / 2, GameFacts.GAME_HEIGHT / 2 - pane.height / 2);
+    }
+
+    /**
+     * With player {@code player}'s frames drawn from the helmet cam, its
+     * camera for the span {@code out} (whose cars are posed): exactly, on the
+     * player's car as the span poses it at the start and at the end, with the
+     * head as it was after the tick before and after the last one, as
+     * {@link #renderScene} places it. Otherwise the game's own camera, as set.
+     */
+    private void helmetSpan(int player, PoseSpan out) {
+        out.wholeCamera();
+        if (player >= out.slots || !helmetShown(player)) {
+            return;
+        }
+        int mode = out.mode[player];
+        int[][] a = mode == PoseSpan.AT_END ? out.end : out.start;
+        int[][] b = mode == PoseSpan.AT_START ? out.start : out.end;
+        int lookback = u[player].lookback;
+        FeatureBridge.helmetCamera(player, true, a[0][player], a[1][player], a[2][player], a[3][player],
+                a[4][player], a[5][player], lookback, out.cameraStart, out.cameraStartFraction);
+        FeatureBridge.helmetCamera(player, false, b[0][player], b[1][player], b[2][player], b[3][player],
+                b[4][player], b[5][player], lookback, out.cameraEnd, out.cameraEndFraction);
+        out.cameraFractions = true;
+    }
+
+    /**
+     * True if player {@code player}'s frames are drawn from the helmet cam:
+     * chosen with the view key, the extra on in this race, the race under
+     * way (not the fly-by before the countdown) and the player's own car in
+     * view (not another's watched after the end).
+     */
+    private boolean helmetShown(int player) {
+        return helmetView[player] && ui.fase == Phase.INGAME && ui.starcnt < 38
+                && (player != 0 || ui.spectate == 0) && FeatureBridge.helmetReady(player);
+    }
+
+    /** The camera in Medium at {@code cam}, and on an exact frame {@code fraction} past it. */
+    private static void placeExactly(int[] cam, float[] fraction) {
+        Medium.x = cam[0];
+        Medium.y = cam[1];
+        Medium.z = cam[2];
+        Medium.xz = cam[3];
+        Medium.zy = cam[4];
+        if (Precise.on) {
+            Precise.camX = fraction[0];
+            Precise.camY = fraction[1];
+            Precise.camZ = fraction[2];
+            Precise.camXZ = fraction[3];
+            Precise.camZY = fraction[4];
+        }
+    }
+
+    /** How far past its whole values the helmet's camera is, value {@code k} (x, y, z, xz, zy), at {@code alpha}. */
+    private float helmetShare(boolean helmet, int k, float alpha) {
+        return helmet ? helmetFrom[k] + (helmetTo[k] - helmetFrom[k]) * alpha : 0F;
     }
 
     /** Where split-screen player {@code player}'s camera (the first's out of split screen) was at the last tick. */
@@ -3237,6 +3365,9 @@ public class GameSparker extends Panel implements Runnable {
             BufferedImage hud;
             boolean flash;
             long version;
+            /** The helmet cam's darkened edges as the tick before ends (see keepVignette), and how dark at the end. */
+            final float[] vignette = new float[2 * VIGNETTE_VALUES];
+            final float[] vignetteEnd = new float[2];
 
             /** Its {@link #panes}, made the first time a split-screen race needs them. */
             KeptPanes panes() {
@@ -3309,6 +3440,8 @@ public class GameSparker extends Panel implements Runnable {
         private final PreciseSleep sleep = new PreciseSleep();
         private final FramePose pose = new FramePose();
         private final FramePose pose2 = new FramePose();
+        /** The darkened edges of the frame being drawn here. */
+        private final float[] shade = new float[2 * VIGNETTE_VALUES];
         private final FramePose carried = new FramePose();
         /** -Dnfm.projectiontest=N: compares N frames placed on the card with the same frames placed here. */
         private int projectionTests = Integer.getInteger("nfm.projectiontest", 0);
@@ -3564,11 +3697,17 @@ public class GameSparker extends Panel implements Runnable {
             if (flash) {
                 flashedVersion = k.version;
             }
+            float share = Math.max(0F, Math.min(1F, alpha));
+            System.arraycopy(k.vignette, 0, shade, 0, shade.length);
+            for (int p = 0; p < 2; p++) {
+                int at = p * VIGNETTE_VALUES + 4;
+                shade[at] += (k.vignetteEnd[p] - shade[at]) * share;
+            }
             long placed = System.nanoTime();
             boolean shown;
             try {
                 shown = showOnGpu(false, k.shown().list(), onCard ? k.cardScenes() : null, k.hud, k.version, k.version,
-                        flash, true, span.motionAt(alpha), showAt);
+                        flash, shade, true, span.motionAt(alpha), showAt);
             } catch (RuntimeException | LinkageError ex) {
                 HLogger.warn("The graphics card stopped drawing a race: " + ex);
                 shown = false;
@@ -3613,11 +3752,12 @@ public class GameSparker extends Panel implements Runnable {
          */
         private void testProjection(Kept k) {
             nfm.lit.gpu.SceneList list = k.shown().list();
-            if (!showOnGpu(true, list, null, k.hud, -1L, -1L, false, true, FrameLog.NO_MOTION, 0L)) {
+            if (!showOnGpu(true, list, null, k.hud, -1L, -1L, false, null, true, FrameLog.NO_MOTION, 0L)) {
                 return;
             }
             BufferedImage here = capturedGpuScene;
-            if (!showOnGpu(true, list, k.cardScenes(), k.hud, k.version, -1L, false, true, FrameLog.NO_MOTION, 0L)) {
+            if (!showOnGpu(true, list, k.cardScenes(), k.hud, k.version, -1L, false, null, true, FrameLog.NO_MOTION,
+                    0L)) {
                 return;
             }
             BufferedImage onCard = capturedGpuScene;
@@ -3965,6 +4105,119 @@ public class GameSparker extends Panel implements Runnable {
     }
 
     /**
+     * The helmet cam's darkened edges for {@code kept}'s frames: as the tick
+     * before ends (alpha 0) and as the last one does (alpha 1); and those
+     * syncBackBuffer draws, as the scene was recorded.
+     */
+    private void keepVignette(Presenter.Kept kept) {
+        Rectangle[] panes = kept.split ? kept.panes.areas : null;
+        helmetVignettes(panes, 0F, kept.vignette);
+        for (int p = 0; p < 2; p++) {
+            kept.vignetteEnd[p] = p < (panes == null ? 1 : 2) && helmetShown(p) ? FeatureBridge.helmetVignette(p, 1F)
+                    : 0F;
+        }
+        helmetVignettes(panes, RETAINED_AT, gpuSceneVignette);
+    }
+
+    /**
+     * Each player's helmet cam vignette {@code share} of the way from the
+     * tick before to the last into {@code into}: in their pane of
+     * {@code panes}, or with null the first player's over the whole picture.
+     */
+    private void helmetVignettes(Rectangle[] panes, float share, float[] into) {
+        clearVignette(into);
+        for (int p = 0; p < (panes == null ? 1 : 2); p++) {
+            if (helmetShown(p)) {
+                vignetteArea(into, p, panes == null ? null : panes[p], FeatureBridge.helmetVignette(p, share));
+            }
+        }
+    }
+
+    /** No darkened edges in {@code areas}. */
+    private static void clearVignette(float[] areas) {
+        java.util.Arrays.fill(areas, 0F);
+    }
+
+    /** Player {@code player}'s slot of {@code into}: their {@code pane} (null: the whole picture), {@code strength} dark. */
+    private static void vignetteArea(float[] into, int player, Rectangle pane, float strength) {
+        int at = player * VIGNETTE_VALUES;
+        if (pane == null) {
+            into[at] = 0F;
+            into[at + 1] = 0F;
+            into[at + 2] = 1F;
+            into[at + 3] = 1F;
+        } else {
+            float width = Math.max(1, GameFacts.sceneWidth);
+            float height = Math.max(1, GameFacts.sceneHeight);
+            into[at] = pane.x / width;
+            into[at + 1] = pane.y / height;
+            into[at + 2] = pane.width / width;
+            into[at + 3] = pane.height / height;
+        }
+        into[at + 4] = strength;
+    }
+
+    /**
+     * Draws the darkened edges of {@code areas} (see GpuDisplay#setVignette)
+     * over the race in the menus' picture, in software, as the card does.
+     */
+    private void drawVignette(float[] areas) {
+        for (int at = 0; at + 4 < areas.length; at += VIGNETTE_VALUES) {
+            int shade = Math.round(Math.min(1F, areas[at + 4]) * VIGNETTE_SHADES);
+            if (shade <= 0) {
+                continue;
+            }
+            if (vignetteImage == null) {
+                vignetteImage = vignettePicture();
+            }
+            if (vignetteShades[shade] == null) {
+                vignetteShades[shade] = AlphaComposite.getInstance(AlphaComposite.SRC_OVER,
+                        shade / (float) VIGNETTE_SHADES);
+            }
+            AffineTransform toCanvas = sceneToCanvas();
+            AffineTransform before = rd.getTransform();
+            Composite composite = rd.getComposite();
+            Object interpolation = rd.getRenderingHint(RenderingHints.KEY_INTERPOLATION);
+            try {
+                if (toCanvas != null) {
+                    rd.transform(toCanvas);
+                }
+                rd.setComposite(vignetteShades[shade]);
+                rd.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                float width = GameFacts.sceneWidth;
+                float height = GameFacts.sceneHeight;
+                int left = Math.round(areas[at] * width);
+                int top = Math.round(areas[at + 1] * height);
+                int right = Math.round((areas[at] + areas[at + 2]) * width);
+                int bottom = Math.round((areas[at + 1] + areas[at + 3]) * height);
+                rd.drawImage(vignetteImage, left, top, right - left, bottom - top, null);
+            } finally {
+                rd.setTransform(before);
+                rd.setComposite(composite);
+                if (interpolation != null) {
+                    rd.setRenderingHint(RenderingHints.KEY_INTERPOLATION, interpolation);
+                }
+            }
+        }
+    }
+
+    /** The software vignette: black, as dark at each place as Shaders.VIGNETTE_FS makes it at full strength. */
+    private static BufferedImage vignettePicture() {
+        int width = 192;
+        int height = 108;
+        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                double edge = Math.hypot((x + 0.5D) / width * 2D - 1D, (y + 0.5D) / height * 2D - 1D);
+                double t = Math.max(0D, Math.min(1D, (edge - 0.55D) / (1.4D - 0.55D)));
+                int alpha = (int) Math.round(t * t * (3D - 2D * t) * 255D);
+                image.setRGB(x, y, alpha << 24);
+            }
+        }
+        return image;
+    }
+
+    /**
      * Records the scene kept for the countdown's first frames (in split
      * screen both panes, as its frames record them), with the HUD layer as it
      * stands, and makes it ready for the card, for the next picture shown to
@@ -4282,6 +4535,7 @@ public class GameSparker extends Panel implements Runnable {
             gpuSceneHudVersion = ownHudVersion;
         }
         gpuSceneFlash = pendingWhiteFlash;
+        System.arraycopy(frameVignette, 0, gpuSceneVignette, 0, gpuSceneVignette.length);
         if (pendingWhiteFlash) {
             rd.setColor(new Color(255, 255, 255));
             pendingWhiteFlash = false;
@@ -4318,6 +4572,7 @@ public class GameSparker extends Panel implements Runnable {
         }
         try {
             replayScene(shownRecorder);
+            drawVignette(gpuSceneVignette);
             if (gpuSceneHud != null) {
                 rd.drawImage(gpuSceneHud, 0, 0, GameFacts.screenWidth, GameFacts.screenHeight, null);
             }
@@ -4342,22 +4597,25 @@ public class GameSparker extends Panel implements Runnable {
      */
     private boolean presentOnGpu(boolean capture) {
         return showOnGpu(capture, gpuSceneFrame ? shownRecorder.list() : null, null, gpuSceneHud,
-                gpuSceneFrame ? gpuSceneVersion : -1L, gpuSceneHudVersion, gpuSceneFlash, false, frameMotionNanos,
-                frameChosenNanos);
+                gpuSceneFrame ? gpuSceneVersion : -1L, gpuSceneHudVersion, gpuSceneFlash,
+                gpuSceneFrame ? gpuSceneVignette : null, false, frameMotionNanos, frameChosenNanos);
     }
 
     /**
      * Shows a frame through the graphics card: the 3D {@code scene} with the
      * {@code hud} on top (with the same {@code version} of a kept scene, the
      * HUD is not uploaded again and its polygons are cut as before; -1 for
-     * a frame drawn anew) and the white {@code flash}, or with no scene the
+     * a frame drawn anew), the helmet cam's darkened edges {@code vignette}
+     * (see GpuDisplay#setVignette, null for none) and the white
+     * {@code flash}, or with no scene the
      * game thread's picture. A frame the {@code presenter} draws on its own
      * never falls back to the picture. The frame shows the race as it was at
      * {@code motionNanos}, chosen at {@code chosenNanos} (see FrameLog.shown).
      */
     private boolean showOnGpu(boolean capture, nfm.lit.gpu.SceneList scene, nfm.lit.gpu.ProjectedScene[] projected,
             BufferedImage hud, long version,
-            long hudVersion, boolean flash, boolean presenterFrame, long motionNanos, long chosenNanos) {
+            long hudVersion, boolean flash, float[] vignette, boolean presenterFrame, long motionNanos,
+            long chosenNanos) {
         if (gpu == null && presenterFrame) {
             return false;
         }
@@ -4412,6 +4670,7 @@ public class GameSparker extends Panel implements Runnable {
                     float scale = dynamicResolution == 0 ? 1F : resolution.scale();
                     Rectangle drawnPlace = drawnPlace(place, width);
                     Dimension target = sceneTargetSize(drawnPlace, gpu.maxTextureSize());
+                    gpu.setVignette(vignette);
                     boolean drawn = gpu.drawScene(scene, projected, hud, version, hudVersion, flash, capture, target,
                             scale, hudArea(places.canvas(), place));
                     multisampleInUse = gpu.multisample();
@@ -7928,6 +8187,7 @@ public class GameSparker extends Panel implements Runnable {
                     }
                     shownRecorder = sceneRecorder;
                     gpuSceneVersion = -1L;
+                    clearVignette(frameVignette);
                     if (splitFrame != null && SplitRace.pictureSplit) {
                         aheadValid = false;
                         if (!drawRetained(splitFrame, false, renderAlpha)) {
@@ -7963,6 +8223,7 @@ public class GameSparker extends Panel implements Runnable {
                     if (gpuSceneFrame) {
                         finishGpuScene();
                     } else {
+                        drawVignette(frameVignette);
                         if (hudImage != null) {
                             rd.drawImage(hudImage, 0, 0, GameFacts.screenWidth, GameFacts.screenHeight, null);
                         }
@@ -8307,7 +8568,9 @@ public class GameSparker extends Panel implements Runnable {
 
         @Override
         public BufferedImage frame() {
+            clearVignette(frameVignette);
             renderIngameScene(1F);
+            drawVignette(frameVignette);
             if (hudImage != null) {
                 rd.drawImage(hudImage, 0, 0, GameFacts.screenWidth, GameFacts.screenHeight, null);
             }

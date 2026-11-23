@@ -81,6 +81,16 @@ final class FramePose {
         clampCamera();
     }
 
+    /** The camera moved on by fractions of its whole values (a helmet cam's exact place, see PoseSpan). */
+    void shiftCamera(float dx, float dy, float dz, float dxz, float dzy) {
+        camX += dx;
+        camY += dy;
+        camZ += dz;
+        camXZ += dxz;
+        camZY += dzy;
+        clampCamera();
+    }
+
     /** As {@code Medium.clampView} keeps it: never below the ground nor past straight up or down. */
     private void clampCamera() {
         if (camY > 0D) {

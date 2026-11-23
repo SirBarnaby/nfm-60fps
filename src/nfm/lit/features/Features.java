@@ -22,6 +22,7 @@ public final class Features {
         new nfm.lit.features.skidmarks.SkidZonesFeature(),
         new nfm.lit.features.wingtrail.WingTrailFeature(),
         new nfm.lit.features.realism.RealismFeature(),
+        nfm.lit.features.helmetcam.HelmetCam.FEATURE,
     };
 
     private static final boolean[] active = new boolean[ALL.length];

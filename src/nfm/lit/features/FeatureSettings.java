@@ -134,8 +134,9 @@ public final class FeatureSettings {
                         + LOOK_1_0,
                 "xtrareal", Kind.LOOK, 0, "Off", "On"),
         new Switch("helmetcam", "Helmet cam",
-                "Adds a view from the driver's helmet to the views you cycle through, with the cockpit around you"
-                        + " and the g-forces felt in the head." + LOOK_1_0,
+                "Adds a view from the driver's helmet after the others on the view key: the road over the bonnet,"
+                        + " the head thrown by braking, corners and landings, the edges darker under hard g-forces."
+                        + LOOK_1_0,
                 "xtrahelmet", Kind.LOOK, 0, "Off", "On"),
         new Switch("enginesound", "Rebuilt engine sound",
                 "With the 3D sound: engines, exhausts and tyres rebuilt from the game's own recordings, grain by"

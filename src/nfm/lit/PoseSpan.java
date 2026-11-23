@@ -36,6 +36,10 @@ final class PoseSpan {
     /* x, y, z, xz, zy */
     final int[] cameraStart = new int[5];
     final int[] cameraEnd = new int[5];
+    /* how far past cameraStart and cameraEnd the camera really is (a helmet cam's exact place); zero for the game's own */
+    final float[] cameraStartFraction = new float[5];
+    final float[] cameraEndFraction = new float[5];
+    boolean cameraFractions;
 
     /** When the stretch starts and how long it lasts, as System.nanoTime. */
     long startNanos;
@@ -86,6 +90,9 @@ final class PoseSpan {
         cameraMode = o.cameraMode;
         System.arraycopy(o.cameraStart, 0, cameraStart, 0, 5);
         System.arraycopy(o.cameraEnd, 0, cameraEnd, 0, 5);
+        System.arraycopy(o.cameraStartFraction, 0, cameraStartFraction, 0, 5);
+        System.arraycopy(o.cameraEndFraction, 0, cameraEndFraction, 0, 5);
+        cameraFractions = o.cameraFractions;
         startNanos = o.startNanos;
         lengthNanos = o.lengthNanos;
         moving = o.moving;
@@ -138,11 +145,26 @@ final class PoseSpan {
                 out.car(i, s[0][i], s[1][i], s[2][i], s[3][i], s[4][i], s[5][i], s[6][i], s[7][i]);
             }
         }
-        if (between && cameraMode == MOVING) {
+        boolean cameraMoving = between && cameraMode == MOVING;
+        if (cameraMoving) {
             out.camera(alpha, cameraStart[0], cameraStart[1], cameraStart[2], cameraStart[3], cameraStart[4],
                     cameraEnd[0], cameraEnd[1], cameraEnd[2], cameraEnd[3], cameraEnd[4]);
         } else {
             out.camera(cameraEnd[0], cameraEnd[1], cameraEnd[2], cameraEnd[3], cameraEnd[4]);
         }
+        if (cameraFractions) {
+            float[] a = cameraStartFraction;
+            float[] b = cameraEndFraction;
+            float t = cameraMoving ? alpha : 1F;
+            out.shiftCamera(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t,
+                    a[3] + (b[3] - a[3]) * t, a[4] + (b[4] - a[4]) * t);
+        }
+    }
+
+    /** The camera's start and end are the game's own, at whole values. */
+    void wholeCamera() {
+        cameraFractions = false;
+        java.util.Arrays.fill(cameraStartFraction, 0F);
+        java.util.Arrays.fill(cameraEndFraction, 0F);
     }
 }
