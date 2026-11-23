@@ -1,7 +1,7 @@
 # Effects
 
 ## Purpose
-Effects that show what the cars are doing: skidmarks and the Radical One's wing trail.
+Effects that show what the cars are doing: skidmarks and the Radical One's wing trail. They change the look, so until 1.0 they stay switched off by default (see Release 1.0).
 
 ## Requirements
 
@@ -67,3 +67,17 @@ The Radical One SHALL show a slight trail from its wing while it is in mid-air a
 #### Scenario: Check: steering in the air
 - **WHEN** the Radical One is in the air and the player steers it
 - **THEN** its wing leaves a slight trail, and there is none on the ground or in the air without steering
+
+### Requirement: Last race's skid zones can be shown
+A toggle SHALL make the places where there were the most skidmarks in the last race somewhat visible. While a race runs, each stage keeps a coarse grid of how much sliding happened where, saved when the race ends; the next time on that stage, the heaviest zones show as a faint darker tone on the road. The toggle is off by default. (Owner, 2026-11-23: extras brief "Perhaps a toggle also", then "Keep those in also".)
+
+#### Scenario: Check: second race on a stage
+- **WHEN** the toggle is on and the player races a stage they raced before
+- **THEN** the zones where most sliding happened last time show faintly darker, and with the toggle off they do not show
+
+### Requirement: The wing trail looks like vapour
+The Radical One's wing trail SHALL look like vapour: thin white streams from both wing tips, like wing-tip vortices, spreading and fading within about a second. It follows the car's smooth drawn position, so it does not step. (Owner, 2026-11-23: kept the suggested "Vapour" look with "Keep those in also".)
+
+#### Scenario: Check: the trail's look
+- **WHEN** the Radical One's wing trail shows
+- **THEN** it is thin white streams from both wing tips that spread and fade within about a second, without steps
