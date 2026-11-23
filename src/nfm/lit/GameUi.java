@@ -2886,9 +2886,11 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             }
             return false;
         }
-        int tick = world.ticksSinceGo - 1; // the tick just run, 0 at Go!
-        int wait = CustomGame.launchGroup(0, cars) * gap - tick;
-        int number = wait <= 0 ? 0 : (wait + gap - 1) / gap; // the seconds left; 0 is Go!
+        int tick = world.ticksSinceGo - 1; // the tick just run: 0 the first after Go!, -1 on Go!'s own frame
+        int launch = CustomGame.launchGroup(0, cars); // the player's wait in seconds, counted from Go!
+        int wait = launch * gap - tick;
+        // the seconds left, 0 for Go!; never more than the whole wait, which Go!'s own frame would round up past
+        int number = wait <= 0 ? 0 : Math.min((wait + gap - 1) / gap, launch);
         if (number > 3) {
             drawcs(LAUNCH_CAPTION_Y, "Group " + CustomGame.groupsGone(cars, tick) + " of " + groups
                     + " is off. You go in " + number, 0, 0, 100, 0);
