@@ -15,7 +15,8 @@ import java.util.Arrays;
  * cut into triangles that fill what Java2D's even-odd rule does, one crossing
  * itself in bands between its corners and crossings; in a kept scene placed
  * on the card, whose corners move after it is cut, the points where bands
- * meet edges move along with them. Only a polygon with very many corners, or
+ * meet edges move along with them, and those where edges cross go where they
+ * cross in each frame. Only a polygon with very many corners, or
  * one placed on the card that is flat when it is cut, uses the stencil
  * buffer: its fan of triangles flips the stencil, and a second pass colours
  * where it ended up odd.
@@ -474,6 +475,10 @@ final class SceneGeometry {
      */
     private double[] levels = new double[64];
     private int levelCount;
+    /* where two edges cross (crossCount of them, see scanEdges): its height, and the two edges, two ints each */
+    private double[] crossY = new double[32];
+    private int[] crossEdges = new int[64];
+    private int crossCount;
     private int[] spans = new int[16];
     private double[] spanX = new double[16];
 
@@ -482,7 +487,8 @@ final class SceneGeometry {
      * once: true if none of them meet, so it has an inside and an outside
      * (as {@link #isSimple}). For a polygon {@link #bandFill} may cut, it
      * also puts the heights it is cut at into {@link #levels}: every
-     * corner's, then every height where two edges cross (not just touch).
+     * corner's, then every height where two edges cross (not just touch),
+     * and those crossings into {@link #crossY} with their edges.
      * The ear clipper and the bands each took a pass over the pairs of their
      * own, and most polygons that reach this cross themselves.
      */
@@ -494,7 +500,12 @@ final class SceneGeometry {
         if (levels.length < most) {
             levels = new double[most];
         }
+        if (crossY.length < most - n) {
+            crossY = new double[most - n];
+            crossEdges = new int[2 * (most - n)];
+        }
         int count = 0;
+        int crossings = 0;
         for (int k = 0; k < n; k++) {
             levels[count++] = py[k];
         }
@@ -513,13 +524,19 @@ final class SceneGeometry {
                 if (crosses(sa, sb, sc, sd)) {
                     // a cut at that height; edges that only touch meet at a corner, whose height is a cut anyway
                     simple = false;
-                    levels[count++] = py[i] + sa / (sa - sb) * ((double) py[i1] - py[i]);
+                    double y = py[i] + sa / (sa - sb) * ((double) py[i1] - py[i]);
+                    levels[count++] = y;
+                    crossY[crossings] = y;
+                    crossEdges[2 * crossings] = i;
+                    crossEdges[2 * crossings + 1] = j;
+                    crossings++;
                 } else if (simple && touches(sa, sb, sc, sd, px[i], py[i], px[i1], py[i1], px[j], py[j], px[j1], py[j1])) {
                     simple = false;
                 }
             }
         }
         levelCount = count;
+        crossCount = crossings;
         return simple;
     }
 
@@ -639,6 +656,13 @@ final class SceneGeometry {
     private int[] linePoint = new int[128];
     private double[] lineX = new double[128];
     private float[] lineAlong = new float[128];
+    /*
+     * for an edge's point where it crosses another edge, that edge's point on the same cut (its place), else -1; and
+     * how far along the first of the two it may go, where that edge meets the cuts above and below
+     */
+    private int[] lineCross = new int[128];
+    private float[] lineLow = new float[128];
+    private float[] lineHigh = new float[128];
     private int[] piece = new int[32];
     /* each edge's lowest and highest corner height */
     private float[] edgeLow = new float[16];
@@ -656,6 +680,16 @@ final class SceneGeometry {
      * lying between them came off the cut as the corners moved: a crack a
      * frame, a pixel high, across a road whose far corner was thousands of
      * pixels off the screen.
+     * <p>
+     * Where two edges cross, each has a point on the cut there, and the
+     * pieces above and below run through both. Placed as shares of the way
+     * along their edges, the two drift apart as the corners move, since the
+     * edges then cross somewhere else, and the pieces filled past the
+     * outline by as much: both are placed where the edges cross in each
+     * frame ({@link #ROLE_CROSS}), kept on the first edge between where it
+     * meets the cuts above and below, so a crossing of two edges that are
+     * almost parallel, which slides a long way as they move, cannot fold
+     * the pieces either side over each other.
      */
     private void bandsOnCard(int n, int count) {
         if (lineY.length < count) {
@@ -685,6 +719,9 @@ final class SceneGeometry {
                 linePoint = Arrays.copyOf(linePoint, 2 * (points + n));
                 lineX = Arrays.copyOf(lineX, linePoint.length);
                 lineAlong = Arrays.copyOf(lineAlong, linePoint.length);
+                lineCross = Arrays.copyOf(lineCross, linePoint.length);
+                lineLow = Arrays.copyOf(lineLow, linePoint.length);
+                lineHigh = Arrays.copyOf(lineHigh, linePoint.length);
             }
             double y = lineY[c];
             lineStart[c] = points;
@@ -700,6 +737,7 @@ final class SceneGeometry {
                 }
             }
             lineCount[c] = points - lineStart[c];
+            markCrossings(n, c, cuts);
         }
         if (piece.length < 2 * n) { // up to n points on each of its two cuts
             piece = new int[2 * n];
@@ -740,6 +778,52 @@ final class SceneGeometry {
         linePoint[at] = code;
         lineAlong[at] = along;
         return end + 1;
+    }
+
+    /**
+     * Pairs the points on cut {@code c} (of {@code cuts}) of two edges that
+     * cross at its height (one that rounds to it), for {@link #pointVertex}
+     * to place both where the edges cross, along the first between where it
+     * meets the cuts either side.
+     */
+    private void markCrossings(int n, int c, int cuts) {
+        int start = lineStart[c];
+        int end = start + lineCount[c];
+        Arrays.fill(lineCross, start, end, -1);
+        float y = (float) lineY[c];
+        for (int t = 0; t < crossCount; t++) {
+            if ((float) crossY[t] != y) {
+                continue;
+            }
+            int first = crossEdges[2 * t]; // the lower numbered: scanEdges pairs edge i with a later j
+            int a = place(start, end, n + first);
+            int b = place(start, end, n + crossEdges[2 * t + 1]);
+            if (a >= 0 && b >= 0 && lineCross[a] < 0 && lineCross[b] < 0) {
+                lineCross[a] = b;
+                lineCross[b] = a;
+                float above = c > 0 ? share(n, first, lineY[c - 1]) : 0F;
+                float below = c + 1 < cuts ? share(n, first, lineY[c + 1]) : 1F;
+                lineLow[a] = lineLow[b] = Math.min(above, below);
+                lineHigh[a] = lineHigh[b] = Math.max(above, below);
+            }
+        }
+    }
+
+    /** How far along edge k height {@code y} is, 0 at its first corner and 1 at the next, kept within those. */
+    private float share(int n, int k, double y) {
+        int next = k + 1 < n ? k + 1 : 0;
+        double along = (y - py[k]) / ((double) py[next] - py[k]);
+        return (float) Math.max(0D, Math.min(1D, along));
+    }
+
+    /** Where point {@code code} is among the places from {@code start} to {@code end}, -1 if it is not there. */
+    private int place(int start, int end, int code) {
+        for (int q = start; q < end; q++) {
+            if (linePoint[q] == code) {
+                return q;
+            }
+        }
+        return -1;
     }
 
     /**
@@ -824,7 +908,25 @@ final class SceneGeometry {
         }
         int a = code - n;
         int b = a + 1 < n ? a + 1 : 0;
+        int other = lineCross[q];
+        if (other >= 0) {
+            // both edges' points here as one: the first edge's corners, then the second's, in the same order for both
+            int first = Math.min(a, linePoint[other] - n);
+            int second = Math.max(a, linePoint[other] - n);
+            int firstNext = first + 1 < n ? first + 1 : 0;
+            int secondNext = second + 1 < n ? second + 1 : 0;
+            if (onePoint(first) && onePoint(firstNext) && onePoint(second) && onePoint(secondNext)) {
+                projectedVertex(lineLow[q], lineHigh[q], refX[first], refX[firstNext], refX[second], refX[secondNext],
+                        ROLE_CROSS);
+                return;
+            }
+        }
         projectedVertex(lineAlong[q], 0F, refX[a], refY[a], refX[b], refY[b], ROLE_ALONG);
+    }
+
+    /** True if corner k takes its x and y from the same point, as {@link #ROLE_CROSS} needs. */
+    private boolean onePoint(int k) {
+        return refX[k] == refY[k];
     }
 
     /**
@@ -1121,14 +1223,17 @@ final class SceneGeometry {
     /*
      * Roles of a vertex placed on the card (see Shaders.PROJECTED_VS): a
      * polygon's corner, a fixed position, a point a share of the way along
-     * the edge between two corners (the share in the position's x), or one
-     * of the four corners of a one-pixel line's parallelogram (ROLE_SEGMENT +
-     * 0..3), plain or antialiased, which the shader works out from the line's
-     * two ends.
+     * the edge between two corners (the share in the position's x), where
+     * two edges cross (their four corners, each one point for x and y; how
+     * far along the first it may go, from x to y), or one of the four
+     * corners of a one-pixel line's
+     * parallelogram (ROLE_SEGMENT + 0..3), plain or antialiased, which the
+     * shader works out from the line's two ends.
      */
     static final int ROLE_FILL = 0;
     static final int ROLE_FIXED = 1;
     static final int ROLE_ALONG = 2;
+    static final int ROLE_CROSS = 3;
     static final int ROLE_SEGMENT = 10;
     static final int ROLE_SMOOTH = 20;
 
