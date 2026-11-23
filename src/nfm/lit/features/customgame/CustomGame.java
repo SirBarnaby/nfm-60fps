@@ -54,6 +54,14 @@ public final class CustomGame {
     /** How many of each car the Custom lineup brings, by car. */
     private static final int[] picks = new int[GameFacts.numberOfCars];
 
+    /*
+     * the choices the race being set up is made from, fixed with its field (fixField): the page or the console can
+     * change the choices from then on, and that is for the next race, never for the cars, the recording or the check
+     */
+    private static int fieldRivals = CLASSIC_RIVALS;
+    private static int fieldLineup = LINEUP_DEFAULT;
+    private static final int[] fieldPicks = new int[GameFacts.numberOfCars];
+
     /* which choices were changed since they were last saved: only those are saved, so a choice given for one run is not */
     private static volatile boolean rivalsChanged;
     private static volatile boolean lineupChanged;
@@ -123,6 +131,34 @@ public final class CustomGame {
         picksChanged = true;
         setLineup(LINEUP_CUSTOM);
         return true;
+    }
+
+    /**
+     * Fixes the next race's choices as they are now, when its field is made
+     * ({@code GameUi.carspergame}), and gives its computer cars. Its cars,
+     * its recording and the hidden test's check use these, whatever is
+     * changed afterwards.
+     */
+    public static int fixField() {
+        fieldRivals = rivals;
+        fieldLineup = lineup;
+        System.arraycopy(picks, 0, fieldPicks, 0, picks.length);
+        return fieldCars();
+    }
+
+    /** The computer cars of the race being set up (see {@link #fixField}). */
+    public static int fieldCars() {
+        return fieldLineup == LINEUP_CUSTOM ? Arrays.stream(fieldPicks).sum() : fieldRivals;
+    }
+
+    /** The lineup of the race being set up (see {@link #fixField}). */
+    public static int fieldLineup() {
+        return fieldLineup;
+    }
+
+    /** How many of {@code car} the race being set up brings with the Custom lineup (see {@link #fixField}). */
+    public static int fieldPicks(int car) {
+        return fieldPicks[car];
     }
 
     /** Takes every car out of the Custom lineup. */
@@ -231,9 +267,13 @@ public final class CustomGame {
 
     /** The Custom lineup's counts as saved: one per car, comma separated. */
     static String picksText() {
+        return countsText(picks);
+    }
+
+    private static String countsText(int[] counts) {
         StringBuilder b = new StringBuilder();
-        for (int i = 0; i < picks.length; i++) {
-            b.append(i == 0 ? "" : ",").append(picks[i]);
+        for (int i = 0; i < counts.length; i++) {
+            b.append(i == 0 ? "" : ",").append(counts[i]);
         }
         return b.toString();
     }
@@ -308,11 +348,12 @@ public final class CustomGame {
     /* ========================================================== recorded */
 
     /**
-     * The choices this race is played with, as a recorded race keeps them
+     * The choices this race is played with, fixed with its field (see
+     * {@link #fixField}), as a recorded race keeps them
      * ({@code rivals;lineup;picks}), or empty if it is not a custom game's.
      */
     public static String recorded() {
-        return on ? rivals + ";" + lineup + ";" + picksText() : "";
+        return on ? fieldRivals + ";" + fieldLineup + ";" + countsText(fieldPicks) : "";
     }
 
     /**
@@ -324,6 +365,7 @@ public final class CustomGame {
         if (on) {
             String[] parts = recorded.split(";");
             set(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]), parts[2]);
+            fixField();
         }
     }
 
@@ -336,12 +378,13 @@ public final class CustomGame {
      * Default with six is exactly the classic game.
      */
     public static boolean classicPicks() {
-        return lineup == LINEUP_DEFAULT && rivals <= CLASSIC_RIVALS;
+        return fieldLineup == LINEUP_DEFAULT && fieldRivals <= CLASSIC_RIVALS;
     }
 
     /**
      * Fills {@code sc[1]} to {@code sc[cars - 1]} with the computer cars'
-     * cars, for any lineup but the classic game's own (see
+     * cars, by the choices fixed with the field ({@link #fixField}), for any
+     * lineup but the classic game's own (see
      * {@link #classicPicks}). The car in the highest slot starts at the
      * front of the grid, so the strongest go there: the Default lineup's
      * stage boss, DR Monstaa in Pro, the best car picked in Custom.
@@ -353,7 +396,7 @@ public final class CustomGame {
      */
     public static void pickCars(int[] sc, int cars, int stage, int unlocked, Random deck) {
         int last = cars - 1;
-        switch (lineup) {
+        switch (fieldLineup) {
             case LINEUP_NOVICE -> deal(sc, 1, last, range(0, LAST_NOVICE, -1), deck);
             case LINEUP_PRO -> {
                 // DR Monstaa at the front, then down the line; past Sword of Justice, from DR Monstaa again
@@ -365,7 +408,7 @@ public final class CustomGame {
                 // the best car picked at the front, the rest behind it in the car list's order, downward
                 int slot = last;
                 for (int car = GameFacts.numberOfCars - 1; car >= 0; car--) {
-                    for (int n = 0; n < picks[car] && slot >= 1; n++) {
+                    for (int n = 0; n < fieldPicks[car] && slot >= 1; n++) {
                         sc[slot--] = car;
                     }
                 }

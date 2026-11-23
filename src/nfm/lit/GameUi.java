@@ -722,7 +722,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             if (SplitRace.on) {
                 GameFacts.numberOfPlayers = 2 + SplitRace.rivals; // both players and the computer cars chosen
             } else if (CustomGame.on) {
-                GameFacts.numberOfPlayers = 1 + CustomGame.rivalsNow(); // the player and the computer cars chosen
+                GameFacts.numberOfPlayers = 1 + CustomGame.fixField(); // the player and the computer cars chosen
             } else if (!nplayers_debug) {
                 switch (checkpoints.stage) {
                     // case 2:
@@ -934,7 +934,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         }
         if (screen.frame(rd, control)) {
             fase = screen.backTo;
-            opselect = screen.backTo == Phase.PAUSEMENU ? PAUSE_SETTINGS : MENU_SETTINGS;
+            opselect = screen.backTo == Phase.PAUSEMENU ? PAUSE_SETTINGS : MENU_SPLIT; // as the classic game: Split Screen
         }
     }
 
@@ -3364,8 +3364,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                 }
             }
             if (split == null) {
-                int other = 1;
-                do {
+                for (int other = 1; other < GameFacts.numberOfPlayers; other++) { // none in a practice race
                     if (dested[other] != checkpoints.dested[other]) {
                         dested[other] = checkpoints.dested[other];
                         if (dested[other] == 1) {
@@ -3382,7 +3381,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                             }
                         }
                     }
-                } while (++other < GameFacts.numberOfPlayers);
+                }
             } else {
                 splitWasted(me, split, checkpoints);
             }

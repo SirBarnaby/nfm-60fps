@@ -6,6 +6,7 @@ import nfm.lit.audio.BASSLoader;
 import nfm.lit.audio.SoundManager;
 import nfm.lit.features.customgame.CustomGame;
 import nfm.lit.features.customgame.CustomGameCheck;
+import nfm.lit.features.customgame.CustomGameTest;
 import nfm.lit.features.customgame.StaggeredStart;
 import nfm.lit.gpu.GpuDisplay;
 import nfm.lit.gpu.NativeWindow;
@@ -2686,6 +2687,9 @@ public class GameSparker extends Panel implements Runnable {
 
         if (ui.starcnt == 0) {
             StaggeredStart.beforeDrive(world, u, GameFacts.numberOfPlayers); // a big custom game's groups not yet gone wait
+            if (launchWatch != null) {
+                launchWatch.beforeDrive(world.ticksSinceGo, u); // the hidden custom test (CustomGameCheck.Launches)
+            }
             int car = 0;
             do {
                 int other = 0;
@@ -2706,10 +2710,11 @@ public class GameSparker extends Panel implements Runnable {
             while (++car < GameFacts.numberOfPlayers);
             raceCheckpoints.checkstat(racers, sceneObjects, raceRecord, GameFacts.numberOfPlayers);
 
-            // This starts the AI code for all the cars (in split screen, from car 2: car 1 is Player 2's).
+            // This starts the AI code for all the cars (in split screen, from car 2: car 1 is Player 2's). None
+            // in a custom game's practice race: slot 1 is then no car of this race, and outside the race state.
             GameFacts.paceCar = paceCar();
             car = GameFacts.humans;
-            if (car == 1 || car < GameFacts.numberOfPlayers) {
+            if (car < GameFacts.numberOfPlayers) {
                 do {
                     if (StaggeredStart.drivesNext(world, car, GameFacts.numberOfPlayers)) {
                         u[car].preform(racers[car], sceneObjects[car], raceCheckpoints, raceTrackers,
@@ -6629,214 +6634,46 @@ public class GameSparker extends Panel implements Runnable {
         System.exit(0);
     }
 
-    /**
-     * The hidden test run plays a custom game instead:
-     * -Dnfm.autotest.custom=computer cars[,default|novice|pro|custom], or
-     * {@code saved} for the choices as the player left them; the custom
-     * game's switch is on for the run. Main menu, the custom game's page,
-     * the car and stage select, a race with screenshots (every second
-     * through a staggered start) that ends 30 seconds after the player's
-     * start in the post-race highlight (sooner if it is won or lost), the
-     * results, and the custom game's page again, from where Escape goes back
-     * to the main menu.
-     * <p>
-     * It fails, with exit code 1, if the race's field is not what the
-     * lineup brings, the player does not stand last, a car moves before its
-     * group's start or a group sets off more than 2 seconds after the one
-     * before (see {@link CustomGameCheck}), it skips the highlight, the
-     * results or the page after them, or it never gets through.
-     */
+    /** The hidden custom test, see {@link CustomGameTest}: -Dnfm.autotest.custom=computer cars[,lineup], or saved. */
     private static final String CUSTOM_TEST = System.getProperty("nfm.autotest.custom");
 
-    private void runCustomTest(File directory) {
-        String[] parts = CUSTOM_TEST.split(",");
-        if (!parts[0].trim().equals("saved")) {
-            CustomGame.forTest(Integer.parseInt(parts[0].trim()), parts.length > 1 ? parts[1] : null);
-        }
-        nfm.lit.features.FeatureSettings.set(nfm.lit.features.customgame.CustomGameFeature.ID, 1); // never saved: hidden
-        System.out.println("[autotest] custom game (" + CUSTOM_TEST + ") -> " + directory.getAbsolutePath());
-        long start = System.currentTimeMillis();
-        Phase lastPhase = null;
-        Phase pendingShot = null;
-        long settledAt = start;
-        long lastPress = 0L;
-        long lastShot = 0L;
-        long inGameMillis = 0L;
-        int shots = 0;
-        int step = 0;
-        long racingMillis = 0L;
-        CustomGameCheck.Launches launches = null;
-        boolean highlight = false;
-        boolean results = false;
-        String failed = null;
-        while (System.currentTimeMillis() - start < 240_000L + MENU_HOLD_MILLIS) {
-            try {
-                Thread.sleep(100L);
-            } catch (InterruptedException ex) {
-                return;
-            }
-            Phase phase = ui.fase;
-            long now = System.currentTimeMillis();
-            if (phase != lastPhase) {
-                System.out.println("[autotest] phase " + lastPhase + " -> " + phase + " at " + java.time.LocalTime.now());
-                if (phase == Phase.INGAME && step < 10) {
-                    int cars = GameFacts.numberOfPlayers;
-                    float[] z = new float[cars];
-                    for (int car = 0; car < cars; car++) {
-                        z[car] = sceneObjects[car].z;
-                    }
-                    String grid = CustomGameCheck.grid(z, cars, world.startGroups);
-                    String field = CustomGameCheck.field(ui.sc, cars, raceCheckpoints.stage, ui.unlocked);
-                    System.out.println("[autotest] custom race: " + cars + " cars, " + CustomGame.lineupText(
-                            CustomGame.lineup()) + ", " + (world.staggered() ? world.startGroups + " groups"
-                            : "all at once") + ", cars " + java.util.Arrays.toString(java.util.Arrays.copyOf(ui.sc,
-                            cars)) + ", player starts " + (grid == null ? "last" : "NOT last"));
-                    failed = failed != null ? failed : field != null ? field : grid;
-                    if (world.staggered()) {
-                        launches = new CustomGameCheck.Launches(cars, world.startGroups);
-                    }
-                    inGameMillis = 0L;
-                    step = 10;
-                }
-                if (phase == Phase.CAUGHTHIGHLIGHT || phase == Phase.GAMEHIGHLIGHT) {
-                    highlight = true;
-                }
-                if (phase == Phase.POSTGAME) {
-                    results = true;
-                }
-                lastPhase = phase;
-                settledAt = now;
-                pendingShot = phase;
-            }
-            if (pendingShot != null && now - settledAt >= 300L) {
-                saveFrame(directory, String.format("%02d-%s.png", shots++, phase.name().toLowerCase()));
-                pendingShot = null;
-            }
-            long held = now - settledAt;
-            clickPastLoading(phase, held);
-            switch (phase) {
-                case MAINMENU -> {
-                    if (step >= 30) {
-                        if (failed == null && launches != null) {
-                            failed = launches.problem();
-                        }
-                        if (failed == null && !highlight) {
-                            failed = "the race never went into the post-race highlight";
-                        }
-                        if (failed == null && !results) {
-                            failed = "the race never showed its results";
-                        }
-                        finishAutoTest(directory);
-                        if (failed != null) {
-                            System.out.println("[autotest] custom test FAILED: " + failed);
-                            System.exit(1);
-                        }
-                        System.out.println("[autotest] custom test done");
-                        System.exit(0);
-                    }
-                    if (step == 0 && held >= 600L + MENU_HOLD_MILLIS) {
-                        ui.opselect = GameUi.MENU_CUSTOM;
-                        pressEnter();
-                        step = 1;
-                        System.out.println("[autotest] custom game from the main menu");
-                    }
-                }
-                case CUSTOMGAME -> {
-                    if (step == 1 && held >= 700L) {
-                        ui.selectCustomGameRow("Their cars");
-                        step = 2;
-                    } else if (step == 2 && held >= 1500L) {
-                        saveFrame(directory, String.format("%02d-custom-game.png", shots++));
-                        ui.selectCustomGameRow("Race!");
-                        pressEnter();
-                        step = 3;
-                    } else if (step == 20 && held >= 1500L) {
-                        saveFrame(directory, String.format("%02d-custom-game-again.png", shots++));
-                        SettingsScreen.noteEscape();
-                        pressEnter();
-                        step = 30;
-                    }
-                }
-                case CARSELECT, STAGESELECT, PREGAME -> {
-                    if (now - lastPress > 700L && held >= 500L) {
-                        pressEnter();
-                        lastPress = now;
-                    }
-                }
-                case INGAME -> {
-                    inGameMillis += 100L;
-                    int cars = GameFacts.numberOfPlayers;
-                    if (launches != null && ui.starcnt == 0) {
-                        watchLaunches(launches, cars);
-                    }
-                    long cycle = inGameMillis % 4000L;
-                    boolean over = ui.raceOver();
-                    holdTestKeys(!over, !over && cycle > 3400L && cycle < 3700L, !over && cycle > 2200L && cycle < 2500L);
-                    boolean starting = ui.starcnt == 0 && StaggeredStart.playerWaiting(world, cars);
-                    if (now - lastShot >= (LIVE ? LIVE_SHOT_MILLIS : starting ? 1000L : 5000L)) {
-                        saveFrame(directory, String.format("%02d-race-%06dms.png", shots++, inGameMillis));
-                        lastShot = now;
-                    }
-                    if (ui.starcnt == 0 && !starting && !over) {
-                        racingMillis += 100L;
-                    }
-                    if (racingMillis >= 30_000L && step == 10) {
-                        autotestHighlightRequested = true;
-                        step = 11;
-                        if (launches != null) {
-                            System.out.println("[autotest] groups first seen setting off at ticks " + launches.describe());
-                        }
-                        System.out.println("[autotest] finishing the race into the post-race highlight");
-                    }
-                    if (over && held >= 1000L && now - lastPress > 1500L) {
-                        System.out.println("[autotest] race over, " + (ui.winner ? "won" : "lost"));
-                        pressEnter();
-                        lastPress = now;
-                    }
-                }
-                case CAUGHTHIGHLIGHT, GAMEHIGHLIGHT -> {
-                    holdTestKeys(false, false, false);
-                    if (now - lastShot >= (LIVE ? LIVE_SHOT_MILLIS : 2000L)) {
-                        saveFrame(directory, String.format("%02d-highlight.png", shots++));
-                        lastShot = now;
-                    }
-                }
-                case POSTGAME -> {
-                    holdTestKeys(false, false, false);
-                    if (held >= 1500L && now - lastPress > 1500L) {
-                        pressEnter();
-                        lastPress = now;
-                        step = 20;
-                    }
-                }
-                default -> {
-                }
-            }
-        }
-        // unlike the other tests, a custom test that never got through counts as failed: a dead game thread leaves
-        // the game standing on one screen, and that should not pass for a finished run
-        System.out.println("[autotest] custom test FAILED: ran out of time in " + ui.fase);
-        finishAutoTest(directory);
-        System.exit(1);
-    }
+    /** The custom test's watch on a staggered start, fed by the race tick (see CustomGameCheck.Launches); else null. */
+    private volatile CustomGameCheck.Launches launchWatch;
 
-    /**
-     * One sample of a staggered start for the custom test: the clock, then
-     * which cars are moving and which have their controls back from the
-     * hold, then the clock again (see CustomGameCheck.Launches).
-     */
-    private void watchLaunches(CustomGameCheck.Launches launches, int cars) {
-        int before = world.ticksSinceGo;
-        boolean[] moving = new boolean[cars];
-        boolean[] ownControls = new boolean[cars];
-        for (int car = 0; car < cars; car++) {
-            moving[car] = Math.abs(racers[car].speed) > 1F;
-            ownControls[car] = !StaggeredStart.holds(u[car]);
-        }
-        int after = world.ticksSinceGo;
-        for (int car = 0; car < cars; car++) {
-            launches.see(car, moving[car], ownControls[car], before, after);
-        }
+    /** Runs the hidden custom test through this game's own test helpers. */
+    private void runCustomTest(File directory) {
+        System.out.println("[autotest] screenshots -> " + directory.getAbsolutePath());
+        new CustomGameTest(CUSTOM_TEST, new CustomGameTest.Host() {
+            @Override public Phase phase() { return ui.fase; }
+            @Override public long menuHoldMillis() { return MENU_HOLD_MILLIS; }
+            @Override public long shotEvery(long usual) { return LIVE ? LIVE_SHOT_MILLIS : usual; }
+            @Override public void shot(String name) { saveFrame(directory, name); }
+            @Override public void clickPastLoading(Phase phase, long held) { GameSparker.this.clickPastLoading(phase, held); }
+            @Override public void pressEnter() { GameSparker.this.pressEnter(); }
+            @Override public void holdKeys(boolean up, boolean left, boolean right) { holdTestKeys(up, left, right); }
+            @Override public void chooseCustomGame() { ui.opselect = GameUi.MENU_CUSTOM; }
+            @Override public void selectRow(String label) { ui.selectCustomGameRow(label); }
+            @Override public void leavePage() { SettingsScreen.noteEscape(); }
+            @Override public int starcnt() { return ui.starcnt; }
+            @Override public boolean raceOver() { return ui.raceOver(); }
+            @Override public boolean won() { return ui.winner; }
+            @Override public void finishRace() { autotestHighlightRequested = true; }
+            @Override public World world() { return world; }
+            @Override public int[] field() { return java.util.Arrays.copyOf(ui.sc, GameFacts.numberOfPlayers); }
+            @Override public int stage() { return raceCheckpoints.stage; }
+            @Override public int unlocked() { return ui.unlocked; }
+            @Override public void watch(CustomGameCheck.Launches launches) { launchWatch = launches; }
+            @Override public void finish() { finishAutoTest(directory); }
+
+            @Override
+            public float[] gridZ() {
+                float[] z = new float[GameFacts.numberOfPlayers];
+                for (int car = 0; car < z.length; car++) {
+                    z[car] = sceneObjects[car].z;
+                }
+                return z;
+            }
+        }).run();
     }
 
     /** The arrows a test run holds down, as the keyboard holds them: the next race tick latches them. */
@@ -7736,6 +7573,9 @@ public class GameSparker extends Panel implements Runnable {
                 }
                 raceTicks++;
                 FeatureBridge.afterTick(racers, u, sceneObjects, raceTrackers, raceTicks); // real ticks only
+                if (launchWatch != null) {
+                    launchWatch.afterRealTick(world.ticksSinceGo, car -> Math.abs(racers[car].speed) > 1F);
+                }
 
                 if (session != null) {
                     session.ingameTickEnded();

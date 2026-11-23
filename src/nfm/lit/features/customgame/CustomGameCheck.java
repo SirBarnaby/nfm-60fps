@@ -2,15 +2,17 @@ package nfm.lit.features.customgame;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.IntPredicate;
+import nfm.lit.Control;
 import nfm.lit.GameFacts;
 
 /**
  * What the hidden custom test ({@code -Dnfm.autotest.custom}) holds a custom
  * race to, from what the race shows rather than from the rules that made
  * it: the field the lineup should bring, the player last on the grid, and
- * each group seen setting off in turn, never let go before its start and
- * at most two seconds after the group before. Each check gives what is
- * wrong, or null.
+ * each group setting off together, in turn, never before its start, at
+ * most two seconds after the group before, the player with the last. Each
+ * check gives what is wrong, or null.
  */
 public final class CustomGameCheck {
 
@@ -27,11 +29,11 @@ public final class CustomGameCheck {
      */
     public static String field(int[] sc, int cars, int stage, int unlocked) {
         int rivals = cars - 1;
-        if (rivals != CustomGame.rivalsNow()) {
-            return rivals + " computer cars where " + CustomGame.rivalsNow() + " were chosen";
+        if (rivals != CustomGame.fieldCars()) {
+            return rivals + " computer cars where " + CustomGame.fieldCars() + " were chosen";
         }
         int last = cars - 1;
-        switch (CustomGame.lineup()) {
+        switch (CustomGame.fieldLineup()) {
             case CustomGame.LINEUP_NOVICE -> {
                 int[] count = new int[GameFacts.numberOfCars];
                 for (int slot = 1; slot <= last; slot++) {
@@ -64,8 +66,8 @@ public final class CustomGameCheck {
                     count[sc[slot]]++;
                 }
                 for (int car = 0; car < GameFacts.numberOfCars; car++) {
-                    if (count[car] != CustomGame.picks(car)) {
-                        return "Custom brought " + count[car] + " of car " + car + " where " + CustomGame.picks(car)
+                    if (count[car] != CustomGame.fieldPicks(car)) {
+                        return "Custom brought " + count[car] + " of car " + car + " where " + CustomGame.fieldPicks(car)
                                 + " were picked";
                     }
                 }
@@ -111,81 +113,150 @@ public final class CustomGameCheck {
     }
 
     /**
-     * Watches a staggered start from the test's samples. A car whose group has
-     * not gone is still a car on the road, and one that is hit is pushed, so
-     * a computer car counts as setting off only when it moves with controls
-     * of its own, not the hold ({@link StaggeredStart#holds}). The player is
-     * held by the same code, but its keys are latched over the hold at the
-     * start of every tick, so its controls say nothing between ticks: it is
-     * only logged, and must be seen moving.
+     * Watches a staggered start on the game thread, tick by tick, in the real
+     * ticks only: the controls each car drives with, read just before the
+     * cars drive, where the physics takes them, and which cars are moving
+     * after the tick. A car whose group has not gone is still a car on the
+     * road, and one that is hit is pushed, so a start is read from the
+     * controls, never from movement: every car, the player's included, must
+     * drive with the hold ({@link StaggeredStart#holds}) on each tick before
+     * its group's start and with controls of its own on that tick, so the
+     * cars of a group go together and the player goes with the last group.
      * <p>
-     * Each sample reads the clock, then the cars, then the clock again. A
-     * held computer car's controls are the hold from the first tick after
-     * Go! until its AI takes over, on the tick before its group's start
-     * ({@link StaggeredStart#drivesNext}): one seen with controls of its own
-     * while the clock still shows an earlier tick was let go too soon, and
-     * the check can never say so wrongly.
+     * The run-ahead and the warm-up play race ticks too and put them back. A
+     * tick's controls are only taken in when the real tick that read them
+     * has run: {@link #afterRealTick} is called after the real tick alone, and
+     * keeps what {@link #beforeDrive} saw only if the race's clock has moved
+     * on from that tick by one.
      */
     public static final class Launches {
         private final int cars;
-        private final int[] firstSeen;
-        private int playerSeen = -1;
-        private String early;
+        private final int[] released;
+        private final int[] groupMoved;
+        private final boolean[] own;
+        private int seenTick = -1;
+        private int firstTick = -1;
+        private int lastTick = -1;
+        private int playerMoved = -1;
+        private String problem;
 
         public Launches(int cars, int groups) {
             this.cars = cars;
-            this.firstSeen = new int[groups];
-            Arrays.fill(firstSeen, -1);
+            this.released = new int[cars];
+            this.groupMoved = new int[groups];
+            this.own = new boolean[cars];
+            Arrays.fill(released, -1);
+            Arrays.fill(groupMoved, -1);
+        }
+
+        /** Game thread, in every race tick from Go! on (real or not), just before the cars drive with {@code u}. */
+        public void beforeDrive(int tick, Control[] u) {
+            for (int car = 0; car < cars; car++) {
+                own[car] = !StaggeredStart.holds(u[car]);
+            }
+            seenTick = tick;
         }
 
         /**
-         * Car {@code car} in a sample: whether it is moving, and whether its
-         * controls are its own rather than the hold, read after the clock said
-         * {@code before} ticks since Go! and before it said {@code after}.
+         * Game thread, after each real tick: takes in the controls
+         * {@link #beforeDrive} saw, if they were this tick's ({@code ticksSinceGo}
+         * one past theirs), with which cars are {@code moving} now.
          */
-        public void see(int car, boolean moving, boolean ownControls, int before, int after) {
-            int group = StaggeredStart.launchGroup(car, cars);
-            int takesOver = StaggeredStart.launchTick(group) - 1;
-            if (car != 0 && ownControls && before >= 1 && after < takesOver && early == null) {
-                early = "car " + car + " of group " + (group + 1) + " had its controls back by tick " + after
-                        + ", before its AI takes over on tick " + takesOver;
+        public synchronized void afterRealTick(int ticksSinceGo, IntPredicate moving) {
+            int tick = seenTick;
+            seenTick = -1;
+            if (tick < 0 || tick != ticksSinceGo - 1) {
+                return; // no drive this tick (the countdown), or what was seen was a tick put back
             }
-            if (!moving) {
-                return;
+            if (firstTick < 0) {
+                firstTick = tick;
+            } else if (tick != lastTick + 1 && problem == null) {
+                problem = "the watch missed ticks " + (lastTick + 1) + " to " + (tick - 1);
             }
-            if (car == 0) {
-                if (playerSeen < 0) {
-                    playerSeen = after;
+            lastTick = tick;
+            for (int car = 0; car < cars; car++) {
+                int group = StaggeredStart.launchGroup(car, cars);
+                int start = StaggeredStart.launchTick(group);
+                if (problem == null && tick < start && own[car]) {
+                    problem = who(car, group) + " drove tick " + tick + " with controls of its own, before its group's"
+                            + " start at tick " + start;
+                } else if (problem == null && tick == start && !own[car]) {
+                    problem = who(car, group) + " was still held on tick " + start + ", its group's start";
                 }
-            } else if (ownControls && firstSeen[group] < 0) {
-                firstSeen[group] = after;
+                if (own[car] && released[car] < 0) {
+                    released[car] = tick;
+                }
+                if (own[car] && moving.test(car)) {
+                    if (car == 0) {
+                        playerMoved = playerMoved < 0 ? tick : playerMoved;
+                    } else if (groupMoved[group] < 0) {
+                        groupMoved[group] = tick;
+                    }
+                }
             }
         }
 
-        /** The ticks each group was first seen setting off, for the log. */
-        public String describe() {
-            return Arrays.toString(firstSeen) + ", the player " + playerSeen;
+        private static String who(int car, int group) {
+            return car == 0 ? "the player" : "car " + car + " of group " + (group + 1);
+        }
+
+        /** Each group's start as seen (the tick its cars first drove with their own controls), and when it first moved. */
+        public synchronized String describe() {
+            StringBuilder b = new StringBuilder();
+            for (int g = 0; g < groupMoved.length; g++) {
+                b.append(g == 0 ? "" : ", ").append(groupStart(g)).append(" (moving ").append(groupMoved[g]).append(")");
+            }
+            return b + "; the player " + released[0] + " (moving " + playerMoved + ")";
+        }
+
+        /** The tick group {@code g}'s cars first drove with their own controls, if they all did on the same one; else -1. */
+        private int groupStart(int g) {
+            int start = -1;
+            for (int car = 1; car < cars; car++) {
+                if (StaggeredStart.launchGroup(car, cars) == g) {
+                    if (released[car] < 0 || start >= 0 && released[car] != start) {
+                        return -1;
+                    }
+                    start = released[car];
+                }
+            }
+            return start;
         }
 
         /** What is wrong with the start seen, or null; call once every group has gone. */
-        public String problem() {
-            if (early != null) {
-                return early;
+        public synchronized String problem() {
+            if (problem != null) {
+                return problem;
             }
-            for (int g = 0; g < firstSeen.length; g++) {
-                if (firstSeen[g] < 0) {
-                    return "group " + (g + 1) + " was never seen setting off";
+            if (firstTick != 0) {
+                return firstTick < 0 ? "the watch saw no tick of the race" : "the watch began at tick " + firstTick;
+            }
+            int last = StaggeredStart.launchTick(groupMoved.length - 1);
+            if (lastTick < last) {
+                return "the watch ended at tick " + lastTick + ", before the last group's start at tick " + last;
+            }
+            for (int g = 0; g < groupMoved.length; g++) {
+                int start = groupStart(g);
+                if (start < 0) {
+                    return "the cars of group " + (g + 1) + " did not all set off on one tick";
                 }
-                if (g > 0 && firstSeen[g] < firstSeen[g - 1]) {
-                    return "group " + (g + 1) + " set off before group " + g;
+                if (g > 0 && start <= groupStart(g - 1)) {
+                    return "group " + (g + 1) + " set off on tick " + start + ", not after group " + g;
                 }
-                if (g > 0 && firstSeen[g] - firstSeen[g - 1] > StaggeredStart.MOST_TICKS_APART) {
-                    return "group " + (g + 1) + " set off " + (firstSeen[g] - firstSeen[g - 1])
-                            + " ticks after group " + g + ", more than 2 seconds";
+                if (g > 0 && start - groupStart(g - 1) > StaggeredStart.MOST_TICKS_APART) {
+                    return "group " + (g + 1) + " set off " + (start - groupStart(g - 1)) + " ticks after group " + g
+                            + ", more than 2 seconds";
+                }
+                if (groupMoved[g] < 0) {
+                    return "no car of group " + (g + 1) + " ever moved";
                 }
             }
-            if (playerSeen < 0) {
-                return "the player was never seen moving";
+            if (released[0] != groupStart(groupMoved.length - 1)) {
+                return "the player set off on tick " + released[0] + ", the last group on tick "
+                        + groupStart(groupMoved.length - 1);
+            }
+            if (playerMoved < 0) {
+                return "the player never moved";
             }
             return null;
         }

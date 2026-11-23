@@ -14,12 +14,13 @@ What the owner asked for is in `openspec\specs\custom-game\spec.md`: up to 32 co
 | `CustomGame` | The choices (computer cars, lineup, picks), how they are saved (`customrivals`, `customlineup`, `custompicks`; only the ones changed) and typed (`-Dnfm.custom.*`), the cars each lineup brings, the string a recorded race keeps (RaceLog format 6), the result line and the `custom` console command. `CustomGame.on` is true from the page to the main menu, or for a recorded custom race. |
 | `StaggeredStart` | The grid of a big field, the groups and their start ticks, the cars held before their group goes, and what the HUD shows of the start. Its state is race state: `World.startGroups` and `World.ticksSinceGo`. |
 | `CustomGamePage` | The page's rows, laid out through `nfm.lit.features.Page` (the settings screen's box, keys and look). |
-| `CustomGameCheck` | What the hidden test holds a custom race to: the field each lineup brings, the player last on the grid, and each group seen setting off, never early, at most 2 seconds after the one before. |
+| `CustomGameCheck` | What the hidden test holds a custom race to: the field each lineup brings, the player last on the grid, and the start, watched on the game thread from the controls each car drives with: every car of a group on its group's tick, never before, at most 2 seconds after the group before, the player with the last group. |
+| `CustomGameTest` | The hidden test (`-Dnfm.autotest.custom`): the run from the main menu to the page again, through a small `Host` that `GameSparker` fills with its test helpers. ||
 
 ## The calls into it
 
-- `GameUi`: the main menu item (shown only with the switch on), the page (`SettingsScreen.page`), the car count (`carspergame`), the cars (`sortcars`), the staggered countdown and captions (`launchCountdown`), the result line, and no unlocks from a custom race.
-- `GameSparker`: the grid and `World.startGroups` in `loadstage`; `StaggeredStart.beforeDrive`, `drivesNext` and `afterDrive` in the race tick; the fly-by car; loading and saving the choices; `CustomGame.on` off at the main menu and the page again after the results; the frame log's `staggered start` part; and the hidden test (`runCustomTest`), next to the game's other hidden tests.
+- `GameUi`: the main menu item (shown only with the switch on), the page (`SettingsScreen.page`), the car count (`carspergame`, which fixes the race's choices: `CustomGame.fixField`), the cars (`sortcars`), the staggered countdown and captions (`launchCountdown`), the result line, and no unlocks from a custom race.
+- `GameSparker`: the grid and `World.startGroups` in `loadstage`; `StaggeredStart.beforeDrive`, `drivesNext` and `afterDrive` in the race tick; the fly-by car; loading and saving the choices; `CustomGame.on` off at the main menu and the page again after the results; the frame log's `staggered start` part; the hidden test's host (`runCustomTest`, the game's test helpers for `CustomGameTest`) and two calls in the race tick that feed its watch on the start.
 - `RaceSession`: the choices written into a recording and set up again before a recorded race is played.
 - `DevTool`: `custom`.
 

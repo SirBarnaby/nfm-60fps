@@ -10,6 +10,8 @@ The blind review of the custom game (`docs\reviews\2026-11-23-1604-81640e3.md`, 
 - `settings`: a choice given with `-Dnfm.custom.*` for one run was saved over the player's own when any other choice was edited.
 - `test\live.ps1 -Custom 32,pro` only worked through `powershell -File`: through `&` or `-Command` PowerShell bound it as the array `32 pro`, which the game then read as `32 pro`.
 
+The second blind review (`docs\reviews\2026-11-23-1744-ce5cd34.md`) found more, under the same requirements: a practice race ran the AI for an empty slot outside the race state (`code-health`, races deterministic and capturable); a console change during the car or stage select made a recording hold other choices than its field's; the start's check sampled from the test's thread, where a run-ahead tick can be read, and did not hold every car of a group or the player to its tick (`custom-game`, `done-and-testing`); leaving Settings moved the classic menu's choice (`release-1-0`); the hidden test's driver sat in `GameSparker` (`code-health`); the design stated gate results before they were run.
+
 ## What Changes
 
 - **`src\nfm\lit\features\customgame\`**, the custom game's own folder:
@@ -17,12 +19,14 @@ The blind review of the custom game (`docs\reviews\2026-11-23-1604-81640e3.md`, 
   - `CustomGame`: the choices, their saving (only the ones changed) and properties, the lineups, the recorded string, the result line and the `custom` console command.
   - `StaggeredStart`: the big grid, the groups, the held cars, the start's clock and what the HUD shows of it.
   - `CustomGamePage`: the page's rows, through a new `nfm.lit.features.Page` that the settings screen lays out (`SettingsScreen.page`), so a feature can have a page of its own in the settings' look.
-  - `CustomGameCheck`: what the hidden test holds a custom race to.
+  - `CustomGameCheck`: what the hidden test holds a custom race to, the start watched on the game thread.
+  - `CustomGameTest`: the hidden test itself, through a small host in `GameSparker`.
 - **The calls in the existing files** stay one call each where the game hands over (`carspergame`, `sortcars`, the grid, the race tick, the fly-by, the HUD's countdown, the results, the console, the recordings, loading and saving). The main menu shows Custom Game only with the switch on.
 - **The start.** A held computer car's AI runs from the tick before its group's start (`StaggeredStart.drivesNext`), so the whole group, the player's included, sets off on the same tick. A held car stays a car on the road: hit, it is pushed (said in the README).
 - **The hidden test fails** (exit code 1, `custom test FAILED: <why>`) on a field the lineup does not bring, a player not last, a computer car with its controls back before its group's start (a push is not a start), a group setting off more than 2 seconds (38 ticks) after the one before, a skipped highlight or results, or a run that does not get through. Each group's first movement is logged from what the race shows.
 - **The frame log** names the player's wait in a staggered start `staggered start`, a part of its own; `test\live.ps1` grades it as a race part and asks for it with 19 or more computer cars (a wait of 3 seconds or more).
 - **`test\live.ps1 -Custom`** takes the value as one string or several and checks it.
+- **The second review:** no AI for an empty slot; the choices fixed with the field (`CustomGame.fixField`); the start watched on the game thread; Split Screen chosen again after Settings, as in the classic game; the hidden test in the folder; the design's gate results stated as expected. With 9 or fewer computer cars the classic start is kept as it is (design decision 10).
 - **The archived `custom-game` change**: its design no longer says the full field was measured (task 5.4 is open), and task 5.4 names `test\live.ps1 -Split`.
 - **README, `docs\features\customgame.md`, `docs\solutions\custom-game-big-fields.md`**.
 

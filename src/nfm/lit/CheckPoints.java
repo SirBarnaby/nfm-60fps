@@ -116,12 +116,11 @@ class CheckPoints {
             }
         }
         wasted = 0;
-        int opponent = 1;
-        do {
+        for (int opponent = 1; opponent < ncars; opponent++) { // none in a custom game's practice race
             if (cars[opponent].dest) {
                 wasted++;
             }
-        } while (++opponent < ncars);
+        }
         if (catchfin != 0) {
             catchfin--;
             if (catchfin == 0) {

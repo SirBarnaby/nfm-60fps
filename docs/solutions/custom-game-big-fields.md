@@ -35,7 +35,15 @@ The race tick drives every car with the controls it has, then runs the AI (`Cont
 
 The hidden test samples the race from its own thread every 100 ms while the game thread runs ticks. To say when something first happened without ever saying it happened too early, read what you look for first (the cars' speeds) and the clock after (`World.ticksSinceGo`): the clock can only have moved on since. Check what the race shows, not what the rules say it should show: the first version logged each group's start from the same formula that held the cars, so it could never fail.
 
-But what the race shows has to be the thing asked about. The next version took a car's first movement for its start, and the 32-car Pro run failed: a car of the last group was pushed while it waited (a Pro field attacks a lot, `Control.attack`). A push is not a start. Look at what the start changes, the car's controls (`StaggeredStart.holds`), and read the clock before and after them, so you know the hold had been set and had not yet been let go by its own rule.
+But what the race shows has to be the thing asked about, read where the race decides it. The next version took a car's first movement for its start, and the 32-car Pro run failed: a car of the last group was pushed while it waited (a Pro field attacks a lot, `Control.attack`). A push is not a start. The version after read the controls from the test's thread, and the blind review pointed out that the run-ahead plays ticks ahead and puts them back, so a sample can catch a tick that never happened. The start is now watched on the game thread: the controls each car will drive with, just before the drive (`CustomGameCheck.Launches.beforeDrive`), taken in after a real tick only and only if the race's clock has moved on from them by one, which a tick put back never does.
+
+## A race with no computer car
+
+The classic AI loop is a do-while from car 1, so it ran once even in a race of one car, which the classic game never plays; a custom practice race does, and slot 1 is then a car of no race, outside the race state, which the AI changed and the run-ahead never put back. Loops over the computer cars start at 1 and must check the count first (`CheckPoints.checkstat`'s wasted count and the HUD's wasted messages were the same). Grep `= 1;` followed by `do` when a count can be smaller than the classic one.
+
+## The choices a race was made from
+
+The field's size is fixed at the car select (`GameUi.carspergame`), its cars at the stage's loading and its recording after it. The developer console can change the custom game's choices in between, so a recording that wrote the choices as they were at the end held a different race from the one played. Copy the choices once, where the field is fixed (`CustomGame.fixField`), and make the cars, the recording and the test's check from the copy.
 
 ## A feature switch that changes a menu
 

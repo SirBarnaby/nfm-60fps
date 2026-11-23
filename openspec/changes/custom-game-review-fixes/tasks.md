@@ -20,6 +20,17 @@
 ## 3. Gates
 
 - [ ] 3.1 `build.ps1 -Quick`; `test\verify-races.ps1`; `test\verify-races.ps1 -Features races -NoGolden`; `test\verify-sound.ps1`; `test\spec-check.ps1`
-- [ ] 3.2 Hidden custom runs with the switch off by default: 9 Default, 12 Novice, 20 Custom picks, 32 Pro; a 32-car race recorded and played back, with and without `-Rollback 7`
+- [ ] 3.2 Hidden custom runs with the switch off by default: 0 (a practice race), 9 Default, 12 Novice, 20 Custom picks, 32 Pro; the 0, 12 and 32-car races recorded and played back, with and without `-Rollback 7`; the plain hidden run's main menu after Settings
 - [ ] 3.3 `test\perf.ps1`; `test\live.ps1 -Custom 32,pro`, `test\live.ps1` and `test\live.ps1 -Split` on the owner's PC
 - [ ] 3.4 `test\blind-review.ps1 -Base <the commit before the custom game>`
+
+## 4. The second blind review (`docs\reviews\2026-11-23-1744-ce5cd34.md`)
+
+- [x] 4.1 A practice race runs no AI for slot 1, and its wasted counts leave slot 1 out
+- [x] 4.2 A race's choices are fixed with its field (`CustomGame.fixField`): cars, recording and check use them
+- [x] 4.3 The start is watched on the game thread, in real ticks, from the controls the cars drive with: every car of a group on one tick, the player with the last group
+- [x] 4.4 Leaving Settings puts the main menu's choice on Split Screen, as the classic game does
+- [x] 4.5 The hidden test in the folder (`CustomGameTest`), through a small host
+- [x] 4.6 The design states the gate results expected; tasks 3.1 and 3.2 hold the actual lines, from the revision they ran on
+
+Not changed, by design decision 10: with 9 or fewer computer cars the start is the classic one, its first-tick AI lag included.
