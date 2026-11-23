@@ -2864,11 +2864,17 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
      * under the classic countdown, which starts the front group, a line on
      * how the start goes; then, while the player waits, which group is off
      * and the seconds left, and for the last three the classic countdown's
-     * numbers, voice and Go! once more, for the player's own start.
+     * numbers, voice and Go! once more, for the player's own start. Only in
+     * the race itself: the warm-up plays race ticks on the screen before it
+     * (see GameSparker.warmUpWhileLoading), before the countdown has made
+     * the portrait.
      *
      * @param world the race, whose {@link World#ticksSinceGo} the start runs by
      */
     private void launchCountdown(World world, int me) {
+        if (fase != Phase.INGAME) {
+            return;
+        }
         int cars = GameFacts.numberOfPlayers;
         int gap = CustomGame.LAUNCH_GAP_TICKS;
         int groups = world.startGroups;
