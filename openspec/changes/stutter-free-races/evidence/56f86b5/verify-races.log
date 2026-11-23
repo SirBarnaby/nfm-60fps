@@ -1,0 +1,158 @@
+[verify] race-20261116-045234-684-stage12.nfmr: stage 12, 7 cars, 1120 ticks, finished (autopilot seed 1 race 1/17, intro skipped, unpaced, 2026-11-16 04:52)
+[verify]   OK: all 1120 ticks and their 24 sound commands match
+[verify]     15 values at the start of the countdown differed from the recording and were restored (the intro camera, or state left by earlier races): car0.model.dist, car1.model.dist, car2.model.dist, car3.model.dist, car4.model.dist, car5.model.dist, car6.model.dist, race.hud.aflk, camera.x, camera.y, camera.z, camera.xz, camera.zy, camera.vxz, camera.adv
+[verify]   frame after tick-0040: same
+[verify]   frame after tick-0399: same
+[verify]   frame after tick-0759: same
+[verify]   frame after tick-1119: same
+[verify] race-20261116-045245-353-stage10.nfmr: stage 10, 7 cars, 1501 ticks, quit (autopilot seed 1 race 2/17, replay at tick 696, unpaced, 2026-11-16 04:52)
+[verify]   OK: all 1501 ticks and their 19 sound commands match
+[verify]     14 values at the start of the countdown differed from the recording and were restored (the intro camera, or state left by earlier races): car0.model.dist, car1.model.dist, car2.model.dist, car3.model.dist, car4.model.dist, car5.model.dist, car6.model.dist, camera.x, camera.y, camera.z, camera.xz, camera.zy, camera.vxz, camera.adv
+[verify]   frame after tick-0040: same
+[verify]   frame after tick-0526: same
+[verify]   frame after tick-1013: same
+[verify]   frame after tick-1500: same
+[verify] race-20261116-045251-248-stage04.nfmr: stage 4, 7 cars, 1501 ticks, quit (autopilot seed 1 race 3/17, intro skipped, unpaced, 2026-11-16 04:52)
+[verify]   OK: all 1501 ticks and their 11 sound commands match
+[verify]     15 values at the start of the countdown differed from the recording and were restored (the intro camera, or state left by earlier races): car0.model.dist, car1.model.dist, car2.model.dist, car3.model.dist, car4.model.dist, car5.model.dist, car6.model.dist, race.hud.aflk, camera.x, camera.y, camera.z, camera.xz, camera.zy, camera.vxz, camera.adv
+[verify]   frame after tick-0040: same
+[verify]   frame after tick-0526: same
+[verify]   frame after tick-1013: same
+[verify]   frame after tick-1500: same
+[verify] race-20261116-045258-734-stage01.nfmr: stage 1, 7 cars, 1468 ticks, finished (autopilot seed 1 race 4/17, intro skipped, unpaced, 2026-11-16 04:52)
+[verify]   OK: all 1468 ticks and their 29 sound commands match
+[verify]     15 values at the start of the countdown differed from the recording and were restored (the intro camera, or state left by earlier races): car0.model.dist, car1.model.dist, car2.model.dist, car3.model.dist, car4.model.dist, car5.model.dist, car6.model.dist, race.hud.aflk, camera.x, camera.y, camera.z, camera.xz, camera.zy, camera.vxz, camera.adv
+[verify]   frame after tick-0040: same
+[verify]   frame after tick-0515: same
+[verify]   frame after tick-0991: same
+[verify]   frame after tick-1467: same
+[verify] race-20261116-045305-063-stage03.nfmr: stage 3, 7 cars, 1501 ticks, quit (autopilot seed 1 race 5/17, intro skipped, replay at tick 411, unpaced, 2026-11-16 04:52)
+[verify]   OK: all 1501 ticks and their 30 sound commands match
+[verify]     14 values at the start of the countdown differed from the recording and were restored (the intro camera, or state left by earlier races): car0.model.dist, car1.model.dist, car2.model.dist, car3.model.dist, car4.model.dist, car5.model.dist, car6.model.dist, camera.x, camera.y, camera.z, camera.xz, camera.zy, camera.vxz, camera.adv
+[verify]   frame after tick-0040: same
+[verify]   frame after tick-0526: same
+[verify]   frame after tick-1013: same
+[verify]   frame after tick-1500: same
+[verify] race-20261116-045309-625-stage09.nfmr: stage 9, 7 cars, 1501 ticks, quit (autopilot seed 1 race 6/17, intro skipped, unpaced, 2026-11-16 04:53)
+[verify]   OK: all 1501 ticks and their 20 sound commands match
+[verify]     15 values at the start of the countdown differed from the recording and were restored (the intro camera, or state left by earlier races): car0.model.dist, car1.model.dist, car2.model.dist, car3.model.dist, car4.model.dist, car5.model.dist, car6.model.dist, race.hud.aflk, camera.x, camera.y, camera.z, camera.xz, camera.zy, camera.vxz, camera.adv
+[verify]   frame after tick-0040: same
+[verify]   frame after tick-0526: same
+[verify]   frame after tick-1013: same
+[verify]   frame after tick-1500: same
+[verify] race-20261116-045315-492-stage14.nfmr: stage 14, 7 cars, 1501 ticks, quit (autopilot seed 1 race 7/17, intro skipped, unpaced, 2026-11-16 04:53)
+[verify]   OK: all 1501 ticks and their 14 sound commands match
+[verify]     15 values at the start of the countdown differed from the recording and were restored (the intro camera, or state left by earlier races): car0.model.dist, car1.model.dist, car2.model.dist, car3.model.dist, car4.model.dist, car5.model.dist, car6.model.dist, race.hud.aflk, camera.x, camera.y, camera.z, camera.xz, camera.zy, camera.vxz, camera.adv
+[verify]   frame after tick-0040: same
+[verify]   frame after tick-0526: same
+[verify]   frame after tick-1013: same
+[verify]   frame after tick-1500: same
+[verify] race-20261116-045322-653-stage06.nfmr: stage 6, 7 cars, 1501 ticks, quit (autopilot seed 1 race 8/17, replay at tick 377, unpaced, 2026-11-16 04:53)
+[verify]   OK: all 1501 ticks and their 20 sound commands match
+[verify]     15 values at the start of the countdown differed from the recording and were restored (the intro camera, or state left by earlier races): car0.model.dist, car1.model.dist, car2.model.dist, car3.model.dist, car4.model.dist, car5.model.dist, car6.model.dist, race.hud.aflk, camera.x, camera.y, camera.z, camera.xz, camera.zy, camera.vxz, camera.adv
+[verify]   frame after tick-0040: same
+[verify]   frame after tick-0526: same
+[verify]   frame after tick-1013: same
+[verify]   frame after tick-1500: same
+[verify] race-20261116-045325-819-stage17.nfmr: stage 17, 7 cars, 1501 ticks, quit (autopilot seed 1 race 9/17, intro skipped, unpaced, 2026-11-16 04:53)
+[verify]   OK: all 1501 ticks and their 10 sound commands match
+[verify]     15 values at the start of the countdown differed from the recording and were restored (the intro camera, or state left by earlier races): car0.model.dist, car1.model.dist, car2.model.dist, car3.model.dist, car4.model.dist, car5.model.dist, car6.model.dist, race.hud.aflk, camera.x, camera.y, camera.z, camera.xz, camera.zy, camera.vxz, camera.adv
+[verify]   frame after tick-0040: same
+[verify]   frame after tick-0526: same
+[verify]   frame after tick-1013: same
+[verify]   frame after tick-1500: same
+[verify] race-20261116-045328-617-stage11.nfmr: stage 11, 7 cars, 957 ticks, finished (autopilot seed 1 race 10/17, unpaced, 2026-11-16 04:53)
+[verify]   OK: all 957 ticks and their 25 sound commands match
+[verify]     15 values at the start of the countdown differed from the recording and were restored (the intro camera, or state left by earlier races): car0.model.dist, car1.model.dist, car2.model.dist, car3.model.dist, car4.model.dist, car5.model.dist, car6.model.dist, race.hud.aflk, camera.x, camera.y, camera.z, camera.xz, camera.zy, camera.vxz, camera.adv
+[verify]   frame after tick-0040: same
+[verify]   frame after tick-0345: same
+[verify]   frame after tick-0650: same
+[verify]   frame after tick-0956: same
+[verify] race-20261116-045331-245-stage07.nfmr: stage 7, 7 cars, 324 ticks, finished (autopilot seed 1 race 11/17, replay at tick 515, unpaced, 2026-11-16 04:53)
+[verify]   OK: all 324 ticks and their 16 sound commands match
+[verify]     15 values at the start of the countdown differed from the recording and were restored (the intro camera, or state left by earlier races): car0.model.dist, car1.model.dist, car2.model.dist, car3.model.dist, car4.model.dist, car5.model.dist, car6.model.dist, camera.x, camera.y, camera.z, camera.xz, camera.zy, camera.vxz, camera.adv, camera.vert
+[verify]   frame after tick-0040: same
+[verify]   frame after tick-0134: same
+[verify]   frame after tick-0228: same
+[verify]   frame after tick-0323: same
+[verify] race-20261116-045335-898-stage05.nfmr: stage 5, 7 cars, 1501 ticks, quit (autopilot seed 1 race 12/17, unpaced, 2026-11-16 04:53)
+[verify]   OK: all 1501 ticks and their 21 sound commands match
+[verify]     14 values at the start of the countdown differed from the recording and were restored (the intro camera, or state left by earlier races): car0.model.dist, car1.model.dist, car2.model.dist, car3.model.dist, car4.model.dist, car5.model.dist, car6.model.dist, camera.x, camera.y, camera.z, camera.xz, camera.zy, camera.vxz, camera.adv
+[verify]   frame after tick-0040: same
+[verify]   frame after tick-0526: same
+[verify]   frame after tick-1013: same
+[verify]   frame after tick-1500: same
+[verify] race-20261116-045340-893-stage13.nfmr: stage 13, 7 cars, 1501 ticks, quit (autopilot seed 1 race 13/17, intro skipped, unpaced, 2026-11-16 04:53)
+[verify]   OK: all 1501 ticks and their 20 sound commands match
+[verify]     15 values at the start of the countdown differed from the recording and were restored (the intro camera, or state left by earlier races): car0.model.dist, car1.model.dist, car2.model.dist, car3.model.dist, car4.model.dist, car5.model.dist, car6.model.dist, race.hud.aflk, camera.x, camera.y, camera.z, camera.xz, camera.zy, camera.vxz, camera.adv
+[verify]   frame after tick-0040: same
+[verify]   frame after tick-0526: same
+[verify]   frame after tick-1013: same
+[verify]   frame after tick-1500: same
+[verify] race-20261116-045347-543-stage15.nfmr: stage 15, 7 cars, 1501 ticks, quit (autopilot seed 1 race 14/17, intro skipped, replay at tick 486, unpaced, 2026-11-16 04:53)
+[verify]   OK: all 1501 ticks and their 12 sound commands match
+[verify]     15 values at the start of the countdown differed from the recording and were restored (the intro camera, or state left by earlier races): car0.model.dist, car1.model.dist, car2.model.dist, car3.model.dist, car4.model.dist, car5.model.dist, car6.model.dist, race.hud.aflk, camera.x, camera.y, camera.z, camera.xz, camera.zy, camera.vxz, camera.adv
+[verify]   frame after tick-0040: same
+[verify]   frame after tick-0526: same
+[verify]   frame after tick-1013: same
+[verify]   frame after tick-1500: same
+[verify] race-20261116-045352-343-stage08.nfmr: stage 8, 7 cars, 1501 ticks, quit (autopilot seed 1 race 15/17, intro skipped, unpaced, 2026-11-16 04:53)
+[verify]   OK: all 1501 ticks and their 26 sound commands match
+[verify]     15 values at the start of the countdown differed from the recording and were restored (the intro camera, or state left by earlier races): car0.model.dist, car1.model.dist, car2.model.dist, car3.model.dist, car4.model.dist, car5.model.dist, car6.model.dist, race.hud.aflk, camera.x, camera.y, camera.z, camera.xz, camera.zy, camera.vxz, camera.adv
+[verify]   frame after tick-0040: same
+[verify]   frame after tick-0526: same
+[verify]   frame after tick-1013: same
+[verify]   frame after tick-1500: same
+[verify] race-20261116-045353-295-stage02.nfmr: stage 2, 7 cars, 323 ticks, finished (autopilot seed 1 race 16/17, intro skipped, unpaced, 2026-11-16 04:53)
+[verify]   OK: all 323 ticks and their 10 sound commands match
+[verify]     15 values at the start of the countdown differed from the recording and were restored (the intro camera, or state left by earlier races): car0.model.dist, car1.model.dist, car2.model.dist, car3.model.dist, car4.model.dist, car5.model.dist, car6.model.dist, race.hud.aflk, camera.x, camera.y, camera.z, camera.xz, camera.zy, camera.vxz, camera.adv
+[verify]   frame after tick-0040: same
+[verify]   frame after tick-0134: same
+[verify]   frame after tick-0228: same
+[verify]   frame after tick-0322: same
+[verify] race-20261116-045359-938-stage16.nfmr: stage 16, 7 cars, 1501 ticks, quit (autopilot seed 1 race 17/17, replay at tick 756, unpaced, 2026-11-16 04:53)
+[verify]   OK: all 1501 ticks and their 18 sound commands match
+[verify]     14 values at the start of the countdown differed from the recording and were restored (the intro camera, or state left by earlier races): car0.model.dist, car1.model.dist, car2.model.dist, car3.model.dist, car4.model.dist, car5.model.dist, car6.model.dist, camera.x, camera.y, camera.z, camera.xz, camera.zy, camera.vxz, camera.adv
+[verify]   frame after tick-0040: same
+[verify]   frame after tick-0526: same
+[verify]   frame after tick-1013: same
+[verify]   frame after tick-1500: same
+[verify] race-20261116-045423-904-stage01.nfmr: stage 1, 7 cars, 3883 ticks, finished (autopilot seed 2 race 1/2, unpaced, 2026-11-16 04:54)
+[verify]   OK: all 3883 ticks and their 62 sound commands match
+[verify]     531 values at the start of the countdown differed from the recording and were restored (the intro camera, or state left by earlier races): car0.physics.forca, car0.physics.point, car0.driver.fpnt[1], car0.driver.fpnt[2], car0.driver.fpnt[3], car0.driver.hold, car0.model.dist, car1.physics.forca, car1.physics.point, car1.physics.shakedam, car1.driver.agressed, car1.driver.aim, car1.driver.avoidnlev, car1.driver.cntrn, car1.driver.flycnt, car1.driver.fpnt[1], ...
+[verify]     16 track values left by the stages loaded before differed from the recording and were restored (boundary-wall surfaces, and wall slots the AI still remembers from the last race)
+[verify]   frame after tick-0040: same
+[verify]   frame after tick-1320: same
+[verify]   frame after tick-2601: same
+[verify]   frame after tick-3882: same
+[verify] race-20261116-045428-284-stage11.nfmr: stage 11, 7 cars, 1008 ticks, finished (autopilot seed 2 race 2/2, intro skipped, replay at tick 1551, unpaced, 2026-11-16 04:54)
+[verify]   OK: all 1008 ticks and their 30 sound commands match
+[verify]     15 values at the start of the countdown differed from the recording and were restored (the intro camera, or state left by earlier races): car0.model.dist, car1.model.dist, car2.model.dist, car3.model.dist, car4.model.dist, car5.model.dist, car6.model.dist, camera.x, camera.y, camera.z, camera.xz, camera.zy, camera.vxz, camera.adv, camera.vert
+[verify]   frame after tick-0040: same
+[verify]   frame after tick-0362: same
+[verify]   frame after tick-0684: same
+[verify]   frame after tick-1007: same
+[verify] race-20261116-045548-547-stage16.nfmr: stage 16, 7 cars, 1301 ticks, quit (autopilot seed 3 race 1/1, real time, 2026-11-16 04:54)
+[verify]   OK: all 1301 ticks and their 24 sound commands match
+[verify]     227 values at the start of the countdown differed from the recording and were restored (the intro camera, or state left by earlier races): car0.physics.forca, car0.physics.point, car0.physics.shakedam, car0.driver.fpnt[0], car0.driver.fpnt[1], car0.model.dist, car1.physics.forca, car1.physics.point, car1.physics.shakedam, car1.physics.srfcnt, car1.driver.agressed, car1.driver.clrnce, car1.driver.cntrn, car1.driver.flycnt, car1.driver.fpnt[0], car1.driver.fpnt[1], ...
+[verify]   frame after tick-0040: same
+[verify]   frame after tick-0460: same
+[verify]   frame after tick-0880: same
+[verify]   frame after tick-1300: same
+[verify] 20 matched, 0 differed, 0 could not be run
+[verify] car select car-0: same
+[verify] car select car-0-1920x1080 as at 1280x720: same (7 pixels on edges a little lighter or darker)
+[verify] car select car-0-2560x1080 as at 1280x720: same (17 pixels on edges a little lighter or darker)
+[verify] car select car-0-2560x1440 as at 1280x720: same (17 pixels on edges a little lighter or darker)
+[verify] car select car-0-1280x960 as at 1280x720: same
+[verify] car select car-6: same
+[verify] car select car-6-1920x1080 as at 1280x720: same
+[verify] car select car-6-2560x1080 as at 1280x720: same (28 pixels on edges a little lighter or darker)
+[verify] car select car-6-2560x1440 as at 1280x720: same (28 pixels on edges a little lighter or darker)
+[verify] car select car-6-1280x960 as at 1280x720: same
+[verify] car select car-12: same
+[verify] car select car-12-1920x1080 as at 1280x720: same
+[verify] car select car-12-2560x1080 as at 1280x720: same (26 pixels on edges a little lighter or darker)
+[verify] car select car-12-2560x1440 as at 1280x720: same (26 pixels on edges a little lighter or darker)
+[verify] car select car-12-1280x960 as at 1280x720: same
+[verify] golden frames: 95 same, 0 changed, 0 saved

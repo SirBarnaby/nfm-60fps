@@ -13,6 +13,8 @@
 .classpath
 /data/music/temp*
 *.log
+# but a change's gate outputs, kept as its evidence (openspec\changes\<change>\evidence\<commit>)
+!openspec/changes/**/evidence/**/*.log
 /runtime/
 /madness.jar
 /build-info.json

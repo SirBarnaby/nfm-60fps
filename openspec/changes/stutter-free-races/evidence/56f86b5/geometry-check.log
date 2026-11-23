@@ -1,0 +1,37 @@
+Band check of 56f86b5 (src\nfm\lit\gpu\SceneGeometry.java), probe True
+move 2.00 edge, probe true: 2000 polygons, 969 of them to the stencil; filled outside 0.3 px^2, missed inside 0.0 px^2, of 895170 px^2 inside the rest (0.0000%); 1 polygons wrong somewhere, worst 0.06%
+  wrong samples by distance to the outline: under 0.0001 px 1 (ties), under 0.01 0, under 0.1 0, under 0.5 0, more 0: pass
+move 0.50 one, probe true: 2000 polygons, 245 of them to the stencil; filled outside 0.0 px^2, missed inside 0.0 px^2, of 1519502 px^2 inside the rest (0.0000%); 0 polygons wrong somewhere, worst 0.00%
+  wrong samples by distance to the outline: under 0.0001 px 0 (ties), under 0.01 0, under 0.1 0, under 0.5 0, more 0: pass
+move 2.00 one, probe true: 2000 polygons, 600 of them to the stencil; filled outside 0.0 px^2, missed inside 0.3 px^2, of 1212089 px^2 inside the rest (0.0000%); 1 polygons wrong somewhere, worst 0.04%
+  wrong samples by distance to the outline: under 0.0001 px 1 (ties), under 0.01 0, under 0.1 0, under 0.5 0, more 0: pass
+move 0.50 random, probe true: 2000 polygons, 697 of them to the stencil; filled outside 0.0 px^2, missed inside 0.0 px^2, of 1125867 px^2 inside the rest (0.0000%); 0 polygons wrong somewhere, worst 0.00%
+  wrong samples by distance to the outline: under 0.0001 px 0 (ties), under 0.01 0, under 0.1 0, under 0.5 0, more 0: pass
+move 2.00 random, probe true: 2000 polygons, 1303 of them to the stencil; filled outside 0.5 px^2, missed inside 0.0 px^2, of 600407 px^2 inside the rest (0.0001%); 2 polygons wrong somewhere, worst 0.02%
+  wrong samples by distance to the outline: under 0.0001 px 2 (ties), under 0.01 0, under 0.1 0, under 0.5 0, more 0: pass
+move 5.00 random, probe true: 2000 polygons, 1653 of them to the stencil; filled outside 0.0 px^2, missed inside 0.0 px^2, of 303847 px^2 inside the rest (0.0000%); 0 polygons wrong somewhere, worst 0.00%
+  wrong samples by distance to the outline: under 0.0001 px 0 (ties), under 0.01 0, under 0.1 0, under 0.5 0, more 0: pass
+move 1.00 perspective, probe true: 2000 polygons, 189 of them to the stencil; filled outside 0.3 px^2, missed inside 0.0 px^2, of 1592777 px^2 inside the rest (0.0000%); 1 polygons wrong somewhere, worst 0.03%
+  wrong samples by distance to the outline: under 0.0001 px 1 (ties), under 0.01 0, under 0.1 0, under 0.5 0, more 0: pass
+motion-200.bin: 146 polygons cross themselves, 16 of them to the stencil
+motion-250.bin: 133 polygons cross themselves, 8 of them to the stencil
+motion-300.bin: 135 polygons cross themselves, 8 of them to the stencil
+motion-350.bin: 131 polygons cross themselves, 6 of them to the stencil
+motion-400.bin: 131 polygons cross themselves, 6 of them to the stencil
+motion-450.bin: 129 polygons cross themselves, 6 of them to the stencil
+motion-200.bin: 111 polygons cross themselves, 12 of them to the stencil
+motion-250.bin: 103 polygons cross themselves, 12 of them to the stencil
+motion-300.bin: 108 polygons cross themselves, 15 of them to the stencil
+motion-350.bin: 103 polygons cross themselves, 12 of them to the stencil
+motion-400.bin: 99 polygons cross themselves, 10 of them to the stencil
+motion-450.bin: 96 polygons cross themselves, 8 of them to the stencil
+probe true (reach 1.50): 1425 polygons, 119 of them to the stencil; the rest placed 62221 times: 106 pixels wrong of 21794987 inside (0.0005%), the worst placement 1 (motion-200.bin scenery|true|6|-1|46 moment 0)
+  wrong samples by distance to the outline: under 0.0001 px 106 (ties), under 0.01 0, under 0.1 0, under 0.5 0, more 0: pass
+round 0: 1425 polygons from 12 scenes, built 7.96 us each without the probe, 10.82 us with it: the check 0.340 ms a scene
+round 1: 1425 polygons from 12 scenes, built 4.97 us each without the probe, 8.41 us with it: the check 0.408 ms a scene
+round 2: 1425 polygons from 12 scenes, built 4.89 us each without the probe, 8.19 us with it: the check 0.393 ms a scene
+round 3: 1425 polygons from 12 scenes, built 4.66 us each without the probe, 8.34 us with it: the check 0.437 ms a scene
+round 4: 1425 polygons from 12 scenes, built 5.42 us each without the probe, 8.75 us with it: the check 0.395 ms a scene
+round 5: 1425 polygons from 12 scenes, built 4.95 us each without the probe, 8.49 us with it: the check 0.420 ms a scene
+(the later rounds are the warm ones)
+Band check: passed
