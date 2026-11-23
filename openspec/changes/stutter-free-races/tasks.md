@@ -29,6 +29,9 @@
 - [x] 4.7 The countdown at 120 fps: frames placed for the moment they reach the screen, apart for frames that send the card a new scene (decision 10, 3a8fab1)
 - [x] 4.8 No warm-up ticks in the countdown; up to 500 ms while the music loads, once a run (decision 2, 3a8fab1)
 - [x] 4.9 Split screen's results took the item under a resting mouse every tick, so the live split test raced again instead of going to Main Menu; hovering now counts only when the mouse moves, as in the pause menu (907de35)
+- [x] 4.10 The warm-up's unseen draw with the HUD and the white flash, as a race frame draws it; split screen's both panes too (decision 11, 12febb0)
+- [x] 4.11 Frames placed for the screen by their place after a new kept scene: split screen's two frames after one waited on the card (decision 10, 12febb0)
+- [x] 4.12 Split screen's countdown portrait tint redrew both panes whole: a pane replays inside the clip it is given (decision 12, 12febb0)
 
 ## 5. Gates
 

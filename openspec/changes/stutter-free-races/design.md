@@ -93,6 +93,18 @@
 - **Input lag.** New poses are used the moment they come, as before; a frame shows the race at the moment it reaches the screen instead of 1-6 ms before it.
 - **Result** (quiet hidden runs): the countdown at 120 fps 14 of 815 frames off even by over 4 ms (1.7%), against 82 of 793; with no limit 8 of 1,921 against 125 of 1,616; the race at 120 fps 1 of 2,300.
 - *Alternatives:* sending the card the next scene a frame early (the frame before it then takes the time instead); letting frames queue on the card (input lag).
+- **By place after a new scene** (12febb0). In split screen the card gets two panes' scenes at once, and the two frames after the one that sends them waited 3-5 ms more on the card still busy with it (`bgfx_frame` holds at most one frame queued): they showed the race +3.1 and +2.7 ms behind against -1.5 for the rest, 71 of the 75 frames off even by over 4 ms in a split countdown at 120 fps. The presenter now keeps the time apart by the frame's place after a new kept scene: the frame that sends it, the two after it, and the rest (a quarter of each new measure for the first three, a sixteenth for the rest). One player is as before: there those two frames were on time.
+
+### 11. The warm-up's scene drawn as a race frame draws it, in split screen too
+
+- **Why.** The countdown's third frame took 30-48 ms in every quiet hidden run. Sampled on the presenter thread, all of it is in `bgfx_frame`: bgfx works on the calling thread with at most one frame queued, so the third frame's swap waits for the card to finish the first two. The warm-up's unseen draw (decision 2) had the scene's buffers, target and shaders ready, but drew no HUD: the countdown's first frame was the first to make the HUD's texture (the picture's size, 1920x1080) and draw it with its blend. Split screen had no warm-up draw at all (the live test: the card held its first countdown frame up 101 ms).
+- **What.** The warm-up scene keeps the HUD layer as it stands and is drawn with it, where a race frame puts it, and with the start's white flash; in split screen both panes are recorded and drawn as their frames do (`SplitRace.inPicture`). Split screen's ticks are still never played ahead.
+- **Result** (interleaved quiet hidden runs, no AOT cache on either side): the third frame 30-34 ms against 38-48 ms in 3 of 3 pairs. Not all of it: with frames slowed down by a trace (one line printed a frame) the stall did not come at all, and the card's own time for those frames was 0.3-4.9 ms, so the rest is the swap's wait on Windows' and the driver's side, not the card drawing.
+
+### 12. A split-screen pane replays inside the clip it is given
+
+- **Why.** Every split countdown had one tick of 54-78 ms (against 20-30), 4.95 s in, and the next tick late 13-25 ms: the tick that tints the countdown portrait with the picture behind it (decision 4). It redraws only the portrait's part of the picture in software, by clip; `SceneRecorder` replaced the clip with each pane's own at the pane's mark, so both panes were redrawn whole.
+- **What.** A pane's clip is put inside the clip the replay was given. Every other replay gives no clip or the whole picture, where this draws the same pixels as before.
 
 ### 250+ fps and no stutter
 
