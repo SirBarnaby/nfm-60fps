@@ -2856,8 +2856,8 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         }
     }
 
-    /** Where the staggered start's captions go: under the countdown. */
-    private static final int LAUNCH_CAPTION_Y = 150;
+    /** Where the staggered start's captions go: under the countdown's portrait, which is 160 high. */
+    private static final int LAUNCH_CAPTION_Y = 180;
 
     /**
      * A staggered start's own countdown (see {@link CustomGame#staggered}):
