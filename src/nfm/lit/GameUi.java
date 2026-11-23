@@ -1164,12 +1164,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
 
     public void fleximage(Image image, int frame, int stage) {
         if (frame == 0) {
-            PixelGrabber grabber = new PixelGrabber(image, 0, 0, GameFacts.screenWidth, GameFacts.screenHeight,
-                    flexpix, 0, GameFacts.screenWidth);
-            try {
-                grabber.grabPixels();
-            } catch (InterruptedException ignored) {
-            }
+            grabScreen(image);
         }
         int column = 0;
         int lastRed = 0;
@@ -1949,36 +1944,56 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         rd.drawImage(fleximg, 0, 0, null);
     }
 
+    /**
+     * Greys the race as it stopped, for behind the pause menu or split
+     * screen's results: each row smeared to the right as the original did,
+     * with whole numbers, as reading each pixel through {@link Color} gave.
+     */
     public void pauseimage(Image image) {
-        PixelGrabber grabber = new PixelGrabber(image, 0, 0, GameFacts.screenWidth, GameFacts.screenHeight,
-                flexpix, 0, GameFacts.screenWidth);
-        try {
-            grabber.grabPixels();
-        } catch (InterruptedException ignored) {
-        }
+        grabScreen(image);
+        int width = GameFacts.screenWidth;
+        int pixels = GameFacts.screenHeight * width;
         int lastGray = 0;
         int column = 0;
-        int px_index = 0;
-        do {
-            Color color = new Color(flexpix[px_index]);
-            int gray = 0;
-            if (column == 0) {
-                gray = (color.getRed() + color.getGreen() + color.getBlue()) / 3;
-                lastGray = gray;
-            } else {
-                gray = (color.getRed() + color.getGreen() + color.getBlue() + lastGray * 30) / 33;
-                lastGray = gray;
-            }
-            if (++column == GameFacts.screenWidth) { // each row greyed on its own
+        for (int i = 0; i < pixels; i++) {
+            int rgb = flexpix[i];
+            int sum = (rgb >> 16 & 0xFF) + (rgb >> 8 & 0xFF) + (rgb & 0xFF);
+            int gray = column == 0 ? sum / 3 : (sum + lastGray * 30) / 33;
+            lastGray = gray;
+            if (++column == width) { // each row greyed on its own
                 column = 0;
             }
-            Color grayColor = new Color(gray, gray, gray);
-            flexpix[px_index] = grayColor.getRGB();
-        } while (++px_index < GameFacts.screenHeight * GameFacts.screenWidth);
+            flexpix[i] = 0xFF000000 | gray << 16 | gray << 8 | gray;
+        }
         fleximg = createImage(new MemoryImageSource(GameFacts.screenWidth, GameFacts.screenHeight, flexpix, 0,
                 GameFacts.screenWidth));
         rd.drawImage(fleximg, 0, 0, null);
         Medium.flex = 0;
+    }
+
+    /**
+     * The screen-sized top left of {@code image} into {@link #flexpix}, as a
+     * {@link PixelGrabber} gives it, but straight from the picture's buffer
+     * when it is one: the grabber took some 30 ms of a tick at 1920x1080, in
+     * the pause menu's first and split screen's results' first.
+     */
+    private void grabScreen(Image image) {
+        int width = GameFacts.screenWidth;
+        int height = GameFacts.screenHeight;
+        if (image instanceof BufferedImage picture && picture.getWidth() >= width && picture.getHeight() >= height) {
+            if (picture.getType() == BufferedImage.TYPE_INT_RGB) {
+                // as stored, 0xRRGGBB, in one go: what reads these takes only red, green and blue (see blendude)
+                picture.getRaster().getDataElements(0, 0, width, height, flexpix);
+            } else {
+                picture.getRGB(0, 0, width, height, flexpix, 0, width);
+            }
+            return;
+        }
+        PixelGrabber grabber = new PixelGrabber(image, 0, 0, width, height, flexpix, 0, width);
+        try {
+            grabber.grabPixels();
+        } catch (InterruptedException ignored) {
+        }
     }
 
     public static void loadstrack(final int stage) {
@@ -5942,11 +5957,6 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         flangados = (int) (Medium.fxRandom() * 6F + 2.0F);
         blackn = 0.0F;
         blacknados = Medium.fxRandom() * 0.4F;
-        PixelGrabber grabber = new PixelGrabber(carsBackdrop(), 0, 0, GameFacts.screenWidth,
-                GameFacts.screenHeight, flexpix, 0, GameFacts.screenWidth);
-        try {
-            grabber.grabPixels();
-        } catch (InterruptedException ignored) {
-        }
+        grabScreen(carsBackdrop());
     }
 }
