@@ -8,9 +8,9 @@ import nfm.lit.GameFacts;
  * What the hidden custom test ({@code -Dnfm.autotest.custom}) holds a custom
  * race to, from what the race shows rather than from the rules that made
  * it: the field the lineup should bring, the player last on the grid, and
- * each group seen setting off in turn, never before its start and at most
- * two seconds after the group before. Each check gives what is wrong, or
- * null.
+ * each group seen setting off in turn, never let go before its start and
+ * at most two seconds after the group before. Each check gives what is
+ * wrong, or null.
  */
 public final class CustomGameCheck {
 
@@ -111,10 +111,20 @@ public final class CustomGameCheck {
     }
 
     /**
-     * Watches a staggered start from the test's samples: the tick each group,
-     * and the player, was first seen moving. A sample's tick is read after
-     * the cars' speeds, so a car is never seen moving on a tick before the
-     * one it moved on.
+     * Watches a staggered start from the test's samples. A car whose group has
+     * not gone is still a car on the road, and one that is hit is pushed, so
+     * a computer car counts as setting off only when it moves with controls
+     * of its own, not the hold ({@link StaggeredStart#holds}). The player is
+     * held by the same code, but its keys are latched over the hold at the
+     * start of every tick, so its controls say nothing between ticks: it is
+     * only logged, and must be seen moving.
+     * <p>
+     * Each sample reads the clock, then the cars, then the clock again. A
+     * held computer car's controls are the hold from the first tick after
+     * Go! until its AI takes over, on the tick before its group's start
+     * ({@link StaggeredStart#drivesNext}): one seen with controls of its own
+     * while the clock still shows an earlier tick was let go too soon, and
+     * the check can never say so wrongly.
      */
     public static final class Launches {
         private final int cars;
@@ -128,27 +138,31 @@ public final class CustomGameCheck {
             Arrays.fill(firstSeen, -1);
         }
 
-        /** Car {@code car} is moving (or not) in a sample taken {@code tick} ticks after Go!. */
-        public void see(int car, boolean moving, int tick) {
+        /**
+         * Car {@code car} in a sample: whether it is moving, and whether its
+         * controls are its own rather than the hold, read after the clock said
+         * {@code before} ticks since Go! and before it said {@code after}.
+         */
+        public void see(int car, boolean moving, boolean ownControls, int before, int after) {
+            int group = StaggeredStart.launchGroup(car, cars);
+            int takesOver = StaggeredStart.launchTick(group) - 1;
+            if (car != 0 && ownControls && before >= 1 && after < takesOver && early == null) {
+                early = "car " + car + " of group " + (group + 1) + " had its controls back by tick " + after
+                        + ", before its AI takes over on tick " + takesOver;
+            }
             if (!moving) {
                 return;
             }
-            int group = StaggeredStart.launchGroup(car, cars);
-            int start = StaggeredStart.launchTick(group);
-            if (tick < start && early == null) {
-                early = (car == 0 ? "the player" : "car " + car + " of group " + (group + 1)) + " moved by tick " + tick
-                        + ", before its start at tick " + start;
-            }
             if (car == 0) {
                 if (playerSeen < 0) {
-                    playerSeen = tick;
+                    playerSeen = after;
                 }
-            } else if (firstSeen[group] < 0) {
-                firstSeen[group] = tick;
+            } else if (ownControls && firstSeen[group] < 0) {
+                firstSeen[group] = after;
             }
         }
 
-        /** The ticks each group was first seen moving, for the log. */
+        /** The ticks each group was first seen setting off, for the log. */
         public String describe() {
             return Arrays.toString(firstSeen) + ", the player " + playerSeen;
         }
@@ -160,7 +174,7 @@ public final class CustomGameCheck {
             }
             for (int g = 0; g < firstSeen.length; g++) {
                 if (firstSeen[g] < 0) {
-                    return "group " + (g + 1) + " was never seen moving";
+                    return "group " + (g + 1) + " was never seen setting off";
                 }
                 if (g > 0 && firstSeen[g] < firstSeen[g - 1]) {
                     return "group " + (g + 1) + " set off before group " + g;

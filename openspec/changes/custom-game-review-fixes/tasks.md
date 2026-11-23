@@ -15,6 +15,7 @@
 - [x] 2.5 Only the choices changed are saved
 - [x] 2.6 The archived `custom-game` change: no claim of a measurement not made; task 5.4 names `test\live.ps1 -Split`
 - [x] 2.7 README, `docs\features\customgame.md`, lessons in `docs\solutions\custom-game-big-fields.md`
+- [x] 2.8 The hidden test tells a held car pushed from one driving off, by its controls (the 32-car Pro run failed on a push)
 
 ## 3. Gates
 

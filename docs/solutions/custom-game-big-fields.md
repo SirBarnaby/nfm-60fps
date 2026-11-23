@@ -35,6 +35,8 @@ The race tick drives every car with the controls it has, then runs the AI (`Cont
 
 The hidden test samples the race from its own thread every 100 ms while the game thread runs ticks. To say when something first happened without ever saying it happened too early, read what you look for first (the cars' speeds) and the clock after (`World.ticksSinceGo`): the clock can only have moved on since. Check what the race shows, not what the rules say it should show: the first version logged each group's start from the same formula that held the cars, so it could never fail.
 
+But what the race shows has to be the thing asked about. The next version took a car's first movement for its start, and the 32-car Pro run failed: a car of the last group was pushed while it waited (a Pro field attacks a lot, `Control.attack`). A push is not a start. Look at what the start changes, the car's controls (`StaggeredStart.holds`), and read the clock before and after them, so you know the hold had been set and had not yet been let go by its own rule.
+
 ## A feature switch that changes a menu
 
 A race extra stays off until 1.0, and the main menu with it off has to be the classic one, pixel for pixel. Keep the item's index (other code sets `opselect` to the items by name), skip it in the drawing, the mouse and the up and down keys, move the items after it up by its step, and close the backdrop up by the same amount (`GameUi.placeMenu`, `opbackGap`). Place the items every frame: the switch can change while the menu is up, from the settings or the developer console.

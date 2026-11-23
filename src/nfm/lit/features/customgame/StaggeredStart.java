@@ -139,6 +139,11 @@ public final class StaggeredStart {
         }
     }
 
+    /** True if {@code c} is as {@link #beforeDrive} leaves a held car: the handbrake on and nothing else. */
+    public static boolean holds(Control c) {
+        return c.handb && !c.up && !c.down && !c.left && !c.right;
+    }
+
     /**
      * True if computer car {@code car}'s driving is worked out after this
      * tick's drive, as the game does for every computer car: its controls

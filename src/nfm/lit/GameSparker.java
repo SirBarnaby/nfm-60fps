@@ -6784,7 +6784,7 @@ public class GameSparker extends Panel implements Runnable {
                         autotestHighlightRequested = true;
                         step = 11;
                         if (launches != null) {
-                            System.out.println("[autotest] groups first seen moving at ticks " + launches.describe());
+                            System.out.println("[autotest] groups first seen setting off at ticks " + launches.describe());
                         }
                         System.out.println("[autotest] finishing the race into the post-race highlight");
                     }
@@ -6821,18 +6821,21 @@ public class GameSparker extends Panel implements Runnable {
     }
 
     /**
-     * One sample of a staggered start for the custom test: which cars are
-     * moving, then the tick, so no car is seen moving on a tick before the
-     * one it set off on (see CustomGameCheck.Launches).
+     * One sample of a staggered start for the custom test: the clock, then
+     * which cars are moving and which have their controls back from the
+     * hold, then the clock again (see CustomGameCheck.Launches).
      */
     private void watchLaunches(CustomGameCheck.Launches launches, int cars) {
+        int before = world.ticksSinceGo;
         boolean[] moving = new boolean[cars];
+        boolean[] ownControls = new boolean[cars];
         for (int car = 0; car < cars; car++) {
             moving[car] = Math.abs(racers[car].speed) > 1F;
+            ownControls[car] = !StaggeredStart.holds(u[car]);
         }
-        int tick = world.ticksSinceGo;
+        int after = world.ticksSinceGo;
         for (int car = 0; car < cars; car++) {
-            launches.see(car, moving[car], tick);
+            launches.see(car, moving[car], ownControls[car], before, after);
         }
     }
 
