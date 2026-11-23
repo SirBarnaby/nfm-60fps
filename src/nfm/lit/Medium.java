@@ -95,9 +95,11 @@ public class Medium {
     public static int w = GameFacts.GAME_WIDTH;
     public static int h = GameFacts.GAME_HEIGHT;
     public static int nsp = 0;
-    public static int spx[] = new int[7];
-    public static int spz[] = new int[7];
-    public static int sprad[] = new int[7];
+    /** The classic game's cars: the most shadows it keeps from overlapping, see {@link #addSp}. */
+    private static final int CLASSIC_SPOTS = 7;
+    public static int spx[] = new int[FramePose.SLOTS];
+    public static int spz[] = new int[FramePose.SLOTS];
+    public static int sprad[] = new int[FramePose.SLOTS];
     private static boolean td = false;
     private static int bcxz = 0;
     public static int vxz = 180;
@@ -781,9 +783,9 @@ public class Medium {
         w = GameFacts.GAME_WIDTH;
         h = GameFacts.GAME_HEIGHT;
         nsp = 0;
-        spx = new int[7];
-        spz = new int[7];
-        sprad = new int[7];
+        spx = new int[FramePose.SLOTS];
+        spz = new int[FramePose.SLOTS];
+        sprad = new int[FramePose.SLOTS];
         td = false;
         bcxz = 0;
         vxz = 180;
@@ -1849,8 +1851,13 @@ public class Medium {
         }
     }
 
+    /**
+     * A shadow drawn this frame: the ground under it is not shaded again by
+     * the shadows drawn after it. Seven, as in the classic game, or one for
+     * every car of a bigger race.
+     */
     public static void addSp(int x, int z, int radius) {
-        if (nsp != 7) {
+        if (nsp < Math.clamp(GameFacts.numberOfPlayers, CLASSIC_SPOTS, spx.length)) {
             spx[nsp] = x;
             spz[nsp] = z;
             sprad[nsp] = radius;

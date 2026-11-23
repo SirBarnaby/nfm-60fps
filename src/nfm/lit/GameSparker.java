@@ -5636,8 +5636,8 @@ public class GameSparker extends Panel implements Runnable {
     }
 
     /* replays keep where each car was, not how it was driven: the 3D sound works its engine out from that */
-    private final float[][] replayPlace = new float[GameFacts.numberOfPlayers][3];
-    private final float[] replaySpeed = new float[GameFacts.numberOfPlayers];
+    private final float[][] replayPlace = new float[FramePose.SLOTS][3];
+    private final float[] replaySpeed = new float[FramePose.SLOTS];
     private boolean replayHeard;
 
     /**

@@ -156,7 +156,10 @@ public final class Sound3D implements Runnable {
     /** A car that moved further than this in one tick was put somewhere else, not driven there. */
     private static final float JUMP = 2_000F;
     private static final int RENDER_RATE = 48_000;
+    /** Cars Steam Audio traces at once: every car of a race this size, the nearest of a bigger one. */
     private static final int MAX_CARS = 8;
+    /** The most cars a race has (a custom game's 32 computer cars and more): each eases its own occlusion. */
+    private static final int ALL_CARS = 51;
     /** Occlusion is traced every this many updates (30 ms) and eased in over this long. */
     private static final int TRACE_EVERY = 3;
     private static final float OCCLUSION_SMOOTHING = 0.12F;
@@ -710,9 +713,13 @@ public final class Sound3D implements Runnable {
     private volatile boolean stageWanted = true;
     /* each car's share of sound reaching the listener through the stage, low, mid and high: traced and smoothed */
     private final float[] traced = new float[3 * MAX_CARS];
-    private final float[] through = new float[3 * MAX_CARS];
+    private final float[] through = new float[3 * ALL_CARS];
     private final float[] carPlaces = new float[3 * MAX_CARS];
     private final boolean[] carTraced = new boolean[MAX_CARS];
+    /* which car each traced slot is, each car's slot (-1 for none), and how far each car is from the listener */
+    private final int[] tracedCar = new int[MAX_CARS];
+    private final int[] tracedSlot = new int[ALL_CARS];
+    private final float[] carDistance = new float[ALL_CARS];
     private int tracedAt;
     private int reverbSlot;
     private int reverbEffect;
@@ -741,6 +748,7 @@ public final class Sound3D implements Runnable {
             }
             Arrays.fill(through, 1F);
             Arrays.fill(traced, 1F);
+            identityTraced();
             acoustics = SteamAcoustics.open(MAX_CARS, lockstep);
             if (lockstep) {
                 runInStep();
@@ -1793,13 +1801,16 @@ public final class Sound3D implements Runnable {
             acoustics.stage(s);
         }
         Moment m = current;
-        int cars = m == null || m.cars == null ? 0 : Math.min(MAX_CARS, m.cars.length);
+        int all = m == null || m.cars == null ? 0 : Math.min(ALL_CARS, m.cars.length);
+        int cars = Math.min(MAX_CARS, all); // traced
         if (++tracedAt >= TRACE_EVERY && cars > 0) {
             tracedAt = 0;
             acoustics.listener(camX, camY, camZ, yawSin, yawCos, pitchSin, pitchCos);
+            chooseTraced(m, all);
             for (int i = 0; i < cars; i++) {
-                Car c = m.cars[i];
-                carTraced[i] = c.running && i != m.player;
+                int car = tracedCar[i];
+                Car c = m.cars[car];
+                carTraced[i] = c.running && car != m.player;
                 carPlaces[3 * i] = c.x;
                 carPlaces[3 * i + 1] = c.y;
                 carPlaces[3 * i + 2] = c.z;
@@ -1808,23 +1819,75 @@ public final class Sound3D implements Runnable {
         }
         float k = 1F - (float) Math.exp(-dt / OCCLUSION_SMOOTHING);
         boolean occluding = occlusionOn;
-        for (int i = 0; i < 3 * MAX_CARS; i++) {
-            float target = occluding && i / 3 < cars && carTraced[i / 3] ? traced[i] : 1F;
-            through[i] += (target - through[i]) * k;
-        }
         float[] paths = occluding && pathsOn ? acoustics.paths() : null;
-        for (int i = 0; i < MAX_CARS; i++) {
+        for (int car = 0; car < Math.max(MAX_CARS, all); car++) {
+            int i = tracedSlot[car];
+            if (i < 0 && occluding) {
+                continue; // not among the nearest: it keeps what it had until it is near again
+            }
+            boolean heard = occluding && i >= 0 && i < cars && carTraced[i];
+            for (int band = 0; band < 3; band++) {
+                float target = heard ? traced[3 * i + band] : 1F;
+                through[3 * car + band] += (target - through[3 * car + band]) * k;
+            }
             int at = SteamAcoustics.PATH_FLOATS * i;
-            boolean found = paths != null && i < cars && carTraced[i] && paths[at] > 0F;
+            boolean found = paths != null && heard && paths[at] > 0F;
             float mid = found ? paths[at + 2] : 0F;
-            pathGain[i] += (mid - pathGain[i]) * k;
-            pathTreble[i] += ((found && mid > 0F ? Math.min(1F, paths[at + 3] / mid) : 0F) - pathTreble[i]) * k;
-            pathWeight[i] += ((found ? 1F : 0F) - pathWeight[i]) * k;
+            pathGain[car] += (mid - pathGain[car]) * k;
+            pathTreble[car] += ((found && mid > 0F ? Math.min(1F, paths[at + 3] / mid) : 0F) - pathTreble[car]) * k;
+            pathWeight[car] += ((found ? 1F : 0F) - pathWeight[car]) * k;
             if (found) {
                 for (int axis = 0; axis < 3; axis++) {
-                    pathFrom[3 * i + axis] += (paths[at + 4 + axis] - pathFrom[3 * i + axis]) * k;
+                    pathFrom[3 * car + axis] += (paths[at + 4 + axis] - pathFrom[3 * car + axis]) * k;
                 }
             }
+        }
+    }
+
+    /**
+     * Which cars Steam Audio traces, one per slot ({@link #tracedCar}, and
+     * each car's slot in {@link #tracedSlot}, -1 for none): every car of a
+     * race of up to {@link #MAX_CARS}, each in its own slot, or the
+     * {@link #MAX_CARS} nearest the listener of a bigger one.
+     */
+    private void chooseTraced(Moment m, int cars) {
+        if (cars <= MAX_CARS) {
+            identityTraced();
+            return;
+        }
+        for (int car = 0; car < cars; car++) {
+            Car c = m.cars[car];
+            float dx = c.x - camX;
+            float dy = c.y - camY;
+            float dz = c.z - camZ;
+            carDistance[car] = dx * dx + dy * dy + dz * dz;
+        }
+        int count = 0;
+        for (int car = 0; car < cars; car++) {
+            // insertion into the nearest found so far, nearest first
+            int at = count < MAX_CARS ? count++ : MAX_CARS;
+            while (at > 0 && carDistance[tracedCar[at - 1]] > carDistance[car]) {
+                if (at < MAX_CARS) {
+                    tracedCar[at] = tracedCar[at - 1];
+                }
+                at--;
+            }
+            if (at < MAX_CARS) {
+                tracedCar[at] = car;
+            }
+        }
+        Arrays.fill(tracedSlot, -1);
+        for (int i = 0; i < MAX_CARS; i++) {
+            tracedSlot[tracedCar[i]] = i;
+        }
+    }
+
+    /** Car i in slot i, as in every race of up to {@link #MAX_CARS} cars. */
+    private void identityTraced() {
+        Arrays.fill(tracedSlot, -1);
+        for (int i = 0; i < MAX_CARS; i++) {
+            tracedCar[i] = i;
+            tracedSlot[i] = i;
         }
     }
 
@@ -1842,25 +1905,25 @@ public final class Sound3D implements Runnable {
     private static final float BLOCKED_TREBLE = 0.15F;
     /* per car, eased like through: how much of it the path round brings (mid band), its treble relative to that,
        how sure the path is (0 none to 1 found), and the direction it arrives from in the game's world */
-    private final float[] pathGain = new float[MAX_CARS];
-    private final float[] pathTreble = new float[MAX_CARS];
-    private final float[] pathWeight = new float[MAX_CARS];
-    private final float[] pathFrom = new float[3 * MAX_CARS];
+    private final float[] pathGain = new float[ALL_CARS];
+    private final float[] pathTreble = new float[ALL_CARS];
+    private final float[] pathWeight = new float[ALL_CARS];
+    private final float[] pathFrom = new float[3 * ALL_CARS];
 
     /** How much of a car the stage hides, 0 in the clear to 1 fully behind something. */
     private float hidden(int car) {
-        return car >= 0 && car < MAX_CARS ? 1F - Math.max(0F, Math.min(1F, through[3 * car + 1])) : 0F;
+        return car >= 0 && car < ALL_CARS ? 1F - Math.max(0F, Math.min(1F, through[3 * car + 1])) : 0F;
     }
 
     /** A car's overall level as the stage lets it through. */
     private float throughGain(int car) {
-        float blocked = car >= 0 && car < MAX_CARS ? Math.max(BLOCKED_GAIN, pathGain[car]) : BLOCKED_GAIN;
+        float blocked = car >= 0 && car < ALL_CARS ? Math.max(BLOCKED_GAIN, pathGain[car]) : BLOCKED_GAIN;
         return 1F - (1F - blocked) * hidden(car);
     }
 
     /** A car's treble as the stage lets it through, relative to {@link #throughGain}. */
     private float throughTreble(int car) {
-        float blocked = car >= 0 && car < MAX_CARS ? Math.max(BLOCKED_TREBLE, pathTreble[car]) : BLOCKED_TREBLE;
+        float blocked = car >= 0 && car < ALL_CARS ? Math.max(BLOCKED_TREBLE, pathTreble[car]) : BLOCKED_TREBLE;
         return 1F - (1F - blocked) * hidden(car);
     }
 
@@ -1870,7 +1933,7 @@ public final class Sound3D implements Runnable {
      * car is hidden and a path was found; the distance stays.
      */
     private void bendTowardPath(int car, float[] d) {
-        float w = car >= 0 && car < MAX_CARS ? hidden(car) * pathWeight[car] : 0F;
+        float w = car >= 0 && car < ALL_CARS ? hidden(car) * pathWeight[car] : 0F;
         float length = (float) Math.sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
         if (w < 0.01F || length < 1e-3F) {
             return;
@@ -2103,7 +2166,7 @@ public final class Sound3D implements Runnable {
 
     private String throughList(int cars) {
         StringBuilder b = new StringBuilder();
-        for (int i = 0; i < Math.min(cars, MAX_CARS); i++) {
+        for (int i = 0; i < Math.min(cars, ALL_CARS); i++) {
             b.append(String.format(Locale.ROOT, "%s%.2f", i == 0 ? "" : " ", through[3 * i + 1]));
         }
         return b.toString();
