@@ -17,6 +17,12 @@ The race itself already holds 51 cars: every per-car array in `Madness`, `Contro
 - When a sound path is checked sample for sample (`test\verify-sound.ps1`), a general loop must run the same float operations on the same operands in the small case: car i in slot i, every slot eased every update.
 - Pull shared drawing out of the classic block (`GameUi.standingRow`, `drawCountdown`) rather than copying it: the classic call then draws the same pixels, and the new feature cannot drift from it.
 
+## The race runs before its countdown
+
+The warm-up (`GameSparker.warmUpWhileLoading`) plays real race ticks on the screen before the race, with `starcnt` 0, and the HUD draws them into a clipped layer. So race-tick drawing in `GameUi.statPlayer` also runs before the countdown has made what it draws with: the countdown portrait (`dudeb`, made by `blendude`) is null then, and `dudo` starts at 0, so the classic `dudo != -1` guard does not catch it. The staggered start's own countdown drew the portrait there with 10 to 24 computer cars and the game thread died. Whatever the race tick draws that the countdown sets up must check that it is in the race (`fase == Phase.INGAME`). Test the first race after a fresh start, at every size the new rule changes: the warm-up runs once per game run, so a second race never shows it.
+
 ## Driving a hidden test run
 
 A test thread that writes `u[0].up` directly races the game: `latchRaceInput` sets the controls from the held keys at the start of every tick and overwrites it. Hold keys the way the keyboard does, in `live[0]` under `inputLock` (`GameSparker.holdTestKeys`), and the next tick latches them.
+
+A hidden test that runs out of time should not exit with code 0: a dead game thread leaves the game on one screen until the time runs out, and code 0 then reads as a pass. The custom test exits with 1.
