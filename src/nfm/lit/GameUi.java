@@ -8,6 +8,10 @@ import nfm.lit.audio.SoundClipThreaded;
 import nfm.lit.audio.SoundClipUnthreaded;
 import nfm.lit.audio.SoundManager;
 import nfm.lit.audio.TrackZipLoader;
+import nfm.lit.features.customgame.CustomGame;
+import nfm.lit.features.customgame.CustomGameFeature;
+import nfm.lit.features.customgame.CustomGamePage;
+import nfm.lit.features.customgame.StaggeredStart;
 
 import java.io.*;
 import java.net.*;
@@ -264,7 +268,10 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
     private int main_menu_height_origin; // see fitScreen
 
     private int main_menu_button_height = 22;
-    /** The main menu's items, in order: the first three are in its picture, the rest are lettered under it. */
+    /**
+     * The main menu's items, in order: the first three are in its picture, the rest are lettered under it.
+     * Custom Game is shown only with its switch on in the extras; without it the menu is the classic one.
+     */
     static final int MENU_PLAY = 0;
     static final int MENU_INSTRUCTIONS = 1;
     static final int MENU_CREDITS = 2;
@@ -279,10 +286,12 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
     /** The colour each item's box flickers to while chosen. */
     private static final Color[] MENU_FLICKER = {new Color(200, 255, 0), new Color(200, 128, 0), new Color(200, 0, 0),
         new Color(255, 200, 0), new Color(0, 160, 220), new Color(200, 0, 128), new Color(128, 0, 200)};
-    private final int[] menuY = new int[MENU_ITEMS]; // see fitScreen
+    private final int[] menuY = new int[MENU_ITEMS]; // see placeMenu
     /** Where the menu's brown backdrop is opened up for the items under its picture, and by how much (its rows stay whole). */
     private static final int OPBACK_GAP_AT = 90;
     private static final int OPBACK_GAP = 100;
+    /** From one lettered item to the next: the items after a hidden one move up by this much, and the backdrop closes up. */
+    private static final int MENU_STEP = 31;
 
     /** The settings screen, made when first opened (the menu font is registered by then). */
     private SettingsScreen settingsScreen;
@@ -857,7 +866,8 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
      */
     void openCustomGame() {
         if (customGameScreen == null) {
-            customGameScreen = SettingsScreen.customGame(back, names, () -> customRaceChosen = true);
+            customGameScreen = SettingsScreen.page(back, CustomGamePage.TITLE,
+                    page -> CustomGamePage.rows(page, names, () -> customRaceChosen = true));
         }
         CustomGame.on = true;
         customRaceChosen = false;
@@ -2856,58 +2866,32 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         }
     }
 
-    /** Where the staggered start's captions go: under the countdown's portrait, which is 160 high. */
-    private static final int LAUNCH_CAPTION_Y = 180;
+    /** What a staggered start's countdown shows in this frame (see {@link #launchCountdown}). */
+    private final StaggeredStart.Countdown launch = new StaggeredStart.Countdown();
 
     /**
-     * A staggered start's own countdown (see {@link CustomGame#staggered}):
-     * under the classic countdown, which starts the front group, a line on
-     * how the start goes; then, while the player waits, which group is off
-     * and the seconds left, and for the last three the classic countdown's
-     * numbers, voice and Go! once more, for the player's own start. Only in
-     * the race itself: the warm-up plays race ticks on the screen before it
-     * (see GameSparker.warmUpWhileLoading), before the countdown has made
-     * the portrait.
+     * A staggered start's own countdown and captions ({@link StaggeredStart#countdown}),
+     * drawn in the race itself only: the warm-up plays race ticks on the
+     * screen before it (see GameSparker.warmUpWhileLoading), before the
+     * countdown has made the portrait.
      *
-     * @param world the race, whose {@link World#ticksSinceGo} the start runs by
-     * @return true while the portrait is up, so captions keep clear of it
+     * @return true while its portrait is up, so captions keep clear of it
      */
     private boolean launchCountdown(World world, int me) {
         if (fase != Phase.INGAME) {
             return false;
         }
-        int cars = GameFacts.numberOfPlayers;
-        int gap = CustomGame.LAUNCH_GAP_TICKS;
-        int groups = world.startGroups;
-        if (starcnt != 0) {
-            if (starcnt <= 35) {
-                drawcs(LAUNCH_CAPTION_Y, "Staggered start: " + groups + " groups, a second apart. You go last.", 0,
-                        0, 100, 0);
-            }
+        StaggeredStart.countdown(world, GameFacts.numberOfPlayers, starcnt, launch);
+        if (launch.caption != null) {
+            drawcs(StaggeredStart.CAPTION_Y, launch.caption, 0, 0, 100, 0);
+        }
+        if (launch.voice != null && !mutes && me == 0) {
+            sm.play(launch.voice);
+        }
+        if (launch.number < 0) {
             return false;
         }
-        int tick = world.ticksSinceGo - 1; // the tick just run: 0 the first after Go!, -1 on Go!'s own frame
-        int launch = CustomGame.launchGroup(0, cars); // the player's wait in seconds, counted from Go!
-        int wait = launch * gap - tick;
-        // the seconds left, 0 for Go!; never more than the whole wait, which Go!'s own frame would round up past
-        int number = wait <= 0 ? 0 : Math.min((wait + gap - 1) / gap, launch);
-        if (number > 3) {
-            drawcs(LAUNCH_CAPTION_Y, "Group " + CustomGame.groupsGone(cars, tick) + " of " + groups
-                    + " is off. You go in " + number, 0, 0, 100, 0);
-            return false;
-        }
-        if (wait < -LAUNCH_GO_TICKS) {
-            return false;
-        }
-        if (wait == number * gap && !mutes && me == 0) {
-            sm.play(switch (number) {
-                case 3 -> "three";
-                case 2 -> "two";
-                case 1 -> "one";
-                default -> "go";
-            });
-        }
-        drawCountdown(number, number == 0 ? 2 : wait > number * gap - 5 ? 1 : 0); // the portrait speaks each number
+        drawCountdown(launch.number, launch.talking);
         return true;
     }
 
@@ -2923,14 +2907,6 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         }
     }
 
-    /** A custom game's result, where a classic race names the stage it completes: the player's place in the field. */
-    private static String customPlace(CheckPoints checkpoints) {
-        return "You came " + ordinal(checkpoints.pos[0] + 1) + " of " + GameFacts.numberOfPlayers + "!";
-    }
-
-    /** How long the player's own Go! stays up: about half a second. */
-    private static final int LAUNCH_GO_TICKS = 10;
-
     /** The places a race can have, written out once: {@link #ordinal}. */
     private static final String[] ORDINALS = new String[52];
 
@@ -2941,7 +2917,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
     }
 
     /** 1st, 2nd, 3rd, 4th ... 11th, 12th, 13th ... 21st, 22nd. */
-    static String ordinal(int n) {
+    public static String ordinal(int n) {
         return n >= 0 && n < ORDINALS.length ? ORDINALS[n] : spellOrdinal(n);
     }
 
@@ -3125,7 +3101,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             }
             // the cars ahead race on while the player waits, so a caption can come up during the player's countdown
             int sayY = split == null && drivers[me].world().staggered() && launchCountdown(drivers[me].world(), me)
-                    ? LAUNCH_CAPTION_Y : 105;
+                    ? StaggeredStart.CAPTION_Y : 105;
             if (looped != 0 && drivers[me].loop == 2) {
                 looped = 0;
             }
@@ -3747,7 +3723,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
                 pin = 30;
                 rd.drawImage(congrd, Utility.centeredImageX(congrd), 87, null);
                 if (CustomGame.on) {
-                    drawcs(137, customPlace(checkpoints), 170, 170, 170, 3);
+                    drawcs(137, CustomGame.resultLine(checkpoints.pos[0], GameFacts.numberOfPlayers), 170, 170, 170, 3);
                 } else if (checkpoints.stage != -1) {
                     drawcs(137, "Stage " + checkpoints.stage + " Completed!", 170, 170, 170, 3);
                 } else {
@@ -3758,8 +3734,8 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         } else {
             pin = 30;
             rd.drawImage(gameov, Utility.centeredImageX(gameov), 117, null);
-            drawcs(167, CustomGame.on ? customPlace(checkpoints) : "Failed to Complete Stage " + checkpoints.stage + "!",
-                    170, 170, 170, 3);
+            drawcs(167, CustomGame.on ? CustomGame.resultLine(checkpoints.pos[0], GameFacts.numberOfPlayers)
+                    : "Failed to Complete Stage " + checkpoints.stage + "!", 170, 170, 170, 3);
             drawcs(184, "" + checkpoints.name + "", 128, 128, 128, 3);
         }
         rd.drawImage(contin[pcontin], Utility.centeredImageX(contin[pcontin]), post_game_continue_button_y, null);
@@ -3780,14 +3756,8 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         }
     }
 
-    /**
-     * unique car sorter
-     *
-     * @param stage checkpoints.stage
-     * @author rafa
-     */
     /** The boss car a stage brings to a race of {@code players} cars: the computer car at the front. */
-    static int stageBoss(int stage, int players) {
+    public static int stageBoss(int stage, int players) {
         return Math.min(players + (stage + 1) / 2, GameFacts.numberOfCars - 1);
     }
 
@@ -3796,10 +3766,16 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
      * (half of it on, as many cars as the race has): the stage itself, or the
      * last one for a stage loaded from a file and once every stage is unlocked.
      */
-    static int carSpanStage(int stage, int unlocked) {
+    public static int carSpanStage(int stage, int unlocked) {
         return stage == -1 || unlocked == GameFacts.numberOfStages ? GameFacts.numberOfStages : stage;
     }
 
+    /**
+     * unique car sorter
+     *
+     * @param stage checkpoints.stage
+     * @author rafa
+     */
     private void sortcars(int stage) {
         // split screen: both players' cars are theirs, the computer cars come after
         boolean split = SplitRace.on;
@@ -4065,9 +4041,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         int height = GameFacts.screenHeight;
         press_enter_to_continue_height = height - 100;
         main_menu_height_origin = (int) (height * 0.2);
-        for (int item = 0; item < MENU_ITEMS; item++) {
-            menuY[item] = MENU_TOP[item] + main_menu_height_origin;
-        }
+        placeMenu();
         car_select_next_back_button_y = (int) (height * 0.68);
         car_select_next_button_x = width - 90;
         car_select_continue_button_y = height - 120;
@@ -4614,6 +4588,27 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         fitScreen();
     }
 
+    /** True if main menu item {@code item} is shown: Custom Game only with its switch on (see CustomGameFeature). */
+    private static boolean menuShows(int item) {
+        return item != MENU_CUSTOM || CustomGameFeature.onMenu();
+    }
+
+    /** Where each shown item of the main menu goes: those after a hidden one take its place. */
+    private void placeMenu() {
+        int hidden = 0;
+        for (int item = 0; item < MENU_ITEMS; item++) {
+            menuY[item] = MENU_TOP[item] - hidden * MENU_STEP + main_menu_height_origin;
+            if (!menuShows(item)) {
+                hidden++;
+            }
+        }
+    }
+
+    /** How far the menu's backdrop is opened up: less by a step for each hidden item. */
+    private static int opbackGap() {
+        return OPBACK_GAP - (menuShows(MENU_CUSTOM) ? 0 : MENU_STEP);
+    }
+
     public void maini(Control control, CheckPoints checkpoints, Madness drivers[], ContO models[], ContO scene[]) {
         // might redo the entire menu its horrible
 
@@ -4709,26 +4704,37 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             movly = 10;
         }
 
+        placeMenu(); // the extras' switches can change while the menu is up
         drawMenuBackdrop(212 + main_menu_height_origin);
         rd.drawImage(nfmcoms, Utility.centeredImageX(nfmcoms), 195 + main_menu_height_origin, null);
-        rd.drawImage(byrd, Utility.centeredImageX(byrd), 383 + OPBACK_GAP + main_menu_height_origin, null);
+        rd.drawImage(byrd, Utility.centeredImageX(byrd), 383 + opbackGap() + main_menu_height_origin, null);
 
+        if (!menuShows(opselect)) {
+            opselect++; // the item chosen was hidden: the one after it
+        }
         if (control.up) {
-            opselect--;
-            if (opselect == -1) {
-                opselect = menuItems - 1;
-            }
+            do {
+                opselect--;
+                if (opselect == -1) {
+                    opselect = menuItems - 1;
+                }
+            } while (!menuShows(opselect));
             control.up = false;
         }
         if (control.down) {
-            opselect++;
-            if (opselect >= menuItems) {
-                opselect = 0;
-            }
+            do {
+                opselect++;
+                if (opselect >= menuItems) {
+                    opselect = 0;
+                }
+            } while (!menuShows(opselect));
             control.down = false;
         }
         clickOnMove(0);
         for (int item = 0; item < menuItems; item++) {
+            if (!menuShows(item)) {
+                continue;
+            }
             int x = Utility.centeredWidthX(MENU_WIDTH[item]);
             if (opselect == item) {
                 if (shaded) {
@@ -4749,7 +4755,9 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             rd.drawRoundRect(x, menuY[item], MENU_WIDTH[item], main_menu_button_height, 7, 20);
         }
         rd.drawImage(opti, Utility.centeredImageX(opti), 250 + main_menu_height_origin, null);
-        SettingsScreen.drawMenuItem(rd, "Custom Game", GameFacts.screenWidth / 2F, menuY[MENU_CUSTOM] + 18);
+        if (menuShows(MENU_CUSTOM)) {
+            SettingsScreen.drawMenuItem(rd, CustomGamePage.TITLE, GameFacts.screenWidth / 2F, menuY[MENU_CUSTOM] + 18);
+        }
         SettingsScreen.drawMenuItem(rd, "Split Screen", GameFacts.screenWidth / 2F, menuY[MENU_SPLIT] + 18);
         SettingsScreen.drawMenuItem(rd, "Settings", GameFacts.screenWidth / 2F, menuY[MENU_SETTINGS] + 18);
         SettingsScreen.drawMenuItem(rd, "Exit Game", GameFacts.screenWidth / 2F, menuY[MENU_EXIT] + 18);
@@ -4770,7 +4778,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             if (opselect == MENU_CREDITS) {
                 fase = Phase.CREDITS;
             }
-            if (opselect == MENU_CUSTOM) {
+            if (opselect == MENU_CUSTOM && menuShows(MENU_CUSTOM)) {
                 openCustomGame();
             }
             if (opselect == MENU_SPLIT) {
@@ -4800,7 +4808,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
     /**
      * The main menu's brown backdrop, taller than its picture by one item: the
      * picture's rows above {@link #OPBACK_GAP_AT}, that row stretched over
-     * {@link #OPBACK_GAP} pixels, then the rest, so its round ends stay whole.
+     * {@link #opbackGap} pixels, then the rest, so its round ends stay whole.
      */
     private void drawMenuBackdrop(int y) {
         int x = Utility.centeredImageX(opback);
@@ -4808,8 +4816,9 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         int h = opback.getHeight(null);
         int at = OPBACK_GAP_AT;
         rd.drawImage(opback, x, y, x + w, y + at, 0, 0, w, at, null);
-        rd.drawImage(opback, x, y + at, x + w, y + at + OPBACK_GAP, 0, at, w, at + 1, null);
-        rd.drawImage(opback, x, y + at + OPBACK_GAP, x + w, y + h + OPBACK_GAP, 0, at, w, h, null);
+        int gap = opbackGap();
+        rd.drawImage(opback, x, y + at, x + w, y + at + gap, 0, at, w, at + 1, null);
+        rd.drawImage(opback, x, y + at + gap, x + w, y + h + gap, 0, at, w, h, null);
     }
 
     /**
@@ -5821,7 +5830,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         if (fase == Phase.MAINMENU) {
             int over = -1;
             for (int item = 0; item < MENU_ITEMS; item++) {
-                if (overon(Utility.centeredWidthX(MENU_WIDTH[item]), menuY[item], MENU_WIDTH[item],
+                if (menuShows(item) && overon(Utility.centeredWidthX(MENU_WIDTH[item]), menuY[item], MENU_WIDTH[item],
                         main_menu_button_height, mouseX, mouseY)) {
                     over = item;
                 }

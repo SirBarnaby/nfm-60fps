@@ -28,7 +28,7 @@ public final class World {
 
     /**
      * The groups a custom game's staggered start sends off one after another
-     * (see {@link CustomGame#staggered}), set when the grid is laid out; 0
+     * (see {@link nfm.lit.features.customgame.StaggeredStart}), set when the grid is laid out; 0
      * when every car starts at once, as in every other race.
      */
     public int startGroups;

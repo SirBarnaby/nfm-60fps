@@ -25,6 +25,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 import java.util.function.IntFunction;
 import java.util.function.IntSupplier;
@@ -34,6 +35,7 @@ import nfm.lit.audio.Sound3D;
 import nfm.lit.audio.StreamMusic;
 import nfm.lit.features.FeatureSettings;
 import nfm.lit.features.Features;
+import nfm.lit.features.Page;
 import nfm.lit.gpu.GpuDisplay;
 
 import javax.imageio.ImageIO;
@@ -153,7 +155,7 @@ final class SettingsScreen {
     private int lastMouseX = -1;
     private int lastMouseY = -1;
     private int backPressed;
-    /** The lettering over the box: "Settings", or the custom game's own page. */
+    /** The lettering over the box: "Settings", or a feature page's own title (see {@link #page}). */
     private final String title;
 
     SettingsScreen(Image[] back) {
@@ -172,13 +174,13 @@ final class SettingsScreen {
     }
 
     /**
-     * The custom game's page, in the settings' own box, rows and keys: how
-     * many computer cars race and whose cars they drive, with Race! to go
-     * on to the car select ({@code race}). Back, or Escape, leaves it.
+     * A feature's own page (see {@link Page}), such as the custom game's: the
+     * rows {@code rows} lays out, in the settings' own box, keys and look,
+     * under {@code title}. Back, or Escape, leaves it.
      */
-    static SettingsScreen customGame(Image[] back, String[] carNames, Runnable race) {
-        SettingsScreen page = new SettingsScreen(back, "Custom Game");
-        page.buildCustomGame(carNames, race);
+    static SettingsScreen page(Image[] back, String title, Consumer<Page> rows) {
+        SettingsScreen page = new SettingsScreen(back, title);
+        rows.accept(page.new FeatureRows());
         page.layout();
         return page;
     }
@@ -618,52 +620,37 @@ final class SettingsScreen {
     private int buildingTab = -1;
     private String nextHeading;
 
-    /**
-     * The custom game's rows: Race!, the computer cars and their lineup on
-     * the first tab; how many of each car the Custom lineup brings on the
-     * second. Picking a car there makes the lineup Custom.
-     */
-    private void buildCustomGame(String[] carNames, Runnable race) {
-        int[] counts = new int[CustomGame.MAX_RIVALS + 1];
-        for (int i = 0; i < counts.length; i++) {
-            counts[i] = i;
-        }
-        tab("Race", "How many computer cars race you, and whose cars they drive.");
-        group("Race");
-        add(new Button("Race!", "Go", "Off to the car select, then the stage select, with the computer cars set"
-                + " below. After the race you are back here.", race));
-        add(new Choice("Computer cars",
-                "How many computer cars race you, up to " + CustomGame.MAX_RIVALS + ". Over "
-                        + CustomGame.STAGGER_ABOVE + " they start in groups of " + CustomGame.GROUP
-                        + ", one group a second, the front first. You always start last.",
-                () -> CustomGame.rivalsNow() > CustomGame.STAGGER_ABOVE
-                        ? "Now: " + CustomGame.groups(CustomGame.rivalsNow() + 1) + " groups, and you go with the last."
-                        : "Now: everyone starts at once.",
-                counts, CustomGame::rivalsText, CustomGame::rivalsNow, CustomGame::setRivals).when(() -> CustomGame.lineup != CustomGame.LINEUP_CUSTOM,
-                        "With the Custom lineup, the cars picked on the Pick cars tab are the computer cars."));
-        add(new Choice("Their cars",
-                "Default: the cars the stage brings in the classic game. Novice: " + carNames[0] + " up to "
-                        + carNames[CustomGame.LAST_NOVICE] + ". Pro: the pro cars only, "
-                        + carNames[GameFacts.numberOfCars - 1] + " first, then down from there. Custom: you pick"
-                        + " them, on the Pick cars tab.",
-                () -> CustomGame.lineupHelp(CustomGame.lineup, carNames) + ".",
-                new int[] {CustomGame.LINEUP_DEFAULT, CustomGame.LINEUP_NOVICE, CustomGame.LINEUP_PRO,
-                    CustomGame.LINEUP_CUSTOM},
-                CustomGame::lineupText, () -> CustomGame.lineup, CustomGame::setLineup));
+    /** How a feature lays out the rows of its own page ({@link #page}): onto this screen's tabs. */
+    private final class FeatureRows implements Page {
+        private Row last;
 
-        tab("Pick cars", "The Custom lineup: how many of each car race you, up to " + CustomGame.MAX_RIVALS
-                + " in all.");
-        group("Cars");
-        for (int c = 0; c < GameFacts.numberOfCars; c++) {
-            final int car = c;
-            add(new Choice(carNames[car],
-                    "How many " + carNames[car] + "s race you. Picking a car makes the lineup Custom (Race tab);"
-                            + " up to " + CustomGame.MAX_RIVALS + " cars in all.",
-                    () -> "Picked: " + CustomGame.picked() + " of " + CustomGame.MAX_RIVALS + ".",
-                    counts, String::valueOf, () -> CustomGame.picks[car], v -> CustomGame.setPick(car, v)));
+        @Override
+        public void tab(String name, String help) {
+            SettingsScreen.this.tab(name, help);
         }
-        add(new Button("Clear the picks", "Clear", "Takes every car out of the Custom lineup.",
-                CustomGame::clearPicks).when(() -> CustomGame.picked() > 0, "No car is picked."));
+
+        @Override
+        public void group(String heading) {
+            SettingsScreen.this.group(heading);
+        }
+
+        @Override
+        public void button(String label, String action, String help, Runnable run) {
+            last = new Button(label, action, help, run);
+            add(last);
+        }
+
+        @Override
+        public void choice(String label, String help, Supplier<String> status, int[] values, IntFunction<String> names,
+                IntSupplier get, IntConsumer set) {
+            last = new Choice(label, help, status, values, names, get, set);
+            add(last);
+        }
+
+        @Override
+        public void onlyWhen(BooleanSupplier when, String why) {
+            last.when(when, why);
+        }
     }
 
     private void tab(String name, String help) {

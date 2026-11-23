@@ -1,6 +1,7 @@
 package nfm.lit.features;
 
 import fallk.logmaster.HLogger;
+import nfm.lit.features.customgame.CustomGameFeature;
 
 /**
  * The extras the game knows, which are on in the race being played, and the
@@ -18,6 +19,7 @@ public final class Features {
 
     /** Every feature, one line each. */
     private static final Feature[] ALL = {
+        new CustomGameFeature(),
     };
 
     private static final boolean[] active = new boolean[ALL.length];

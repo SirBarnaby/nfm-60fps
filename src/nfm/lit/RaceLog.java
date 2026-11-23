@@ -116,7 +116,7 @@ final class RaceLog {
     End end = End.CLOSED;
     /** The tick on which the player passed the last checkpoint of the last lap, or -1. */
     int finishTick = -1;
-    /** A custom game's choices, see {@link CustomGame#recorded}: empty for any other race. */
+    /** A custom game's choices, see {@link nfm.lit.features.customgame.CustomGame#recorded}: empty for any other race. */
     String custom = "";
 
     /* Ticks. */

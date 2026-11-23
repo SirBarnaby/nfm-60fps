@@ -4,6 +4,8 @@ import java.util.Arrays;
 import fallk.logmaster.HLogger;
 import nfm.lit.audio.BASSLoader;
 import nfm.lit.audio.SoundManager;
+import nfm.lit.features.customgame.CustomGame;
+import nfm.lit.features.customgame.StaggeredStart;
 import nfm.lit.gpu.GpuDisplay;
 import nfm.lit.gpu.NativeWindow;
 
@@ -1991,8 +1993,7 @@ public class GameSparker extends Panel implements Runnable {
         gameUi.resetstat(checkpoints.stage);
         // split screen: the players side by side on the second row, a computer car on the first
         boolean split = SplitRace.on;
-        world.startGroups = CustomGame.staggered(GameFacts.numberOfPlayers) ? CustomGame.groups(GameFacts.numberOfPlayers)
-                : 0;
+        world.startGroups = StaggeredStart.groupsFor(GameFacts.numberOfPlayers);
         racer = 0;
         do {
             int slot = split && racer < 3 ? (racer + 1) % 3 : racer;
@@ -2000,7 +2001,7 @@ public class GameSparker extends Panel implements Runnable {
             int z;
             if (world.staggered()) {
                 // a big custom game: the computer cars in groups of six across, the player behind them
-                int[] place = CustomGame.gridPlace(racer, GameFacts.numberOfPlayers);
+                int[] place = StaggeredStart.gridPlace(racer, GameFacts.numberOfPlayers);
                 x = place[0];
                 z = place[1];
             } else if (slot % 3 == 0) {
@@ -2683,13 +2684,7 @@ public class GameSparker extends Panel implements Runnable {
         drawSimulationStep();
 
         if (ui.starcnt == 0) {
-            // a big custom game's staggered start: the groups not yet gone stand still on the grid
-            int cars = GameFacts.numberOfPlayers;
-            boolean staggered = world.staggered();
-            int sinceGo = world.ticksSinceGo;
-            if (staggered) {
-                CustomGame.holdWaiting(u, cars, sinceGo);
-            }
+            StaggeredStart.beforeDrive(world, u, GameFacts.numberOfPlayers); // a big custom game's groups not yet gone wait
             int car = 0;
             do {
                 int other = 0;
@@ -2715,15 +2710,13 @@ public class GameSparker extends Panel implements Runnable {
             car = GameFacts.humans;
             if (car == 1 || car < GameFacts.numberOfPlayers) {
                 do {
-                    if (!staggered || !CustomGame.held(car, cars, sinceGo)) {
+                    if (StaggeredStart.drivesNext(world, car, GameFacts.numberOfPlayers)) {
                         u[car].preform(racers[car], sceneObjects[car], raceCheckpoints, raceTrackers,
                                 GameFacts.numberOfPlayers);
                     }
                 } while (++car < GameFacts.numberOfPlayers);
             }
-            if (staggered) {
-                world.ticksSinceGo++;
-            }
+            StaggeredStart.afterDrive(world);
         } else {
             if (ui.starcnt == 130) {
                 Medium.adv = 1900;
@@ -2774,7 +2767,7 @@ public class GameSparker extends Panel implements Runnable {
             }
         } else {
             if (world.staggered())
-                Medium.around(sceneObjects[CustomGame.flybyCar(GameFacts.numberOfPlayers)], true);
+                Medium.around(sceneObjects[StaggeredStart.flybyCar(GameFacts.numberOfPlayers)], true);
             else if (GameFacts.numberOfPlayers < 5)
                 Medium.around(sceneObjects[0], true);
             else
@@ -5317,50 +5310,6 @@ public class GameSparker extends Panel implements Runnable {
         }
     }
 
-    /* The custom game's choices; "custompicks" holds how many of each car the Custom lineup brings, comma separated. */
-    private static final String CUSTOM_RIVALS_COOKIE = "customrivals";
-    private static final String CUSTOM_LINEUP_COOKIE = "customlineup";
-    private static final String CUSTOM_PICKS_COOKIE = "custompicks";
-
-    /**
-     * The custom game's saved choices (none in hidden runs), each replaced by
-     * -Dnfm.custom.rivals (0 to 32), -Dnfm.custom.lineup (default, novice,
-     * pro or custom) and -Dnfm.custom.picks (a count per car, comma
-     * separated) when given.
-     */
-    private void loadCustomGame() {
-        String rivals = System.getProperty("nfm.custom.rivals");
-        String lineup = System.getProperty("nfm.custom.lineup");
-        String picks = System.getProperty("nfm.custom.picks");
-        int savedRivals = readcookie(CUSTOM_RIVALS_COOKIE);
-        if (rivals != null) {
-            try {
-                savedRivals = Integer.parseInt(rivals.trim());
-            } catch (NumberFormatException e) {
-                HLogger.error("nfm.custom.rivals is not a number: " + rivals);
-            }
-        }
-        CustomGame.load(savedRivals,
-                lineup != null ? CustomGame.lineupNamed(lineup) : readcookie(CUSTOM_LINEUP_COOKIE),
-                picks != null ? picks : readcookieText(CUSTOM_PICKS_COOKIE));
-        if (lineup != null && CustomGame.lineupNamed(lineup) < 0) {
-            HLogger.error("nfm.custom.lineup is not default, novice, pro or custom: " + lineup);
-        }
-        if (picks != null && !CustomGame.readsAsPicks(picks)) {
-            HLogger.error("nfm.custom.picks wants " + GameFacts.numberOfCars
-                    + " counts, one per car, comma separated, adding up to at most " + CustomGame.MAX_RIVALS + ": " + picks);
-        }
-    }
-
-    private void saveCustomGameIfChanged() {
-        if (CustomGame.changed) {
-            CustomGame.changed = false;
-            savecookie(CUSTOM_RIVALS_COOKIE, String.valueOf(CustomGame.rivals));
-            savecookie(CUSTOM_LINEUP_COOKIE, String.valueOf(CustomGame.lineup));
-            savecookie(CUSTOM_PICKS_COOKIE, CustomGame.picksText());
-        }
-    }
-
     private void saveKeysIfChanged() {
         if (KeyBindings.takeChanged()) {
             for (int a = 0; a < KeyBindings.COUNT; a++) {
@@ -6677,7 +6626,8 @@ public class GameSparker extends Panel implements Runnable {
     /**
      * The hidden test run plays a custom game instead:
      * -Dnfm.autotest.custom=computer cars[,default|novice|pro|custom], or
-     * {@code saved} for the choices as the player left them. Main menu, the
+     * {@code saved} for the choices as the player left them; the custom
+     * game's switch is on for the run. Main menu, the
      * custom game's page, the car and stage select, a race with screenshots
      * (every second through a staggered start, with each group's start
      * logged) that ends 30 seconds after the player's start in the post-race
@@ -6689,11 +6639,9 @@ public class GameSparker extends Panel implements Runnable {
     private void runCustomTest(File directory) {
         String[] parts = CUSTOM_TEST.split(",");
         if (!parts[0].trim().equals("saved")) {
-            CustomGame.rivals = Math.clamp(Integer.parseInt(parts[0].trim()), 0, CustomGame.MAX_RIVALS);
-            if (parts.length > 1) {
-                CustomGame.lineup = Math.max(0, CustomGame.lineupNamed(parts[1]));
-            }
+            CustomGame.forTest(Integer.parseInt(parts[0].trim()), parts.length > 1 ? parts[1] : null);
         }
+        nfm.lit.features.FeatureSettings.set(nfm.lit.features.customgame.CustomGameFeature.ID, 1); // never saved: hidden
         System.out.println("[autotest] custom game (" + CUSTOM_TEST + ") -> " + directory.getAbsolutePath());
         long start = System.currentTimeMillis();
         Phase lastPhase = null;
@@ -6719,7 +6667,7 @@ public class GameSparker extends Panel implements Runnable {
                 if (phase == Phase.INGAME && step < 10) {
                     int cars = GameFacts.numberOfPlayers;
                     System.out.println("[autotest] custom race: " + cars + " cars, " + CustomGame.lineupText(
-                            CustomGame.lineup) + ", " + (world.staggered() ? world.startGroups
+                            CustomGame.lineup()) + ", " + (world.staggered() ? world.startGroups
                             + " groups" : "all at once") + ", cars " + java.util.Arrays.toString(
                             java.util.Arrays.copyOf(ui.sc, cars)) + ", player starts " + (startsLast(cars)
                             ? "last" : "NOT last"));
@@ -6776,18 +6724,18 @@ public class GameSparker extends Panel implements Runnable {
                     inGameMillis += 100L;
                     int cars = GameFacts.numberOfPlayers;
                     if (ui.starcnt == 0 && world.staggered()) {
-                        int gone = CustomGame.groupsGone(cars, world.ticksSinceGo - 1);
+                        int gone = Math.min(world.startGroups,
+                                (world.ticksSinceGo - 1) / StaggeredStart.LAUNCH_GAP_TICKS + 1);
                         if (gone > groupsLogged) {
                             groupsLogged = gone;
-                            System.out.println("[autotest] group " + gone + " of " + CustomGame.groups(cars)
+                            System.out.println("[autotest] group " + gone + " of " + world.startGroups
                                     + " gone at tick " + (world.ticksSinceGo - 1) + ", moving: " + movingCars(cars));
                         }
                     }
                     long cycle = inGameMillis % 4000L;
                     boolean over = ui.raceOver();
                     holdTestKeys(!over, !over && cycle > 3400L && cycle < 3700L, !over && cycle > 2200L && cycle < 2500L);
-                    boolean starting = ui.starcnt == 0 && world.staggered()
-                            && CustomGame.playerWait(cars, world.ticksSinceGo) > 0;
+                    boolean starting = ui.starcnt == 0 && StaggeredStart.playerWaiting(world, cars);
                     if (now - lastShot >= (LIVE ? LIVE_SHOT_MILLIS : starting ? 1000L : 5000L)) {
                         saveFrame(directory, String.format("%02d-race-%06dms.png", shots++, inGameMillis));
                         lastShot = now;
@@ -6856,10 +6804,10 @@ public class GameSparker extends Panel implements Runnable {
 
     /** How many cars of each start group are moving, the player's group last: for the custom test's log. */
     private String movingCars(int cars) {
-        int[] moving = new int[CustomGame.groups(cars)];
+        int[] moving = new int[StaggeredStart.groups(cars)];
         for (int car = 0; car < cars; car++) {
             if (Math.abs(racers[car].speed) > 1F) {
-                moving[CustomGame.launchGroup(car, cars)]++;
+                moving[StaggeredStart.launchGroup(car, cars)]++;
             }
         }
         return java.util.Arrays.toString(moving) + (Math.abs(racers[0].speed) > 1F ? ", player moving" : ", player waiting");
@@ -7214,7 +7162,7 @@ public class GameSparker extends Panel implements Runnable {
         loadAudioEffects();
         loadKeys();
         loadSplit();
-        loadCustomGame();
+        CustomGame.load(GameSparker::readcookie, GameSparker::readcookieText);
         loadRunAhead();
         loadFullscreenResolution();
         loadRenderer();
@@ -7311,7 +7259,7 @@ public class GameSparker extends Panel implements Runnable {
                 saveVsyncIfChanged();
                 saveKeysIfChanged();
                 saveSplitIfChanged();
-                saveCustomGameIfChanged();
+                CustomGame.saveIfChanged(this::savecookie);
                 saveAudioEffectsIfChanged();
                 fitPicture(now);
                 ticksRun++;

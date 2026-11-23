@@ -154,6 +154,11 @@ public final class FeatureSettings {
                 "Each wheel on its own spring, grip that runs out in a circle, weight moving under braking and in"
                         + " corners. A new feel, meant for after 1.0." + RACE_1_0,
                 "xtragrip", Kind.RACE, 0, "Off", "On"),
+        new Switch("customgame", "Custom game",
+                "Adds Custom Game to the main menu: up to 32 computer cars, whose cars they drive (Default, Novice,"
+                        + " Pro, or picked one by one), and above 9 a start in groups of six, a second apart, with you"
+                        + " last. Not in split screen." + RACE_1_0,
+                "xtracustom", Kind.RACE, 0, "Off", "On"),
     };
 
     /** Raised by every change, so the features can follow a switch turned during a race. */
