@@ -26,3 +26,15 @@ The warm-up (`GameSparker.warmUpWhileLoading`) plays real race ticks on the scre
 A test thread that writes `u[0].up` directly races the game: `latchRaceInput` sets the controls from the held keys at the start of every tick and overwrites it. Hold keys the way the keyboard does, in `live[0]` under `inputLock` (`GameSparker.holdTestKeys`), and the next tick latches them.
 
 A hidden test that runs out of time should not exit with code 0: a dead game thread leaves the game on one screen until the time runs out, and code 0 then reads as a pass. The custom test exits with 1.
+
+## A computer car's controls are for the next tick
+
+The race tick drives every car with the controls it has, then runs the AI (`Control.preform`), which sets each computer car's controls for the next tick. The player's controls are latched fresh at the start of the tick. So a computer car that is let go on a tick drives that tick with whatever its controls held: when the staggered start began running a held car's AI only from its group's start tick, the car spent that tick with the handbrake still on, and the last group set off a tick after the player. Anything that holds a computer car and lets it go must start its AI on the tick before (`StaggeredStart.drivesNext`). The classic start has the same one-tick lag for every computer car at Go!, and keeps it.
+
+## A test thread reading the race
+
+The hidden test samples the race from its own thread every 100 ms while the game thread runs ticks. To say when something first happened without ever saying it happened too early, read what you look for first (the cars' speeds) and the clock after (`World.ticksSinceGo`): the clock can only have moved on since. Check what the race shows, not what the rules say it should show: the first version logged each group's start from the same formula that held the cars, so it could never fail.
+
+## A feature switch that changes a menu
+
+A race extra stays off until 1.0, and the main menu with it off has to be the classic one, pixel for pixel. Keep the item's index (other code sets `opselect` to the items by name), skip it in the drawing, the mouse and the up and down keys, move the items after it up by its step, and close the backdrop up by the same amount (`GameUi.placeMenu`, `opbackGap`). Place the items every frame: the switch can change while the menu is up, from the settings or the developer console.

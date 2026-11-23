@@ -25,8 +25,8 @@
 ## 5. Gates
 
 - [x] 5.1 `build.ps1` (full, with the startup cache; 2026-11-23 on the owner's PC, worktree)
-- [x] 5.2 `test\verify-races.ps1`: 20 matched, golden frames 95 same; `test\verify-sound.ps1`: all 3 renders match
+- [x] 5.2 `test\verify-races.ps1`: `20 matched, 0 differed, 0 could not be run`, `golden frames: 95 same, 0 changed, 0 saved`; `test\verify-sound.ps1`: `[sound] all 3 renders match the baseline`, each race `same`
 - [x] 5.3 Hidden custom runs: 9 Default, 12 Novice, 32 Pro, a 20-car Custom pick. The first round found the warm-up crash with 10 to 24 computer cars (fixed, see the lessons), captions over the player's countdown portrait and the campaign wording on the results (both fixed)
-- [ ] 5.4 `test\perf.ps1`; `test\live.ps1 -Custom 32,pro` and `test\live.ps1` on the owner's PC
+- [ ] 5.4 `test\perf.ps1`; `test\live.ps1 -Custom 32,pro`, `test\live.ps1` and `test\live.ps1 -Split` on the owner's PC
 - [x] 5.5 `test\spec-check.ps1`, and `openspec validate custom-game --strict`
 - [ ] 5.6 `test\blind-review.ps1 -Base <the commit before the work>`

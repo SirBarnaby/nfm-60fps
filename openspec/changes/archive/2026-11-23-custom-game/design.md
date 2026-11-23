@@ -32,7 +32,7 @@
 
 - Everything new is drawn by the graphics card as before: the extra cars are more polygons in the kept scene the card places every frame; the HUD is the same layer.
 - The game thread does more work a tick with 33 cars (collisions are pairs, 33 × 32; the AI for 32 cars), 19 times a second, off the drawing thread.
-- Measured on the owner's PC with `test\live.ps1 -Custom 32,pro`: see tasks 5.4.
+- Not measured yet: `test\live.ps1 -Custom 32,pro` on the owner's PC is task 5.4, open while the owner uses the PC (see the `custom-game-review-fixes` change).
 
 ## Races stay identical
 
