@@ -34,6 +34,17 @@ final class PowerupDrawing {
     private static final float DEPTH = 18F;
     private static final float LIP = 7F;
     private static final int SOOT = 0x2A241E;
+    /** The rings' corners round the centre, cos and sin, SIDES + 1 of them (the last the first again). */
+    private static final float[] RING_COS = new float[SIDES + 1];
+    private static final float[] RING_SIN = new float[SIDES + 1];
+
+    static {
+        for (int k = 0; k <= SIDES; k++) {
+            double a = k * 2D * Math.PI / SIDES;
+            RING_COS[k] = (float) Math.cos(a);
+            RING_SIN[k] = (float) Math.sin(a);
+        }
+    }
 
     /* light from above, a little from the side (y grows downwards) */
     private static final float LIGHT_X = 0.36F;
@@ -417,20 +428,18 @@ final class PowerupDrawing {
         canvas.dither(0.55F);
         canvas.color(canvas.fog(mix(ground, 0x141210, 0.8F), x, y, z));
         for (int k = 0; k < SIDES; k++) {
-            double a = k * 2D * Math.PI / SIDES;
-            px[k] = x + (float) Math.cos(a) * 200F * s;
+            px[k] = x + RING_COS[k] * 200F * s;
             py[k] = y - 0.5F;
-            pz[k] = z + (float) Math.sin(a) * 200F * s;
+            pz[k] = z + RING_SIN[k] * 200F * s;
         }
         canvas.world(px, py, pz, SIDES);
         canvas.dither(1F);
         // the bowl's floor
         canvas.color(canvas.fog(lit(burnt, 0F, -1F, 0F), x, y, z));
         for (int k = 0; k < SIDES; k++) {
-            double a = k * 2D * Math.PI / SIDES;
-            px[k] = x + (float) Math.cos(a) * 34F * s;
+            px[k] = x + RING_COS[k] * 34F * s;
             py[k] = y + DEPTH * s;
-            pz[k] = z + (float) Math.sin(a) * 34F * s;
+            pz[k] = z + RING_SIN[k] * 34F * s;
         }
         canvas.world(px, py, pz, SIDES);
         // the rings, the far side first
@@ -447,12 +456,10 @@ final class PowerupDrawing {
     /** Side {@code k} of a ring from radius {@code r0} at depth {@code d0} out to {@code r1} at {@code d1}. */
     private void ring(Canvas canvas, float x, float y, float z, int k, float r0, float d0, float r1, float d1,
             int rgb) {
-        double a0 = k * 2D * Math.PI / SIDES;
-        double a1 = (k + 1) * 2D * Math.PI / SIDES;
-        float c0 = (float) Math.cos(a0);
-        float s0 = (float) Math.sin(a0);
-        float c1 = (float) Math.cos(a1);
-        float s1 = (float) Math.sin(a1);
+        float c0 = RING_COS[k];
+        float s0 = RING_SIN[k];
+        float c1 = RING_COS[k + 1];
+        float s1 = RING_SIN[k + 1];
         px[0] = x + c0 * r0;
         py[0] = y + d0;
         pz[0] = z + s0 * r0;

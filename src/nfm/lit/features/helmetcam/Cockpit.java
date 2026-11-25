@@ -37,10 +37,9 @@ final class Cockpit {
     float eyeX;
     float eyeY;
     float eyeZ;
-    /** The top of the bonnet (its least y), and the dashboard: across the car at dashZ, from dashTop down to dashBottom. */
+    /** The top of the bonnet (its least y), and the dashboard: across the car at dashZ, from the bonnet's top down to dashBottom. */
     float bonnetTop;
     float dashZ;
-    float dashTop;
     float dashBottom;
     float dashHalfWidth;
     /** Per polygon (the game's numbers): drawn from the eyes. */
@@ -137,8 +136,7 @@ final class Cockpit {
      */
     private void dash(CarShape s, float from) {
         dashZ = Math.max(from, eyeZ + DASH_AHEAD);
-        dashTop = bonnetTop;
-        dashBottom = Math.max(s.maxY, dashTop) + DASH_BELOW;
+        dashBottom = Math.max(s.maxY, bonnetTop) + DASH_BELOW;
         dashHalfWidth = DASH_WIDE * Math.max(Math.abs(s.minX), Math.abs(s.maxX));
     }
 

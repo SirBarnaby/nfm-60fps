@@ -109,8 +109,7 @@ public final class EngineSound implements Feature {
 
     /** How loud a wheel sliding {@code slide} units a tick skids: nothing below {@link #QUIET}, all of it from {@link #FULL}. */
     static float strength(float slide) {
-        float t = Math.max(0F, Math.min(1F, (slide - QUIET) / (FULL - QUIET)));
-        return t * t * (3F - 2F * t);
+        return SkidSlip.smooth(QUIET, FULL, slide);
     }
 
     @Override

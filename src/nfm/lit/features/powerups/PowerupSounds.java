@@ -1,7 +1,12 @@
 package nfm.lit.features.powerups;
 
+import static nfm.lit.features.Synth.decay;
+import static nfm.lit.features.Synth.pcm;
+import static nfm.lit.features.Synth.sine;
+
 import nfm.lit.audio.Sound3D;
 import nfm.lit.features.Features;
+import nfm.lit.features.Synth.Noise;
 
 /**
  * The powerups' sounds, each made once from a few lines of synthesis (the
@@ -207,43 +212,5 @@ final class PowerupSounds {
         }
         float w = i / (float) CROSSFADE;
         return noise[i] * w + noise[LOOP + i] * (1F - w);
-    }
-
-    private static float sine(float hz, float t) {
-        return (float) Math.sin(2D * Math.PI * hz * t);
-    }
-
-    private static float decay(float t, float time) {
-        return (float) Math.exp(-t / time);
-    }
-
-    /** {@code out} as 16-bit samples, its peak at {@code level} of full scale. */
-    private static short[] pcm(float[] out, float level) {
-        float peak = 1e-6F;
-        for (float v : out) {
-            peak = Math.max(peak, Math.abs(v));
-        }
-        float scale = level * Short.MAX_VALUE / peak;
-        short[] s = new short[out.length];
-        for (int i = 0; i < out.length; i++) {
-            s[i] = (short) Math.round(out[i] * scale);
-        }
-        return s;
-    }
-
-    /** White noise from a fixed seed, -1 to 1. */
-    private static final class Noise {
-        private long state;
-
-        Noise(long seed) {
-            state = seed * 0x9E3779B97F4A7C15L + 1L;
-        }
-
-        float next() {
-            state ^= state << 13;
-            state ^= state >>> 7;
-            state ^= state << 17;
-            return ((state >>> 40) / (float) (1 << 24)) * 2F - 1F;
-        }
     }
 }

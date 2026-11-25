@@ -100,8 +100,6 @@ final class PowerupRace {
     float[] boxX = new float[0];
     float[] boxY = new float[0];
     float[] boxZ = new float[0];
-    /** Across which axis each box's row runs: 1 along x, 2 along z (the gate's). */
-    int[] boxKind = new int[0];
 
     /* ------------------------------------------- the state (see sync) */
 
@@ -176,7 +174,6 @@ final class PowerupRace {
         boxX = new float[boxes];
         boxY = new float[boxes];
         boxZ = new float[boxes];
-        boxKind = new int[boxes];
         int gate = 0;
         int b = 0;
         for (int p = 0; p < race.points(); p++) {
@@ -196,7 +193,6 @@ final class PowerupRace {
                 boxX[b] = x;
                 boxY[b] = road - HOVER;
                 boxZ[b] = z;
-                boxKind[b] = kind;
                 b++;
             }
         }

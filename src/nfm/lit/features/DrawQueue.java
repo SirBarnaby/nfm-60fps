@@ -50,9 +50,16 @@ public final class DrawQueue {
     private float eyeY;
     private float eyeZ;
     private int tick;
+    private float share = 1F;
 
     /** Empties the queue for a frame seen from {@code (eyeX, eyeY, eyeZ)}, {@code tick} real ticks into the race. */
     public void begin(float eyeX, float eyeY, float eyeZ, int tick) {
+        begin(eyeX, eyeY, eyeZ, tick, 1F);
+    }
+
+    /** As {@link #begin(float, float, float, int)}, the frame drawn {@code share} of the way between ticks ({@link #share}). */
+    public void begin(float eyeX, float eyeY, float eyeZ, int tick, float share) {
+        this.share = share;
         count = 0;
         depthCount = 0;
         afterCount = 0;
@@ -84,6 +91,15 @@ public final class DrawQueue {
     /** Real ticks since the race started. */
     public int tick() {
         return tick;
+    }
+
+    /**
+     * How far the frame is from the tick before the last real one (0) to the
+     * last (1), as the cars are drawn; 1 while run-ahead's tick is drawn,
+     * where the last real tick is the latest an extra knows.
+     */
+    public float share() {
+        return share;
     }
 
     /** Item {@code item} lies on the road. */

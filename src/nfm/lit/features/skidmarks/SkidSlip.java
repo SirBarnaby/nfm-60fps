@@ -220,7 +220,8 @@ public final class SkidSlip {
         return d;
     }
 
-    static float smooth(float from, float to, float v) {
+    /** 0 at or below {@code from}, 1 at or above {@code to}, smoothly between (smoothstep). */
+    public static float smooth(float from, float to, float v) {
         float t = Math.max(0F, Math.min(1F, (v - from) / (to - from)));
         return t * t * (3F - 2F * t);
     }

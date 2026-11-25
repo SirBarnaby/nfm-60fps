@@ -120,7 +120,7 @@ public final class HelmetCam implements Feature {
         dashX[1] = w;
         dashX[2] = w;
         dashX[3] = -w;
-        dashY[0] = dashY[1] = c.dashTop;
+        dashY[0] = dashY[1] = c.bonnetTop;
         dashY[2] = dashY[3] = c.dashBottom;
         java.util.Arrays.fill(dashZ, c.dashZ);
         canvas.color(canvas.fog(DASH_RGB, carX[item], carY[item], carZ[item]));

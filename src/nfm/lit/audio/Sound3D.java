@@ -1522,13 +1522,7 @@ public final class Sound3D implements Runnable {
         }
         int buffer = 0;
         try (AudioInputStream in = AudioSystem.getAudioInputStream(new ByteArrayInputStream(data))) {
-            AudioFormat f = in.getFormat();
-            AudioInputStream pcm = in;
-            if (f.getEncoding() != AudioFormat.Encoding.PCM_SIGNED || f.getSampleSizeInBits() != 16
-                    || f.isBigEndian()) {
-                AudioFormat target = new AudioFormat(f.getSampleRate(), 16, f.getChannels(), true, false);
-                pcm = AudioSystem.getAudioInputStream(target, in);
-            }
+            AudioInputStream pcm = pcm16(in);
             byte[] samples = pcm.readAllBytes();
             ByteBuffer direct = MemoryUtil.memAlloc(samples.length);
             try {
@@ -2519,6 +2513,8 @@ public final class Sound3D implements Runnable {
         final float[] velocity = new float[3];
         /** The rebuilt sound's voices for this car, made the first time the extra plays it. */
         RebuiltVoices rebuilt;
+        /** True once the five recordings are paused for the rebuilt sound: only the classic mix plays them again. */
+        boolean classicPaused;
         /** The hum of the powerup the car holds, made the first time it holds one. */
         HumVoice hum;
 
@@ -2590,15 +2586,17 @@ public final class Sound3D implements Runnable {
                     for (int i = 0; i < 5; i++) {
                         gain[i] += (targetGain[i] - gain[i]) * k;
                         pitch[i] += (targetPitch[i] - pitch[i]) * k;
-                        if (alGetSourcei(sources[i], AL_SOURCE_STATE) == AL_PLAYING) {
+                        if (!classicPaused && alGetSourcei(sources[i], AL_SOURCE_STATE) == AL_PLAYING) {
                             alSourcePause(sources[i]);
                         }
                     }
+                    classicPaused = true;
                     rebuilt.play(car, index, dt, gain, pitch, throttle, position, velocity, muted);
                     return;
                 }
                 rebuilt.quiet(dt);
             }
+            classicPaused = false;
             for (int i = 0; i < 5; i++) {
                 gain[i] += (targetGain[i] - gain[i]) * k;
                 pitch[i] += (targetPitch[i] - pitch[i]) * k;
@@ -2633,16 +2631,7 @@ public final class Sound3D implements Runnable {
             }
             float s = Math.abs(car.speed);
             int[] b = car.bands;
-            float t;
-            if (s <= b[0]) {
-                t = b[0] == 0 ? 0F : s / b[0];
-            } else if (s <= b[1]) {
-                t = (s - b[0]) / Math.max(1F, b[1] - b[0]);
-            } else if (s <= b[2]) {
-                t = (s - b[1]) / Math.max(1F, b[2] - b[1]);
-            } else {
-                t = 1F;
-            }
+            float t = bandShare(car);
             float p = Math.min(2.999F, 3F * t); // where in the band: 0 to 3, a third per recording
             if (!car.grounded) {
                 targetGain[0] = 1F;
@@ -2772,58 +2761,67 @@ public final class Sound3D implements Runnable {
     /** The game's skid recordings, a different one at each wheel. */
     private static final String[] SKID_CLIPS = {"skid0", "skid1", "skid2"};
     private static final String[] DUST_CLIPS = {"dustskid0", "dustskid1", "dustskid2"};
+    /** A voice's gain below this (-120 dB) is silence: the voice stops instead of playing on unheard. */
+    private static final float SILENT = 1e-6F;
 
     /* the recordings the rebuilt sound plays, read and cut once (the sound thread's) */
     private final Map<String, EngineGrains.Cycles> cycleCache = new HashMap<>();
-    private final Map<String, float[]> skidCache = new HashMap<>();
-    private final Map<String, Integer> skidRates = new HashMap<>();
-    private final int[] readRate = new int[1];
+    private final Map<String, Recording> skidCache = new HashMap<>();
 
-    /** Engine recording {@code name} cut into its cycles, or null while it is not there. */
+    /** A clip as samples from -1 to 1 (its channels averaged), {@code rate} a second. */
+    private record Recording(float[] x, int rate) {
+    }
+
+    /** What {@link #recording} gives for a clip that cannot be read or is empty: it is not tried again. */
+    private static final Recording UNREADABLE = new Recording(new float[0], 0);
+
+    /** Engine recording {@code name} cut into its cycles, or null while it is not there or cannot be read. */
     private EngineGrains.Cycles cycles(String name) {
         EngineGrains.Cycles c = cycleCache.get(name);
         if (c == null && !cycleCache.containsKey(name)) {
-            float[] x = samples(name, readRate);
-            if (x != null) {
-                c = EngineGrains.cut(x, readRate[0]);
+            Recording r = recording(name);
+            if (r != null) {
+                c = r == UNREADABLE ? null : EngineGrains.cut(r.x(), r.rate());
                 cycleCache.put(name, c);
             }
         }
         return c;
     }
 
-    /** Skid recording {@code name}'s samples (its rate in {@link #skidRates}), or null while it is not there. */
-    private float[] skidSamples(String name) {
-        float[] x = skidCache.get(name);
-        if (x == null && !skidCache.containsKey(name)) {
-            x = samples(name, readRate);
-            if (x != null) {
-                skidCache.put(name, x);
-                skidRates.put(name, readRate[0]);
+    /** Skid recording {@code name}, or null while it is not there or cannot be read. */
+    private Recording skidRecording(String name) {
+        Recording r = skidCache.get(name);
+        if (r == null) {
+            r = recording(name);
+            if (r != null) {
+                skidCache.put(name, r);
             }
         }
-        return x;
+        return r == UNREADABLE ? null : r;
+    }
+
+    /** Clip stream {@code in} as 16-bit little-endian samples, as OpenAL and the rebuilt sound read them. */
+    private static AudioInputStream pcm16(AudioInputStream in) {
+        AudioFormat f = in.getFormat();
+        if (f.getEncoding() == AudioFormat.Encoding.PCM_SIGNED && f.getSampleSizeInBits() == 16 && !f.isBigEndian()) {
+            return in;
+        }
+        return AudioSystem.getAudioInputStream(new AudioFormat(f.getSampleRate(), 16, f.getChannels(), true, false),
+                in);
     }
 
     /**
-     * Clip {@code name} as samples from -1 to 1 (its channels averaged), its
-     * rate into {@code rate[0]}; null if there is none. A clip that cannot
-     * be read is not tried again.
+     * Clip {@code name} as a recording: null while it is not there (the game
+     * still loading), {@link #UNREADABLE} if it cannot be read or is empty.
      */
-    private float[] samples(String name, int[] rate) {
+    private Recording recording(String name) {
         SoundClip clip = clips.clips().get(name);
         byte[] data = clip == null ? null : clip.data();
         if (data == null) {
             return null;
         }
         try (AudioInputStream in = AudioSystem.getAudioInputStream(new ByteArrayInputStream(data))) {
-            AudioFormat f = in.getFormat();
-            AudioInputStream pcm = in;
-            if (f.getEncoding() != AudioFormat.Encoding.PCM_SIGNED || f.getSampleSizeInBits() != 16
-                    || f.isBigEndian()) {
-                pcm = AudioSystem.getAudioInputStream(new AudioFormat(f.getSampleRate(), 16, f.getChannels(), true,
-                        false), in);
-            }
+            AudioInputStream pcm = pcm16(in);
             byte[] b = pcm.readAllBytes();
             int channels = Math.max(1, pcm.getFormat().getChannels());
             int n = b.length / (2 * channels);
@@ -2836,13 +2834,10 @@ public final class Sound3D implements Runnable {
                 }
                 x[i] = sum / (channels * 32768F);
             }
-            rate[0] = (int) pcm.getFormat().getSampleRate();
-            return n > 0 ? x : null;
+            return n > 0 ? new Recording(x, (int) pcm.getFormat().getSampleRate()) : UNREADABLE;
         } catch (Exception ex) {
             HLogger.warn("3D sound cannot read clip " + name + " for the rebuilt engine sound: " + ex);
-            cycleCache.put(name, null);
-            skidCache.put(name, null);
-            return null;
+            return UNREADABLE;
         }
     }
 
@@ -2942,7 +2937,6 @@ public final class Sound3D implements Runnable {
         private final ShortBuffer pcm = MemoryUtil.memAllocShort(REBUILT_BLOCK);
         private final float[] lastGain = new float[5];
         private final float[] lastPitch = {1F, 1F, 1F, 1F, 1F};
-        private final float[] offset = new float[3];
         private final float[] placed = new float[3];
         private final int wheelFilter;
         private float wheelLf = -1F;
@@ -3077,7 +3071,8 @@ public final class Sound3D implements Runnable {
             for (int b = 0; b < need; b++) {
                 Arrays.fill(mixed, 0F);
                 for (int i = 0; i < 5; i++) {
-                    voices[i].add(mixed, 0, REBUILT_BLOCK, pitch[i], gain[i] * level, grainRandom);
+                    float g = gain[i] * level; // eased toward 0, it never quite gets there
+                    voices[i].add(mixed, 0, REBUILT_BLOCK, pitch[i], g < SILENT ? 0F : g, grainRandom);
                 }
                 tone.shape(mixed, frontBlock, backBlock, REBUILT_BLOCK, throttle, grainRandom);
                 queue(front, frontBlock, FRONT_LEVEL);
@@ -3116,9 +3111,9 @@ public final class Sound3D implements Runnable {
                     continue;
                 }
                 String clip = ((car.loose >> w) & 1) != 0 ? DUST_CLIPS[w % 3] : SKID_CLIPS[w % 3];
-                float[] x = skidSamples(clip);
-                if (x != null) {
-                    skids[w].use(x, skidRates.get(clip));
+                Recording skid = skidRecording(clip);
+                if (skid != null) {
+                    skids[w].use(skid.x(), skid.rate());
                 }
                 place(wheels[w].source, 6 + 3 * w, position, velocity);
                 topUp(w);

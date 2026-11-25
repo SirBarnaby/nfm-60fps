@@ -153,6 +153,9 @@ public final class Features {
 
     /** True if race extra {@code feature} plays in this race. */
     public static boolean racePlays(Feature feature) {
+        if (!raceAny) {
+            return false; // none plays (raceStarting sets the two together)
+        }
         for (int f = 0; f < ALL.length; f++) {
             if (ALL[f] == feature) {
                 return racePlays[f];
@@ -391,19 +394,6 @@ public final class Features {
     /** True while a feature draws the cars' bodies elsewhere ({@link CarBody}): the game asks it for their polygons. */
     public static boolean carBodies() {
         return body != null;
-    }
-
-    /** {@link CarBody#bodyFrame}, before a scene is drawn. */
-    public static void bodyFrame(float share, boolean ahead) {
-        CarBody b = body;
-        if (b == null) {
-            return;
-        }
-        try {
-            b.bodyFrame(share, ahead);
-        } catch (RuntimeException e) {
-            fail(bodyOwner, e);
-        }
     }
 
     /** {@link CarBody#body}; false when no feature moves the cars' bodies (or it threw, and is off). */

@@ -62,6 +62,8 @@ public final class EngineGrains {
     /** One recording, a loop, cut into its engine cycles. */
     public static final class Cycles {
         final float[] x;
+        /** The loop with a sample before it and three after, each from its other end, so {@link #at} reads it straight. */
+        private final float[] padded;
         /** Samples a second of the recording. */
         public final int rate;
         /** One cycle's length, samples of the recording (between samples). */
@@ -74,21 +76,29 @@ public final class EngineGrains {
             this.rate = rate;
             this.period = period;
             this.count = Math.max(1, (int) (x.length / period));
+            int n = x.length;
+            padded = new float[n + 4];
+            for (int k = 0; n > 0 && k < padded.length; k++) {
+                padded[k] = x[Math.floorMod(k - 1, n)];
+            }
         }
 
         /** The recording at {@code pos} samples, between samples, the loop going round. */
         float at(double pos) {
             int n = x.length;
-            double wrapped = pos % n;
-            if (wrapped < 0D) {
-                wrapped += n;
+            double wrapped = pos;
+            if (wrapped < 0D || wrapped >= n) { // most reads fall inside the loop: the remainder is the costly part
+                wrapped %= n;
+                if (wrapped < 0D) {
+                    wrapped += n;
+                }
             }
             int i = (int) wrapped;
             float t = (float) (wrapped - i);
-            float a = x[(i + n - 1) % n];
-            float b = x[i % n];
-            float c = x[(i + 1) % n];
-            float d = x[(i + 2) % n];
+            float a = padded[i];
+            float b = padded[i + 1];
+            float c = padded[i + 2];
+            float d = padded[i + 3];
             // a cubic through the four samples around the point (Catmull-Rom)
             return b + 0.5F * t * (c - a + t * (2F * a - 5F * b + 4F * c - d + t * (3F * (b - c) + d - a)));
         }
@@ -177,7 +187,6 @@ public final class EngineGrains {
         private final double[] from = new double[GRAINS];
         private final float[] width = new float[GRAINS];
         private final float[] level = new float[GRAINS];
-        private final float[] step = new float[GRAINS];
         private int grains;
         private Cycles cycles;
         /** Output samples made so far, and where the next grain's middle falls. */
@@ -192,11 +201,6 @@ public final class EngineGrains {
             grains = 0;
             next = time;
             cycle = 0;
-        }
-
-        /** True while it plays a recording. */
-        public boolean ready() {
-            return cycles != null;
         }
 
         /** True if it made sound in the last block or still has grains sounding. */
@@ -221,6 +225,7 @@ public final class EngineGrains {
             }
             pitch = Math.max(0.25F, Math.min(4F, pitch));
             double read = (double) cycles.rate / RATE; // samples of the recording per sample made
+            float step = (float) read; // the same for every grain: use() starts afresh with new recordings
             float natural = (float) (cycles.period / read); // one cycle as recorded, samples made
             float spacing = natural / pitch; // between firings
             float half = Math.max(natural, spacing); // the window: as wide as a cycle, or the gap
@@ -233,7 +238,6 @@ public final class EngineGrains {
                     width[g] = 2F * half;
                     from[g] = centre - half * read;
                     level[g] = keep;
-                    step[g] = (float) read;
                 }
                 next += spacing;
                 cycle = random.nextFloat() < WANDER ? random.nextInt(cycles.count) : (cycle + 1) % cycles.count;
@@ -248,7 +252,7 @@ public final class EngineGrains {
                 for (int i = a; i < b; i++) {
                     double t = time + i - s;
                     float w = window((float) (t * inv));
-                    out[off + i] += w * level[g] * (g0 + dg * i) * cycles.at(from[g] + t * step[g]);
+                    out[off + i] += w * level[g] * (g0 + dg * i) * cycles.at(from[g] + t * step);
                 }
             }
             // grains that have ended go
@@ -259,7 +263,6 @@ public final class EngineGrains {
                     width[g] = width[last];
                     from[g] = from[last];
                     level[g] = level[last];
-                    step[g] = step[last];
                 }
             }
             time = end;
@@ -422,6 +425,19 @@ public final class EngineGrains {
         static final float FROM = 0.15F;
         static final float TO = 0.85F;
         private static final int GRAINS = 3;
+        /**
+         * The square root of the window at each sample of a grain: grains
+         * from random places add as noise does, and a sine window keeps
+         * their power even.
+         */
+        private static final float[] ROOT_WINDOW = new float[GRAIN];
+
+        static {
+            float inv = 1F / GRAIN;
+            for (int t = 0; t < GRAIN; t++) {
+                ROOT_WINDOW[t] = (float) Math.sqrt(window(t * inv));
+            }
+        }
 
         private final double[] from = new double[GRAINS];
         private final long[] start = new long[GRAINS];
@@ -474,7 +490,6 @@ public final class EngineGrains {
             }
             float g0 = lastGain;
             float dg = (gain - g0) / n;
-            float inv = 1F / GRAIN;
             for (int g = 0; g < grains; g++) {
                 int a = (int) Math.max(0L, start[g] - time);
                 int b = (int) Math.min(n, start[g] + GRAIN - time);
@@ -487,8 +502,7 @@ public final class EngineGrains {
                     }
                     float f = (float) (pos - p);
                     float s = x[p] + (x[p + 1] - x[p]) * f;
-                    // grains from random places add as noise does: a sine window keeps their power even
-                    out[off + i] += (float) Math.sqrt(window(t * inv)) * (g0 + dg * i) * s;
+                    out[off + i] += ROOT_WINDOW[(int) t] * (g0 + dg * i) * s; // 0 <= t < GRAIN, from a and b
                 }
             }
             for (int g = grains - 1; g >= 0; g--) {

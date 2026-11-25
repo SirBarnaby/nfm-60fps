@@ -2,6 +2,7 @@ package nfm.lit.features.handling;
 
 import nfm.lit.features.CarBody;
 import nfm.lit.features.CarShape;
+import nfm.lit.features.DrawQueue;
 import nfm.lit.features.Feature;
 import nfm.lit.features.Features;
 import nfm.lit.features.RaceInts;
@@ -30,17 +31,15 @@ public final class HandlingFeature implements Feature, CarBody {
     /** Below these the body is drawn where the game has it. */
     private static final float STILL_DEGREES = 0.05F;
     private static final float STILL_UNITS = 0.3F;
+    /** A pose: pitch (degrees, negative nose down, as the game's zy), roll (positive right side down, as its xy), lowering (units). */
+    private static final int POSE = 3;
 
     final HandlingRace race = new HandlingRace();
 
-    /* the body's pose after the tick before the last real one, and after the last */
+    /* each car's body pose after the tick before the last real one, and after the last: POSE floats a car */
     private int cars;
-    private float[] pitchWas = new float[0];
-    private float[] pitchNow = new float[0];
-    private float[] rollWas = new float[0];
-    private float[] rollNow = new float[0];
-    private float[] lowWas = new float[0];
-    private float[] lowNow = new float[0];
+    private float[] was = new float[0];
+    private float[] now = new float[0];
     /** The height of each car's axles in its own numbers: the body turns about them. */
     private float[] axles = new float[0];
     private RaceView view;
@@ -52,7 +51,6 @@ public final class HandlingFeature implements Feature, CarBody {
     private float[] cosRoll = new float[0];
     private float[] low = new float[0];
     private boolean[] moved = new boolean[0];
-    private final float[] pose = new float[3];
 
     private HandlingFeature() {
     }
@@ -107,12 +105,8 @@ public final class HandlingFeature implements Feature, CarBody {
     public void raceStarted(RaceView r) {
         view = r;
         cars = Math.min(r.cars, race.cars);
-        pitchWas = new float[cars];
-        pitchNow = new float[cars];
-        rollWas = new float[cars];
-        rollNow = new float[cars];
-        lowWas = new float[cars];
-        lowNow = new float[cars];
+        was = new float[cars * POSE];
+        now = new float[cars * POSE];
         axles = new float[cars];
         sinPitch = new float[cars];
         cosPitch = new float[cars];
@@ -120,28 +114,15 @@ public final class HandlingFeature implements Feature, CarBody {
         cosRoll = new float[cars];
         low = new float[cars];
         moved = new boolean[cars];
-        for (int c = 0; c < cars; c++) {
-            axles[c] = axleHeight(r, c);
-            pose(r, c);
-            pitchWas[c] = pitchNow[c] = pose[0];
-            rollWas[c] = rollNow[c] = pose[1];
-            lowWas[c] = lowNow[c] = pose[2];
-        }
+        poses(r);
+        System.arraycopy(now, 0, was, 0, now.length);
     }
 
     @Override
     public void afterTick(RaceView r) {
         view = r;
-        for (int c = 0; c < cars; c++) {
-            pitchWas[c] = pitchNow[c];
-            rollWas[c] = rollNow[c];
-            lowWas[c] = lowNow[c];
-            axles[c] = axleHeight(r, c); // the shapes may come after the start
-            pose(r, c);
-            pitchNow[c] = pose[0];
-            rollNow[c] = pose[1];
-            lowNow[c] = pose[2];
-        }
+        System.arraycopy(now, 0, was, 0, now.length);
+        poses(r);
     }
 
     @Override
@@ -150,13 +131,14 @@ public final class HandlingFeature implements Feature, CarBody {
         view = null;
     }
 
+    /** Before each scene: the bodies' pose for the frame, between the last two real ticks as the cars are drawn. */
     @Override
-    public void bodyFrame(float share, boolean ahead) {
-        float t = ahead ? 1F : HandlingRace.clamp(share, 0F, 1F);
-        for (int c = 0; c < cars; c++) {
-            float pitch = pitchWas[c] + (pitchNow[c] - pitchWas[c]) * t;
-            float roll = rollWas[c] + (rollNow[c] - rollWas[c]) * t;
-            float lowered = lowWas[c] + (lowNow[c] - lowWas[c]) * t;
+    public void queue(DrawQueue queue) {
+        float t = queue.share();
+        for (int c = 0, at = 0; c < cars; c++, at += POSE) {
+            float pitch = was[at] + (now[at] - was[at]) * t;
+            float roll = was[at + 1] + (now[at + 1] - was[at + 1]) * t;
+            float lowered = was[at + 2] + (now[at + 2] - was[at + 2]) * t;
             moved[c] = Math.abs(pitch) > STILL_DEGREES || Math.abs(roll) > STILL_DEGREES
                     || Math.abs(lowered) > STILL_UNITS;
             double p = Math.toRadians(pitch);
@@ -198,15 +180,19 @@ public final class HandlingFeature implements Feature, CarBody {
         return true;
     }
 
-    /**
-     * Car {@code c}'s body pose on its springs into {@link #pose}: pitch
-     * (negative nose down, as the game's {@code zy}), roll (positive right
-     * side down, as its {@code xy}), and how far it is lowered (units).
-     */
-    private void pose(RaceView r, int c) {
-        pose[0] = 0F;
-        pose[1] = 0F;
-        pose[2] = 0F;
+    /** Every car's body pose on its springs into {@link #now}, and its axles' height (the shapes may come after the start). */
+    private void poses(RaceView r) {
+        for (int c = 0; c < cars; c++) {
+            axles[c] = axleHeight(r, c);
+            pose(r, c, c * POSE);
+        }
+    }
+
+    /** Car {@code c}'s body pose on its springs into {@link #now} at {@code out}. */
+    private void pose(RaceView r, int c, int out) {
+        now[out] = 0F;
+        now[out + 1] = 0F;
+        now[out + 2] = 0F;
         int at = c * HandlingRace.WHEELS;
         if (at + HandlingRace.WHEELS > race.travel.length || at + HandlingRace.WHEELS > r.keyX.length) {
             return;
@@ -256,14 +242,14 @@ public final class HandlingFeature implements Feature, CarBody {
         if (fronts > 0 && rears > 0) {
             float base = Math.max(60F, frontZ / fronts - rearZ / rears);
             float pitch = (float) Math.toDegrees(Math.atan((rear / rears - front / fronts) / base));
-            pose[0] = HandlingRace.clamp(pitch, -MAX_PITCH, MAX_PITCH);
+            now[out] = HandlingRace.clamp(pitch, -MAX_PITCH, MAX_PITCH);
         }
         if (rights > 0 && lefts > 0) {
             float track = Math.max(40F, rightX / rights - leftX / lefts);
             float roll = (float) Math.toDegrees(Math.atan((right / rights - left / lefts) / track));
-            pose[1] = HandlingRace.clamp(roll, -MAX_ROLL, MAX_ROLL);
+            now[out + 1] = HandlingRace.clamp(roll, -MAX_ROLL, MAX_ROLL);
         }
-        pose[2] = mean * LOWERING;
+        now[out + 2] = mean * LOWERING;
     }
 
     /** The mean height of car {@code c}'s wheel hubs in its own numbers (0 without its shape). */

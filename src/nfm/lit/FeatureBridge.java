@@ -165,6 +165,11 @@ final class FeatureBridge {
         return shown;
     }
 
+    /** The mean of a car's four wheels' values (a velocity): the car's own, as it moves as one. */
+    private static float mean(float[] v) {
+        return (v[0] + v[1] + v[2] + v[3]) / 4F;
+    }
+
     /** True while the suspension handling plays: its springs show the body's lean, so the game's own is left out. */
     static boolean springs() {
         return HandlingFeature.FEATURE.plays();
@@ -230,7 +235,7 @@ final class FeatureBridge {
             }
             Features.raceStarted(view);
         }
-        boolean looking = Features.carLook() != null;
+        boolean looking = Features.carLook() != null || Features.carBodies(); // recoloured, or bodies on springs
         boolean helmet = HelmetCam.FEATURE.ready(0); // the players' cars say which polygons the eyes see
         for (int c = 0; c < cars; c++) {
             scene[c].carSlot = looking || helmet && c < view.humans ? c : -1;
@@ -263,9 +268,9 @@ final class FeatureBridge {
             view.steer[c] = o.wxz;
             view.speed[c] = m.speed;
             view.topSpeed[c] = m.stat.swits[2];
-            view.vx[c] = (m.scx[0] + m.scx[1] + m.scx[2] + m.scx[3]) / 4F;
-            view.vy[c] = (m.scy[0] + m.scy[1] + m.scy[2] + m.scy[3]) / 4F;
-            view.vz[c] = (m.scz[0] + m.scz[1] + m.scz[2] + m.scz[3]) / 4F;
+            view.vx[c] = mean(m.scx);
+            view.vy[c] = mean(m.scy);
+            view.vz[c] = mean(m.scz);
             view.damage[c] = m.stat.maxmag > 0 ? Math.min(1F, Math.max(0F, m.hitmag / (float) m.stat.maxmag)) : 0F;
             view.wasted[c] = m.dest;
             view.capsized[c] = m.capsized;
@@ -547,12 +552,11 @@ final class FeatureBridge {
      */
     static void beginScene(Graphics2D target, float share, ContO[] scene) {
         drawing = false;
-        Features.bodyFrame(share, ahead); // the bodies on their springs, between ticks as the cars
         if (!Features.anyActive()) {
             return;
         }
         queue.begin(Medium.x + Medium.cx + Precise.camX, Medium.y + Medium.cy + Precise.camY,
-                Medium.z + Precise.camZ, view.tick);
+                Medium.z + Precise.camZ, view.tick, ahead ? 1F : Math.max(0F, Math.min(1F, share)));
         HelmetCam.FEATURE.drawingFor(helmetFrame); // from the helmet: its dashboard
         Features.queue(queue);
         if (queue.isEmpty()) {
@@ -670,20 +674,17 @@ final class FeatureBridge {
 
         @Override
         public float vx(int car) {
-            float[] v = racers[car].scx;
-            return (v[0] + v[1] + v[2] + v[3]) / 4F;
+            return mean(racers[car].scx);
         }
 
         @Override
         public float vy(int car) {
-            float[] v = racers[car].scy;
-            return (v[0] + v[1] + v[2] + v[3]) / 4F;
+            return mean(racers[car].scy);
         }
 
         @Override
         public float vz(int car) {
-            float[] v = racers[car].scz;
-            return (v[0] + v[1] + v[2] + v[3]) / 4F;
+            return mean(racers[car].scz);
         }
 
         @Override

@@ -110,6 +110,7 @@ public final class PowerupsFeature implements Feature {
     @Override
     public void raceSetUp(RaceTick r, long seed) {
         race.setUp(r, seed);
+        PowerupSounds.make(); // made while the stage loads, not in the first frame of the race
     }
 
     @Override
@@ -145,7 +146,6 @@ public final class PowerupsFeature implements Feature {
     @Override
     public void raceStarted(RaceView r) {
         view = r;
-        PowerupSounds.make();
         particles.clear();
         craters = 0;
         seen = race.events;
