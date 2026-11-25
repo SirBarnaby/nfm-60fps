@@ -29,3 +29,4 @@ One page per extra. Each lives in `src\nfm\lit\features\<feature>\`, has a switc
 - [The helmet cam](helmetcam.md)
 - [The rebuilt engine sound](enginesound.md)
 - [Powerups](powerups.md)
+- [Suspension handling](handling.md)

@@ -152,8 +152,9 @@ public final class FeatureSettings {
                         + " anyone the flash bothers.",
                 "xtraflash", Kind.LOOK, 1, "Off", "On"),
         new Switch("handling", "Suspension handling",
-                "Each wheel on its own spring, grip that runs out in a circle, weight moving under braking and in"
-                        + " corners. A new feel, meant for after 1.0." + RACE_1_0,
+                "Each wheel on its own spring and damper, 120 times a second; one grip shared by braking and"
+                        + " turning that lets go smoothly, so a slide can be held; weight forward under braking and"
+                        + " outward in corners; a drift assist that keeps slides catchable. Stunts stay." + RACE_1_0,
                 "xtragrip", Kind.RACE, 0, "Off", "On"),
     };
 

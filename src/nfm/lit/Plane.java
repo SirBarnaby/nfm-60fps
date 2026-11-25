@@ -402,7 +402,8 @@ public class Plane {
         int[] ox = this.ox;
         int[] oy = this.oy;
         int[] oz = this.oz;
-        if (FeatureBridge.lookCar >= 0 && wz != 0 && FeatureBridge.bend(ox, oy, oz, n)) {
+        if (FeatureBridge.lookCar >= 0
+                && (wz != 0 ? FeatureBridge.bend(ox, oy, oz, n) : FeatureBridge.body(ox, oy, oz, n))) {
             ox = FeatureBridge.bentX;
             oy = FeatureBridge.bentY;
             oz = FeatureBridge.bentZ;

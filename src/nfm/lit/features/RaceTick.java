@@ -30,6 +30,16 @@ public interface RaceTick {
     /** The way the car points, degrees (the model's {@code xz}): it drives along (-sin, cos) of it. */
     int yaw(int car);
 
+    /** The car's pitch, degrees ({@code pzy}, positive nose up); 0 where a check does not say. */
+    default int pitch(int car) {
+        return 0;
+    }
+
+    /** The car's roll, degrees ({@code pxy}, positive right side down); 0 where a check does not say. */
+    default int roll(int car) {
+        return 0;
+    }
+
     /** How fast the engine drives the car along its heading (negative backwards). */
     float speed(int car);
 

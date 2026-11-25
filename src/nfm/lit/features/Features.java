@@ -25,6 +25,7 @@ public final class Features {
         nfm.lit.features.helmetcam.HelmetCam.FEATURE,
         nfm.lit.features.enginesound.EngineSound.FEATURE,
         nfm.lit.features.powerups.PowerupsFeature.FEATURE,
+        nfm.lit.features.handling.HandlingFeature.FEATURE,
     };
 
     private static final boolean[] active = new boolean[ALL.length];
@@ -37,6 +38,9 @@ public final class Features {
     /** The feature that recolours and reshapes the cars' polygons, and its place in {@link #ALL}; null and -1 if none is on. */
     private static CarLook look;
     private static int lookOwner = -1;
+    /** The feature that draws the cars' bodies elsewhere (on their springs), and its place; null and -1 if none. */
+    private static CarBody body;
+    private static int bodyOwner = -1;
 
     /*
      * The race extras (features that change races) playing in this race,
@@ -384,15 +388,53 @@ public final class Features {
         }
     }
 
-    /** Finds the feature on now that recolours the cars, if any. */
+    /** True while a feature draws the cars' bodies elsewhere ({@link CarBody}): the game asks it for their polygons. */
+    public static boolean carBodies() {
+        return body != null;
+    }
+
+    /** {@link CarBody#bodyFrame}, before a scene is drawn. */
+    public static void bodyFrame(float share, boolean ahead) {
+        CarBody b = body;
+        if (b == null) {
+            return;
+        }
+        try {
+            b.bodyFrame(share, ahead);
+        } catch (RuntimeException e) {
+            fail(bodyOwner, e);
+        }
+    }
+
+    /** {@link CarBody#body}; false when no feature moves the cars' bodies (or it threw, and is off). */
+    public static boolean carBody(int car, int plane, int[] x, int[] y, int[] z, int n, int[] outX, int[] outY,
+            int[] outZ) {
+        CarBody b = body;
+        if (b == null) {
+            return false;
+        }
+        try {
+            return b.body(car, plane, x, y, z, n, outX, outY, outZ);
+        } catch (RuntimeException e) {
+            fail(bodyOwner, e);
+            return false;
+        }
+    }
+
+    /** Finds the features on now that recolour the cars and move their bodies, if any. */
     private static void relook() {
         look = null;
         lookOwner = -1;
+        body = null;
+        bodyOwner = -1;
         for (int f = 0; f < ALL.length; f++) {
-            if (active[f] && ALL[f] instanceof CarLook l) {
+            if (active[f] && look == null && ALL[f] instanceof CarLook l) {
                 look = l;
                 lookOwner = f;
-                return;
+            }
+            if (active[f] && body == null && ALL[f] instanceof CarBody b) {
+                body = b;
+                bodyOwner = f;
             }
         }
     }

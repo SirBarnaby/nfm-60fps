@@ -1035,33 +1035,41 @@ class Madness {
             }
             if (grip < 1.0F)
                 grip = 1.0F;
+            // the Suspension handling extra's springs and tyres move the wheels (120 times a second): -1 without it
+            float tyreGrip = FeatureBridge.tyres(this, car, targetX, targetY, targetZ, grip, txz,
+                    capsized || dest || checkpoints.haltall);
+            boolean tyres = tyreGrip >= 0.0F;
+            if (tyres)
+                grip = tyreGrip; // the grip shown: the dust and skids below follow the tyres' slide
             float sumX = 0.0F;
             float sumZ = 0.0F;
             int wheel = 0;
             do {
-                if (Math.abs(scx[wheel] - targetX) > grip) {
-                    if (scx[wheel] < targetX)
-                        scx[wheel] += grip;
-                    else
-                        scx[wheel] -= grip;
-                } else {
-                    scx[wheel] = targetX;
-                }
-                if (Math.abs(scz[wheel] - targetZ) > grip) {
-                    if (scz[wheel] < targetZ)
-                        scz[wheel] += grip;
-                    else
-                        scz[wheel] -= grip;
-                } else {
-                    scz[wheel] = targetZ;
-                }
-                if (Math.abs(scy[wheel] - targetY) > grip) {
-                    if (scy[wheel] < targetY)
-                        scy[wheel] += grip;
-                    else
-                        scy[wheel] -= grip;
-                } else {
-                    scy[wheel] = targetY;
+                if (!tyres) {
+                    if (Math.abs(scx[wheel] - targetX) > grip) {
+                        if (scx[wheel] < targetX)
+                            scx[wheel] += grip;
+                        else
+                            scx[wheel] -= grip;
+                    } else {
+                        scx[wheel] = targetX;
+                    }
+                    if (Math.abs(scz[wheel] - targetZ) > grip) {
+                        if (scz[wheel] < targetZ)
+                            scz[wheel] += grip;
+                        else
+                            scz[wheel] -= grip;
+                    } else {
+                        scz[wheel] = targetZ;
+                    }
+                    if (Math.abs(scy[wheel] - targetY) > grip) {
+                        if (scy[wheel] < targetY)
+                            scy[wheel] += grip;
+                        else
+                            scy[wheel] -= grip;
+                    } else {
+                        scy[wheel] = targetY;
+                    }
                 }
                 if (grip < stat.grip) {
                     if (txz != car.xz)
@@ -1555,7 +1563,7 @@ class Madness {
                 car.zy = pzy;
             }
         }
-        if (wtouch && !capsized) {
+        if (wtouch && !capsized && !FeatureBridge.springs()) { // with the suspension handling its springs lean the body
             float maxTilt = (float) ((speed / stat.swits[2]) * 14F
                     * (stat.bounce - 0.40000000000000002D));
             if (control.left && tilt < maxTilt && tilt >= 0.0F)

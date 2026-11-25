@@ -10,6 +10,8 @@ import nfm.lit.features.FeatureSettings;
 import nfm.lit.features.GameHooks;
 import nfm.lit.features.RaceTick;
 import nfm.lit.features.enginesound.EngineSound;
+import nfm.lit.features.handling.Chassis;
+import nfm.lit.features.handling.HandlingFeature;
 import nfm.lit.features.helmetcam.HelmetCam;
 import nfm.lit.features.powerups.PowerupsFeature;
 
@@ -70,6 +72,8 @@ final class FeatureBridge {
 
     /* the race extras (powerups): the race itself, read and moved inside the race tick */
     private static final RaceAccess TICK = new RaceAccess();
+    /** One car's tyres handed to the suspension handling and back, reused (it keeps nothing between calls). */
+    private static final Chassis CHASSIS = new Chassis();
     /** The HUD, for an extra's message line; set when a stage loads. */
     private static GameUi ui;
     /** An extra asked for the white flash after this tick. */
@@ -115,6 +119,55 @@ final class FeatureBridge {
     /** What the race extras add to car {@code car}'s boost this tick: 0 without one. */
     static float raceBoost(int car) {
         return Features.raceBoost(car);
+    }
+
+    /**
+     * Car {@code m}'s tyres this tick, from its grip block on the ground,
+     * when the suspension handling plays: its wheels' velocities and heading
+     * moved by the springs and tyres ({@link HandlingFeature#tyres}), and the
+     * grip the game shows returned. {@code -1F} without it: the game's own
+     * grip runs then, and nothing here has been touched.
+     */
+    static float tyres(Madness m, ContO car, int targetX, int targetY, int targetZ, float grip, int lastHeading,
+            boolean stopped) {
+        if (!HandlingFeature.FEATURE.plays()) {
+            return -1F;
+        }
+        Chassis c = CHASSIS;
+        for (int w = 0; w < Chassis.WHEELS; w++) {
+            c.vx[w] = m.scx[w];
+            c.vy[w] = m.scy[w];
+            c.vz[w] = m.scz[w];
+            c.keyX[w] = car.keyx[w];
+            c.keyZ[w] = car.keyz[w];
+        }
+        c.targetX = targetX;
+        c.targetY = targetY;
+        c.targetZ = targetZ;
+        c.grip = grip;
+        c.bounce = m.stat.bounce;
+        c.speed = m.speed;
+        c.heading = car.xz;
+        c.lastHeading = lastHeading;
+        c.pitch = m.pzy;
+        c.roll = m.pxy;
+        c.stopped = stopped;
+        float shown = HandlingFeature.FEATURE.tyres(m.im, c);
+        if (shown < 0F) {
+            return shown;
+        }
+        for (int w = 0; w < Chassis.WHEELS; w++) {
+            m.scx[w] = c.vx[w];
+            m.scy[w] = c.vy[w];
+            m.scz[w] = c.vz[w];
+        }
+        car.xz = c.heading;
+        return shown;
+    }
+
+    /** True while the suspension handling plays: its springs show the body's lean, so the game's own is left out. */
+    static boolean springs() {
+        return HandlingFeature.FEATURE.plays();
     }
 
     /** True once if an extra asked for the white flash since the last call (a blast near a player). */
@@ -402,6 +455,11 @@ final class FeatureBridge {
         return n <= bentX.length && Features.carBend(lookCar, lookPlane, x, y, z, n, bentX, bentY, bentZ);
     }
 
+    /** As {@link #bend}, for a polygon of {@link #lookCar}'s body (not a wheel's): drawn on its springs. */
+    static boolean body(int[] x, int[] y, int[] z, int n) {
+        return n <= bentX.length && Features.carBody(lookCar, lookPlane, x, y, z, n, bentX, bentY, bentZ);
+    }
+
     /* ----------------------------------------------------- the helmet cam */
 
     /** The player whose frame is being drawn from the helmet cam, or -1: their car's polygons by the eyes are left out. */
@@ -489,6 +547,7 @@ final class FeatureBridge {
      */
     static void beginScene(Graphics2D target, float share, ContO[] scene) {
         drawing = false;
+        Features.bodyFrame(share, ahead); // the bodies on their springs, between ticks as the cars
         if (!Features.anyActive()) {
             return;
         }
@@ -587,6 +646,16 @@ final class FeatureBridge {
         @Override
         public int yaw(int car) {
             return scene[car].xz;
+        }
+
+        @Override
+        public int pitch(int car) {
+            return racers[car].pzy;
+        }
+
+        @Override
+        public int roll(int car) {
+            return racers[car].pxy;
         }
 
         @Override
