@@ -15,3 +15,14 @@ After 1.0, on the normal branches, the cars SHALL drive on approach B, "Arcade r
 #### Scenario: Check: the owner drives it
 - **WHEN** the owner drives a race with corners, bumps, a jump and a stunt
 - **THEN** the body visibly rides on its springs, slides can be held, stunts still work, and the owner signs it off
+
+### Requirement: Tailwhip
+With the handbrake and the normal brake held and left or right pressed, the car SHALL rotate a bit more easily. This can be used to tailwhip enemies, which gives the enemy some extra spin. A tailwhip SHALL be called out in the global chat for all players: X tailwhipped Y, "TAILWHIP!". It probably changes the handling model, so it SHALL be a toggle in the settings. (Owner, 2026-11-26.)
+
+#### Scenario: Check: the turn
+- **WHEN** a car holds the handbrake and the brake and presses left with the toggle on
+- **THEN** it rotates more easily than with the toggle off
+
+#### Scenario: Check: the hit
+- **WHEN** its swinging tail hits an enemy
+- **THEN** the enemy gets extra spin and every player sees that X tailwhipped Y, "TAILWHIP!"

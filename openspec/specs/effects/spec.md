@@ -81,3 +81,21 @@ The Radical One's wing trail SHALL look like vapour: thin white streams from bot
 #### Scenario: Check: the trail's look
 - **WHEN** the Radical One's wing trail shows
 - **THEN** it is thin white streams from both wing tips that spread and fade within about a second, without steps
+
+### Requirement: The track is littered by the end of a race
+A race SHALL litter the map, so the world feels reactive, even if it costs a little performance: drifting in gravel and on the tarmac leaves bits and particles that stay on the track, and these particles sway in the wind of cars driving past them. Car damage is left out of the litter (mere polygons would look bad on the track). (Owner, 2026-11-26.)
+
+#### Scenario: Check: after some laps
+- **WHEN** cars have drifted through the same corner for a few laps
+- **THEN** bits lie on the track there and are still there on the next lap
+
+#### Scenario: Check: driving past
+- **WHEN** a car drives past bits lying on the track
+- **THEN** they sway or shift in its wind
+
+### Requirement: Finishing a stunt into soft ground puffs
+Finishing a stunt into snow SHALL create a particle effect, a puff of flying into the snow. The same SHALL happen on regular dirt: a small puff of that dirt. (Owner, 2026-11-26.)
+
+#### Scenario: Check: landing a stunt
+- **WHEN** a car lands a stunt on snow, then on dirt
+- **THEN** a puff of snow flies up on the snow and a small puff of dirt on the dirt

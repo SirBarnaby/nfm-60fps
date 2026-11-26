@@ -33,3 +33,64 @@ The improved sound SHALL be built with approach A, "Rebuilt originals": the game
 #### Scenario: Check: the owner listens first
 - **WHEN** the new improved sound changes what `test\verify-sound.ps1` hears
 - **THEN** its baseline is renewed only after the owner has listened and agreed
+
+### Requirement: Sound effects come from real recordings
+The sound effects SHALL NOT sound synthesized or fake. Sources SHALL be found for at least some of them, and the sound system SHALL be built over these sources. A recording that is used SHALL be sampled down to the game's sample rate, so it sounds more like the game, and its license SHALL be respected (the creator and source credited and the edits named where the license asks for it). (Owner, 2026-11-26.)
+
+#### Scenario: Check: a sound effect
+- **WHEN** an extra plays a sound effect that has a recording behind it
+- **THEN** what plays is that recording, sampled down to the game's sample rate, not a synthesized stand-in
+
+#### Scenario: Check: the credits
+- **WHEN** a recording under a license that asks for credit is in the game
+- **THEN** its creator, source and license are listed in the game's credits file, with what was changed
+
+### Requirement: Cars are heard in an environment
+Cars SHALL NOT sound as if they drive in a void. They drive in an environment, where loud cars create echoes, reflections and reverb, the player's own car and the other cars alike. If 8 cars drive at once, each one SHALL make actual sound. (Owner, 2026-11-26.)
+
+#### Scenario: Check: next to a wall
+- **WHEN** a car drives past a wall or between buildings with the 3D sound
+- **THEN** its sound comes back from them as echoes and reverb, and in the open it does not
+
+#### Scenario: Check: eight cars
+- **WHEN** eight cars race at once
+- **THEN** each of the eight is heard as a sound of its own
+
+### Requirement: Cars are heard from far off, by how loud each one is
+Cars far off SHALL be audible. Cars with really strong engines SHALL be audible further out. Cars that are by definition more quiet SHALL NOT be as easily locatable with audio. (Owner, 2026-11-26.)
+
+#### Scenario: Check: a strong and a quiet car far away
+- **WHEN** a strong-engined car and a quiet car are the same long distance from the player
+- **THEN** the strong one is still heard and can be placed by ear, and the quiet one is fainter or not heard
+
+### Requirement: The engine sound has layers
+The player SHALL be able to hear, per car: the suspension at times; surface noise; the engine's growl, and perhaps the radiator; a turbo or a supercharger, depending on the car; the rear of the car sounding different since it has the exhaust, and a car whose exhaust is at the side instead of the rear sounding a bit different again; rev ranges for the cars; and skid sounds that can change with the car's wheel size. (Owner, 2026-11-26.)
+
+#### Scenario: Check: listening around one car
+- **WHEN** a car drives by, then the camera goes round it
+- **THEN** the engine is heard from its front, the exhaust from where its pipes are, its turbo or supercharger if it has one, the surface under its wheels, and its suspension over bumps
+
+#### Scenario: Check: wheel size
+- **WHEN** a car with big wheels and one with small wheels skid the same way
+- **THEN** their skids sound different
+
+### Requirement: Exhaust pops are heard and seen
+Some cars SHALL have exhaust pops. A pop makes a sound and SHALL be visible (in HDR). (Owner, 2026-11-26.)
+
+#### Scenario: Check: lifting off
+- **WHEN** a car that pops lifts off the throttle at high revs
+- **THEN** each pop is heard and a short bright flash shows at its exhaust at the same moment; a car that does not pop does neither
+
+### Requirement: Reversing is heard
+Reversing SHALL have a sound: a transmission whine. Trucks can beep as well. (Owner, 2026-11-26.)
+
+#### Scenario: Check: reversing
+- **WHEN** a car reverses, then a truck does
+- **THEN** a transmission whine is heard that rises with the speed backwards, and the truck beeps as well
+
+### Requirement: In mid-air the revs can max out
+In mid-air, with the wheels off the ground, the engine's revs SHALL be able to max out. (Owner, 2026-11-26.)
+
+#### Scenario: Check: a jump on full throttle
+- **WHEN** a car leaves a ramp with the throttle held
+- **THEN** its engine revs up to its limit while it is in the air, and comes back to the road's revs after it lands

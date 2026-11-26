@@ -25,3 +25,17 @@ Settings SHALL NOT need description pictures for now; pictures may be added late
 #### Scenario: Check: a new setting without a picture
 - **WHEN** a change adds a setting
 - **THEN** it works and is complete without a description picture
+
+### Requirement: Gameplay switches cannot be changed during a race
+Toggles that are not meant to be changed during live gameplay SHALL NOT be changeable during it, since they add needless complexity: all gameplay-changing things, such as the Extras tab. (Owner, 2026-11-26.)
+
+#### Scenario: Check: settings opened in a race
+- **WHEN** the player opens the settings during a race
+- **THEN** the gameplay-changing switches cannot be changed there, and can from the menus
+
+### Requirement: A cheat code unlocks everything
+A cheat code SHALL unlock everything. (Owner, 2026-11-26.)
+
+#### Scenario: Check: entering the code
+- **WHEN** the player enters the cheat code
+- **THEN** every car and every stage is unlocked

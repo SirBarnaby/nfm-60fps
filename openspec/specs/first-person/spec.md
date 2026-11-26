@@ -18,3 +18,10 @@ In first person, appropriate g-forces SHALL be visible, in the spirit of NFS: Sh
 #### Scenario: Check: a lap in first person
 - **WHEN** the owner drives a lap with hard braking, a fast corner, a jump and a landing in first person
 - **THEN** each one moves the view the way the force pushes the driver, and the owner signs it off
+
+### Requirement: The helmet cam shows a car interior
+In the helmet cam the bottom half of the screen SHALL NOT be one polygon, and it SHALL NOT clip. The view SHALL emulate a vehicle interior: a very basic mesh that can apply to most vehicle types suffices, and it can be drawn on the client side only. (Owner, 2026-11-26.)
+
+#### Scenario: Check: a lap in the helmet cam
+- **WHEN** the owner drives a lap in the helmet cam in several cars
+- **THEN** an interior is seen around the view (not one flat polygon), nothing clips through it, and the owner signs it off
