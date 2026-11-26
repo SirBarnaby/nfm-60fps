@@ -418,8 +418,8 @@ final class SettingsScreen {
                 v -> GameSparker.setSoundPaths(v == 1))
                 .when(() -> GameSparker.isNewSound() && Sound3D.isOcclusion(), "Only with occlusion on."));
         add(new Choice("Reverb",
-                "Half-pipes, walls and canyons make the engines, skids and crashes ring on; open ground stays"
-                        + " dry.",
+                "Half-pipes, walls and canyons ring on where you are, and what stands around each car echoes"
+                        + " its engine and crashes back; open ground stays dry.",
                 null, new int[] {0, 1}, SettingsScreen::onOff, () -> Sound3D.isReverb() ? 1 : 0,
                 v -> GameSparker.setReverb(v == 1)).when(sound3d, sound3dOnly));
         add(new Choice("HDR audio",

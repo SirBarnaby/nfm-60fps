@@ -276,6 +276,9 @@ final class SteamAcoustics {
     private final MemorySegment[] carSources;
     private final MemorySegment[] probeSources = new MemorySegment[PROBES.length];
     private volatile float enclosure;
+    /** How closed in each car is, as {@link #enclosure} is for the listener; one car is looked at each trace, in turn. */
+    private final float[] carEnclosure;
+    private int nextCar;
     private MemorySegment roomSource = MemorySegment.NULL;
     /* the stage's baked probes, in the simulator while pathsReady; written under the write lock */
     private MemorySegment probeBatch = MemorySegment.NULL;
@@ -295,6 +298,7 @@ final class SteamAcoustics {
     private final MemorySegment directShared;
     private final MemorySegment directOutputs;
     private final MemorySegment probeInputs;
+    private final MemorySegment carShared;
     /* the acoustics thread's */
     private final MemorySegment roomInputs;
     private final MemorySegment roomShared;
@@ -431,6 +435,8 @@ final class SteamAcoustics {
         probeInputs = inputs(SIMULATE_DIRECT, DIRECT_OCCLUSION);
         probeInputs.set(JAVA_INT, at(INPUTS, "occlusionType"), OCCLUSION_RAYCAST);
         directShared = arena.allocate(SHARED_INPUTS);
+        carShared = arena.allocate(SHARED_INPUTS);
+        carEnclosure = new float[cars];
         directOutputs = arena.allocate(OUTPUTS);
         roomInputs = inputs(SIMULATE_REFLECTIONS, 0);
         roomShared = arena.allocate(SHARED_INPUTS);
@@ -455,7 +461,7 @@ final class SteamAcoustics {
         pathCars = new float[3 * cars];
         pathActive = new boolean[cars];
         paths = new float[PATH_FLOATS * cars];
-        for (MemorySegment shared : new MemorySegment[] {directShared, roomShared}) {
+        for (MemorySegment shared : new MemorySegment[] {directShared, carShared, roomShared}) {
             shared.set(JAVA_INT, at(SHARED_INPUTS, "numRays"), RAYS);
             shared.set(JAVA_INT, at(SHARED_INPUTS, "numBounces"), BOUNCES);
             shared.set(JAVA_FLOAT, at(SHARED_INPUTS, "duration"), DURATION);
@@ -587,8 +593,9 @@ final class SteamAcoustics {
      * it is being rebuilt; {@code through} is then left as it was.
      *
      * @param cars x, y, z of each car in the game's world; {@code active[i]} false skips car i
+     * @param around the cars whose surroundings are looked at ({@link #enclosure(int)}), one each call
      */
-    boolean direct(float[] cars, boolean[] active, int count, float[] through) {
+    boolean direct(float[] cars, boolean[] active, boolean[] around, int count, float[] through) {
         if (!ready || !listenerKnown || !lock.readLock().tryLock()) {
             return false;
         }
@@ -637,6 +644,7 @@ final class SteamAcoustics {
                     through[3 * i + b] = occlusion + (1F - occlusion) * t;
                 }
             }
+            around(cars, around, n, origin);
             directNanos = System.nanoTime() - started;
             return true;
         } catch (Throwable ex) {
@@ -647,9 +655,48 @@ final class SteamAcoustics {
         }
     }
 
+    /**
+     * How closed in one car is by the track, the next in turn each trace:
+     * the same sixteen rays as the listener's, from the car, by tracing once
+     * more with the car as the listener and the probes around it. The cars'
+     * own sources are traced again too and not read.
+     */
+    private void around(float[] cars, boolean[] active, int n, long origin) throws Throwable {
+        for (int tried = 0; tried < n; tried++) {
+            int c = nextCar;
+            nextCar = (nextCar + 1) % n;
+            if (!active[c]) {
+                carEnclosure[c] = 0F;
+                continue;
+            }
+            float x = cars[3 * c] / UNITS_PER_METRE;
+            float y = -(cars[3 * c + 1] - 30F) / UNITS_PER_METRE;
+            float z = -cars[3 * c + 2] / UNITS_PER_METRE;
+            writeListener(carShared);
+            long at = at(SHARED_INPUTS, "listener") + 4L * 9;
+            carShared.set(JAVA_FLOAT, at, x);
+            carShared.set(JAVA_FLOAT, at + 4, y);
+            carShared.set(JAVA_FLOAT, at + 8, z);
+            setProbes(origin, x, y, z);
+            simulatorSetShared.invokeExact(simulator, SIMULATE_DIRECT, carShared);
+            simulatorRunDirect.invokeExact(simulator);
+            float closed = 0F;
+            for (MemorySegment probe : probeSources) {
+                sourceGetOutputs.invokeExact(probe, SIMULATE_DIRECT, directOutputs);
+                closed += 1F - directOutputs.get(JAVA_FLOAT, OCCLUSION);
+            }
+            carEnclosure[c] = closed / probeSources.length;
+            return;
+        }
+    }
+
+    /** How closed in car {@code car} is by the track, 0 in the open to 1 all round; each car's is looked at in turn. */
+    float enclosure(int car) {
+        return car >= 0 && car < carEnclosure.length ? carEnclosure[car] : 0F;
+    }
+
     /** Puts the probes around the listener. */
     private void setProbes(long origin) throws Throwable {
-        identityAxes(probeInputs);
         float x;
         float y;
         float z;
@@ -658,6 +705,12 @@ final class SteamAcoustics {
             y = listener[10];
             z = listener[11];
         }
+        setProbes(origin, x, y, z);
+    }
+
+    /** Puts the probes around a place (Steam Audio's coordinates). */
+    private void setProbes(long origin, float x, float y, float z) throws Throwable {
+        identityAxes(probeInputs);
         for (int i = 0; i < PROBES.length; i++) {
             probeInputs.set(JAVA_FLOAT, origin, x + PROBES[i][0] * PROBE_DISTANCE);
             probeInputs.set(JAVA_FLOAT, origin + 4, y + PROBES[i][1] * PROBE_DISTANCE);

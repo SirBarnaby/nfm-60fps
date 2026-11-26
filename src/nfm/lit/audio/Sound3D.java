@@ -194,6 +194,22 @@ public final class Sound3D implements Runnable {
     /** The reverb's level where the track closes in all round; open ground stays dry. */
     private static final float REVERB_LEVEL = 0.6F;
     /*
+     * A car's own surroundings throw its sound back, wherever the listener
+     * is: an echo of each car by how much of the track stands around it
+     * (walls, a ramp, a half-pipe within 40 m; a wall along one side is about
+     * a quarter). The first tap comes back after a wall some 19 m away would
+     * return it, the second a little later from the other side; it repeats
+     * faintly and loses treble as a wall takes it. In the open there is none.
+     */
+    private static final float ECHO_LEVEL = 0.5F;
+    private static final float ECHO_DELAY = 0.11F;
+    private static final float ECHO_SECOND = 0.07F;
+    private static final float ECHO_FEEDBACK = 0.18F;
+    private static final float ECHO_DAMPING = 0.6F;
+    /** How much of the echo a car sends per share of the track around it, up to all of it. */
+    private static final float ECHO_PER_ENCLOSURE = 2F;
+    private static final float ECHO_SMOOTHING = 0.35F;
+    /*
      * A big crash heard at full volume pulls the engines down by this much
      * (about 5 dB) at once and lets them back over half a second, so the hit
      * lands; a crash far off ducks them less, a tap not at all.
@@ -855,10 +871,16 @@ public final class Sound3D implements Runnable {
     private final float[] through = new float[3 * MAX_CARS];
     private final float[] carPlaces = new float[3 * MAX_CARS];
     private final boolean[] carTraced = new boolean[MAX_CARS];
+    private final boolean[] carAround = new boolean[MAX_CARS];
     private int tracedAt;
     private int reverbSlot;
     private int reverbEffect;
     private boolean eaxReverb;
+    /* the cars' echo: its slot and effect, and per car a filter that is how much of it the car sends (0: none) */
+    private int echoSlot;
+    private int echoEffect;
+    private final int[] echoFilter = new int[MAX_CARS];
+    private final float[] echo = new float[MAX_CARS];
     private final float[] reverbNow = new float[3];
     private final float[] reverbApplied = {-1F, -1F, -1F};
     private float enclosed;
@@ -1495,6 +1517,14 @@ public final class Sound3D implements Runnable {
                 EXTEfx.alDeleteAuxiliaryEffectSlots(reverbSlot);
                 EXTEfx.alDeleteEffects(reverbEffect);
             }
+            if (echoSlot != 0) {
+                EXTEfx.alDeleteAuxiliaryEffectSlots(echoSlot);
+                EXTEfx.alDeleteEffects(echoEffect);
+                for (int f : echoFilter) {
+                    EXTEfx.alDeleteFilters(f);
+                }
+                echoSlot = 0;
+            }
             for (int source : named.values()) {
                 alDeleteSources(source);
             }
@@ -1891,7 +1921,25 @@ public final class Sound3D implements Runnable {
             // the track's reverb, fainter with distance as the direct sound is
             alSourcef(s, EXTEfx.AL_ROOM_ROLLOFF_FACTOR, 1F);
             AL11.alSource3i(s, EXTEfx.AL_AUXILIARY_SEND_FILTER, reverbSlot, 0, EXTEfx.AL_FILTER_NULL);
+            echoSend(s, -1);
         }
+    }
+
+    /** Source {@code s} sends to the echo as car {@code car} does (its surroundings); -1: not at all. */
+    private void echoSend(int s, int car) {
+        if (echoSlot == 0) {
+            return;
+        }
+        if (car >= 0 && car < MAX_CARS) {
+            AL11.alSource3i(s, EXTEfx.AL_AUXILIARY_SEND_FILTER, echoSlot, 1, echoFilter[car]);
+        } else {
+            AL11.alSource3i(s, EXTEfx.AL_AUXILIARY_SEND_FILTER, EXTEfx.AL_EFFECTSLOT_NULL, 1, EXTEfx.AL_FILTER_NULL);
+        }
+    }
+
+    /** How much of the echo car {@code car} sends now, 0 to 1. */
+    private float echoOf(int car) {
+        return car >= 0 && car < MAX_CARS ? Math.min(1F, ECHO_PER_ENCLOSURE * echo[car]) : 0F;
     }
 
     /**
@@ -1910,6 +1958,33 @@ public final class Sound3D implements Runnable {
         reverbSlot = EXTEfx.alGenAuxiliaryEffectSlots();
         EXTEfx.alAuxiliaryEffectSlotf(reverbSlot, EXTEfx.AL_EFFECTSLOT_GAIN, 0F);
         EXTEfx.alAuxiliaryEffectSloti(reverbSlot, EXTEfx.AL_EFFECTSLOT_EFFECT, reverbEffect);
+        openEcho();
+    }
+
+    /** The cars' echo, on a send of its own beside the reverb's; without a second send there is none. */
+    private void openEcho() {
+        if (alcGetInteger(device, EXTEfx.ALC_MAX_AUXILIARY_SENDS) < 2) {
+            return;
+        }
+        alGetError();
+        echoEffect = EXTEfx.alGenEffects();
+        EXTEfx.alEffecti(echoEffect, EXTEfx.AL_EFFECT_TYPE, EXTEfx.AL_EFFECT_ECHO);
+        if (alGetError() != AL_NO_ERROR) {
+            EXTEfx.alDeleteEffects(echoEffect);
+            return;
+        }
+        EXTEfx.alEffectf(echoEffect, EXTEfx.AL_ECHO_DELAY, ECHO_DELAY);
+        EXTEfx.alEffectf(echoEffect, EXTEfx.AL_ECHO_LRDELAY, ECHO_SECOND);
+        EXTEfx.alEffectf(echoEffect, EXTEfx.AL_ECHO_FEEDBACK, ECHO_FEEDBACK);
+        EXTEfx.alEffectf(echoEffect, EXTEfx.AL_ECHO_DAMPING, ECHO_DAMPING);
+        echoSlot = EXTEfx.alGenAuxiliaryEffectSlots();
+        EXTEfx.alAuxiliaryEffectSlotf(echoSlot, EXTEfx.AL_EFFECTSLOT_GAIN, reverbOn ? ECHO_LEVEL : 0F);
+        EXTEfx.alAuxiliaryEffectSloti(echoSlot, EXTEfx.AL_EFFECTSLOT_EFFECT, echoEffect);
+        for (int i = 0; i < MAX_CARS; i++) {
+            echoFilter[i] = EXTEfx.alGenFilters();
+            EXTEfx.alFilteri(echoFilter[i], EXTEfx.AL_FILTER_TYPE, EXTEfx.AL_FILTER_LOWPASS);
+            EXTEfx.alFilterf(echoFilter[i], EXTEfx.AL_LOWPASS_GAIN, 0F);
+        }
     }
 
     /** Eases the reverb toward the place's reverb times and sets it when it has moved enough to hear. */
@@ -1924,6 +1999,9 @@ public final class Sound3D implements Runnable {
         float k = 1F - (float) Math.exp(-dt / REVERB_SMOOTHING);
         enclosed += (acoustics.enclosure() - enclosed) * k;
         boolean moved = Math.abs(enclosed - enclosedApplied) > 0.02F || reverbOn != reverbOnApplied;
+        if (echoSlot != 0 && reverbOn != reverbOnApplied) {
+            EXTEfx.alAuxiliaryEffectSlotf(echoSlot, EXTEfx.AL_EFFECTSLOT_GAIN, reverbOn ? ECHO_LEVEL : 0F);
+        }
         if (moved) {
             enclosedApplied = enclosed;
             reverbOnApplied = reverbOn;
@@ -1974,11 +2052,20 @@ public final class Sound3D implements Runnable {
             for (int i = 0; i < cars; i++) {
                 Car c = m.cars[i];
                 carTraced[i] = c.running && i != m.player;
+                carAround[i] = c.running; // your own car's surroundings echo as the others' do
                 carPlaces[3 * i] = c.x;
                 carPlaces[3 * i + 1] = c.y;
                 carPlaces[3 * i + 2] = c.z;
             }
-            acoustics.direct(carPlaces, carTraced, cars, traced);
+            acoustics.direct(carPlaces, carTraced, carAround, cars, traced);
+        }
+        float ke = 1F - (float) Math.exp(-dt / ECHO_SMOOTHING);
+        for (int i = 0; i < MAX_CARS; i++) {
+            float around = reverbOn && i < cars && carAround[i] ? acoustics.enclosure(i) : 0F;
+            echo[i] += (around - echo[i]) * ke;
+            if (echo[i] < 0.005F && around == 0F) {
+                echo[i] = 0F;
+            }
         }
         float k = 1F - (float) Math.exp(-dt / OCCLUSION_SMOOTHING);
         boolean occluding = occlusionOn;
@@ -2269,6 +2356,7 @@ public final class Sound3D implements Runnable {
         voice.car = car;
         voice.gain = gain;
         muffle(voice);
+        echoSend(voice.source, car); // a crash between walls comes back from them
         placeAtCar(voice.source, car);
         alSourcePlay(voice.source);
     }
@@ -2384,8 +2472,12 @@ public final class Sound3D implements Runnable {
                         e.gain[4]));
             }
             if (acoustics != null) {
-                b.append(String.format(Locale.ROOT, "through[%s] rt[%.2f %.2f %.2f] closed %.2f %s",
-                        throughList(cars), reverbNow[0], reverbNow[1], reverbNow[2], enclosed,
+                StringBuilder around = new StringBuilder();
+                for (int i = 0; i < Math.min(cars, MAX_CARS); i++) {
+                    around.append(String.format(Locale.ROOT, "%s%.2f", i == 0 ? "" : " ", echo[i]));
+                }
+                b.append(String.format(Locale.ROOT, "through[%s] rt[%.2f %.2f %.2f] closed %.2f around[%s] %s",
+                        throughList(cars), reverbNow[0], reverbNow[1], reverbNow[2], enclosed, around,
                         acoustics.describe()));
             }
             System.out.println(b);
@@ -2610,6 +2702,8 @@ public final class Sound3D implements Runnable {
         float throttle;
         float appliedHf = -1F;
         float appliedLf = -1F;
+        /** How much of the echo its sources were last set to send; -1: not set yet. */
+        float appliedEcho = -1F;
         final float[] position = new float[3];
         final float[] velocity = new float[3];
         /** The rebuilt sound's voices for this car, made the first time the extra plays it. */
@@ -2682,7 +2776,23 @@ public final class Sound3D implements Runnable {
             if (car.rebuilt || rebuilt != null) {
                 if (rebuilt == null) {
                     rebuilt = new RebuiltVoices(filter);
+                    appliedEcho = -1F; // its sources send to the echo as the car's others do
                 }
+            }
+            float sent = echoOf(index);
+            if (echoSlot != 0 && (Math.abs(sent - appliedEcho) > 0.03F || sent == 0F && appliedEcho != 0F)) {
+                // what stands around the car throws its engine back (a filter is copied when it is attached)
+                EXTEfx.alFilterf(echoFilter[index], EXTEfx.AL_LOWPASS_GAIN, sent);
+                for (int s : sources) {
+                    echoSend(s, index);
+                }
+                if (rebuilt != null) {
+                    echoSend(rebuilt.front.source, index);
+                    echoSend(rebuilt.back.source, index);
+                }
+                appliedEcho = sent;
+            }
+            if (car.rebuilt || rebuilt != null) {
                 if (car.rebuilt) {
                     // the same mix, played one cycle at a time: the five recordings fall silent
                     for (int i = 0; i < 5; i++) {
