@@ -458,7 +458,7 @@ public final class RealismCheck {
                 + " from a front engine; a mid engine's at z " + n(mid[2]));
     }
 
-    /** The exhaust: flames on lift-off at top speed, a blue flame with nitrous, a shimmer at idle. */
+    /** The exhaust: flames on lift-off at top speed, a blue flame with nitrous (red with two at once), a shimmer at idle. */
     private void exhaust() {
         start();
         for (int t = 0; t < 10; t++) {
@@ -478,15 +478,25 @@ public final class RealismCheck {
         real.particles.clear();
         frame(0F, GROUND - 20F, carZ - 400F);
         int blue = canvas.drawn(0x5f9cff);
+        float blueLong = canvas.span(0x5f9cff);
+        v.nitrousDouble[0] = true;
+        drive(100F, true, false);
+        real.particles.clear();
+        frame(0F, GROUND - 20F, carZ - 400F);
+        int red = canvas.drawn(0xff3a22);
+        float redLong = canvas.span(0xff3a22);
+        v.nitrousDouble[0] = false;
         v.nitrous[0] = false;
         start();
         for (int t = 0; t < 20; t++) {
             drive(0F, false, false);
         }
         float[] idle = meanLocal(0xdfe3e6);
-        boolean ok = flames && orange > 0 && ends && blue > 0 && idle[3] > 0 && idle[2] < s.parts.rear + 6F;
+        boolean ok = flames && orange > 0 && ends && blue > 0 && red > 0 && redLong > blueLong && idle[3] > 0
+                && idle[2] < s.parts.rear + 6F;
         check(F, "the exhaust shows the engine's state", ok, "lift-off flames " + flames + " (" + orange
-                + " polygons), gone after " + ends + "; nitrous flame " + blue + " polygons; idle shimmer "
+                + " polygons), gone after " + ends + "; nitrous flame " + blue + " blue polygons " + n(blueLong) + " long, two at once " + red
+                + " red " + n(redLong) + " long; idle shimmer "
                 + (int) idle[3] + " puffs at z " + n(idle[2]));
     }
 

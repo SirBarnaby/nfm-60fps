@@ -144,11 +144,12 @@ public final class FeatureSettings {
                         + SOUND_1_0,
                 "xtraengine", Kind.SOUND, 0, "Off", "On"),
         new Switch("powerups", "Powerups",
-                "Boxes along the track give nitrous, dynamite or a magnet; the computer cars use them too."
+                "A few rows of boxes along the track give nitrous, dynamite or a bomb to drop behind you; the"
+                        + " computer cars use them too."
                         + RACE_1_0,
                 "xtraboxes", Kind.RACE, 0, "Off", "On"),
         new Switch("flash", "powerups", "Explosion flash",
-                "With powerups: the screen flashes white for a frame when dynamite goes off near you. Off for"
+                "The screen flashes white for a frame when something explodes near you. Off for"
                         + " anyone the flash bothers.",
                 "xtraflash", Kind.LOOK, 1, "Off", "On"),
         new Switch("handling", "Suspension handling",

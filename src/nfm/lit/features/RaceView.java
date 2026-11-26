@@ -86,6 +86,8 @@ public final class RaceView {
     public int[] wheelDrop = new int[0];
     /** Nitrous burns in the car's engine (the powerups' nitrous). */
     public boolean[] nitrous = new boolean[0];
+    /** Two nitrous burn at once (a second fired while the first still burned): the flame is red and bigger. */
+    public boolean[] nitrousDouble = new boolean[0];
     /** The car went through a repair hoop this tick: all its damage is fixed. */
     public boolean[] repaired = new boolean[0];
     /** Each car's model as loaded (its polygons), filled when the race starts. */
@@ -186,6 +188,7 @@ public final class RaceView {
         radius = new int[n];
         wheelDrop = new int[n];
         nitrous = new boolean[n];
+        nitrousDouble = new boolean[n];
         repaired = new boolean[n];
         CarShape[] shapes = new CarShape[n];
         for (int c = 0; c < n; c++) {

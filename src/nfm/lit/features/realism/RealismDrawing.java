@@ -26,6 +26,10 @@ final class RealismDrawing {
     private static final float FLASH_WIDE = 3.2F;
     private static final int NITROUS = 0x5f9cff;
     private static final int NITROUS_CORE = 0xdcefff;
+    /** Two nitrous at once: red, and this much bigger. */
+    private static final int NITROUS_TWO = 0xff3a22;
+    private static final int NITROUS_TWO_CORE = 0xffd2a0;
+    private static final float NITROUS_TWO_SIZE = 1.35F;
     /** How far the cracks and scratches stand off their glass and panel, so the panel never covers them. */
     private static final float STAND_OFF = 0.35F;
     /** A flame's teardrop: how far along and how wide each of its five corners is. */
@@ -67,9 +71,15 @@ final class RealismDrawing {
         }
     }
 
-    /** The flame at car {@code car}'s exhaust tip {@code pipe}: orange on lift-off, blue with nitrous. */
-    void flame(Canvas canvas, int car, CarState s, int pipe, boolean nitrous) {
-        float reach = s.flameReach[pipe];
+    /**
+     * The flame at car {@code car}'s exhaust tip {@code pipe}: orange on
+     * lift-off, blue with nitrous ({@code burns} 1), red and a bit bigger
+     * with two nitrous at once ({@code burns} 2).
+     */
+    void flame(Canvas canvas, int car, CarState s, int pipe, int burns) {
+        boolean nitrous = burns > 0;
+        float size = burns > 1 ? NITROUS_TWO_SIZE : 1F;
+        float reach = s.flameReach[pipe] * size;
         if (reach <= 0F) {
             return;
         }
@@ -77,10 +87,11 @@ final class RealismDrawing {
         canvas.glow(1F);
         for (int layer = 0; layer < 2; layer++) {
             boolean core = layer == 1;
-            int rgb = nitrous ? (core ? NITROUS_CORE : NITROUS) : core ? FLAME_CORE : FLAME;
+            int rgb = burns > 1 ? (core ? NITROUS_TWO_CORE : NITROUS_TWO)
+                    : nitrous ? (core ? NITROUS_CORE : NITROUS) : core ? FLAME_CORE : FLAME;
             canvas.color(canvas.fog(rgb, s.at[0], s.at[1], s.at[2]));
             float length = reach * (core ? 0.6F : 1F);
-            float half = (p.stacks ? 1.6F : 1.4F) * (core ? 0.55F : 1F);
+            float half = (p.stacks ? 1.6F : 1.4F) * (core ? 0.55F : 1F) * size;
             for (int plane = 0; plane < 2; plane++) {
                 teardrop(p, pipe, length, half, plane);
                 canvas.onCar(car, x, y, z, 5);

@@ -1,19 +1,21 @@
 package nfm.lit.features.powerups;
 
 import java.util.Arrays;
+import nfm.lit.features.BlastPush;
 import nfm.lit.features.RaceInts;
 import nfm.lit.features.RaceTick;
 
 /**
  * The race half of the powerups: the boxes along the track, what each car
  * holds, nitrous burning, dynamite sticks in flight and their blasts, and
- * magnets pulling. It runs inside the race tick, run-ahead's and the
+ * the bombs dropped on the road. It runs inside the race tick, run-ahead's and the
  * verifier's too, so everything it changes is in the arrays {@link #sync}
  * saves and restores, it draws only from dice of its own, and it reads the
  * race only through {@link RaceTick} (trigonometry through
  * {@link StrictMath}, so every machine plays it the same).
  * <p>
- * What happened in a tick (a pickup, a use, a throw, a blast) goes into a
+ * What happened in a tick (a pickup, a use, a throw, a blast, a bomb dropped
+ * or set off) goes into a
  * ring of events the look and the sound read after real ticks only.
  */
 final class PowerupRace {
@@ -22,15 +24,16 @@ final class PowerupRace {
     static final int NONE = 0;
     static final int NITROUS = 1;
     static final int DYNAMITE = 2;
-    static final int MAGNET = 3;
+    static final int BOMB = 3;
 
     /* events */
     static final int PICKUP = 1;
+    /** Nitrous fired: its {@code what} is 1, or 2 when the last one still burned (a double). */
     static final int USED = 2;
     static final int THROWN = 3;
     static final int BLAST = 4;
-    static final int MAGNET_OFF = 5;
-    static final int NOBODY_AHEAD = 6;
+    static final int DROPPED = 5;
+    static final int BANG = 6;
 
     /** Ticks a second: the race's 19. */
     static final int SECOND = 19;
@@ -40,8 +43,10 @@ final class PowerupRace {
     static final int ROW = 3;
     static final float SPACING = 170F;
     static final float HOVER = 70F;
-    /** With more checkpoints than this, every second one has boxes. */
+    /** The first build: a row at each checkpoint, every second one with more checkpoints than this. */
     private static final int MANY_CHECKPOINTS = 16;
+    /** Now a row at one checkpoint in this many of the first build's, spread evenly round the lap. */
+    static final int RARER = 4;
     /** A car takes a box within this much plus a share of its radius across, and this much up or down. */
     private static final float REACH = 60F;
     private static final float REACH_PER_RADIUS = 0.4F;
@@ -54,6 +59,8 @@ final class PowerupRace {
     static final float NITROUS_BOOST = 60F;
     static final int NITROUS_FULL = 2 * SECOND;
     static final int NITROUS_FADE = SECOND;
+    /** The grip left while it burns (the tyres let go sooner), coming back as it fades. */
+    static final float NITROUS_GRIP = 0.55F;
 
     /* dynamite */
     /** The stick leaves the car this long after the pickup. */
@@ -61,6 +68,9 @@ final class PowerupRace {
     private static final float THROW_FORWARD = 60F;
     private static final float THROW_UP = 16F;
     private static final float GRAVITY = 1.4F;
+    /** The throw turns toward the nearest enemy ahead within this far, by this much at most (degrees). */
+    static final float AIM_MOST = 2.5F;
+    private static final float AIM_RANGE = 6000F;
     /** It blows up on a car this near; the thrower's own only once it has flown this long. */
     private static final float HIT_CAR = 90F;
     private static final int OWN_CAR_AFTER = 12;
@@ -71,23 +81,40 @@ final class PowerupRace {
     private static final float BLAST_PUSH = 55F;
     private static final float BLAST_LIFT = 30F;
     private static final float BLAST_TIP = 15F;
-    private static final float BLAST_DAMAGE = 0.25F;
+    static final float BLAST_DAMAGE = 0.25F;
     /** A blast this near the ground dents it. */
     static final float CRATER_HEIGHT = 150F;
     static final int STICKS = 8;
 
-    /* magnet */
-    static final int MAGNET_TICKS = 3 * SECOND;
-    private static final float MAGNET_STEP = 9F;
-    private static final float MAGNET_GAP = 260F;
-    private static final float MAGNET_BOOST = 25F;
+    /* the bomb */
+    static final int BOMBS = 12;
+    /** Dropped in the air: it falls to the flat ground under it. */
+    private static final float FALLS = Float.MAX_VALUE;
+    /** Dropped this far behind the car's tail. */
+    private static final float BOMB_BEHIND = 60F;
+    /** A car sets it off within this much plus a share of its radius across, and this much up or down. */
+    private static final float BOMB_REACH = 35F;
+    private static final float BOMB_REACH_PER_RADIUS = 0.4F;
+    private static final float BOMB_UP = 150F;
+    /** The car that dropped it sets it off only after this long. */
+    static final int BOMB_OWN_AFTER = SECOND;
+    /** The bang: the car that set it off takes this much damage and is thrown this much; cars this near, their share. */
+    static final float BANG_DAMAGE = 0.30F;
+    static final float BANG_RADIUS = 300F;
+    private static final float BANG_PUSH = 20F;
+    private static final float BANG_LIFT = 22F;
+    private static final float BANG_TIP = 12F;
 
     /* the computer drivers */
     private static final float AI_NITROUS = 0.12F;
     private static final float AI_NITROUS_SPEED = 0.6F;
-    private static final float AI_MAGNET = 0.15F;
-    private static final float AI_MAGNET_NEAR = 400F;
-    private static final float AI_MAGNET_FAR = 3000F;
+    /** A computer car drops its bomb with a car this far behind it, in line; or anyway after holding it this long. */
+    private static final float AI_BOMB = 0.3F;
+    private static final float AI_BOMB_NEAR = 150F;
+    private static final float AI_BOMB_FAR = 1400F;
+    private static final float AI_BOMB_IN_LINE = 0.9F;
+    private static final int AI_BOMB_KEPT = 15 * SECOND;
+    private static final float AI_BOMB_ANYWAY = 0.05F;
 
     /* the events' ring */
     static final int EVENTS = 32;
@@ -113,12 +140,11 @@ final class PowerupRace {
     private boolean[] keyBefore = new boolean[0];
     /** Ticks of nitrous left, the last {@link #NITROUS_FADE} fading. */
     int[] nitrous = new int[0];
-    /** Ticks of magnet left, and the car it pulls toward. */
-    int[] magnet = new int[0];
-    int[] magnetTarget = new int[0];
-    /** The magnet's moves below a whole unit, carried to the next tick. */
-    private float[] carryX = new float[0];
-    private float[] carryZ = new float[0];
+    /** Ticks the nitrous before the last still burns under it: while above 0 the two overlap (a double). */
+    int[] doubled = new int[0];
+    /** Where each car was after the last tick, so a bomb between two ticks is not driven over unseen. */
+    private float[] lastX = new float[0];
+    private float[] lastZ = new float[0];
     /** Dynamite in flight: the car that threw it (-1: none), where it is, how it moves, how long it has flown. */
     final int[] stickOwner = new int[STICKS];
     final float[] stickX = new float[STICKS];
@@ -128,14 +154,25 @@ final class PowerupRace {
     final float[] stickVY = new float[STICKS];
     final float[] stickVZ = new float[STICKS];
     final int[] stickAge = new int[STICKS];
+    /** Bombs dropped: the car that dropped it (-1: none), where it is, how fast it falls, how long it has been out. */
+    final int[] bombOwner = new int[BOMBS];
+    final float[] bombX = new float[BOMBS];
+    final float[] bombY = new float[BOMBS];
+    final float[] bombZ = new float[BOMBS];
+    final float[] bombVY = new float[BOMBS];
+    /** The road it was dropped on (under the wheels of a car on the ground); {@link #FALLS} when dropped in the air. */
+    final float[] bombRoad = new float[BOMBS];
+    final int[] bombAge = new int[BOMBS];
     /** The ring of events, and how many there have been. */
     final int[] eventKind = new int[EVENTS];
     final int[] eventCar = new int[EVENTS];
-    /** The powerup of a pickup or use; for a blast, 1 if it dented the ground. */
+    /** The powerup of a pickup; 1 or 2 for nitrous fired alone or doubled; for a blast, 1 if it dented the ground. */
     final int[] eventWhat = new int[EVENTS];
     final float[] eventX = new float[EVENTS];
     final float[] eventY = new float[EVENTS];
     final float[] eventZ = new float[EVENTS];
+    /** The ground under a blast or a bang. */
+    final float[] eventGround = new float[EVENTS];
     int events;
 
     /** The stage has loaded: the boxes go at its checkpoints, and nobody holds anything. */
@@ -149,18 +186,33 @@ final class PowerupRace {
         heldTicks = new int[cars];
         keyBefore = new boolean[cars];
         nitrous = new int[cars];
-        magnet = new int[cars];
-        magnetTarget = new int[cars];
-        carryX = new float[cars];
-        carryZ = new float[cars];
-        Arrays.fill(magnetTarget, -1);
+        doubled = new int[cars];
+        lastX = new float[cars];
+        lastZ = new float[cars];
+        for (int c = 0; c < cars; c++) {
+            lastX[c] = race.x(c);
+            lastZ[c] = race.z(c);
+        }
         Arrays.fill(stickOwner, -1);
         Arrays.fill(stickAge, 0);
+        Arrays.fill(bombOwner, -1);
+        Arrays.fill(bombAge, 0);
         Arrays.fill(eventKind, 0);
         events = 0;
     }
 
-    /** A row of boxes across the road at each checkpoint (every second one on a stage with many). */
+    /** Rows of boxes the first build had on a lap with {@code gates} checkpoints: one at each, every second with many. */
+    static int firstBuildRows(int gates) {
+        int every = gates > MANY_CHECKPOINTS ? 2 : 1;
+        return (gates + every - 1) / every;
+    }
+
+    /** Rows of boxes on a lap with {@code gates} checkpoints: a quarter of the first build's, one at least. */
+    static int rows(int gates) {
+        return gates <= 0 ? 0 : Math.max(1, Math.round(firstBuildRows(gates) / (float) RARER));
+    }
+
+    /** A row of boxes across the road at a few of the checkpoints, spread evenly round the lap. */
     private void placeBoxes(RaceTick race) {
         int gates = 0;
         for (int p = 0; p < race.points(); p++) {
@@ -168,22 +220,23 @@ final class PowerupRace {
                 gates++;
             }
         }
-        int every = gates > MANY_CHECKPOINTS ? 2 : 1;
-        int rows = (gates + every - 1) / every;
+        int rows = rows(gates);
         boxes = rows * ROW;
         boxX = new float[boxes];
         boxY = new float[boxes];
         boxZ = new float[boxes];
         int gate = 0;
+        int row = 0;
         int b = 0;
-        for (int p = 0; p < race.points(); p++) {
+        for (int p = 0; p < race.points() && row < rows; p++) {
             int kind = race.pointKind(p);
             if (kind <= 0) {
                 continue;
             }
-            if (gate++ % every != 0) {
+            if (gate++ != (int) ((row + 0.5F) * gates / rows)) {
                 continue;
             }
+            row++;
             for (int k = 0; k < ROW; k++) {
                 float offset = (k - (ROW - 1) / 2F) * SPACING;
                 float x = race.pointX(p) + (kind == 1 ? offset : 0F);
@@ -206,10 +259,9 @@ final class PowerupRace {
         s.contents(heldTicks);
         s.contents(keyBefore);
         s.contents(nitrous);
-        s.contents(magnet);
-        s.contents(magnetTarget);
-        s.contents(carryX);
-        s.contents(carryZ);
+        s.contents(doubled);
+        s.contents(lastX);
+        s.contents(lastZ);
         s.contents(stickOwner);
         s.contents(stickX);
         s.contents(stickY);
@@ -218,16 +270,24 @@ final class PowerupRace {
         s.contents(stickVY);
         s.contents(stickVZ);
         s.contents(stickAge);
+        s.contents(bombOwner);
+        s.contents(bombX);
+        s.contents(bombY);
+        s.contents(bombZ);
+        s.contents(bombVY);
+        s.contents(bombRoad);
+        s.contents(bombAge);
         s.contents(eventKind);
         s.contents(eventCar);
         s.contents(eventWhat);
         s.contents(eventX);
         s.contents(eventY);
         s.contents(eventZ);
+        s.contents(eventGround);
         events = s.value(events);
     }
 
-    /** What the powerups add to car {@code car}'s boost: nitrous burning, a magnet pulling. */
+    /** What the powerups add to car {@code car}'s boost: nitrous burning (two at once no more than one). */
     float boost(int car) {
         if (car < 0 || car >= cars) {
             return 0F;
@@ -237,10 +297,17 @@ final class PowerupRace {
         if (n > 0) {
             add += n > NITROUS_FADE ? NITROUS_BOOST : NITROUS_BOOST * n / NITROUS_FADE;
         }
-        if (magnet[car] > 0) {
-            add += MAGNET_BOOST;
-        }
         return add;
+    }
+
+    /** What is left of car {@code car}'s grip, 0 to 1: less while its nitrous burns, back to all of it as that fades. */
+    float grip(int car) {
+        if (car < 0 || car >= cars || nitrous[car] <= 0) {
+            return 1F;
+        }
+        int n = nitrous[car];
+        float burning = n > NITROUS_FADE ? 1F : n / (float) NITROUS_FADE;
+        return 1F - (1F - NITROUS_GRIP) * burning;
     }
 
     /** One tick, after every car has driven. */
@@ -259,13 +326,15 @@ final class PowerupRace {
             keyBefore[c] = key;
             if (race.wasted(c)) {
                 nitrous[c] = 0;
-                stopMagnet(c, false);
+                doubled[c] = 0;
                 continue;
             }
             if (nitrous[c] > 0) {
                 nitrous[c]--;
             }
-            pull(race, c);
+            if (doubled[c] > 0) {
+                doubled[c]--;
+            }
             if (held[c] == NONE) {
                 pickUp(race, c);
                 continue;
@@ -277,6 +346,15 @@ final class PowerupRace {
             if (stickOwner[s] >= 0) {
                 fly(race, s);
             }
+        }
+        for (int b = 0; b < BOMBS; b++) {
+            if (bombOwner[b] >= 0) {
+                lie(race, b);
+            }
+        }
+        for (int c = 0; c < cars; c++) {
+            lastX[c] = race.x(c);
+            lastZ[c] = race.z(c);
         }
     }
 
@@ -299,22 +377,26 @@ final class PowerupRace {
             boxWait[b] = RESPAWN;
             held[c] = roll(race, c);
             heldTicks[c] = 0;
-            event(PICKUP, c, held[c], boxX[b], boxY[b], boxZ[b]);
+            event(PICKUP, c, held[c], boxX[b], boxY[b], boxZ[b], 0F);
             return;
         }
     }
 
-    /** What a box gives car {@code c}, by its place: the leader never a magnet, the last car more often one. */
+    /**
+     * What a box gives car {@code c}, by its place: the leader, with the
+     * field behind it, more often a bomb and seldom dynamite; the last car,
+     * with the field ahead, seldom a bomb.
+     */
     private int roll(RaceTick race, int c) {
         int place = race.place(c);
         int r = below(100);
         if (place <= 0) {
-            return r < 57 ? NITROUS : DYNAMITE;
+            return r < 45 ? NITROUS : r < 60 ? DYNAMITE : BOMB;
         }
         if (place >= cars - 1) {
-            return r < 40 ? NITROUS : r < 60 ? DYNAMITE : MAGNET;
+            return r < 45 ? NITROUS : r < 90 ? DYNAMITE : BOMB;
         }
-        return r < 40 ? NITROUS : r < 70 ? DYNAMITE : MAGNET;
+        return r < 40 ? NITROUS : r < 75 ? DYNAMITE : BOMB;
     }
 
     /** Car {@code c} uses what it holds: a person on a press of the key, a computer car when it suits, dynamite by itself. */
@@ -323,20 +405,18 @@ final class PowerupRace {
         switch (held[c]) {
             case NITROUS -> {
                 if (person ? pressed : wantsNitrous(race, c)) {
+                    // fired while the last one still burns: the two overlap for as long as that one had left
+                    boolean twice = nitrous[c] > 0;
+                    doubled[c] = Math.max(doubled[c], nitrous[c]);
                     nitrous[c] = NITROUS_FULL + NITROUS_FADE;
-                    used(c, NITROUS, race);
+                    held[c] = NONE;
+                    heldTicks[c] = 0;
+                    event(USED, c, twice ? 2 : 1, race.x(c), race.y(c), race.z(c), 0F);
                 }
             }
-            case MAGNET -> {
-                int ahead = carAhead(race, c);
-                if (person && pressed && ahead < 0) {
-                    event(NOBODY_AHEAD, c, MAGNET, race.x(c), race.y(c), race.z(c));
-                } else if (ahead >= 0 && (person ? pressed : wantsMagnet(race, c, ahead))) {
-                    magnet[c] = MAGNET_TICKS;
-                    magnetTarget[c] = ahead;
-                    carryX[c] = 0F;
-                    carryZ[c] = 0F;
-                    used(c, MAGNET, race);
+            case BOMB -> {
+                if (person ? pressed : wantsToDrop(race, c)) {
+                    drop(race, c);
                 }
             }
             case DYNAMITE -> {
@@ -348,77 +428,118 @@ final class PowerupRace {
         }
     }
 
-    private void used(int c, int what, RaceTick race) {
-        held[c] = NONE;
-        heldTicks[c] = 0;
-        event(USED, c, what, race.x(c), race.y(c), race.z(c));
-    }
-
     /** A computer car fires nitrous on the ground, flat out, going straight and already quick. */
     private boolean wantsNitrous(RaceTick race, int c) {
         return race.grounded(c) && race.throttle(c) && !race.steering(c)
                 && race.speed(c) > AI_NITROUS_SPEED * race.topSpeed(c) && chance(AI_NITROUS);
     }
 
-    /** A computer car uses the magnet with the car ahead neither too near nor too far. */
-    private boolean wantsMagnet(RaceTick race, int c, int ahead) {
-        float d = distance(race.x(ahead) - race.x(c), race.z(ahead) - race.z(c));
-        return d > AI_MAGNET_NEAR && d < AI_MAGNET_FAR && chance(AI_MAGNET);
-    }
-
-    /** The car one place ahead of car {@code c}, if it is still racing; -1 if none. */
-    private int carAhead(RaceTick race, int c) {
-        int place = race.place(c);
-        if (place <= 0) {
-            return -1;
+    /** A computer car drops its bomb in front of a car close behind it, or anyway once it has carried it long. */
+    private boolean wantsToDrop(RaceTick race, int c) {
+        if (!race.grounded(c)) {
+            return false;
         }
+        double yaw = StrictMath.toRadians(race.yaw(c));
+        float fx = (float) -StrictMath.sin(yaw);
+        float fz = (float) StrictMath.cos(yaw);
         for (int o = 0; o < cars; o++) {
-            if (o != c && race.place(o) == place - 1) {
-                return race.wasted(o) ? -1 : o;
+            if (o == c || race.wasted(o)) {
+                continue;
+            }
+            float dx = race.x(o) - race.x(c);
+            float dz = race.z(o) - race.z(c);
+            float d = distance(dx, dz);
+            if (d > AI_BOMB_NEAR && d < AI_BOMB_FAR && -(dx * fx + dz * fz) > AI_BOMB_IN_LINE * d) {
+                return chance(AI_BOMB);
             }
         }
-        return -1;
+        return heldTicks[c] > AI_BOMB_KEPT && chance(AI_BOMB_ANYWAY);
     }
 
-    /** A magnet pulling car {@code c} toward its target: closing in at most a few units a tick, never ramming. */
-    private void pull(RaceTick race, int c) {
-        if (magnet[c] <= 0) {
-            return;
+    /* ---------------------------------------------------------- the bomb */
+
+    /** Car {@code c} drops its bomb behind its tail; it falls to the road and lies there. */
+    private void drop(RaceTick race, int c) {
+        held[c] = NONE;
+        heldTicks[c] = 0;
+        int b = 0;
+        while (b < BOMBS && bombOwner[b] >= 0) {
+            b++;
         }
-        int t = magnetTarget[c];
-        if (t < 0 || t >= cars || race.wasted(t)) {
-            stopMagnet(c, true);
-            return;
-        }
-        float dx = race.x(t) - race.x(c);
-        float dz = race.z(t) - race.z(c);
-        float d = distance(dx, dz);
-        if (d > MAGNET_GAP) {
-            float step = Math.min(MAGNET_STEP, (d - MAGNET_GAP) / 10F);
-            float mx = dx / d * step + carryX[c];
-            float mz = dz / d * step + carryZ[c];
-            int ix = (int) mx;
-            int iz = (int) mz;
-            carryX[c] = mx - ix;
-            carryZ[c] = mz - iz;
-            if (ix != 0 || iz != 0) {
-                race.move(c, ix, iz);
+        if (b == BOMBS) {
+            b = 0; // every place taken: the one out the longest makes way
+            for (int k = 1; k < BOMBS; k++) {
+                if (bombAge[k] > bombAge[b]) {
+                    b = k;
+                }
             }
         }
-        if (--magnet[c] == 0) {
-            stopMagnet(c, true);
+        double yaw = StrictMath.toRadians(race.yaw(c));
+        float fx = (float) -StrictMath.sin(yaw);
+        float fz = (float) StrictMath.cos(yaw);
+        float behind = race.radius(c) + BOMB_BEHIND;
+        bombOwner[b] = c;
+        bombAge[b] = 0;
+        bombX[b] = race.x(c) - fx * behind;
+        bombZ[b] = race.z(c) - fz * behind;
+        if (race.grounded(c)) {
+            // on the road the car is on, a slope or a ramp too
+            bombRoad[b] = race.y(c) + race.wheelDrop(c);
+            bombY[b] = bombRoad[b];
+            bombVY[b] = 0F;
+        } else {
+            bombRoad[b] = FALLS;
+            bombY[b] = race.y(c);
+            bombVY[b] = Math.max(0F, race.vy(c));
+        }
+        event(DROPPED, c, BOMB, bombX[b], bombY[b], bombZ[b], 0F);
+    }
+
+    /** Bomb {@code b} a tick on: it falls until it lies on the road, and the first car that drives onto it sets it off. */
+    private void lie(RaceTick race, int b) {
+        bombAge[b]++;
+        float ground = bombRoad[b] != FALLS ? bombRoad[b] : race.ground(bombX[b], bombY[b] - 10F, bombZ[b]);
+        if (bombY[b] < ground) {
+            bombVY[b] += GRAVITY;
+            bombY[b] = Math.min(ground, bombY[b] + bombVY[b]);
+        } else {
+            bombY[b] = ground;
+            bombVY[b] = 0F;
+        }
+        for (int c = 0; c < cars; c++) {
+            if (race.wasted(c) || c == bombOwner[b] && bombAge[b] < BOMB_OWN_AFTER
+                    || Math.abs(race.y(c) - bombY[b]) > BOMB_UP) {
+                continue;
+            }
+            float reach = BOMB_REACH + BOMB_REACH_PER_RADIUS * race.radius(c);
+            if (passed(lastX[c], lastZ[c], race.x(c), race.z(c), bombX[b], bombZ[b]) < reach * reach) {
+                bang(race, b, c, ground);
+                return;
+            }
         }
     }
 
-    private void stopMagnet(int c, boolean tell) {
-        if (magnet[c] > 0 || magnetTarget[c] >= 0) {
-            if (tell) {
-                event(MAGNET_OFF, c, MAGNET, 0F, 0F, 0F);
-            }
-            magnet[c] = 0;
-            magnetTarget[c] = -1;
-        }
+    /** How near (squared) the way from {@code (ax, az)} to {@code (bx, bz)} comes to {@code (px, pz)}. */
+    private static float passed(float ax, float az, float bx, float bz, float px, float pz) {
+        float wx = bx - ax;
+        float wz = bz - az;
+        float len2 = wx * wx + wz * wz;
+        float t = len2 > 0F ? ((px - ax) * wx + (pz - az) * wz) / len2 : 0F;
+        t = Math.max(0F, Math.min(1F, t));
+        float dx = ax + wx * t - px;
+        float dz = az + wz * t - pz;
+        return dx * dx + dz * dz;
     }
+
+    /** Bomb {@code b} goes off under car {@code c}: that car takes all of it, cars close by their share. */
+    private void bang(RaceTick race, int b, int c, float ground) {
+        bombOwner[b] = -1;
+        BlastPush.throwCars(race, bombX[b], bombY[b], bombZ[b], BANG_RADIUS, BANG_PUSH, BANG_LIFT, BANG_TIP,
+                BANG_DAMAGE, c, -1);
+        event(BANG, c, BOMB, bombX[b], bombY[b], bombZ[b], ground);
+    }
+
+    /* ------------------------------------------------------- the dynamite */
 
     /** Car {@code c} throws its stick from its nose: its own speed and more, forwards and a little up. */
     private void throwStick(RaceTick race, int c) {
@@ -431,7 +552,7 @@ final class PowerupRace {
         if (s == STICKS) {
             s = oldestStick();
         }
-        double yaw = Math.toRadians(race.yaw(c));
+        double yaw = StrictMath.toRadians(race.yaw(c));
         float fx = (float) -StrictMath.sin(yaw);
         float fz = (float) StrictMath.cos(yaw);
         float nose = race.radius(c) * 0.8F;
@@ -440,10 +561,48 @@ final class PowerupRace {
         stickX[s] = race.x(c) + fx * nose;
         stickY[s] = race.y(c) - 30F;
         stickZ[s] = race.z(c) + fz * nose;
-        stickVX[s] = race.vx(c) + fx * THROW_FORWARD;
+        float vx = race.vx(c) + fx * THROW_FORWARD;
+        float vz = race.vz(c) + fz * THROW_FORWARD;
+        int enemy = nearestAhead(race, c, fx, fz);
+        if (enemy >= 0) {
+            // the way it leaves, turned toward the enemy by a couple of degrees at most (x = sin, z = cos of a heading)
+            double leaves = StrictMath.atan2(vx, vz);
+            double wanted = StrictMath.atan2(race.x(enemy) - stickX[s], race.z(enemy) - stickZ[s]);
+            double turn = wanted - leaves;
+            if (turn > StrictMath.PI) {
+                turn -= 2D * StrictMath.PI;
+            } else if (turn < -StrictMath.PI) {
+                turn += 2D * StrictMath.PI;
+            }
+            double most = StrictMath.toRadians(AIM_MOST);
+            turn = Math.max(-most, Math.min(most, turn));
+            float speed = distance(vx, vz);
+            vx = (float) (StrictMath.sin(leaves + turn) * speed);
+            vz = (float) (StrictMath.cos(leaves + turn) * speed);
+        }
+        stickVX[s] = vx;
         stickVY[s] = race.vy(c) - THROW_UP;
-        stickVZ[s] = race.vz(c) + fz * THROW_FORWARD;
-        event(THROWN, c, DYNAMITE, stickX[s], stickY[s], stickZ[s]);
+        stickVZ[s] = vz;
+        event(THROWN, c, DYNAMITE, stickX[s], stickY[s], stickZ[s], 0F);
+    }
+
+    /** The nearest car ahead of car {@code c}'s nose that still races, within the aim's range; -1 if none. */
+    private int nearestAhead(RaceTick race, int c, float fx, float fz) {
+        int nearest = -1;
+        float least = AIM_RANGE;
+        for (int o = 0; o < cars; o++) {
+            if (o == c || race.wasted(o)) {
+                continue;
+            }
+            float dx = race.x(o) - race.x(c);
+            float dz = race.z(o) - race.z(c);
+            float d = distance(dx, dz);
+            if (d < least && dx * fx + dz * fz > 0F) {
+                least = d;
+                nearest = o;
+            }
+        }
+        return nearest;
     }
 
     private int oldestStick() {
@@ -493,46 +652,12 @@ final class PowerupRace {
     private void blast(RaceTick race, int s, float x, float y, float z, float ground) {
         int owner = stickOwner[s];
         stickOwner[s] = -1;
-        for (int c = 0; c < cars; c++) {
-            if (race.wasted(c)) {
-                continue;
-            }
-            float dx = race.x(c) - x;
-            float dy = race.y(c) - y;
-            float dz = race.z(c) - z;
-            float d = (float) StrictMath.sqrt(dx * dx + dy * dy + dz * dz);
-            if (d >= BLAST_RADIUS) {
-                continue;
-            }
-            float share = 1F - d / BLAST_RADIUS;
-            float nearest = Float.MAX_VALUE;
-            float farthest = 0F;
-            int nearWheel = 0;
-            for (int w = 0; w < 4; w++) {
-                float wd = distance(race.wheelX(c, w) - x, race.wheelZ(c, w) - z);
-                if (wd < nearest) {
-                    nearest = wd;
-                    nearWheel = w;
-                }
-                farthest = Math.max(farthest, wd);
-            }
-            for (int w = 0; w < 4; w++) {
-                float wx = race.wheelX(c, w) - x;
-                float wz = race.wheelZ(c, w) - z;
-                float wd = distance(wx, wz);
-                float ax = wd > 1F ? wx / wd : 0F;
-                float az = wd > 1F ? wz / wd : 0F;
-                float near = farthest > nearest ? (farthest - wd) / (farthest - nearest) : 1F;
-                float lift = (BLAST_LIFT + BLAST_TIP * near) * share;
-                race.push(c, w, ax * BLAST_PUSH * share, -lift, az * BLAST_PUSH * share);
-            }
-            race.damage(c, nearWheel, BLAST_DAMAGE * share);
-        }
+        BlastPush.throwCars(race, x, y, z, BLAST_RADIUS, BLAST_PUSH, BLAST_LIFT, BLAST_TIP, BLAST_DAMAGE, -1, -1);
         boolean dents = ground - y < CRATER_HEIGHT;
-        event(BLAST, owner, dents ? 1 : 0, x, dents ? ground : y, z);
+        event(BLAST, owner, dents ? 1 : 0, x, dents ? ground : y, z, ground);
     }
 
-    private void event(int kind, int car, int what, float x, float y, float z) {
+    private void event(int kind, int car, int what, float x, float y, float z, float ground) {
         int at = events % EVENTS;
         eventKind[at] = kind;
         eventCar[at] = car;
@@ -540,6 +665,7 @@ final class PowerupRace {
         eventX[at] = x;
         eventY[at] = y;
         eventZ[at] = z;
+        eventGround[at] = ground;
         events++;
     }
 

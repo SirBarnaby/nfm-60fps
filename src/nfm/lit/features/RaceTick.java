@@ -56,6 +56,11 @@ public interface RaceTick {
     /** The car's radius. */
     int radius(int car);
 
+    /** How far below the car's centre its wheels touch the ground; 0 where a check does not say. */
+    default int wheelDrop(int car) {
+        return 0;
+    }
+
     /** Where wheel {@code wheel} of the car is, across the ground (its place on the car turned by the yaw). */
     float wheelX(int car, int wheel);
 
@@ -95,9 +100,6 @@ public interface RaceTick {
 
     /** Adds {@code (vx, vy, vz)} to wheel {@code wheel}'s velocity, as a crash does. */
     void push(int car, int wheel, float vx, float vy, float vz);
-
-    /** Moves the car {@code (dx, dz)} whole units across the ground (the game keeps a car's place in whole units). */
-    void move(int car, int dx, int dz);
 
     /**
      * Damages the car by {@code share} of what wastes it, struck at wheel

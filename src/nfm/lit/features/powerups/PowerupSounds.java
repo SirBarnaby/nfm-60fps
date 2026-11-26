@@ -10,22 +10,23 @@ import nfm.lit.features.Synth.Noise;
 import nfm.lit.features.sounds.Recordings;
 
 /**
- * The powerups' sounds, each made once from a few lines of synthesis (the
- * same every run: the noise comes from fixed seeds): the pickup's rising
- * chime, a hum for each powerup held (looped, so each loops without a
- * click), the nitrous burst, the magnet's clunk, the throw and the blast.
- * They go to the 3D sound as the extras' clips and to Classic sound as
- * clips of its own, never into the game's own list of sounds.
+ * The powerups' sounds: the pickup, a hum for each powerup held (looped),
+ * nitrous fired, the dynamite's throw and the bomb's drop. Each is a real
+ * recording where there is one ({@link Recordings}); the others, and any
+ * whose recording is missing, are made once from a few lines of synthesis
+ * (the same every run: the noise comes from fixed seeds). They go to the 3D
+ * sound as the extras' clips and to Classic sound as clips of its own,
+ * never into the game's own list of sounds. An explosion's sound is
+ * {@link nfm.lit.features.Explosions}'s.
  */
 final class PowerupSounds {
 
     static final String PICKUP = "pwr-pickup";
-    /** The hum of powerup {@code n} is {@code HUM + n}: 1 nitrous, 2 dynamite, 3 magnet (Sound3D's HumVoice). */
+    /** The hum of powerup {@code n} is {@code HUM + n}: 1 nitrous, 2 dynamite, 3 the bomb (Sound3D's HumVoice). */
     static final String HUM = "pwr-hum";
     static final String NITROUS = "pwr-nitrous";
-    static final String MAGNET = "pwr-magnet";
     static final String THROW = "pwr-throw";
-    static final String BLAST = "pwr-blast";
+    static final String DROP = "pwr-drop";
 
     static final int RATE = 22050;
     /** A hum's loop, a second: every tone in it a whole number of hertz, so the loop meets itself. */
@@ -45,16 +46,14 @@ final class PowerupSounds {
         made = true;
         give(PICKUP, pickup());
         give(HUM + PowerupRace.NITROUS, nitrousHum());
-        // the fuse and the blast are recordings; the rest follow with the powerups' rework
         if (!Recordings.give(HUM + PowerupRace.DYNAMITE, "fuse", true)) {
             give(HUM + PowerupRace.DYNAMITE, fuseHum());
         }
-        give(HUM + PowerupRace.MAGNET, magnetHum());
+        give(HUM + PowerupRace.BOMB, bombHum());
         give(NITROUS, burst());
-        give(MAGNET, clunk());
         give(THROW, toss());
-        if (!Recordings.give(BLAST, "blast", true)) {
-            give(BLAST, blast());
+        if (!Recordings.give(DROP, "knock", true)) {
+            give(DROP, clunk());
         }
     }
 
@@ -110,15 +109,20 @@ final class PowerupSounds {
         return pcm(out, 0.4F);
     }
 
-    /** A magnet held: an electric hum with a slow pulse. */
-    static short[] magnetHum() {
+    /** A bomb held: a clock ticking, four ticks a second, each a short click with a little ring. */
+    static short[] bombHum() {
         float[] out = new float[LOOP];
-        for (int i = 0; i < LOOP; i++) {
-            float t = i / (float) RATE;
-            float hum = sine(60F, t) + 0.6F * sine(120F, t) + 0.35F * sine(180F, t) + 0.2F * sine(300F, t);
-            out[i] = hum * (0.7F + 0.3F * sine(4F, t));
+        Noise noise = new Noise(113);
+        for (int k = 0; k < 4; k++) {
+            int at = k * LOOP / 4 + 200;
+            float pitch = k % 2 == 0 ? 2100F : 1750F; // tick, tock
+            for (int i = 0; i < RATE / 12 && at + i < LOOP; i++) {
+                float t = i / (float) RATE;
+                out[at + i] += noise.next() * decay(t, 0.0012F) * 0.8F + sine(pitch, t) * decay(t, 0.012F) * 0.6F
+                        + sine(pitch * 2.4F, t) * decay(t, 0.006F) * 0.3F;
+            }
         }
-        return pcm(out, 0.45F);
+        return pcm(out, 0.5F);
     }
 
     /** Nitrous fired: a rising rush of air. */
@@ -139,7 +143,7 @@ final class PowerupSounds {
         return pcm(out, 0.7F);
     }
 
-    /** The magnet catching: a metal clank and a thump. */
+    /** The bomb put down, if its recording is missing: a metal clank and a thump. */
     static short[] clunk() {
         float[] out = new float[(int) (RATE * 0.5F)];
         Noise noise = new Noise(101);
@@ -165,35 +169,6 @@ final class PowerupSounds {
             out[i] = lo * envelope;
         }
         return pcm(out, 0.5F);
-    }
-
-    /** The blast: a falling boom, a roar of low noise dying away, and debris crackling. */
-    static short[] blast() {
-        float[] out = new float[(int) (RATE * 2.4F)];
-        Noise noise = new Noise(107);
-        float lo = 0F;
-        float lower = 0F;
-        float phase = 0F;
-        for (int i = 0; i < out.length; i++) {
-            float t = i / (float) RATE;
-            float hz = 35F + 55F * decay(t, 0.25F);
-            phase += hz / RATE;
-            float boom = (float) Math.sin(2D * Math.PI * phase) * decay(t, 0.45F);
-            float n = noise.next();
-            lo += (n - lo) * 0.12F;
-            lower += (lo - lower) * 0.05F;
-            float roar = (lo * 0.8F + lower * 4F) * decay(t, 0.6F);
-            float crack = n * decay(t, 0.015F);
-            out[i] = boom * 1.1F + roar + crack * 0.8F;
-        }
-        for (int k = 0; k < 24; k++) {
-            int at = (int) ((0.15F + Math.abs(noise.next()) * 1.6F) * RATE);
-            float gain = 0.25F * decay(at / (float) RATE, 0.7F);
-            for (int i = 0; i < 200 && at + i < out.length; i++) {
-                out[at + i] += noise.next() * gain * decay(i / (float) RATE, 0.002F);
-            }
-        }
-        return pcm(out, 0.9F);
     }
 
     /* ----------------------------------------------------------- helpers */

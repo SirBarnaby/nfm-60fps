@@ -330,10 +330,6 @@ public final class HandlingCheck {
         }
 
         @Override
-        public void move(int car, int dx, int dz) {
-        }
-
-        @Override
         public void damage(int car, int wheel, float share) {
         }
     }

@@ -16,6 +16,8 @@ public final class CheckCanvas implements Canvas {
     public int onWheel;
     /** Polygons drawn in each colour since the last reset. */
     public final java.util.Map<Integer, Integer> colors = new java.util.HashMap<>();
+    /** The widest polygon drawn in each colour since the last reset: the farthest two of its corners apart. */
+    public final java.util.Map<Integer, Float> spans = new java.util.HashMap<>();
 
     public void reset() {
         polygons = 0;
@@ -25,6 +27,12 @@ public final class CheckCanvas implements Canvas {
         onWheel = 0;
         maxGlow = 0F;
         colors.clear();
+        spans.clear();
+    }
+
+    /** How wide the widest polygon drawn in colour {@code rgb} since the last reset is; 0 if none. */
+    public float span(int rgb) {
+        return spans.getOrDefault(rgb, 0F);
     }
 
     /** Polygons drawn in colour {@code rgb} since the last reset. */
@@ -54,37 +62,47 @@ public final class CheckCanvas implements Canvas {
 
     @Override
     public void world(float[] x, float[] y, float[] z, int n) {
-        count(n);
+        count(x, y, z, n);
     }
 
     @Override
     public void moving(float[] x, float[] y, float[] z, float vx, float vy, float vz, int n) {
-        count(n);
+        count(x, y, z, n);
         moving++;
     }
 
     @Override
     public void moving(float[] x, float[] y, float[] z, float[] vx, float[] vy, float[] vz, int n) {
-        count(n);
+        count(x, y, z, n);
         moving++;
     }
 
     @Override
     public void onCar(int car, float[] x, float[] y, float[] z, int n) {
-        count(n);
+        count(x, y, z, n);
         onCar++;
     }
 
     @Override
     public void onWheel(int car, float[] x, float[] y, float[] z, int n, int steerX, int hubY, int hubZ) {
-        count(n);
+        count(x, y, z, n);
         onWheel++;
     }
 
-    private void count(int n) {
+    private void count(float[] x, float[] y, float[] z, int n) {
         polygons++;
         corners += n;
         colors.merge(lastColor, 1, Integer::sum);
+        float widest = 0F;
+        for (int i = 0; i < n; i++) {
+            for (int j = i + 1; j < n; j++) {
+                float dx = x[i] - x[j];
+                float dy = y[i] - y[j];
+                float dz = z[i] - z[j];
+                widest = Math.max(widest, (float) Math.sqrt(dx * dx + dy * dy + dz * dz));
+            }
+        }
+        spans.merge(lastColor, widest, Math::max);
     }
 
     /** Queues and draws everything {@code feature} draws in a frame seen from {@code (x, y, z)}; returns the polygons. */

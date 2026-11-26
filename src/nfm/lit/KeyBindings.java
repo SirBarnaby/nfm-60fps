@@ -57,7 +57,7 @@ public final class KeyBindings {
         "Points the arrow at the top along the track, or at the nearest car.",
         "Switches the music off and on again.",
         "Switches the race's sounds off and on again.",
-        "With Powerups on (Extras tab): fires the nitrous or the magnet the car holds. Dynamite throws itself.",
+        "With Powerups on (Extras tab): fires the nitrous the car holds, or drops its bomb behind it. Dynamite throws itself.",
     };
     /** The game's own keys: the first of each action's. */
     private static final int[] DEFAULTS = {KeyEvent.VK_UP, KeyEvent.VK_DOWN, KeyEvent.VK_LEFT, KeyEvent.VK_RIGHT,

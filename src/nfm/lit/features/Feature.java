@@ -48,6 +48,11 @@ public interface Feature {
         return 0F;
     }
 
+    /** A race extra: the share of car {@code car}'s grip it leaves this tick, 1 for all of it (nitrous burning leaves less). */
+    default float grip(int car) {
+        return 1F;
+    }
+
     /** A race starts (or the feature was switched on during one): forget the last race, read the cars. */
     default void raceStarted(RaceView race) {
     }

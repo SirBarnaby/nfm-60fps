@@ -130,6 +130,11 @@ final class FeatureBridge {
         return Features.raceBoost(car);
     }
 
+    /** Car {@code car}'s grip this tick as the race extras leave it (nitrous burning lets go sooner): {@code grip} itself without one. */
+    static float raceGrip(int car, float grip) {
+        return Features.raceGrip(car, grip);
+    }
+
     /**
      * Car {@code m}'s tyres this tick, from its grip block on the ground,
      * when the suspension handling plays: its wheels' velocities and heading
@@ -315,7 +320,9 @@ final class FeatureBridge {
             view.right[c] = k.right;
             view.handbrake[c] = k.handb;
             view.power[c] = m.power;
-            view.nitrous[c] = PowerupsFeature.FEATURE.nitrous(c);
+            int burns = PowerupsFeature.FEATURE.nitrousKind(c);
+            view.nitrous[c] = burns > 0;
+            view.nitrousDouble[c] = burns > 1;
             view.repaired[c] = c < repairedNow.length && repairedNow[c];
             view.radius[c] = o.maxR;
             view.wheelDrop[c] = o.grat;
@@ -735,6 +742,11 @@ final class FeatureBridge {
         }
 
         @Override
+        public int wheelDrop(int car) {
+            return scene[car].grat;
+        }
+
+        @Override
         public float wheelX(int car, int wheel) {
             ContO o = scene[car];
             return o.x + o.keyx[wheel] * RadicalMath.cos(o.xz) - o.keyz[wheel] * RadicalMath.sin(o.xz);
@@ -824,12 +836,6 @@ final class FeatureBridge {
             m.scx[wheel] += vx;
             m.scy[wheel] += vy;
             m.scz[wheel] += vz;
-        }
-
-        @Override
-        public void move(int car, int dx, int dz) {
-            scene[car].x += dx;
-            scene[car].z += dz;
         }
 
         @Override

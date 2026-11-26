@@ -8,7 +8,8 @@ import nfm.lit.features.RaceView;
  * The powerups' shapes, in flat shaded polygons as the game draws its own:
  * the boxes (spinning, bobbing cubes, each face with a darker diamond), the
  * dynamite stick tumbling, the powerup a car holds floating over its roof,
- * the nitrous flame, the magnet's arc and the craters. Things that move are
+ * the bomb (a black ball with a sparking fuse, over the roof and on the
+ * road) and the nitrous flame. Things that move are
  * drawn with each corner's move to the next tick ({@link Canvas#moving}),
  * so they are smooth between the ticks; a solid's faces turned away from
  * the eye are left out. Nothing is allocated while drawing.
@@ -25,24 +26,42 @@ final class PowerupDrawing {
     private static final int BOX_TOP = 0xFFE070;
     private static final int BOX_MARK = 0x7A3A08;
 
-    /* the held powerups' colours: outside and inside */
-    private static final int[] ICON_OUT = {0, 0x2F7BFF, 0xD8281C, 0xB048F0};
-    private static final int[] ICON_IN = {0, 0xBFE0FF, 0xFFD27A, 0xF0C8FF};
+    /* the held powerups' colours: outside and inside (the bomb is drawn as itself) */
+    private static final int[] ICON_OUT = {0, 0x2F7BFF, 0xD8281C};
+    private static final int[] ICON_IN = {0, 0xBFE0FF, 0xFFD27A};
 
-    /* the craters: a scorched patch, a bowl this deep and a raised lip, in rings of this many sides */
-    private static final int SIDES = 12;
-    private static final float DEPTH = 18F;
-    private static final float LIP = 7F;
-    private static final int SOOT = 0x2A241E;
-    /** The rings' corners round the centre, cos and sin, SIDES + 1 of them (the last the first again). */
-    private static final float[] RING_COS = new float[SIDES + 1];
-    private static final float[] RING_SIN = new float[SIDES + 1];
+    /* the nitrous flame: one burning, and two at once (red, a bit bigger) */
+    private static final int FLAME_BLUE = 0x3866FF;
+    private static final int FLAME_BLUE_CORE = 0xC8E4FF;
+    private static final int FLAME_RED = 0xFF3A22;
+    private static final int FLAME_RED_CORE = 0xFFD2A0;
+    static final float FLAME_DOUBLE = 1.35F;
+
+    /* the bomb: a black ball this big on the road and over a roof, lit from dark to a dull shine, with a fuse */
+    static final float BOMB_RADIUS = 24F;
+    private static final float BOMB_HELD = 15F;
+    private static final int BOMB_DARK = 0x101014;
+    private static final int BOMB_SHINE = 0x6E6E7C;
+    private static final int BOMB_FUSE = 0xB89A5A;
+    private static final int BOMB_SPARK = 0xFFC850;
+    private static final int BOMB_SPARK_CORE = 0xFFF6D8;
+    /** The ball: an icosahedron's twelve corners (unit) and twenty faces. */
+    private static final float[][] BALL = new float[12][];
+    private static final int[][] BALL_FACES = {
+        {0, 11, 5}, {0, 5, 1}, {0, 1, 7}, {0, 7, 10}, {0, 10, 11}, {1, 5, 9}, {5, 11, 4}, {11, 10, 2}, {10, 7, 6},
+        {7, 1, 8}, {3, 9, 4}, {3, 4, 2}, {3, 2, 6}, {3, 6, 8}, {3, 8, 9}, {4, 9, 5}, {2, 4, 11}, {6, 2, 10},
+        {8, 6, 7}, {9, 8, 1},
+    };
 
     static {
-        for (int k = 0; k <= SIDES; k++) {
-            double a = k * 2D * Math.PI / SIDES;
-            RING_COS[k] = (float) Math.cos(a);
-            RING_SIN[k] = (float) Math.sin(a);
+        float t = 1.618034F;
+        float[][] corners = {
+            {-1, t, 0}, {1, t, 0}, {-1, -t, 0}, {1, -t, 0}, {0, -1, t}, {0, 1, t}, {0, -1, -t}, {0, 1, -t},
+            {t, 0, -1}, {t, 0, 1}, {-t, 0, -1}, {-t, 0, 1},
+        };
+        float len = (float) Math.sqrt(1F + t * t);
+        for (int i = 0; i < 12; i++) {
+            BALL[i] = new float[] {corners[i][0] / len, corners[i][1] / len, corners[i][2] / len};
         }
     }
 
@@ -80,7 +99,6 @@ final class PowerupDrawing {
     private final float[] my = new float[Canvas.MAX_CORNERS];
     private final float[] mz = new float[Canvas.MAX_CORNERS];
     private final float[] p = new float[3];
-    private final float[] q = new float[3];
 
     PowerupDrawing(PowerupsFeature feature) {
         f = feature;
@@ -264,7 +282,7 @@ final class PowerupDrawing {
     void icon(Canvas canvas, int c) {
         RaceView v = f.view;
         int kind = f.held[c];
-        if (v == null || c >= v.cars || kind <= 0 || kind >= ICON_OUT.length) {
+        if (v == null || c >= v.cars || kind <= 0 || kind > PowerupRace.BOMB) {
             return;
         }
         CarShape shape = v.shape[c];
@@ -276,6 +294,10 @@ final class PowerupDrawing {
         float x = p[0];
         float y = p[1];
         float z = p[2];
+        if (kind == PowerupRace.BOMB) {
+            bombShape(canvas, x, y + bob, z, BOMB_HELD, v.vx[c], v.vy[c] + bobNext - bob, v.vz[c], c);
+            return;
+        }
         diamond(canvas, x, y + bob, z, 22F, bobNext - bob, v.vx[c], v.vy[c], v.vz[c], ICON_OUT[kind], 0.5F);
         diamond(canvas, x, y + bob, z, 11F, bobNext - bob, v.vx[c], v.vy[c], v.vz[c], ICON_IN[kind], 0.8F);
     }
@@ -311,18 +333,24 @@ final class PowerupDrawing {
         canvas.moving(px, py, pz, mx, my, mz, 4);
     }
 
-    /** Nitrous burning in car {@code c}: a flickering blue flame from under its tail. */
+    /**
+     * Nitrous burning in car {@code c}: a flickering flame from under its
+     * tail, blue for one, red and a bit bigger while two burn at once.
+     */
     void flame(Canvas canvas, int c) {
         RaceView v = f.view;
         if (v == null || c >= v.cars) {
             return;
         }
+        boolean two = f.burning[c] > 1;
+        float size = two ? FLAME_DOUBLE : 1F;
         CarShape shape = v.shape[c];
         float height = shape.maxY - (shape.maxY - shape.minY) * 0.3F;
         float flicker = (float) Math.sin(f.tick * 2.3F + c) * 14F;
-        float length = 80F + flicker;
-        flameTriangle(canvas, v, c, height, shape.minZ, 14F, length, 0x3866FF, 0.75F);
-        flameTriangle(canvas, v, c, height, shape.minZ, 6F, length * 0.55F, 0xC8E4FF, 1F);
+        float length = (80F + flicker) * size;
+        flameTriangle(canvas, v, c, height, shape.minZ, 14F * size, length, two ? FLAME_RED : FLAME_BLUE, 0.75F);
+        flameTriangle(canvas, v, c, height, shape.minZ, 6F * size, length * 0.55F, two ? FLAME_RED_CORE
+                : FLAME_BLUE_CORE, 1F);
     }
 
     private void flameTriangle(Canvas canvas, RaceView v, int c, float y, float back, float half, float length,
@@ -345,144 +373,100 @@ final class PowerupDrawing {
         canvas.dither(1F);
     }
 
-    /* ------------------------------------------------------- the magnet */
+    /* --------------------------------------------------------- the bomb */
 
-    /** Car {@code c}'s magnet: a crackling arc from its roof to the car it pulls toward. */
-    void arc(Canvas canvas, int c) {
-        RaceView v = f.view;
-        int t = f.pulling[c];
-        if (v == null || t < 0 || c >= v.cars || t >= v.cars) {
-            return;
-        }
-        v.toWorld(c, 0F, v.shape[c].minY - 10F, 0F, p);
-        v.toWorld(t, 0F, v.shape[t].minY - 10F, 0F, q);
-        int segments = 5;
-        canvas.glow(0.8F);
-        canvas.dither(0.7F);
-        canvas.color(0xA8E0FF);
-        float lastX = p[0];
-        float lastY = p[1];
-        float lastZ = p[2];
-        for (int k = 1; k <= segments; k++) {
-            float share = k / (float) segments;
-            float jitter = k == segments ? 0F : jitter(c, k) * 40F;
-            float x = p[0] + (q[0] - p[0]) * share;
-            float y = p[1] + (q[1] - p[1]) * share - (float) Math.sin(share * Math.PI) * 60F + jitter;
-            float z = p[2] + (q[2] - p[2]) * share;
-            segment(canvas, v, c, t, lastX, lastY, lastZ, (k - 1) / (float) segments, x, y, z, share);
-            lastX = x;
-            lastY = y;
-            lastZ = z;
-        }
-        canvas.dither(1F);
+    /** Bomb {@code b} on the road (or falling to it): the ball resting on the ground, its fuse sparking. */
+    void bomb(Canvas canvas, int b) {
+        bombShape(canvas, f.bombX[b], f.bombY[b] - BOMB_RADIUS, f.bombZ[b], BOMB_RADIUS, 0F, f.bombVY[b], 0F, b);
     }
 
-    /** A number from -1 to 1 for the arc's bend at point {@code k}, new every tick. */
-    private float jitter(int c, int k) {
-        int h = (f.tick * 73 + c * 31 + k * 17) * 0x9E3779B1;
+    /**
+     * A bomb of radius {@code r} at {@code (x, y, z)} moving
+     * {@code (vx, vy, vz)} a tick: a black ball of flat faces, a short fuse
+     * out of its top and a flickering spark at the fuse's end.
+     */
+    private void bombShape(Canvas canvas, float x, float y, float z, float r, float vx, float vy, float vz,
+            int which) {
+        canvas.glow(0F);
+        for (int[] face : BALL_FACES) {
+            float[] a = BALL[face[0]];
+            float[] b = BALL[face[1]];
+            float[] c = BALL[face[2]];
+            float nx = a[0] + b[0] + c[0];
+            float ny = a[1] + b[1] + c[1];
+            float nz = a[2] + b[2] + c[2];
+            float len = (float) Math.sqrt(nx * nx + ny * ny + nz * nz);
+            nx /= len;
+            ny /= len;
+            nz /= len;
+            if (!facing(nx, ny, nz, x + nx * r, y + ny * r, z + nz * r)) {
+                continue;
+            }
+            float light = Math.max(0F, Math.min(1F, -(nx * LIGHT_X + ny * LIGHT_Y + nz * LIGHT_Z)));
+            canvas.color(canvas.fog(mix(BOMB_DARK, BOMB_SHINE, light * light), x, y, z));
+            for (int k = 0; k < 3; k++) {
+                float[] corner = BALL[face[k]];
+                px[k] = x + corner[0] * r;
+                py[k] = y + corner[1] * r;
+                pz[k] = z + corner[2] * r;
+            }
+            canvas.moving(px, py, pz, vx, vy, vz, 3);
+        }
+        // the fuse: a short band from the top, leaning, turned to the eye
+        float dx = x - f.eyeX;
+        float dz = z - f.eyeZ;
+        float len = (float) Math.sqrt(dx * dx + dz * dz);
+        float ax = len > 1F ? dz / len : 1F;
+        float az = len > 1F ? -dx / len : 0F;
+        float w = r * 0.09F;
+        float tipX = x + ax * r * 0.3F;
+        float tipY = y - r * 1.55F;
+        float tipZ = z + az * r * 0.3F;
+        px[0] = x - ax * w;
+        py[0] = y - r * 0.95F;
+        pz[0] = z - az * w;
+        px[1] = x + ax * w;
+        py[1] = y - r * 0.95F;
+        pz[1] = z + az * w;
+        px[2] = tipX + ax * w;
+        py[2] = tipY;
+        pz[2] = tipZ + az * w;
+        px[3] = tipX - ax * w;
+        py[3] = tipY;
+        pz[3] = tipZ - az * w;
+        canvas.color(canvas.fog(BOMB_FUSE, x, y, z));
+        canvas.moving(px, py, pz, vx, vy, vz, 4);
+        // the spark: two diamonds, a new size every tick
+        float flicker = 0.75F + 0.25F * hash(f.tick * 7 + which);
+        spark(canvas, tipX, tipY, tipZ, ax, az, r * 0.42F * flicker, vx, vy, vz, BOMB_SPARK);
+        spark(canvas, tipX, tipY, tipZ, ax, az, r * 0.2F * flicker, vx, vy, vz, BOMB_SPARK_CORE);
+    }
+
+    private void spark(Canvas canvas, float x, float y, float z, float ax, float az, float size, float vx, float vy,
+            float vz, int rgb) {
+        px[0] = x;
+        py[0] = y - size;
+        pz[0] = z;
+        px[1] = x + ax * size;
+        py[1] = y;
+        pz[1] = z + az * size;
+        px[2] = x;
+        py[2] = y + size;
+        pz[2] = z;
+        px[3] = x - ax * size;
+        py[3] = y;
+        pz[3] = z - az * size;
+        canvas.glow(1F);
+        canvas.color(rgb);
+        canvas.moving(px, py, pz, vx, vy, vz, 4);
+        canvas.glow(0F);
+    }
+
+    /** A number from -1 to 1 from {@code n}, the same every run. */
+    private static float hash(int n) {
+        int h = n * 0x9E3779B1;
         h ^= h >>> 15;
         return (h & 0xFFFF) / 32767.5F - 1F;
-    }
-
-    /** A thin band of the arc from {@code a} to {@code b}, its ends moving as the two cars do. */
-    private void segment(Canvas canvas, RaceView v, int c, int t, float ax, float ay, float az, float shareA,
-            float bx, float by, float bz, float shareB) {
-        float dx = bx - ax;
-        float dz = bz - az;
-        float len = (float) Math.sqrt(dx * dx + dz * dz);
-        float wx = len > 1F ? -dz / len * 4F : 4F;
-        float wz = len > 1F ? dx / len * 4F : 0F;
-        px[0] = ax - wx;
-        py[0] = ay;
-        pz[0] = az - wz;
-        px[1] = bx - wx;
-        py[1] = by;
-        pz[1] = bz - wz;
-        px[2] = bx + wx;
-        py[2] = by + 3F;
-        pz[2] = bz + wz;
-        px[3] = ax + wx;
-        py[3] = ay + 3F;
-        pz[3] = az + wz;
-        for (int k = 0; k < 4; k++) {
-            float share = k == 0 || k == 3 ? shareA : shareB;
-            mx[k] = v.vx[c] + (v.vx[t] - v.vx[c]) * share;
-            my[k] = v.vy[c] + (v.vy[t] - v.vy[c]) * share;
-            mz[k] = v.vz[c] + (v.vz[t] - v.vz[c]) * share;
-        }
-        canvas.moving(px, py, pz, mx, my, mz, 4);
-    }
-
-    /* ------------------------------------------------------- the craters */
-
-    /** Crater {@code i}: a scorched patch, then a bowl inside a raised lip, its faces shaded by their slope. */
-    void crater(Canvas canvas, int i) {
-        float x = f.craterX[i];
-        float y = f.craterY[i];
-        float z = f.craterZ[i];
-        float s = f.craterSize[i];
-        int ground = f.view == null ? SOOT : f.view.groundColor;
-        int burnt = mix(ground, SOOT, 0.7F);
-        int earth = mix(ground, 0x5A4A38, 0.6F);
-        // the scorched patch, see-through
-        canvas.dither(0.55F);
-        canvas.color(canvas.fog(mix(ground, 0x141210, 0.8F), x, y, z));
-        for (int k = 0; k < SIDES; k++) {
-            px[k] = x + RING_COS[k] * 200F * s;
-            py[k] = y - 0.5F;
-            pz[k] = z + RING_SIN[k] * 200F * s;
-        }
-        canvas.world(px, py, pz, SIDES);
-        canvas.dither(1F);
-        // the bowl's floor
-        canvas.color(canvas.fog(lit(burnt, 0F, -1F, 0F), x, y, z));
-        for (int k = 0; k < SIDES; k++) {
-            px[k] = x + RING_COS[k] * 34F * s;
-            py[k] = y + DEPTH * s;
-            pz[k] = z + RING_SIN[k] * 34F * s;
-        }
-        canvas.world(px, py, pz, SIDES);
-        // the rings, the far side first
-        double eye = Math.atan2(f.eyeZ - z, f.eyeX - x);
-        int start = (int) Math.round((eye + Math.PI) / (2D * Math.PI) * SIDES);
-        for (int n = 0; n < SIDES; n++) {
-            int k = Math.floorMod(start + (n % 2 == 0 ? n / 2 : -(n + 1) / 2), SIDES);
-            ring(canvas, x, y, z, k, 34F * s, DEPTH * s, 92F * s, 0F, burnt);
-            ring(canvas, x, y, z, k, 92F * s, 0F, 118F * s, -LIP * s, earth);
-            ring(canvas, x, y, z, k, 118F * s, -LIP * s, 150F * s, 0F, earth);
-        }
-    }
-
-    /** Side {@code k} of a ring from radius {@code r0} at depth {@code d0} out to {@code r1} at {@code d1}. */
-    private void ring(Canvas canvas, float x, float y, float z, int k, float r0, float d0, float r1, float d1,
-            int rgb) {
-        float c0 = RING_COS[k];
-        float s0 = RING_SIN[k];
-        float c1 = RING_COS[k + 1];
-        float s1 = RING_SIN[k + 1];
-        px[0] = x + c0 * r0;
-        py[0] = y + d0;
-        pz[0] = z + s0 * r0;
-        px[1] = x + c1 * r0;
-        py[1] = y + d0;
-        pz[1] = z + s1 * r0;
-        px[2] = x + c1 * r1;
-        py[2] = y + d1;
-        pz[2] = z + s1 * r1;
-        px[3] = x + c0 * r1;
-        py[3] = y + d1;
-        pz[3] = z + s0 * r1;
-        // the slope's normal: outward along the middle of the side, tilted by how the ring rises
-        float cm = (c0 + c1) / 2F;
-        float sm = (s0 + s1) / 2F;
-        float run = r1 - r0;
-        float rise = d1 - d0; // negative: rises outward (y grows downwards)
-        float len = (float) Math.sqrt(run * run + rise * rise);
-        float nx = -cm * (-rise) / len;
-        float nz = -sm * (-rise) / len;
-        float ny = -run / len;
-        canvas.color(canvas.fog(lit(rgb, nx, ny, nz), x, y, z));
-        canvas.world(px, py, pz, 4);
     }
 
     /* ------------------------------------------------------------ helpers */

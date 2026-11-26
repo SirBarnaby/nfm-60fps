@@ -217,6 +217,19 @@ public final class Features {
         return add;
     }
 
+    /** Car {@code car}'s grip as the race extras leave it: {@code grip} itself, untouched, without one. */
+    public static float raceGrip(int car, float grip) {
+        if (!raceAny) {
+            return grip;
+        }
+        for (int f = 0; f < ALL.length; f++) {
+            if (racePlays[f]) {
+                grip *= ALL[f].grip(car);
+            }
+        }
+        return grip;
+    }
+
     /*
      * A race extra that throws keeps playing: switching it off would change
      * the race and the shape of its state in the middle of it. It is logged

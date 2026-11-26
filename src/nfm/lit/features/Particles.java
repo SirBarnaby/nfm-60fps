@@ -135,6 +135,11 @@ public final class Particles {
         return i >= 0 && i < capacity && alive[i] && streak[i];
     }
 
+    /** True if particle {@code i} is alive and a puff (smoke, dust, vapour): neither a spark nor a falling clod. */
+    public boolean isPuff(int i) {
+        return i >= 0 && i < capacity && alive[i] && !streak[i] && lift[i] >= 0F;
+    }
+
     /**
      * A new particle at {@code (px, py, pz)} moving {@code (dx, dy, dz)} a
      * tick, living {@code ticks} ticks, growing from {@code from} to

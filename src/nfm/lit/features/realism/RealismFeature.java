@@ -69,7 +69,8 @@ public final class RealismFeature implements Feature, CarLook {
     }
     CarState[] states = new CarState[0];
     int cars;
-    private boolean[] nitrous = new boolean[0];
+    /** Nitrous burning in each car: 0 none, 1 one, 2 two at once. */
+    private int[] nitrous = new int[0];
     private final HeatEffects heat = new HeatEffects(this);
     private final DamageEffects damage = new DamageEffects(this);
     private final RealismDrawing drawing = new RealismDrawing();
@@ -93,7 +94,7 @@ public final class RealismFeature implements Feature, CarLook {
                 grown[c] = c < states.length ? states[c] : new CarState();
             }
             states = grown;
-            nitrous = new boolean[cars];
+            nitrous = new int[cars];
         }
         dice.reset(race.seed, ID);
         particles.clear();
@@ -117,7 +118,7 @@ public final class RealismFeature implements Feature, CarLook {
         for (int c = 0; c < cars; c++) {
             CarState s = states[c];
             s.pose(race, c, p);
-            nitrous[c] = race.nitrous[c] && !race.wasted[c];
+            nitrous[c] = !race.nitrous[c] || race.wasted[c] ? 0 : race.nitrousDouble[c] ? 2 : 1;
             heat.tick(race, c, s);
             damage.tick(race, c, s);
         }

@@ -793,7 +793,7 @@ class Madness {
                         boost = (float) (boost * 0.76000000000000001D);
                     else if (checkpoints.stage != 6)
                         boost = (float) (boost * 0.90000000000000002D);
-                boost += FeatureBridge.raceBoost(im); // a race extra's (the powerups' nitrous, magnet): 0 without one
+                boost += FeatureBridge.raceBoost(im); // a race extra's (the powerups' nitrous): 0 without one
                 if (control.down)
                     if (speed > 0.0F) {
                         speed -= stat.handb / 2;
@@ -1037,6 +1037,7 @@ class Madness {
             }
             if (grip < 1.0F)
                 grip = 1.0F;
+            grip = FeatureBridge.raceGrip(im, grip); // a race extra's (nitrous burning is slippery): untouched without one
             // the Suspension handling extra's springs and tyres move the wheels (120 times a second): -1 without it
             float tyreGrip = FeatureBridge.tyres(this, car, targetX, targetY, targetZ, grip, txz,
                     capsized || dest || checkpoints.haltall);
