@@ -81,8 +81,9 @@ public final class PowerupsFeature implements Feature {
 
     /** The events seen so far. */
     private int seen;
-    /** Each player's hum playing in Classic sound (0 none). */
+    /** Each player's hum playing in Classic sound (0 none), and their nitrous burning (0 none, else one of the four). */
     private final int[] classicHum = new int[2];
+    private final int[] classicNitro = new int[2];
     /** The eye the frame is queued from. */
     float eyeX;
     float eyeY;
@@ -159,6 +160,7 @@ public final class PowerupsFeature implements Feature {
         seen = race.events;
         dice.reset(r.seed, ID);
         classicHum[0] = classicHum[1] = 0;
+        classicNitro[0] = classicNitro[1] = 0;
         copy(r);
     }
 
@@ -187,7 +189,23 @@ public final class PowerupsFeature implements Feature {
                 hooks.classic(p, PowerupSounds.HUM + classicHum[p], GameHooks.STOP);
                 classicHum[p] = 0;
             }
+            if (classicNitro[p] != 0) {
+                hooks.classic(p, PowerupSounds.NITROUS + classicNitro[p], GameHooks.STOP);
+                classicNitro[p] = 0;
+            }
         }
+    }
+
+    /**
+     * Which of the four nitrous sounds car {@code c} makes now: 1 on the
+     * ground, 2 in the air, 3 two at once on the ground, 4 two at once in
+     * the air; 0 while none burns.
+     */
+    int nitrousSound(RaceView r, int c) {
+        if (c >= burning.length || c >= r.cars || burning[c] == 0 || wasted[c]) {
+            return 0;
+        }
+        return (burning[c] - 1) * 2 + (r.grounded[c] ? 1 : 2);
     }
 
     /** What the race half holds now, for the frames until the next real tick. */
@@ -239,7 +257,7 @@ public final class PowerupsFeature implements Feature {
                 }
             }
             case PowerupRace.USED -> {
-                sound(hooks, in3d, car, person, PowerupSounds.NITROUS, what == 2 ? 1.2F : 1F);
+                // heard as long as it burns: the 3D sound's nitrous voice, Classic sound's loop (classicLoops)
                 if (person) {
                     hooks.rumble(car, what == 2 ? 170F : 120F);
                 }
@@ -284,22 +302,28 @@ public final class PowerupsFeature implements Feature {
         }
     }
 
-    /** A player's hum in Classic sound follows what their car holds. */
+    /** A player's hum in Classic sound follows what their car holds, and their nitrous which of its four sounds it is. */
     private void classicHums(RaceView r) {
         GameHooks hooks = Features.hooks();
         for (int p = 0; p < classicHum.length; p++) {
-            int want = p < r.humans && p < race.cars && !hooks.sound3d() && !wasted[p] ? race.held[p] : 0;
-            if (want == classicHum[p]) {
-                continue;
-            }
-            if (classicHum[p] != 0) {
-                hooks.classic(p, PowerupSounds.HUM + classicHum[p], GameHooks.STOP);
+            boolean theirs = p < r.humans && p < race.cars && !hooks.sound3d() && !wasted[p];
+            classicHum[p] = classicLoop(hooks, p, PowerupSounds.HUM, classicHum[p], theirs ? race.held[p] : 0);
+            classicNitro[p] = classicLoop(hooks, p, PowerupSounds.NITROUS, classicNitro[p],
+                    theirs ? nitrousSound(r, p) : 0);
+        }
+    }
+
+    /** Player {@code p}'s loop {@code clip + want} instead of {@code clip + playing} (0: none); returns {@code want}. */
+    private static int classicLoop(GameHooks hooks, int p, String clip, int playing, int want) {
+        if (want != playing) {
+            if (playing != 0) {
+                hooks.classic(p, clip + playing, GameHooks.STOP);
             }
             if (want != 0) {
-                hooks.classic(p, PowerupSounds.HUM + want, GameHooks.LOOP);
+                hooks.classic(p, clip + want, GameHooks.LOOP);
             }
-            classicHum[p] = want;
         }
+        return want;
     }
 
     /* ------------------------------------------------------------ drawing */

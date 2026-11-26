@@ -27,7 +27,9 @@ nor Python.
   at high precision, so it sits among the game's sounds instead of over them.
 - **A loop** is cut 0.2 s longer than it plays, and that tail is laid over
   its start at equal power, so it repeats without a seam; then it is brought
-  to one level (-17 dB RMS, never over -2 dB peak).
+  to one level (-17 dB RMS, never over -2 dB peak; a loop of single
+  sounds, such as the bomb's ticking clock, is held by that peak and so is
+  quieter than the steady ones).
 - **A shot** starts from silence over 4 ms, fades out over its last 30 ms and
   peaks at -3 dB.
 - **Filters** take out what is not the sound: the dyno run the turbo comes

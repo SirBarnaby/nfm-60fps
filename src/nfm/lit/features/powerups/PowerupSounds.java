@@ -11,10 +11,10 @@ import nfm.lit.features.sounds.Recordings;
 
 /**
  * The powerups' sounds: the pickup, a hum for each powerup held (looped),
- * nitrous fired, the dynamite's throw and the bomb's drop. Each is a real
- * recording where there is one ({@link Recordings}); the others, and any
- * whose recording is missing, are made once from a few lines of synthesis
- * (the same every run: the noise comes from fixed seeds). They go to the 3D
+ * nitrous burning (four sounds), the dynamite's throw and the bomb's drop. Each is a real
+ * recording ({@link Recordings}); one whose recording is missing is made
+ * once from a few lines of synthesis instead (the same every run: the
+ * noise comes from fixed seeds). They go to the 3D
  * sound as the extras' clips and to Classic sound as clips of its own,
  * never into the game's own list of sounds. An explosion's sound is
  * {@link nfm.lit.features.Explosions}'s.
@@ -24,9 +24,13 @@ final class PowerupSounds {
     static final String PICKUP = "pwr-pickup";
     /** The hum of powerup {@code n} is {@code HUM + n}: 1 nitrous, 2 dynamite, 3 the bomb (Sound3D's HumVoice). */
     static final String HUM = "pwr-hum";
+    /** Nitrous burning, for Classic sound: {@code NITROUS + kind}, the four loops of {@link #nitroLoop}. */
     static final String NITROUS = "pwr-nitrous";
     static final String THROW = "pwr-throw";
     static final String DROP = "pwr-drop";
+
+    /** The recordings these sounds are (clips of {@code sounds\clips.tsv}): the checks ask that none is missing. */
+    static final String[] RECORDINGS = {"bell", "bottle", "fuse", "clock", "nitro", "afterburner", "toss", "knock"};
 
     static final int RATE = 22050;
     /** A hum's loop, a second: every tone in it a whole number of hertz, so the loop meets itself. */
@@ -44,14 +48,31 @@ final class PowerupSounds {
             return;
         }
         made = true;
-        give(PICKUP, pickup());
-        give(HUM + PowerupRace.NITROUS, nitrousHum());
+        if (!Recordings.give(PICKUP, "bell", true)) {
+            give(PICKUP, pickup());
+        }
+        if (!Recordings.give(HUM + PowerupRace.NITROUS, "bottle", true)) {
+            give(HUM + PowerupRace.NITROUS, nitrousHum());
+        }
         if (!Recordings.give(HUM + PowerupRace.DYNAMITE, "fuse", true)) {
             give(HUM + PowerupRace.DYNAMITE, fuseHum());
         }
-        give(HUM + PowerupRace.BOMB, bombHum());
-        give(NITROUS, burst());
-        give(THROW, toss());
+        if (!Recordings.give(HUM + PowerupRace.BOMB, "clock", true)) {
+            give(HUM + PowerupRace.BOMB, bombHum());
+        }
+        // nitrous burning: the two recordings the 3D sound mixes as it plays, and the four mixes for Classic sound
+        Recordings.give(Sound3D.NITRO_HISS, "nitro", false);
+        Recordings.give(Sound3D.NITRO_BURNER, "afterburner", false);
+        Recordings.Clip hiss = Recordings.clip("nitro");
+        for (int kind = 1; kind <= 4 && hiss != null; kind++) {
+            short[] loop = nitroLoop(kind);
+            if (loop != null) {
+                Features.hooks().classicClip(NITROUS + kind, loop, hiss.rate());
+            }
+        }
+        if (!Recordings.give(THROW, "toss", true)) {
+            give(THROW, toss());
+        }
         if (!Recordings.give(DROP, "knock", true)) {
             give(DROP, clunk());
         }
@@ -62,7 +83,7 @@ final class PowerupSounds {
         Features.hooks().classicClip(name, pcm, RATE);
     }
 
-    /** A rising chime: three bell notes close together. */
+    /** The pickup, if its recording is missing: a rising chime, three bell notes close together. */
     static short[] pickup() {
         float[] out = new float[(int) (RATE * 0.45F)];
         float[] notes = {1046.5F, 1318.5F, 1568F};
@@ -77,7 +98,7 @@ final class PowerupSounds {
         return pcm(out, 0.6F);
     }
 
-    /** Nitrous held: a pressurised hiss over a low, slowly beating tone. */
+    /** Nitrous held, if its recording is missing: a pressurised hiss over a low, slowly beating tone. */
     static short[] nitrousHum() {
         float[] noise = band(new Noise(71), LOOP + CROSSFADE, 0.6F, 0.12F);
         float[] out = new float[LOOP];
@@ -89,7 +110,7 @@ final class PowerupSounds {
         return pcm(out, 0.45F);
     }
 
-    /** Dynamite held: a fuse fizzing and crackling. */
+    /** Dynamite held, if its recording is missing: a fuse fizzing and crackling. */
     static short[] fuseHum() {
         Noise noise = new Noise(83);
         float[] hiss = band(new Noise(89), LOOP + CROSSFADE, 0.9F, 0.35F);
@@ -109,7 +130,7 @@ final class PowerupSounds {
         return pcm(out, 0.4F);
     }
 
-    /** A bomb held: a clock ticking, four ticks a second, each a short click with a little ring. */
+    /** A bomb held, if its recording is missing: a clock ticking, four ticks a second, each a short click with a little ring. */
     static short[] bombHum() {
         float[] out = new float[LOOP];
         Noise noise = new Noise(113);
@@ -125,22 +146,61 @@ final class PowerupSounds {
         return pcm(out, 0.5F);
     }
 
-    /** Nitrous fired: a rising rush of air. */
-    static short[] burst() {
-        float[] out = new float[(int) (RATE * 0.9F)];
-        Noise noise = new Noise(97);
-        float lo = 0F;
-        float hi = 0F;
-        for (int i = 0; i < out.length; i++) {
-            float t = i / (float) RATE;
-            float sweep = 0.05F + 0.5F * Math.min(1F, t / 0.5F);
-            float n = noise.next();
-            hi += (n - hi) * sweep;
-            lo += (hi - lo) * sweep * 0.3F;
-            float envelope = Math.min(1F, t / 0.03F) * decay(Math.max(0F, t - 0.35F), 0.18F);
-            out[i] = (hi - lo) * envelope + sine(80F + 140F * t, t) * 0.25F * envelope;
+    /**
+     * Nitrous sound {@code kind} (1 on the ground, 2 in the air, 3 two at
+     * once on the ground, 4 two at once in the air) mixed into one loop for
+     * Classic sound, from the two recordings as the 3D sound mixes them
+     * while it plays ({@link Sound3D#nitroMix}); null if a recording is
+     * missing. The loop is as long as it takes both parts to come round
+     * together.
+     */
+    static short[] nitroLoop(int kind) {
+        Recordings.Clip hiss = Recordings.clip("nitro");
+        Recordings.Clip burner = Recordings.clip("afterburner");
+        if (hiss == null || burner == null || hiss.rate() != burner.rate()) {
+            return null;
         }
-        return pcm(out, 0.7F);
+        float[] mix = Sound3D.nitroMix(kind);
+        float hissLoop = mix[0] > 0F ? hiss.pcm().length / mix[1] : 0F;
+        float burnerLoop = mix[2] > 0F ? burner.pcm().length / mix[3] : 0F;
+        int n = Math.round(Math.max(hissLoop, burnerLoop));
+        if (hissLoop > 0F && burnerLoop > 0F) {
+            // both come round together after a whole number of each: try up to eight of the longer
+            for (int k = 1; k <= 8; k++) {
+                float longer = Math.max(hissLoop, burnerLoop) * k;
+                float times = longer / Math.min(hissLoop, burnerLoop);
+                n = Math.round(longer);
+                if (Math.abs(times - Math.round(times)) < 0.002F) {
+                    break;
+                }
+            }
+        }
+        float[] out = new float[n];
+        add(out, hiss.pcm(), mix[0], mix[1]);
+        add(out, burner.pcm(), mix[2], mix[3]);
+        float peak = 1F;
+        for (float v : out) {
+            peak = Math.max(peak, Math.abs(v));
+        }
+        short[] pcm = new short[n];
+        for (int i = 0; i < n; i++) {
+            pcm[i] = (short) Math.round(out[i] / peak * 32767F);
+        }
+        return pcm;
+    }
+
+    /** Adds looping {@code clip} to {@code out} at {@code gain} (1: as recorded), played {@code pitch} times as fast. */
+    private static void add(float[] out, short[] clip, float gain, float pitch) {
+        if (gain <= 0F || clip.length == 0) {
+            return;
+        }
+        for (int i = 0; i < out.length; i++) {
+            double at = (i * (double) pitch) % clip.length;
+            int a = (int) at;
+            int b = (a + 1) % clip.length;
+            float t = (float) (at - a);
+            out[i] += (clip[a] + (clip[b] - clip[a]) * t) / 32768F * gain;
+        }
     }
 
     /** The bomb put down, if its recording is missing: a metal clank and a thump. */
@@ -157,7 +217,7 @@ final class PowerupSounds {
         return pcm(out, 0.65F);
     }
 
-    /** The stick thrown: a short swish. */
+    /** The stick thrown, if its recording is missing: a short swish. */
     static short[] toss() {
         float[] out = new float[(int) (RATE * 0.3F)];
         Noise noise = new Noise(103);

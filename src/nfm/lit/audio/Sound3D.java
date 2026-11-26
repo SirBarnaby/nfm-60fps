@@ -123,6 +123,12 @@ public final class Sound3D implements Runnable {
         public int loose;
         /** The hum of the powerup the car holds (the powerups extra): 1 to 3, 0 for none. */
         public int hum;
+        /**
+         * Nitrous burning in the car (the powerups extra), one of four
+         * sounds: 1 on the ground, 2 in the air, 3 two at once on the
+         * ground, 4 two at once in the air; 0 for none.
+         */
+        public int nitro;
 
         float skid(int wheel) {
             return switch (wheel) {
@@ -2687,6 +2693,113 @@ public final class Sound3D implements Runnable {
         }
     }
 
+    /** The clips of nitrous burning: gas rushing out, and an afterburner. */
+    public static final String NITRO_HISS = "pwr-nitro-hiss";
+    public static final String NITRO_BURNER = "pwr-nitro-burner";
+    /** How loud nitrous burns, against the game's effects, and how quickly its two parts follow the car, in seconds. */
+    private static final float NITRO_LEVEL = 0.8F;
+    private static final float NITRO_SMOOTHING = 0.12F;
+    /**
+     * The four sounds of nitrous burning, each a mix of the two recordings:
+     * the hiss's gain and pitch, the afterburner's gain and pitch. On the
+     * ground it is the gas alone; in the air some of it gives way to the
+     * afterburner; two at once are lower and louder, and in the air mostly
+     * afterburner.
+     */
+    private static final float[][] NITRO_MIX = {
+        {0F, 1F, 0F, 1F},
+        {1F, 1F, 0F, 1F},
+        {0.7F, 1F, 0.6F, 1F},
+        {1.3F, 0.8F, 0F, 1F},
+        {0.9F, 0.8F, 1F, 1F},
+    };
+
+    /** The mix of nitrous sound {@code kind} (see {@link Car#nitro}): the hiss's gain and pitch, the afterburner's gain and pitch. */
+    public static float[] nitroMix(int kind) {
+        return NITRO_MIX[kind < 0 || kind >= NITRO_MIX.length ? 0 : kind].clone();
+    }
+
+    /**
+     * Nitrous burning in a car (the powerups extra): two looping sources
+     * that follow the car, the gas hiss and the afterburner, mixed by which
+     * of the four sounds it is, so a jump or a second nitrous crosses over
+     * without a break.
+     */
+    private final class NitroVoice {
+        final int hiss;
+        final int burner;
+        boolean loaded;
+        final float[] now = {0F, 1F, 0F, 1F};
+
+        NitroVoice() {
+            hiss = alGenSources();
+            burner = alGenSources();
+            world(hiss);
+            world(burner);
+            alSourcei(hiss, AL_LOOPING, AL_TRUE);
+            alSourcei(burner, AL_LOOPING, AL_TRUE);
+        }
+
+        /** Burns as {@code kind} (0 for none) from {@code position}, moving at {@code velocity}; null keeps the place. */
+        void update(int kind, float[] position, float[] velocity, float dt) {
+            if (!loaded && kind != 0) {
+                int a = buffer(NITRO_HISS);
+                int b = buffer(NITRO_BURNER);
+                if (a == 0 || b == 0) {
+                    return;
+                }
+                alSourcei(hiss, AL_BUFFER, a);
+                alSourcei(burner, AL_BUFFER, b);
+                loaded = true;
+            }
+            if (!loaded) {
+                return;
+            }
+            float[] want = NITRO_MIX[kind < 0 || kind >= NITRO_MIX.length ? 0 : kind];
+            float k = 1F - (float) Math.exp(-dt / NITRO_SMOOTHING);
+            now[0] += (want[0] - now[0]) * k;
+            now[2] += (want[2] - now[2]) * k;
+            if (kind != 0) {
+                // the pitch only while it burns: fading out it keeps the pitch it had
+                now[1] += (want[1] - now[1]) * k;
+                now[3] += (want[3] - now[3]) * k;
+            }
+            part(hiss, now[0], now[1], position, velocity);
+            part(burner, now[2], now[3], position, velocity);
+        }
+
+        private void part(int source, float gain, float pitch, float[] position, float[] velocity) {
+            boolean on = alGetSourcei(source, AL_SOURCE_STATE) == AL_PLAYING;
+            if (gain < 0.002F) {
+                if (on) {
+                    alSourcePause(source);
+                }
+                return;
+            }
+            alSourcef(source, AL_GAIN, gain * NITRO_LEVEL * bus[BUS_EFFECTS] * everyday);
+            alSourcef(source, AL_PITCH, pitch);
+            if (position != null) {
+                alSource3f(source, AL_POSITION, position[0], position[1], position[2]);
+                alSource3f(source, AL_VELOCITY, velocity[0], velocity[1], velocity[2]);
+            }
+            if (!on) {
+                alSourcePlay(source);
+            }
+        }
+
+        void silence() {
+            now[0] = 0F;
+            now[2] = 0F;
+            alSourceStop(hiss);
+            alSourceStop(burner);
+        }
+
+        void delete() {
+            alDeleteSources(hiss);
+            alDeleteSources(burner);
+        }
+    }
+
     /**
      * One car's engine: its five recordings, all looping, mixed by gain and
      * bent by pitch, and a low-pass filter that dulls them off the throttle.
@@ -2712,6 +2825,8 @@ public final class Sound3D implements Runnable {
         boolean classicPaused;
         /** The hum of the powerup the car holds, made the first time it holds one. */
         HumVoice hum;
+        /** Nitrous burning in the car, made the first time it burns. */
+        NitroVoice nitro;
 
         EngineVoices() {
             for (int i = 0; i < 5; i++) {
@@ -2734,6 +2849,9 @@ public final class Sound3D implements Runnable {
                 if (hum != null) {
                     hum.update(0, null, null, dt);
                 }
+                if (nitro != null) {
+                    nitro.update(0, null, null, dt);
+                }
                 return;
             }
             if (car.engine != engine) {
@@ -2754,6 +2872,12 @@ public final class Sound3D implements Runnable {
                     hum = new HumVoice();
                 }
                 hum.update(muted || !car.running ? 0 : car.hum, position, velocity, dt);
+            }
+            if (car.nitro != 0 || nitro != null) {
+                if (nitro == null) {
+                    nitro = new NitroVoice();
+                }
+                nitro.update(muted || !car.running ? 0 : car.nitro, position, velocity, dt);
             }
             float k = 1F - (float) Math.exp(-dt / ENGINE_SMOOTHING);
             float kt = 1F - (float) Math.exp(-dt / THROTTLE_SMOOTHING);
@@ -2941,6 +3065,9 @@ public final class Sound3D implements Runnable {
             if (hum != null) {
                 hum.silence();
             }
+            if (nitro != null) {
+                nitro.silence();
+            }
         }
 
         void delete() {
@@ -2952,6 +3079,9 @@ public final class Sound3D implements Runnable {
             }
             if (hum != null) {
                 hum.delete();
+            }
+            if (nitro != null) {
+                nitro.delete();
             }
             if (filter != 0) {
                 EXTEfx.alDeleteFilters(filter);

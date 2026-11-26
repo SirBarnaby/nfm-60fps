@@ -35,6 +35,8 @@ public final class PowerupsCheck {
         pickup();
         nitrous();
         twoNitrous();
+        fourSounds();
+        recorded();
         slippery();
         dynamite();
         aim();
@@ -194,6 +196,136 @@ public final class PowerupsCheck {
                 "one: " + blueAlone + " blue polygons; two: " + red + " red, " + n(redWide) + " long where one is "
                         + n(blueWide) + ", for " + overlap + " ticks (the first had " + left + " left), boost " + n(boost)
                         + "; then " + blueAfter + " blue, " + redAfter + " red");
+    }
+
+    /**
+     * Nitrous burning has four sounds: on the ground, in the air, two at
+     * once on the ground and two at once in the air. Each is a different
+     * mix, and the two in the air are more like the afterburner's recording
+     * than their ground ones: how alike is how well their spectra (20 bands
+     * from 80 Hz to 5 kHz, in decibels) follow the afterburner's.
+     */
+    private static void fourSounds() {
+        PowerupsFeature f = PowerupsFeature.FEATURE;
+        PowerupRace r = f.race;
+        CheckRace t = new CheckRace(2, 4);
+        r.setUp(t, 16L);
+        RaceView v = view(t);
+        f.raceStarted(v);
+        int[] kinds = new int[4];
+        for (int k = 0; k < 4; k++) {
+            r.nitrous[0] = 30;
+            r.doubled[0] = k >= 2 ? 10 : 0;
+            v.grounded[0] = k % 2 == 0;
+            f.afterTick(v);
+            kinds[k] = f.nitrousSound(v, 0);
+        }
+        r.nitrous[0] = 0;
+        f.afterTick(v);
+        int none = f.nitrousSound(v, 0);
+        nfm.lit.features.sounds.Recordings.Clip burner = nfm.lit.features.sounds.Recordings.clip("afterburner");
+        boolean made = burner != null;
+        float[][] bands = new float[5][];
+        for (int kind = 1; kind <= 4 && made; kind++) {
+            short[] loop = PowerupSounds.nitroLoop(kind);
+            made = loop != null && loop.length > 1000;
+            bands[kind] = made ? bands(loop, burner.rate()) : null;
+        }
+        float[] like = new float[5];
+        float apart = Float.MAX_VALUE;
+        if (made) {
+            float[] real = bands(burner.pcm(), burner.rate());
+            for (int kind = 1; kind <= 4; kind++) {
+                like[kind] = follows(bands[kind], real);
+                for (int other = kind + 1; other <= 4; other++) {
+                    apart = Math.min(apart, apart(bands[kind], bands[other]));
+                }
+            }
+        }
+        boolean ok = made && kinds[0] == 1 && kinds[1] == 2 && kinds[2] == 3 && kinds[3] == 4 && none == 0
+                && apart > 1F && like[2] > like[1] + 0.05F && like[4] > like[3] + 0.05F;
+        check(F, "nitrous has four sounds, the two in the air more like an afterburner", ok,
+                "ground, air, two on the ground, two in the air play sounds " + kinds[0] + ", " + kinds[1] + ", "
+                        + kinds[2] + ", " + kinds[3] + "; like the afterburner (1 the same): " + n(like[1]) + ", "
+                        + n(like[2]) + ", " + n(like[3]) + ", " + n(like[4]) + "; the two most alike are " + n(apart)
+                        + " dB apart a band");
+    }
+
+    /** Every sound of the powerups is a recording: none is missing, so none falls back on synthesis. */
+    private static void recorded() {
+        StringBuilder missing = new StringBuilder();
+        StringBuilder found = new StringBuilder();
+        for (String name : PowerupSounds.RECORDINGS) {
+            nfm.lit.features.sounds.Recordings.Clip c = nfm.lit.features.sounds.Recordings.clip(name);
+            if (c == null || c.pcm().length < c.rate() / 10) {
+                missing.append(missing.isEmpty() ? "" : ", ").append(name);
+            } else {
+                found.append(found.isEmpty() ? "" : ", ").append(name).append(' ')
+                        .append(n(c.pcm().length / (float) c.rate())).append(" s");
+            }
+        }
+        check(F, "every powerup sound is a recording", missing.isEmpty(),
+                missing.isEmpty() ? found.toString() : "missing: " + missing);
+    }
+
+    /** A sound's level in 20 bands from 80 Hz to 5 kHz, decibels, over its first three seconds. */
+    private static float[] bands(short[] pcm, int rate) {
+        int n = Math.min(pcm.length, rate * 3);
+        float[] out = new float[20];
+        for (int b = 0; b < out.length; b++) {
+            double sum = 0D;
+            // three tones across the band (Goertzel), so a band is not one lucky frequency
+            for (int k = 0; k < 3; k++) {
+                double hz = 80D * Math.pow(5000D / 80D, (b + k / 3D) / out.length);
+                double w = 2D * Math.PI * hz / rate;
+                double coeff = 2D * Math.cos(w);
+                int window = 2048;
+                for (int at = 0; at + window <= n; at += window) {
+                    double s1 = 0D;
+                    double s2 = 0D;
+                    for (int i = 0; i < window; i++) {
+                        double s0 = pcm[at + i] / 32768D + coeff * s1 - s2;
+                        s2 = s1;
+                        s1 = s0;
+                    }
+                    sum += s1 * s1 + s2 * s2 - coeff * s1 * s2;
+                }
+            }
+            out[b] = (float) (10D * Math.log10(sum + 1e-12D));
+        }
+        return out;
+    }
+
+    /** How well band levels {@code a} follow {@code b}: their correlation, 1 for the same shape. */
+    private static float follows(float[] a, float[] b) {
+        float ma = 0F;
+        float mb = 0F;
+        for (int i = 0; i < a.length; i++) {
+            ma += a[i] / a.length;
+            mb += b[i] / b.length;
+        }
+        float ab = 0F;
+        float aa = 0F;
+        float bb = 0F;
+        for (int i = 0; i < a.length; i++) {
+            ab += (a[i] - ma) * (b[i] - mb);
+            aa += (a[i] - ma) * (a[i] - ma);
+            bb += (b[i] - mb) * (b[i] - mb);
+        }
+        return (float) (ab / Math.sqrt(aa * bb + 1e-12D));
+    }
+
+    /** How far apart two sounds' band levels are, decibels a band, their overall loudness aside. */
+    private static float apart(float[] a, float[] b) {
+        float mean = 0F;
+        for (int i = 0; i < a.length; i++) {
+            mean += (a[i] - b[i]) / a.length;
+        }
+        float sum = 0F;
+        for (int i = 0; i < a.length; i++) {
+            sum += Math.abs(a[i] - b[i] - mean) / a.length;
+        }
+        return sum;
     }
 
     /**

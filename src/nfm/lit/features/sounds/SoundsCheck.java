@@ -20,6 +20,10 @@ public final class SoundsCheck {
     /** The rates the game's own sounds are sampled at. */
     private static final int[] GAME_RATES = {8_000, 8_272, 11_025, 22_050};
 
+    /** make.py's level for a loop (LOOP_RMS), and how near its peak limit (LOOP_PEAK, 0.8) a loop held by it comes. */
+    private static final float LOOP_LEVEL = 0.14F;
+    private static final float PEAK_HELD = 0.78F;
+
     private SoundsCheck() {
     }
 
@@ -30,6 +34,7 @@ public final class SoundsCheck {
         int clipped = 0;
         int steps = 0;
         int loops = 0;
+        int held = 0;
         float quietest = Float.MAX_VALUE;
         float loudest = 0F;
         StringBuilder wrong = new StringBuilder();
@@ -63,8 +68,13 @@ public final class SoundsCheck {
             if ("loop".equals(c.kind())) {
                 loops++;
                 float level = (float) Math.sqrt(sum / x.length) / 32_768F;
-                quietest = Math.min(quietest, level);
-                loudest = Math.max(loudest, level);
+                if (peak >= PEAK_HELD * 32_768F && level < LOOP_LEVEL) {
+                    // a loop of single sounds (a clock's ticks): make.py holds its peak, so it is quieter than the steady ones
+                    held++;
+                } else {
+                    quietest = Math.min(quietest, level);
+                    loudest = Math.max(loudest, level);
+                }
                 // the step from the last sample back to the first, against the steps inside the loop
                 int biggest = 1;
                 for (int i = 1; i < x.length; i++) {
@@ -82,8 +92,8 @@ public final class SoundsCheck {
                 offRate + " at a rate the game does not use, " + clipped + " clipped (the game's: 8000, 8272, 11025"
                         + " and 22050 Hz)");
         check(F, "the loops are level and seamless", loops > 0 && steps == 0 && loudest < 2F * quietest,
-                loops + " loops, level " + n(quietest) + " to " + n(loudest) + " of full scale, " + steps
-                        + " with a step at the seam");
+                loops + " loops, level " + n(quietest) + " to " + n(loudest) + " of full scale (" + held
+                        + " of single sounds, held at its peak instead), " + steps + " with a step at the seam");
         int unnamed = 0;
         int attributed = 0;
         for (Recordings.Credit c : credits) {

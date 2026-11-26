@@ -133,16 +133,31 @@ bomb dropped, bang).
   not feel the smoke or the wind.
 - Craters: a scorched patch, then a bowl 18 deep inside a raised lip, each
   face shaded by its slope, drawn on the road for the rest of the race (16).
-- Sounds: the dynamite's fuse, the bomb's drop and the explosions are
-  recordings (`sounds\README.md`); the pickup's chime, the nitrous hum and
-  rush, the bomb's ticking and the throw are synthesized once from fixed
-  seeds. With the 3D sound each plays at its car (`Sound3D.carSound`), an
-  explosion held at its place (`Sound3D.pointSound`), and each car's hum
-  from a looping source of its own that follows it (`Sound3D.Car.hum`).
-  With Classic sound a player hears their own pickup, uses and hum, and
-  explosions near them; these clips play on their own, outside the game's
-  list of sounds, so the game's own sound commands (and the recorded races'
-  sound check) stay as they were.
+- Sounds: every one is a recording (`sounds\README.md`, credits in
+  `sounds\CREDITS.md`): the pickup a service bell, the nitrous held a gas
+  bottle's thin hiss, the dynamite held a fuse burning, the bomb held a
+  clock ticking, the throw a whip through the air, the bomb's drop a knock,
+  the explosions blasts. `PowerupSounds` keeps a few lines of synthesis for
+  each only as what plays if a recording's file is missing; the checks fail
+  when one is. With the 3D sound each plays at its car
+  (`Sound3D.carSound`), an explosion held at its place
+  (`Sound3D.pointSound`), and each car's hum from a looping source of its
+  own that follows it (`Sound3D.Car.hum`). With Classic sound a player
+  hears their own pickup, uses and hum, and explosions near them; these
+  clips play on their own, outside the game's list of sounds, so the game's
+  own sound commands (and the recorded races' sound check) stay as they
+  were.
+- Nitrous burning has four sounds, heard as long as it burns: on the ground
+  the gas rushing out (a recorded gas hiss); in the air an afterburner (a
+  recorded jet afterburner over a quieter hiss); two at once on the ground
+  the hiss louder and a third lower; two at once in the air that with the
+  afterburner at full. The 3D sound mixes them as it plays from two looping
+  sources on the car (`Sound3D.NitroVoice`, the gains and pitches in
+  `Sound3D.NITRO_MIX`, which sound from `Sound3D.Car.nitro`), so a jump or
+  a second nitrous crosses over in about a tenth of a second with no break.
+  "In the air" is the game's own rule, the one its engine sound uses
+  (`Madness.mtouch`). Classic sound plays the same four as loops mixed
+  once (`PowerupSounds.nitroLoop`), for a player's own car.
 - Messages, in the game's message line: "Nitrous! Ctrl to use", "Dynamite!
   Thrown in 2 seconds", "Bomb! Ctrl to drop it behind you", with the
   player's own key.
@@ -153,7 +168,11 @@ bomb dropped, bang).
 the race half on a made-up straight and draws the look half into a canvas
 that counts: the boxes' rows and how rare pickups are beside the first
 build, a pickup, nitrous's three seconds, two nitrous at once (red and
-bigger for exactly the overlap, then blue), the grip nitrous leaves and a
+bigger for exactly the overlap, then blue), nitrous's four sounds (which
+plays on the ground, in the air and with two at once, that the four mixes
+differ and that the two in the air are more like the afterburner's
+recording), that no powerup sound's recording is missing, the grip nitrous
+leaves and a
 corner taken by the game's grip rule with and without it, dynamite thrown at
 two seconds, its aim (1 degree to an enemy 1 degree off, 2.5 to one 6 off,
 one 40 off still missed) and its blast throwing a car and denting the

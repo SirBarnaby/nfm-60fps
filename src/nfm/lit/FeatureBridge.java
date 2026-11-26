@@ -590,6 +590,9 @@ final class FeatureBridge {
             sound.skids(c, car);
         }
         car.hum = replay ? 0 : PowerupsFeature.FEATURE.hum(c); // the powerup the car holds hums
+        // nitrous burning: one of four sounds, by one or two at once and by the ground or the air
+        int burns = replay ? 0 : PowerupsFeature.FEATURE.nitrousKind(c);
+        car.nitro = burns == 0 ? 0 : (burns - 1) * 2 + (car.grounded ? 1 : 2);
     }
 
     /* ------------------------------------------------------------- drawing */
