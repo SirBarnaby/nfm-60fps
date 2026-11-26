@@ -75,6 +75,15 @@ scratches are kept per side.
 - **Lift-off flames**: lifting off the throttle above 80% of top speed throws
   flames from the exhaust tips for 3 or 4 ticks (5 or 6 with a turbo, longer
   flames), flickering; **nitrous** (the powerups) burns a steady blue flame.
+- **Exhaust pops** (sound, "Exhaust pops are heard and seen"): a car that
+  pops (its sheet: a charged engine, or `pops=yes`) bangs with the first
+  flame of a lift-off and pops on while the flames last, 45% of the ticks.
+  Each pop is a recorded pop from the exhaust and, in the same tick, a
+  near-white burst at one of the pipes, wider than the flame and glowing in
+  HDR; a charged engine's first bang is a backfire 35% of the time, louder,
+  with a bigger flash. A car that does not pop throws its flames in silence.
+  With the rebuilt engine sound the pop is mixed into the exhaust's own
+  stream; without it, played at the car.
 
 ## Damage
 
@@ -128,10 +137,12 @@ scratches are kept per side.
   polygon is drawn from tilted copies of its points.
 - `Madness.regx/regz`: every touch goes to `FeatureBridge.touch` before the
   game decides whether it dents.
-- `Sound3D.extraClip/carSound`: the extra's clips, made once
-  (`RealismSounds`: decaying modes for the tick, the thud and the rattle,
-  filtered noise with metallic modes for the scrape), played at the car by the
-  3D sound only. Classic sound never hears them.
+- `Sound3D.extraClip/carSound/carPop`: the extra's clips, each a recording
+  (`RealismSounds` gives them from `features\sounds`: a metal ping for the
+  tick, a collision for the thud, metal on concrete for the scrape, loose
+  metal for the rattle, swords for the spikes' ring, exhaust pops and a
+  backfire; `sounds\README.md`), played at the car by the 3D sound only.
+  Classic sound never hears them.
 - `Particles.keep`: a particle stays as debris where it lands
   (`CarLooks.debris`).
 

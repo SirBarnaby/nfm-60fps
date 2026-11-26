@@ -9,7 +9,7 @@ deforming, the magnet, stylised explosions with the flash) and
 
 Code: `src\nfm\lit\features\powerups\` (`PowerupRace` the race half,
 `PowerupsFeature` the look, sound and messages, `PowerupDrawing` the shapes,
-`PowerupSounds` the synthesis, `PowerupsCheck` the checks); the framework's
+`PowerupSounds` the sounds, `PowerupsCheck` the checks); the framework's
 race-extra hooks in `Features`, `RaceTick`, `RaceInts` and `GameHooks`, and
 the game's side in `nfm.lit.FeatureBridge` (`RaceAccess`, `Hooks`).
 
@@ -89,9 +89,11 @@ nobody ahead).
   blows up within 6000 units of a player's car and Explosion flash is on.
 - The magnet: a crackling arc from roof to roof. Nitrous: a blue flame from
   the tail, or Damage and heat's exhaust flame when that is on.
-- Sounds, synthesized once from fixed seeds: the pickup's chime, a looped
-  hum per powerup (a hiss, a fizzing fuse, an electric hum), the nitrous
-  rush, the magnet's clunk, the throw and the blast. With the 3D sound each
+- Sounds: the dynamite's fuse and the blast are recordings (a burning fuse,
+  an explosion; `sounds\README.md`). The rest are still synthesized once
+  from fixed seeds and are replaced with the powerups' rework: the pickup's
+  chime, the nitrous and magnet hums, the nitrous rush, the magnet's clunk
+  and the throw. With the 3D sound each
   plays at its car (`Sound3D.carSound`), the blast held at its place
   (`Sound3D.pointSound`), and each car's hum from a looping source of its
   own that follows it (`Sound3D.Car.hum`). With Classic sound a player hears

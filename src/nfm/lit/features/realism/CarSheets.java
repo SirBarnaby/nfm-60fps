@@ -19,7 +19,7 @@ import java.util.Map;
  * A line that cannot be read is logged and left out; a car with no line gets
  * {@link CarSheet#DEFAULT}.
  */
-final class CarSheets {
+public final class CarSheets {
 
     /** The resource's name, next to this class. */
     static final String RESOURCE = "car-sheets.txt";
@@ -32,7 +32,7 @@ final class CarSheets {
     }
 
     /** The sheet of car model {@code model} (its file name, such as {@code radicalone}). */
-    static synchronized CarSheet of(String model) {
+    public static synchronized CarSheet of(String model) {
         if (sheets == null) {
             List<String> lines = lines();
             sheets = lines == null ? Map.of() : parse(lines, SOURCE);
@@ -88,7 +88,7 @@ final class CarSheets {
     }
 
     /** One line: car, engine, sits, cooling, turbo, brakes, exhausts, then any {@code name=value} traits; null if it is not one. */
-    static CarSheet parseLine(String line) {
+    public static CarSheet parseLine(String line) {
         String[] t = line.toLowerCase(Locale.ROOT).split("\\s+");
         if (t.length < 7) {
             return null;

@@ -20,6 +20,10 @@ final class RealismDrawing {
     private static final int LAMP = 0xff2a18;
     private static final int FLAME = 0xff8a22;
     private static final int FLAME_CORE = 0xffe08a;
+    /** An exhaust pop's flash, and how long and how wide (at its root) one is. */
+    static final int POP_FLASH = 0xfff4d6;
+    private static final float FLASH_LONG = 4.5F;
+    private static final float FLASH_WIDE = 3.2F;
     private static final int NITROUS = 0x5f9cff;
     private static final int NITROUS_CORE = 0xdcefff;
     /** How far the cracks and scratches stand off their glass and panel, so the panel never covers them. */
@@ -79,6 +83,15 @@ final class RealismDrawing {
             float half = (p.stacks ? 1.6F : 1.4F) * (core ? 0.55F : 1F);
             for (int plane = 0; plane < 2; plane++) {
                 teardrop(p, pipe, length, half, plane);
+                canvas.onCar(car, x, y, z, 5);
+            }
+        }
+        float flash = s.popFlash[pipe];
+        if (flash > 0F && !nitrous) {
+            // a pop: for this tick a short burst at the pipe's mouth, wider than the flame and near white
+            canvas.color(canvas.fog(POP_FLASH, s.at[0], s.at[1], s.at[2]));
+            for (int plane = 0; plane < 2; plane++) {
+                teardrop(p, pipe, FLASH_LONG * flash, FLASH_WIDE * flash, plane);
                 canvas.onCar(car, x, y, z, 5);
             }
         }

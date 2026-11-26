@@ -7,6 +7,7 @@ import static nfm.lit.features.Synth.sine;
 import nfm.lit.audio.Sound3D;
 import nfm.lit.features.Features;
 import nfm.lit.features.Synth.Noise;
+import nfm.lit.features.sounds.Recordings;
 
 /**
  * The powerups' sounds, each made once from a few lines of synthesis (the
@@ -44,12 +45,17 @@ final class PowerupSounds {
         made = true;
         give(PICKUP, pickup());
         give(HUM + PowerupRace.NITROUS, nitrousHum());
-        give(HUM + PowerupRace.DYNAMITE, fuseHum());
+        // the fuse and the blast are recordings; the rest follow with the powerups' rework
+        if (!Recordings.give(HUM + PowerupRace.DYNAMITE, "fuse", true)) {
+            give(HUM + PowerupRace.DYNAMITE, fuseHum());
+        }
         give(HUM + PowerupRace.MAGNET, magnetHum());
         give(NITROUS, burst());
         give(MAGNET, clunk());
         give(THROW, toss());
-        give(BLAST, blast());
+        if (!Recordings.give(BLAST, "blast", true)) {
+            give(BLAST, blast());
+        }
     }
 
     private static void give(String name, short[] pcm) {

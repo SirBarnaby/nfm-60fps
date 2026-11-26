@@ -35,6 +35,8 @@ final class CarState {
     /** Ticks of lift-off flame left, and how long the flames reach this tick. */
     int flame;
     final float[] flameReach = new float[2];
+    /** A pop's flash at each pipe this tick: its size (1 a pop, more a backfire), 0 for none. */
+    final float[] popFlash = new float[2];
     /** Ticks since the car last went fast (for the ticking). */
     int idleTicks;
 
@@ -94,6 +96,7 @@ final class CarState {
         wasUp = false;
         flame = 0;
         Arrays.fill(flameReach, 0F);
+        Arrays.fill(popFlash, 0F);
         idleTicks = 0;
         repair();
         dirt = 0F;

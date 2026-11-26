@@ -57,7 +57,16 @@ public final class RealismFeature implements Feature, CarLook {
     final Particles particles = new Particles(PARTICLES);
     final Debris debris = new Debris(DEBRIS_KEPT);
     final Dice dice = new Dice(0L, ID);
-    Ears ears = Sound3D::carSound;
+    Ears ears = RealismFeature::toSound;
+
+    /** A sound to the 3D sound: an exhaust pop from the car's exhaust, anything else at the car. */
+    private static void toSound(int car, String clip, float gain, float pitch) {
+        if (RealismSounds.POP.equals(clip) || RealismSounds.BACKFIRE.equals(clip)) {
+            Sound3D.carPop(car, gain, RealismSounds.BACKFIRE.equals(clip));
+        } else {
+            Sound3D.carSound(car, clip, gain, pitch);
+        }
+    }
     CarState[] states = new CarState[0];
     int cars;
     private boolean[] nitrous = new boolean[0];

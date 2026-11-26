@@ -237,6 +237,8 @@ public final class Sound3D implements Runnable {
     private static final int EXTRA = 11;
     /** An extra's own clip, played at a place in the world (see {@link #pointSound}). */
     private static final int EXTRA_AT = 12;
+    /** An exhaust pop of a car (see {@link #carPop}). */
+    private static final int POP = 13;
 
     private final ConcurrentLinkedQueue<Command> commands = new ConcurrentLinkedQueue<>();
     private volatile Moment latest;
@@ -754,6 +756,41 @@ public final class Sound3D implements Runnable {
                 Arrays.fill(bodies[car], 0F);
                 System.arraycopy(local, 0, bodies[car], 0, Math.min(local.length, BODY_VALUES));
             }
+        }
+    }
+
+    private static final EngineLayers.Kit[] kits = new EngineLayers.Kit[MAX_CARS];
+
+    /**
+     * What car {@code car} is fitted with, for the rebuilt engine sound's
+     * layers (its turbo or supercharger, a truck's beeper, how loud its
+     * engine is); null for nothing. From the game thread when a race starts.
+     */
+    public static void carKit(int car, EngineLayers.Kit kit) {
+        if (car >= 0 && car < MAX_CARS) {
+            synchronized (bodies) {
+                kits[car] = kit;
+            }
+        }
+    }
+
+    private static EngineLayers.Kit kitOf(int car) {
+        synchronized (bodies) {
+            EngineLayers.Kit k = car >= 0 && car < MAX_CARS ? kits[car] : null;
+            return k == null ? EngineLayers.PLAIN : k;
+        }
+    }
+
+    /**
+     * Car {@code car}'s exhaust pops, at {@code gain}; {@code big} for a
+     * loud backfire. With the rebuilt engine sound it is heard from the
+     * exhaust, mixed into it; only with the 3D sound, and never for a
+     * run-ahead tick.
+     */
+    public static void carPop(int car, float gain, boolean big) {
+        Sound3D sound = instance;
+        if (sound != null && !SoundManager.isDiscarding()) {
+            sound.post(new Command(POP, null, car, gain, big ? 1F : 0F));
         }
     }
 
@@ -1596,6 +1633,12 @@ public final class Sound3D implements Runnable {
                     playAtPoint(c.x, c.y, c.z, c.clip, c.a, c.b);
                 }
             }
+            case POP -> {
+                Moment m = current;
+                if (m != null && !m.muted) {
+                    pop(c.car, c.a, c.b != 0F);
+                }
+            }
             case STOP_ALL -> stopEverything();
             case MUSIC_PLAY -> startMusic(c.music);
             case MUSIC_PAUSE, MUSIC_RESUME -> pauseMusic(c.music, c.kind == MUSIC_PAUSE);
@@ -2064,6 +2107,64 @@ public final class Sound3D implements Runnable {
             carEffects[car] = new CarEffects();
         }
         return carEffects[car];
+    }
+
+    /** The exhaust pops' recordings at the rebuilt sound's rate, made the first time one pops (the sound thread's). */
+    private float[][] popRecordings;
+    private float[] backfireRecording;
+
+    /** Extra clip {@code name} as samples from -1 to 1 at the rebuilt sound's rate; null if there is none. */
+    private static float[] atGrainRate(String name) {
+        short[] pcm = extraClips.get(name);
+        Integer rate = extraRates.get(name);
+        if (pcm == null || rate == null || pcm.length < 2) {
+            return null;
+        }
+        int n = (int) ((long) pcm.length * EngineGrains.RATE / rate);
+        float[] out = new float[n];
+        double step = (double) rate / EngineGrains.RATE;
+        for (int i = 0; i < n; i++) {
+            double at = i * step;
+            int a = Math.min(pcm.length - 2, (int) at);
+            float f = (float) (at - a);
+            out[i] = (pcm[a] * (1F - f) + pcm[a + 1] * f) / 32_768F;
+        }
+        return out;
+    }
+
+    private float[][] popRecordings() {
+        if (popRecordings == null) {
+            List<float[]> found = new ArrayList<>();
+            for (String name : EngineLayers.POP_CLIPS) {
+                float[] x = atGrainRate(name);
+                if (x != null) {
+                    found.add(x);
+                }
+            }
+            backfireRecording = atGrainRate(EngineLayers.BACKFIRE_CLIP);
+            if (found.isEmpty()) {
+                return new float[0][]; // not given yet: look again at the next pop
+            }
+            popRecordings = found.toArray(new float[0][]);
+        }
+        return popRecordings;
+    }
+
+    /** A car's exhaust pops: from its exhaust with the rebuilt sound, else at the car. */
+    private void pop(int car, float gain, boolean big) {
+        float[][] pops = popRecordings();
+        float[] clip = big && backfireRecording != null ? backfireRecording
+                : pops.length == 0 ? null : pops[random.nextInt(pops.length)];
+        if (clip == null || car < 0 || car >= engines.size()) {
+            return;
+        }
+        RebuiltVoices rebuilt = engines.get(car).rebuilt;
+        if (rebuilt != null && rebuilt.level > 0F) {
+            rebuilt.tone.pop(clip, gain);
+        } else {
+            playAt(car, big ? EngineLayers.BACKFIRE_CLIP : EngineLayers.POP_CLIPS[random.nextInt(pops.length)], gain,
+                    variation());
+        }
     }
 
     private void crash(int car, float force, int kind) {
@@ -2544,6 +2645,7 @@ public final class Sound3D implements Runnable {
             if (car.engine != engine) {
                 setEngine(car.engine);
             }
+            semitones = car.rebuilt ? kitOf(index).revs : BEND_SEMITONES;
             mix(car, muted);
             if (!carNow(index, ahead, position, velocity)) {
                 return;
@@ -2634,8 +2736,12 @@ public final class Sound3D implements Runnable {
             float t = bandShare(car);
             float p = Math.min(2.999F, 3F * t); // where in the band: 0 to 3, a third per recording
             if (!car.grounded) {
-                targetGain[0] = 1F;
+                // with the rebuilt sound the revs run up to the limiter while the throttle is held in the air
+                float air = car.rebuilt && rebuilt != null ? rebuilt.layers.air() : 0F;
+                targetGain[0] = (float) Math.cos(air * Math.PI / 2);
                 targetPitch[0] = 1F + 0.15F * t;
+                targetGain[4] = (float) Math.sin(air * Math.PI / 2);
+                targetPitch[4] = bend(1.5F * air - 0.5F);
                 return;
             }
             if (car.spinning && car.throttle) {
@@ -2665,8 +2771,11 @@ public final class Sound3D implements Runnable {
             targetGain[0] = Math.max(idle, car.throttle ? 0F : 0.6F);
         }
 
+        /** Semitones a recording bends across a third of a band: the car's own with the rebuilt sound. */
+        float semitones = BEND_SEMITONES;
+
         private float bend(float thirds) {
-            return (float) Math.pow(2D, thirds * BEND_SEMITONES / 12D);
+            return (float) Math.pow(2D, thirds * semitones / 12D);
         }
 
         private void loudestOnly() {
@@ -2938,6 +3047,12 @@ public final class Sound3D implements Runnable {
         private final float[] lastGain = new float[5];
         private final float[] lastPitch = {1F, 1F, 1F, 1F, 1F};
         private final float[] placed = new float[3];
+        /** The layers over the engine, the sources that loop them (made when first heard) and the car's kit. */
+        final EngineLayers layers = new EngineLayers();
+        private final int[] layerSource = new int[EngineLayers.COUNT];
+        private final String[] layerClip = new String[EngineLayers.COUNT];
+        private EngineLayers.Kit kit = EngineLayers.PLAIN;
+        private float reach = -1F;
         private final int wheelFilter;
         private float wheelLf = -1F;
         private float wheelHf = -1F;
@@ -2945,7 +3060,6 @@ public final class Sound3D implements Runnable {
         /** How much of the car it plays: 1 while the extra plays it, fading to 0 when it stops. */
         private float level;
         private float lastThrottle;
-        private boolean wasOn;
         /* the car's turn, for its points */
         private float sy;
         private float cy;
@@ -3001,23 +3115,87 @@ public final class Sound3D implements Runnable {
                 }
             }
             turnOf(car);
+            kit = kitOf(index);
+            if (kit.loud != reach) {
+                // a strong engine carries further, a quiet one fades sooner
+                reach = kit.loud;
+                alSourcef(front.source, AL_REFERENCE_DISTANCE, FULL_VOLUME_DISTANCE * reach);
+                alSourcef(back.source, AL_REFERENCE_DISTANCE, FULL_VOLUME_DISTANCE * reach);
+            }
             place(front.source, 0, position, velocity);
             place(back.source, 3, position, velocity);
-            // a lift high in the band pops the exhaust; off the ground or stopped it does not
-            boolean on = car.throttle && car.running;
-            if (wasOn && !on && car.grounded && car.running && bandShare(car) > 0.5F) {
-                tone.lifted();
-            }
-            if (!car.grounded || !car.running || muted) {
-                tone.calm();
-            }
-            wasOn = on;
             level = Math.min(1F, level + dt / REBUILT_FADE);
             System.arraycopy(gain, 0, lastGain, 0, 5);
             System.arraycopy(pitch, 0, lastPitch, 0, 5);
             lastThrottle = throttle;
             engineBlocks(gain, pitch, throttle);
             wheelBlocks(car, index, dt, muted, position, velocity);
+            int[] b = car.bands;
+            layers.update(car, kit, bandShare(car), b[0], b[2], dt, muted);
+            float blown = layers.takeBlowOff();
+            if (blown > 0F) {
+                playAt(index, EngineLayers.BLOW_OFF_CLIP, 0.6F * blown * kit.loud, variation());
+            }
+            layerVoices(position, velocity);
+        }
+
+        /** Where on the car each layer is heard: an offset into {@link #body}, or -1 for its middle. */
+        private static final int[] LAYER_AT = {0, 3, 3, -1, -1, 0};
+
+        /** Each layer's source: made and started when the layer is first heard, paused while it is silent. */
+        private void layerVoices(float[] position, float[] velocity) {
+            for (int i = 0; i < EngineLayers.COUNT; i++) {
+                float g = layers.gain[i] * level;
+                int source = layerSource[i];
+                if (g <= 0F) {
+                    if (source != 0 && layerClip[i] != null && alGetSourcei(source, AL_SOURCE_STATE) == AL_PLAYING) {
+                        alSourcePause(source);
+                    }
+                    continue;
+                }
+                String clip = EngineLayers.clip(i, kit);
+                if (clip == null) {
+                    continue;
+                }
+                if (source == 0) {
+                    source = layerSource[i] = alGenSources();
+                    world(source);
+                    alSourcei(source, AL_LOOPING, AL_TRUE);
+                    if (wheelFilter != 0) {
+                        alSourcei(source, EXTEfx.AL_DIRECT_FILTER, wheelFilter); // muffled by the stage as the skids are
+                    }
+                }
+                if (!clip.equals(layerClip[i])) {
+                    int buffer = buffer(clip);
+                    if (buffer == 0) {
+                        continue;
+                    }
+                    alSourceStop(source);
+                    alSourcei(source, AL_BUFFER, buffer);
+                    layerClip[i] = clip;
+                }
+                boolean engines = i == EngineLayers.CHARGER || i == EngineLayers.WHINE || i == EngineLayers.FAN;
+                alSourcef(source, AL_GAIN, g * (engines ? engineLevel * kit.loud : everyday * bus[BUS_EFFECTS]));
+                alSourcef(source, AL_PITCH, Math.max(0.5F, Math.min(2F, layers.pitch[i])));
+                if (LAYER_AT[i] < 0) {
+                    alSource3f(source, AL_POSITION, position[0], position[1], position[2]);
+                    alSource3f(source, AL_VELOCITY, velocity[0], velocity[1], velocity[2]);
+                } else {
+                    place(source, LAYER_AT[i], position, velocity);
+                }
+                if (alGetSourcei(source, AL_SOURCE_STATE) != AL_PLAYING) {
+                    alSourcePlay(source);
+                }
+            }
+        }
+
+        private void layersOff() {
+            layers.clear();
+            for (int source : layerSource) {
+                if (source != 0) {
+                    alSourceStop(source);
+                }
+            }
         }
 
         /** The extra no longer plays the car (or the car is gone): fades it out, then lets the streams run dry. */
@@ -3026,7 +3204,7 @@ public final class Sound3D implements Runnable {
                 return;
             }
             level = Math.max(0F, level - dt / REBUILT_FADE);
-            tone.calm();
+            layersOff();
             engineBlocks(lastGain, lastPitch, lastThrottle);
             float down = 1F - (float) Math.exp(-dt / SKID_RELEASE);
             for (int w = 0; w < REBUILT_WHEELS; w++) {
@@ -3074,12 +3252,12 @@ public final class Sound3D implements Runnable {
                     float g = gain[i] * level; // eased toward 0, it never quite gets there
                     voices[i].add(mixed, 0, REBUILT_BLOCK, pitch[i], g < SILENT ? 0F : g, grainRandom);
                 }
-                tone.shape(mixed, frontBlock, backBlock, REBUILT_BLOCK, throttle, grainRandom);
+                tone.shape(mixed, frontBlock, backBlock, REBUILT_BLOCK, throttle);
                 queue(front, frontBlock, FRONT_LEVEL);
                 queue(back, backBlock, BACK_LEVEL);
             }
-            alSourcef(front.source, AL_GAIN, engineLevel);
-            alSourcef(back.source, AL_GAIN, engineLevel);
+            alSourcef(front.source, AL_GAIN, engineLevel * kit.loud);
+            alSourcef(back.source, AL_GAIN, engineLevel * kit.loud);
             front.keepPlaying();
             back.keepPlaying();
         }
@@ -3096,6 +3274,11 @@ public final class Sound3D implements Runnable {
                     EXTEfx.alFilterf(wheelFilter, EXTEfx.AL_LOWPASS_GAINHF, hf);
                     for (Stream s : wheels) {
                         alSourcei(s.source, EXTEfx.AL_DIRECT_FILTER, wheelFilter);
+                    }
+                    for (int source : layerSource) {
+                        if (source != 0) {
+                            alSourcei(source, EXTEfx.AL_DIRECT_FILTER, wheelFilter);
+                        }
                     }
                     wheelLf = lf;
                     wheelHf = hf;
@@ -3131,7 +3314,8 @@ public final class Sound3D implements Runnable {
             int need = s.free() - (STREAM_BUFFERS - ahead);
             for (int b = 0; b < need; b++) {
                 Arrays.fill(wheelBlock, 0F);
-                skid.add(wheelBlock, 0, REBUILT_BLOCK, 0.95F + 0.12F * skidLevel[w], skidLevel[w], grainRandom);
+                skid.add(wheelBlock, 0, REBUILT_BLOCK, (0.95F + 0.12F * skidLevel[w]) * kit.skidPitch, skidLevel[w],
+                        grainRandom);
                 queue(s, wheelBlock, SKID_LEVEL);
             }
             alSourcef(s.source, AL_GAIN, everyday * bus[BUS_EFFECTS]);
@@ -3189,6 +3373,7 @@ public final class Sound3D implements Runnable {
             level = 0F;
             Arrays.fill(lastGain, 0F);
             tone.clear();
+            layersOff();
             engine = -1; // the voices start again from their first cycle
         }
 
@@ -3197,6 +3382,11 @@ public final class Sound3D implements Runnable {
             back.delete();
             for (Stream s : wheels) {
                 s.delete();
+            }
+            for (int source : layerSource) {
+                if (source != 0) {
+                    alDeleteSources(source);
+                }
             }
             if (wheelFilter != 0) {
                 EXTEfx.alDeleteFilters(wheelFilter);

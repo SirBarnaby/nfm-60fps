@@ -37,6 +37,11 @@ final class HeatEffects {
     static final float TICKING = 0.35F;
     /** Lifting off above this share of top speed throws flames. */
     static final float LIFT_OFF = 0.8F;
+    /** A charged engine's first flame is a backfire this often; a flame after the first is heard this often. */
+    static final float BACKFIRES = 0.35F;
+    static final float POPS = 0.45F;
+    /** A backfire's flash against a pop's. */
+    static final float FLASH_BACKFIRE = 1.6F;
     /** The haze shows over an engine hotter than this. */
     static final float HAZE = 0.45F;
 
@@ -80,11 +85,24 @@ final class HeatEffects {
         ticking(race, c, s, ground);
     }
 
-    /** Lift-off flames at high revs, and the blue flame of nitrous. */
+    /**
+     * Lift-off flames at high revs, and the blue flame of nitrous. A car
+     * that pops (its sheet) bangs with the first flame and pops as the
+     * flames go on: each pop a sound and a flash at a pipe in the same tick.
+     */
     private void flames(RaceView race, int c, CarState s, float share, boolean alive) {
         boolean up = race.up[c];
+        boolean pops = s.parts.sheet.pops();
+        java.util.Arrays.fill(s.popFlash, 0F);
         if (alive && s.wasUp && !up && share > LIFT_OFF) {
             s.flame = (s.parts.sheet.turbo ? 5 : 3) + f.dice.below(2);
+            if (pops) {
+                // a charged engine now and then lets go with a backfire
+                boolean backfire = s.parts.sheet.turbo && f.dice.next() < BACKFIRES;
+                pop(c, s, backfire, 0.7F + 0.3F * f.dice.next());
+            }
+        } else if (pops && s.flame > 0 && f.dice.next() < POPS) {
+            pop(c, s, false, 0.35F + 0.4F * f.dice.next());
         }
         s.wasUp = up;
         boolean nitrous = alive && race.nitrous[c];
@@ -101,6 +119,12 @@ final class HeatEffects {
         if (s.flame > 0) {
             s.flame--;
         }
+    }
+
+    /** One pop from car {@code c}'s exhaust: heard, and seen as a flash at one of its pipes this tick. */
+    private void pop(int c, CarState s, boolean backfire, float gain) {
+        f.sound(c, backfire ? RealismSounds.BACKFIRE : RealismSounds.POP, gain, 1F);
+        s.popFlash[f.dice.below(Math.max(1, Math.min(s.popFlash.length, s.parts.pipes)))] = backfire ? FLASH_BACKFIRE : 1F;
     }
 
     /** The shimmer behind the exhausts (at idle, and when they are hot) and over a hot engine. */

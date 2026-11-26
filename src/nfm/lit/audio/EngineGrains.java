@@ -345,72 +345,84 @@ public final class EngineGrains {
 
     /** The engine's sound made into the front (engine and intake) and the back (exhaust). */
     public static final class Tone {
-        /** The pops after a lift: how long they go on, seconds, how many a second, and how long one rings. */
-        static final float POP_TIME = 0.8F;
-        static final float POPS_A_SECOND = 5F;
-        static final float POP_RING = 0.006F;
-
         private final Biquad thin = new Biquad().highPass(120F, 0.7F);
         private final Biquad intake = new Biquad().bandPass(700F, 1.4F);
         private final Biquad body = new Biquad().lowPass(1_000F, 0.7F);
         private final Biquad low = new Biquad().lowPass(180F, 0.7F);
-        private final Biquad popTone = new Biquad().lowPass(2_500F, 0.9F);
-        private float popsLeft;
-        private float pop;
-        private final float popFade = (float) Math.exp(-1D / (POP_RING * RATE));
+        /* the exhaust's pops sounding now: each one's recording, where it has got to and its level */
+        private static final int POPS = 4;
+        private final float[][] popping = new float[POPS][];
+        private final int[] popAt = new int[POPS];
+        private final float[] popLevel = new float[POPS];
 
-        /** A lift of the throttle at high revs: the exhaust pops for a moment. */
-        public void lifted() {
-            popsLeft = POP_TIME;
+        /**
+         * One pop of the exhaust now: recording {@code clip} (at
+         * {@link #RATE}) at {@code gain}, mixed into the back. The pops come
+         * from outside (a pop is seen as it is heard: the realism extra's
+         * flames), never on a count of the sound's own.
+         */
+        public void pop(float[] clip, float gain) {
+            if (clip == null || clip.length == 0) {
+                return;
+            }
+            int slot = 0;
+            for (int k = 0; k < POPS; k++) {
+                if (popping[k] == null) {
+                    slot = k;
+                    break;
+                }
+                if (popAt[k] > popAt[slot]) {
+                    slot = k; // all sounding: the one furthest through gives way
+                }
+            }
+            popping[slot] = clip;
+            popAt[slot] = 0;
+            popLevel[slot] = gain;
         }
 
-        /** Stops the pops: the engine stopped or the car left the ground. */
-        public void calm() {
-            popsLeft = 0F;
-        }
-
-        /** True while it is popping. */
+        /** True while a pop sounds. */
         public boolean popping() {
-            return popsLeft > 0F || pop > 0.001F;
+            for (float[] clip : popping) {
+                if (clip != null) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         /**
          * Shapes {@code n} samples of the engine ({@code in}) into the front
          * and the back, {@code load} the throttle (0 to 1, smoothed).
          */
-        public void shape(float[] in, float[] front, float[] back, int n, float load, Random random) {
+        public void shape(float[] in, float[] front, float[] back, int n, float load) {
             float growl = 1F + 2F * load;
             float intakeLevel = 0.3F + 0.9F * load;
             float lowLevel = 0.4F + 0.4F * load;
-            float popChance = POPS_A_SECOND / RATE;
             for (int i = 0; i < n; i++) {
                 float x = in[i];
                 front[i] = 0.8F * thin.run(x) + intakeLevel * intake.run(x);
                 float b = body.run(x) + lowLevel * low.run(x);
                 b = soft(growl * b) / growl; // as loud, its peaks rounded: harmonics, a growl under load
-                if (popsLeft > 0F && random.nextFloat() < popChance) {
-                    pop = 0.35F + 0.35F * random.nextFloat();
-                }
-                if (pop > 0.001F) {
-                    b += popTone.run(pop * (2F * random.nextFloat() - 1F));
-                    pop *= popFade;
-                } else {
-                    pop = 0F;
+                for (int k = 0; k < POPS; k++) {
+                    float[] clip = popping[k];
+                    if (clip != null) {
+                        b += clip[popAt[k]] * popLevel[k];
+                        if (++popAt[k] >= clip.length) {
+                            popping[k] = null;
+                        }
+                    }
                 }
                 back[i] = b;
             }
-            popsLeft = Math.max(0F, popsLeft - (float) n / RATE);
         }
 
-        /** Forgets the filters' state, for a fresh start. */
+        /** Forgets the filters' state and the pops, for a fresh start. */
         public void clear() {
             thin.clear();
             intake.clear();
             body.clear();
             low.clear();
-            popTone.clear();
-            popsLeft = 0F;
-            pop = 0F;
+            java.util.Arrays.fill(popping, null);
         }
     }
 

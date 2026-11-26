@@ -65,6 +65,7 @@ public final class RealismCheck {
         c.sidePods();
         c.smoke();
         c.exhaust();
+        c.pops();
         c.ticking();
         c.noBonnetNoBumper();
         c.repair();
@@ -487,6 +488,55 @@ public final class RealismCheck {
         check(F, "the exhaust shows the engine's state", ok, "lift-off flames " + flames + " (" + orange
                 + " polygons), gone after " + ends + "; nitrous flame " + blue + " polygons; idle shimmer "
                 + (int) idle[3] + " puffs at z " + n(idle[2]));
+    }
+
+    /**
+     * Exhaust pops: a car whose sheet says it pops bangs as it lifts off at
+     * high revs and pops while its flames last, each pop heard and seen as
+     * a flash at a pipe in the same tick; a car that does not pop throws
+     * its flames in silence, with no flash.
+     */
+    private void pops() {
+        int[] heardPops = new int[2];
+        int[] flashes = new int[2];
+        int[] together = new int[2];
+        int[] flashPolygons = new int[2];
+        boolean[] first = new boolean[2];
+        boolean[] late = new boolean[2];
+        for (int kind = 0; kind < 2; kind++) {
+            start(CarSheets.parseLine(kind == 0 ? "popper V8 front front no disc 2 pops=yes"
+                    : "silent V8 front front no disc 2"), true);
+            // several lift-offs, so the dice have their say
+            for (int lift = 0; lift < 6; lift++) {
+                for (int t = 0; t < 10; t++) {
+                    drive(100F, true, false);
+                }
+                for (int t = 0; t < 14; t++) {
+                    heard.clear();
+                    drive(95F, false, false);
+                    boolean pop = heard.contains(RealismSounds.POP) || heard.contains(RealismSounds.BACKFIRE);
+                    boolean flash = s.popFlash[0] > 0F || s.popFlash[1] > 0F;
+                    heardPops[kind] += pop ? 1 : 0;
+                    flashes[kind] += flash ? 1 : 0;
+                    together[kind] += pop && flash && s.flameReach[0] > 0F ? 1 : 0;
+                    first[kind] |= t == 0 && pop;
+                    late[kind] |= t > 8 && (pop || flash);
+                    if (flash && flashPolygons[kind] == 0) {
+                        real.particles.clear();
+                        frame(0F, GROUND - 20F, carZ - 400F);
+                        flashPolygons[kind] = canvas.drawn(RealismDrawing.POP_FLASH);
+                    }
+                }
+            }
+        }
+        boolean popper = first[0] && heardPops[0] > 6 && heardPops[0] == flashes[0] && together[0] == heardPops[0]
+                && flashPolygons[0] > 0 && !late[0];
+        boolean silent = heardPops[1] == 0 && flashes[1] == 0;
+        check(F, "exhaust pops are heard and seen", popper && silent,
+                "a car that pops, six lift-offs: " + heardPops[0] + " pops heard, " + flashes[0] + " flashes, "
+                        + together[0] + " in the same tick with a flame (the flash " + flashPolygons[0]
+                        + " polygons), a bang with every first flame " + first[0] + ", none once the flames are out "
+                        + !late[0] + "; a car that does not: " + heardPops[1] + " pops, " + flashes[1] + " flashes");
     }
 
     /** Hot metal ticks: a car stopped after a long fast run ticks for a while, less and less. */

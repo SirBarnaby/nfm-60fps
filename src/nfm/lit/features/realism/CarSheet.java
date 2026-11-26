@@ -10,36 +10,36 @@ import java.util.Map;
  * the brakes run, how the exhaust behaves. Kept in
  * {@code car-sheets.txt} next to this class ({@link CarSheets}).
  */
-final class CarSheet {
+public final class CarSheet {
 
     /* where the engine sits */
-    static final int FRONT = 0;
-    static final int MID = 1;
-    static final int REAR = 2;
+    public static final int FRONT = 0;
+    public static final int MID = 1;
+    public static final int REAR = 2;
     /* its cooling */
-    static final int RADIATOR_FRONT = 0;
-    static final int SIDE_PODS = 1;
-    static final int AIR = 2;
+    public static final int RADIATOR_FRONT = 0;
+    public static final int SIDE_PODS = 1;
+    public static final int AIR = 2;
     /* its brakes */
-    static final int DRUM = 0;
-    static final int DISC = 1;
-    static final int CARBON = 2;
+    public static final int DRUM = 0;
+    public static final int DISC = 1;
+    public static final int CARBON = 2;
     /** Exhausts: upright pipes behind the cab rather than pipes at the back. */
-    static final int STACKS = 3;
+    public static final int STACKS = 3;
 
     /** For a car with no line in the sheets: a front-engined V8 with a radiator, discs and two pipes. */
-    static final CarSheet DEFAULT = new CarSheet("", "V8", FRONT, RADIATOR_FRONT, false, DISC, 2);
+    public static final CarSheet DEFAULT = new CarSheet("", "V8", FRONT, RADIATOR_FRONT, false, DISC, 2);
 
-    final String car;
-    final String engine;
-    final int sits;
-    final int cooling;
-    final boolean turbo;
-    final int brakes;
+    public final String car;
+    public final String engine;
+    public final int sits;
+    public final int cooling;
+    public final boolean turbo;
+    public final int brakes;
     /** 1 or 2 pipes at the back, or {@link #STACKS}. */
-    final int exhausts;
+    public final int exhausts;
     /** The car's own traits, written after the columns as {@code name=value} (such as {@code spikes=yes}). */
-    final Map<String, String> traits;
+    public final Map<String, String> traits;
 
     CarSheet(String car, String engine, int sits, int cooling, boolean turbo, int brakes, int exhausts) {
         this(car, engine, sits, cooling, turbo, brakes, exhausts, Map.of());
@@ -58,17 +58,22 @@ final class CarSheet {
     }
 
     /** True if the sheet gives trait {@code name} as yes. */
-    boolean is(String name) {
+    public boolean is(String name) {
         return "yes".equals(traits.get(name));
     }
 
+    /** Its exhaust pops when the throttle lifts at high revs: a charged engine's does, or one whose sheet says {@code pops=yes}. */
+    public boolean pops() {
+        return "yes".equals(traits.getOrDefault("pops", turbo ? "yes" : "no"));
+    }
+
     /** Trait {@code name}, or {@code fallback} if the sheet does not give it. */
-    String trait(String name, String fallback) {
+    public String trait(String name, String fallback) {
         return traits.getOrDefault(name, fallback);
     }
 
     /** Trait {@code name} as a number, or {@code fallback} if the sheet does not give one. */
-    float number(String name, float fallback) {
+    public float number(String name, float fallback) {
         try {
             String text = traits.get(name);
             return text == null ? fallback : Float.parseFloat(text);
