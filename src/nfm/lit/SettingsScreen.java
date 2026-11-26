@@ -568,7 +568,11 @@ final class SettingsScreen {
             return;
         }
         tab("Extras", "Additions to the original game. Each changes the look, the sound or the races, so until"
-                + " 1.0 each is off by default.");
+                + " 1.0 each is off by default. They are chosen from the menus: during a race they stay as they"
+                + " are.");
+        // an extra is chosen before a race, never during one (settings, "Gameplay switches cannot be changed
+        // during a race"); only a detail of the look, such as the explosions' flash, can still be turned
+        BooleanSupplier outOfRace = () -> backTo != Phase.PAUSEMENU;
         FeatureSettings.Kind heading = null;
         for (FeatureSettings.Switch s : switches) {
             if (!Features.registered(s.owner)) {
@@ -590,6 +594,9 @@ final class SettingsScreen {
             }
             if (owner != s) {
                 row.when(owner::on, "Only with " + owner.label + " on.");
+            }
+            if (owner == s || s.kind == FeatureSettings.Kind.RACE) {
+                row.and(outOfRace, "Chosen from the main menu, not during a race.");
             }
             add(row);
         }
@@ -1222,7 +1229,7 @@ final class SettingsScreen {
             Row row = rows.get(selected);
             title = row.label;
             help = row.help();
-            status = row.enabled() ? row.status() : row.disabledWhy;
+            status = row.enabled() ? row.status() : row.why();
             pictured = PICTURED.contains(row.label);
             picture = pictureName(row.label);
         } else {
@@ -1577,6 +1584,7 @@ final class SettingsScreen {
         private final Supplier<String> status;
         private BooleanSupplier enabled = () -> true;
         String disabledWhy;
+        private Supplier<String> why = () -> disabledWhy;
         /** The tab it is on, and the heading it starts a group under (or null); set as it is added. */
         int tab;
         String heading;
@@ -1593,8 +1601,22 @@ final class SettingsScreen {
             return this;
         }
 
+        /** Also only while {@code condition} holds; while it does not, {@code why} is what the row says. */
+        Row and(BooleanSupplier condition, String why) {
+            BooleanSupplier before = enabled;
+            Supplier<String> beforeWhy = this.why;
+            enabled = () -> condition.getAsBoolean() && before.getAsBoolean();
+            this.why = () -> condition.getAsBoolean() ? beforeWhy.get() : why;
+            return this;
+        }
+
         boolean enabled() {
             return enabled.getAsBoolean();
+        }
+
+        /** Why the row cannot be changed now. */
+        String why() {
+            return why.get();
         }
 
         String status() {
