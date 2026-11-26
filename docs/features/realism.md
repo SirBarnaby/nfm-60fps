@@ -64,9 +64,28 @@ scratches are kept per side.
   (1.3 times the heating, 0.7 the cooling), carbon sheds it (0.85, 1.3). A disc
   shows from 0.45: one hard stop from top speed leaves the fronts a dull red,
   four close together take them to about 0.9, orange; the glow is gone in
-  about 3 s at speed and 6 s standing. Drawn as a glowing octagon with a dark
-  hub on the wheel's outer face, steered and spun with the wheel
-  (`Canvas.onWheel`), only when that face is turned to the eye.
+  about 3 s at speed and 6 s standing. It glows inside the wheel, seen
+  through the wheel's openings (below).
+- **The wheels** (`WheelFace`). The game's wheel has a closed face: six
+  triangles from the rim's corners to the hub. With the extra on each is
+  drawn as the game draws it and then, right on it, an opening (the dark
+  inside of the wheel) and in it the brake disc, steel grey cold (dark iron
+  for a drum, which also glows half as much) or glowing with its heat. What
+  is left of the face is a hub cap (the inner 32%), six spokes (18% of a
+  triangle's width at each edge) and the rim's lip (the outer 12%), in the
+  rim's own colour and the game's own shading and outlines. Every corner of
+  an opening and a disc is a point of the game's triangle, so from any side
+  none of it is outside the wheel, and it is drawn at the triangle's place
+  in the car's back-to-front order (`CarLook.onPlane`), so a wing or a spike
+  in front of the wheel covers it as it covers the wheel. They steer, spin
+  and wobble with the wheel. Four cars' wheels have a hub that stands out of
+  the wheel (Nimi and Kool Kat a little, EL KING more, Sword of Justice a
+  spike 39 units long): an opening painted on that would be out in front of
+  the wheel, so their face is drawn flat, dished one unit (through the
+  extra's `bend`), and the point is put back on the hub, from the hub cap's
+  edge (up to 50% out under a long spike) to where the game's point was.
+  Beyond the distance where the game stops drawing a wheel's face there are
+  no openings either.
 - **Exhaust** heat rises with throttle and speed and falls slowly. A stopped
   car whose exhaust is above 0.35 **ticks**: a quiet metallic tick, less often
   as it cools, for about 15 s after a long fast run.
@@ -134,7 +153,12 @@ scratches are kept per side.
 - `Plane.d`: the colour a race car's polygon is drawn in passes through the
   extra (`CarLook.color`, before the fog: the same on the processor and in the
   kept scene); `CarLook.lamp` lights or darkens a light; a bent wheel's
-  polygon is drawn from tilted copies of its points.
+  polygon is drawn from tilted copies of its points (`CarLook.bend`), as is
+  the face of a wheel whose hub stood out.
+- `ContO.d`: right after it draws a race car's polygon it asks the extra
+  what to draw on it (`FeatureBridge.onPlane`, `CarLook.onPlane`, with the
+  colour `Plane.d` just drew it in): a wheel's openings and disc. Not asked
+  for a polygon the game left out, is breaking up or draws black.
 - `Madness.regx/regz`: every touch goes to `FeatureBridge.touch` before the
   game decides whether it dents.
 - `Sound3D.extraClip/carSound/carPop`: the extra's clips, each a recording

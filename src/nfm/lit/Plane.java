@@ -1197,6 +1197,9 @@ public class Plane {
                 Glow.set(Glow.LAMP);
             }
             rd.fillPolygon(screenX, screenY, n);
+            if (FeatureBridge.lookCar >= 0 && embos == 0 && !blackout) {
+                FeatureBridge.lookDrawn = red << 16 | green << 8 | blue; // an extra may draw on this polygon
+            }
             if (Medium.trk && gr == -10) {
                 noOutline = false;
             }

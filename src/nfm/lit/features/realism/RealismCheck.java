@@ -41,6 +41,33 @@ public final class RealismCheck {
     private static final int REAR_LIGHT = 10;
     private static final int FRONT_LIGHT = 12;
     private static final int FIRST_WHEEL = 14;
+    /** Each wheel's face: six triangles from the rim to the hub, as the game's wheels have. */
+    private static final int FIRST_RIM = FIRST_WHEEL + RaceView.WHEELS;
+    private static final int RIM_RGB = 0x9098a0;
+    /**
+     * The game's cars' wheels, from their model files: the model's size and
+     * width, its rims' size and depth, then each wheel's line (x, y, z,
+     * steering, width, height). {@link #wheelsOf} builds them as the game
+     * does.
+     */
+    private static final float[][] CAR_WHEELS = {
+        {2.05F, 1F, 20, 20, -32, 9, 27, 11, 13, 10, 32, 9, 27, 11, -13, 10, -32, 9, -72, 0, 13, 10, 32, 9, -72, 0, -13, 10},
+        {1.70F, 1.05F, 15, 30, -28, -8, 67, 11, 19, 10, 28, -8, 67, 11, -19, 10, -35, -8, -70, 0, 22, 12, 35, -8, -70, 0, -22, 12},
+        {2.47F, 1F, 20, 30, -38, 6, 75, 11, 15, 13, 38, 6, 75, 11, -15, 13, -38, 6, -38, 2, 15, 13, 38, 6, -38, 2, -15, 13},
+        {1.70F, 1F, 18, 20, -45, 3, 58, 11, 15, 11, 45, 3, 58, 11, -14, 11, -45, 3, -74, 3, 15, 11, 45, 3, -74, 3, -14, 11},
+        {1.90F, 1F, 15, 50, -29, 8, 41, 11, 14, 9, 29, 8, 41, 11, -14, 9, -29, 8, -41, 0, 14, 9, 29, 8, -41, 0, -14, 9},
+        {1.47F, 1F, 20, 0, -48, 6, 50, 11, 18, 15, 48, 6, 50, 11, -18, 15, -48, 6, -92, 0, 18, 15, 48, 6, -92, 0, -18, 15},
+        {1.70F, 1F, 20, 30, -36, 18, 108, 11, 19, 13, 36, 18, 108, 11, -19, 13, -36, 18, -48, 0, 19, 13, 36, 18, -48, 0, -19, 13},
+        {1.80F, 1F, 19, 50, -37, 16, 84, 11, 14, 13, 37, 16, 84, 11, -14, 13, -35, 16, -40, 0, 14, 13, 35, 16, -40, 0, -14, 13},
+        {1.57F, 1F, 21, 0, -46, -7, 64, 11, 19, 14, 46, -7, 64, 11, -19, 14, -46, -7, -60, 0, 19, 14, 46, -7, -60, 0, -19, 14},
+        {1.70F, 1F, 12, 160, -41, 16, 60, 11, 19, 15, 41, 16, 60, 11, -19, 15, -41, 16, -50, 0, 19, 15, 41, 16, -50, 0, -19, 15},
+        {1.39F, 1F, 20, 17, -47, 2, 64, 11, 17, 15, 47, 2, 64, 11, -17, 15, -47, 2, -86, 0, 17, 15, 47, 2, -86, 0, -17, 15},
+        {1.90F, 1F, 25, 60, -52, 48, 80, 11, 22, 16, 52, 48, 80, 11, -22, 16, -52, 48, -97, 0, 22, 16, 52, 48, -97, 0, -22, 16},
+        {1.60F, 1F, 24, 10, -48, 20, 67, 11, 19, 14, 48, 20, 67, 11, -19, 14, -48, 20, -67, 0, 19, 14, 48, 20, -67, 0, -19, 14},
+        {2.95F, 1.17F, 27, 30, -27, 34, 66, 11, 20, 15, 27, 34, 66, 11, -20, 15, -23, 34, -24, 0, 20, 15, 23, 34, -24, 0, -20, 15},
+        {1.60F, 1F, 19, -20, -42, 2, 72, 11, 17, 12, 42, 2, 72, 11, -17, 12, -42, 2, -84, 0, 17, 12, 42, 2, -84, 0, -17, 12},
+        {1.82F, 1F, 21, 10, -41, 0, 50, 11, 35, 20, 41, 0, 50, 11, -35, 20, -41, 0, -71, 0, 35, 20, 41, 0, -71, 0, -35, 20},
+    };
     /** The game's cars, as in its car list (GameSparker.carModels). */
     private static final String[] CARS = {"2000tornados", "formula7", "canyenaro", "lescrab", "nimi", "maxrevenge",
         "leadoxide", "koolkat", "drifter", "policecops", "mustang", "king", "audir8", "masheen", "radicalone",
@@ -61,6 +88,7 @@ public final class RealismCheck {
         RealismCheck c = new RealismCheck();
         c.cosmeticOnly();
         c.discs();
+        c.discInside();
         c.radiator();
         c.sidePods();
         c.smoke();
@@ -118,7 +146,34 @@ public final class RealismCheck {
             polys.add(c);
             kinds.add(new int[] {TYRE_RGB, 0, 0, w});
         }
+        for (int w = 0; w < RaceView.WHEELS; w++) {
+            // the wheel's face, a touch dished: six triangles from the rim's corners to the hub
+            float out = KEY_X[w] < 0 ? -1F : 1F;
+            float face = KEY_X[w] + out * 2F;
+            for (int k = 0; k < 6; k++) {
+                double a = k * Math.PI / 3D;
+                double b = (k + 1) * Math.PI / 3D;
+                add(polys, kinds, RIM_RGB, 0, 0, w,
+                        face, 2F + (float) Math.sin(a) * 6F, KEY_Z[w] + (float) Math.cos(a) * 6F,
+                        face, 2F + (float) Math.sin(b) * 6F, KEY_Z[w] + (float) Math.cos(b) * 6F,
+                        face - out, 2F, KEY_Z[w]);
+            }
+        }
         CarShape shape = new CarShape();
+        fill(shape, polys, kinds);
+        for (int w = 0; w < RaceView.WHEELS; w++) {
+            shape.hubX[w] = KEY_X[w] + (KEY_X[w] < 0 ? -2F : 2F);
+            shape.hubY[w] = 2F;
+            shape.hubZ[w] = KEY_Z[w];
+            shape.wheelRadius[w] = 8F;
+            shape.wheelHalfWidth[w] = 2F;
+            shape.steerX[w] = w < 2 ? KEY_X[w] : 0;
+        }
+        return shape;
+    }
+
+    /** The polygons into {@code shape}: corners, colours, what each is, the body's extent. */
+    private static void fill(CarShape shape, List<float[]> polys, List<int[]> kinds) {
         int corners = 0;
         for (float[] c : polys) {
             corners += c.length / 3;
@@ -150,15 +205,6 @@ public final class RealismCheck {
                 }
             }
         }
-        for (int w = 0; w < RaceView.WHEELS; w++) {
-            shape.hubX[w] = KEY_X[w] + (KEY_X[w] < 0 ? -2F : 2F);
-            shape.hubY[w] = 2F;
-            shape.hubZ[w] = KEY_Z[w];
-            shape.wheelRadius[w] = 8F;
-            shape.wheelHalfWidth[w] = 2F;
-            shape.steerX[w] = w < 2 ? KEY_X[w] : 0;
-        }
-        return shape;
     }
 
     private static void add(List<float[]> polys, List<int[]> kinds, int rgb, int glass, int light, int wheel,
@@ -330,8 +376,7 @@ public final class RealismCheck {
         heatBrakes();
         float front = Math.max(s.brake[0], s.brake[1]);
         float rear = Math.max(s.brake[2], s.brake[3]);
-        frame(-300F, GROUND - 20F, carZ);
-        int drawn = canvas.onWheel;
+        int drawn = wheelFaces(HeatEffects.discColor(s.brake[0]));
         float glow = canvas.maxGlow;
         int atSpeed = 0;
         while (Math.max(s.brake[0], s.brake[1]) > HeatEffects.VISIBLE && atSpeed < 2000) {
@@ -348,8 +393,188 @@ public final class RealismCheck {
         boolean ok = front > 0.8F && front > rear * 1.4F && rear > 0.3F && drawn > 0 && glow > 0.3F
                 && atSpeed >= 19 && atSpeed <= 6 * 19 && standing > atSpeed && standing <= 12 * 19;
         check(F, "brake discs glow", ok, "after four hard stops: fronts " + n(front) + ", rears " + n(rear)
-                + " (shows from " + n(HeatEffects.VISIBLE) + "), " + drawn + " disc polygons drawn, glow " + n(glow)
+                + " (shows from " + n(HeatEffects.VISIBLE) + "), a front disc glows in " + drawn
+                + " openings of its wheel, glow " + n(glow)
                 + "; gone in " + n(atSpeed / 19F) + " s at speed, " + n(standing / 19F) + " s standing");
+    }
+
+    /**
+     * Draws what the extra draws on every face triangle of the car's wheels,
+     * as the game asks for it after drawing each; returns the polygons drawn
+     * in colour {@code rgb}.
+     */
+    private int wheelFaces(int rgb) {
+        canvas.reset();
+        CarShape shape = v.shape[0];
+        for (int i = 0; i < shape.planes; i++) {
+            if (shape.wheel[i] >= 0) {
+                real.onPlane(0, i, shape.rgb[i], canvas);
+            }
+        }
+        return canvas.drawn(rgb);
+    }
+
+    /**
+     * The brake disc sits inside the wheel, on every car: the wheels of the
+     * game's sixteen cars, built as the game builds them, each with hot
+     * brakes. Every wheel shows its disc in six openings; every corner of an
+     * opening and of a disc is on the wheel's face or inside it, within the
+     * rim, and within its own triangle of the face, so from the side and
+     * from behind none of it is outside the wheel. A hub that stood out of
+     * the wheel (Sword of Justice's spike) is drawn flat, its point on the
+     * hub.
+     */
+    private void discInside() {
+        int wheels = 0;
+        int discs = 0;
+        int flat = 0;
+        int proud = 0;
+        float farthestOut = -Float.MAX_VALUE;
+        float beyondRim = -Float.MAX_VALUE;
+        float offTriangle = 0F;
+        float proudest = 0F;
+        StringBuilder wrong = new StringBuilder();
+        int[] x = new int[3];
+        int[] y = new int[3];
+        int[] z = new int[3];
+        int[] ox = new int[3];
+        int[] oy = new int[3];
+        int[] oz = new int[3];
+        for (int car = 0; car < CAR_WHEELS.length; car++) {
+            start();
+            CarShape shape = wheelsOf(CAR_WHEELS[car]);
+            v.shape[0] = shape;
+            s.parts.build(shape, CarSheet.DEFAULT, DROP);
+            Arrays.fill(s.brake, 1F);
+            int hot = HeatEffects.discColor(1F);
+            for (int w = 0; w < RaceView.WHEELS; w++) {
+                wheels++;
+                float out = s.parts.faceOut[w];
+                float face = s.parts.faceX[w];
+                proudest = Math.max(proudest, s.parts.hubProud[w]);
+                proud += s.parts.hubProud[w] > 0F ? 1 : 0;
+                int seen = 0;
+                for (int i = 0; i < shape.planes; i++) {
+                    if (shape.wheel[i] != w || s.parts.rimHub[i] < 0) {
+                        continue;
+                    }
+                    int f = shape.first[i];
+                    int hub = s.parts.rimHub[i];
+                    corners(shape, i, x, y, z);
+                    boolean bent = real.bend(0, i, x, y, z, 3, ox, oy, oz);
+                    if (s.parts.hubProud[w] > 0F) {
+                        flat += bent && (ox[hub] - face) * out <= 0F ? 1 : 0;
+                    } else if (bent) {
+                        wrong.append(' ').append(CARS[car]).append(" bent a true wheel");
+                    }
+                    canvas.reset();
+                    canvas.keeping = true;
+                    real.onPlane(0, i, RIM_RGB, canvas);
+                    canvas.keeping = false;
+                    float rim = (float) Math.hypot(shape.y[f + (hub + 1) % 3] - shape.hubY[w],
+                            shape.z[f + (hub + 1) % 3] - shape.hubZ[w]);
+                    for (int k = 0; k < canvas.kept.size(); k++) {
+                        if (canvas.keptColor.get(k) == RIM_RGB) {
+                            continue; // the hub's point, put back: the wheel's own, not the brake
+                        }
+                        if (canvas.keptColor.get(k) == hot && canvas.keptGlow.get(k) > 0.3F) {
+                            seen++;
+                        }
+                        float[] c = canvas.kept.get(k);
+                        for (int j = 0; j < c.length; j += 3) {
+                            farthestOut = Math.max(farthestOut, (c[j] - face) * out);
+                            beyondRim = Math.max(beyondRim, (float) Math.hypot(c[j + 1] - shape.hubY[w],
+                                    c[j + 2] - shape.hubZ[w]) - rim);
+                            offTriangle = Math.max(offTriangle, outside(shape, f, hub, c[j + 1], c[j + 2]));
+                        }
+                    }
+                }
+                discs += seen;
+                if (seen != 6) {
+                    wrong.append(' ').append(CARS[car]).append(" wheel ").append(w).append(": ").append(seen);
+                }
+            }
+        }
+        boolean ok = wheels == 64 && discs == 6 * wheels && wrong.isEmpty() && farthestOut <= 0.01F
+                && beyondRim < 0F && offTriangle <= 0.01F && proud > 0 && flat == 6 * proud;
+        check(F, "the brake disc sits inside the wheel", ok, CAR_WHEELS.length + " cars, " + wheels
+                + " wheels, each disc seen in 6 openings (" + discs + "); the farthest any opening or disc reaches"
+                + " out of its wheel's face " + n(farthestOut) + " (0 is on the face, less is inside), past its rim "
+                + n(beyondRim) + ", out of its own triangle of the face " + n(offTriangle) + "; " + proud
+                + " wheels whose hub stood out (by up to " + n(proudest) + ") drawn flat with the point on the hub, "
+                + flat + " of their " + 6 * proud + " triangles"
+                + wrong);
+    }
+
+    /**
+     * How far point {@code (py, pz)} is outside face triangle {@code f}
+     * (its hub corner {@code hub}) seen along the axle: 0 inside it.
+     */
+    private static float outside(CarShape shape, int f, int hub, float py, float pz) {
+        float worst = 0F;
+        for (int k = 0; k < 3; k++) {
+            int a = f + (hub + k) % 3;
+            int b = f + (hub + k + 1) % 3;
+            int c = f + (hub + k + 2) % 3;
+            float ey = shape.y[b] - shape.y[a];
+            float ez = shape.z[b] - shape.z[a];
+            float len = (float) Math.hypot(ey, ez);
+            // which side of edge a-b the third corner is on is inside
+            float side = ey * (shape.z[c] - shape.z[a]) - ez * (shape.y[c] - shape.y[a]);
+            float d = (ey * (pz - shape.z[a]) - ez * (py - shape.y[a])) / Math.max(1e-3F, len);
+            worst = Math.max(worst, side >= 0F ? -d : d);
+        }
+        return worst;
+    }
+
+    /**
+     * The four wheels of a car as the game builds them from its model's
+     * lines ({@code Wheels.make}: whole numbers, the face's six triangles
+     * from the rim's corners to the hub, the tread across the tyre), as a
+     * car's shape with no body.
+     */
+    static CarShape wheelsOf(float[] car) {
+        List<float[]> polys = new ArrayList<>();
+        List<int[]> kinds = new ArrayList<>();
+        float size = car[0];
+        float width = car[1];
+        float rim = car[2] / 10F;
+        float depth = car[3] / 10F;
+        CarShape shape = new CarShape();
+        for (int w = 0; w < RaceView.WHEELS; w++) {
+            int at = 4 + w * 6;
+            int x = (int) (car[at] * size * width);
+            int y = (int) (car[at + 1] * size);
+            int z = (int) (car[at + 2] * size);
+            float widthScale = (int) (car[at + 4] * size * width) / 10F;
+            float sizeScale = (int) (car[at + 5] * size) / 10F;
+            int face = (int) (x - 4F * widthScale);
+            int inner = (int) (x + 4F * widthScale);
+            int hub = (int) (x - depth * widthScale);
+            int[] ry = {y, (int) (y + 8.66D * rim), (int) (y + 8.66D * rim), y, (int) (y - 8.66D * rim),
+                (int) (y - 8.66D * rim)};
+            int[] rz = {(int) (z + 10F * rim), (int) (z + 5F * rim), (int) (z - 5F * rim), (int) (z - 10F * rim),
+                (int) (z - 5F * rim), (int) (z + 5F * rim)};
+            for (int k = 0; k < 6; k++) {
+                int n = (k + 1) % 6;
+                add(polys, kinds, RIM_RGB, 0, 0, w, face, ry[k], rz[k], face, ry[n], rz[n], hub, y, z);
+            }
+            int top = (int) (y - 12F * sizeScale);
+            int bottom = (int) (y + 12F * sizeScale);
+            int ahead = (int) (z + 5F * sizeScale);
+            int behind = (int) (z - 5F * sizeScale);
+            add(polys, kinds, TYRE_RGB, 0, 0, w, face, top, ahead, face, top, behind, inner, top, behind, inner, top, ahead);
+            add(polys, kinds, TYRE_RGB, 0, 0, w, face, bottom, behind, face, bottom, ahead, inner, bottom, ahead, inner,
+                    bottom, behind);
+            shape.hubX[w] = x;
+            shape.hubY[w] = y;
+            shape.hubZ[w] = z;
+            shape.wheelRadius[w] = 12F * sizeScale;
+            shape.wheelHalfWidth[w] = Math.abs(4F * widthScale);
+            shape.steerX[w] = car[at + 3] == 11F ? inner : 0;
+        }
+        fill(shape, polys, kinds);
+        return shape;
     }
 
     private void heatBrakes() {

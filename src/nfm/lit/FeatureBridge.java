@@ -504,6 +504,25 @@ final class FeatureBridge {
         return rgb;
     }
 
+    /**
+     * The colour {@link #lookCar}'s polygon {@link #lookPlane} was just
+     * drawn in (0xRRGGBB), or -1 if the game left it out: {@code Plane.d}
+     * sets it, the car's drawing loop reads it and puts it back to -1.
+     */
+    static int lookDrawn = -1;
+
+    /** After {@link #lookCar}'s polygon {@link #lookPlane} was drawn: the extras draw on it (a wheel's openings). */
+    static void onPlane() {
+        int rgb = lookDrawn;
+        lookDrawn = -1;
+        if (!drawing || !Features.carLooks()) {
+            return;
+        }
+        canvas.startItem();
+        Features.carOnPlane(lookCar, lookPlane, rgb, canvas);
+        canvas.endItem();
+    }
+
     /** True if {@link #lookCar}'s polygon {@link #lookPlane} is drawn from other corners, then in {@link #bentX} etc. */
     static boolean bend(int[] x, int[] y, int[] z, int n) {
         return n <= bentX.length && Features.carBend(lookCar, lookPlane, x, y, z, n, bentX, bentY, bentZ);
@@ -611,7 +630,7 @@ final class FeatureBridge {
                 Medium.z + Precise.camZ, view.tick, ahead ? 1F : Math.max(0F, Math.min(1F, share)));
         HelmetCam.FEATURE.drawingFor(helmetFrame); // from the helmet: its dashboard
         Features.queue(queue);
-        if (queue.isEmpty()) {
+        if (queue.isEmpty() && !Features.carLooks()) { // a car look draws on the cars' own polygons, queue or not
             return;
         }
         queue.sort();

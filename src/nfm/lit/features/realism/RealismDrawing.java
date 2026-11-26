@@ -1,19 +1,15 @@
 package nfm.lit.features.realism;
 
-import nfm.lit.features.CarShape;
 import nfm.lit.features.Canvas;
 
 /**
- * Draws what damage and heat put on a car: glowing discs on the wheels,
- * flames at the exhaust tips, the windscreen's cracks, the scratches, drawn
- * brake lights. Each is a few flat polygons on the car ({@link Canvas#onCar},
- * so it moves with it) or on a wheel ({@link Canvas#onWheel}). Nothing is
- * allocated.
+ * Draws what damage and heat put on a car: flames at the exhaust tips, the
+ * windscreen's cracks, the scratches, drawn brake lights. Each is a few flat
+ * polygons on the car ({@link Canvas#onCar}, so it moves with it). The
+ * wheels' openings and discs are {@link WheelFace}'s. Nothing is allocated.
  */
 final class RealismDrawing {
 
-    private static final float TAU = 6.2831855F;
-    private static final int HUB = 0x3a3a3c;
     private static final int CRACK = 0xe6eef2;
     private static final int STREAK = 0xd8dadc;
     private static final int BARE_METAL = 0xb4b8bc;
@@ -39,37 +35,6 @@ final class RealismDrawing {
     private final float[] x = new float[Canvas.MAX_CORNERS];
     private final float[] y = new float[Canvas.MAX_CORNERS];
     private final float[] z = new float[Canvas.MAX_CORNERS];
-
-    /** Car {@code car}'s brake disc on wheel {@code w}, glowing with its heat, seen through the wheel. */
-    void disc(Canvas canvas, int car, CarState s, int w) {
-        CarShape shape = s.parts.shape;
-        float r = shape.wheelRadius[w];
-        if (r <= 0F) {
-            return;
-        }
-        float t = s.brake[w];
-        float out = shape.hubX[w] < 0F ? -1F : 1F;
-        float face = shape.hubX[w] + out * (shape.wheelHalfWidth[w] + 0.3F);
-        int hubY = Math.round(shape.hubY[w]);
-        int hubZ = Math.round(shape.hubZ[w]);
-        canvas.color(canvas.fog(HeatEffects.discColor(t), s.at[0], s.at[1], s.at[2]));
-        canvas.glow(HeatEffects.discGlow(t));
-        octagon(face, shape.hubY[w], shape.hubZ[w], r * 0.62F);
-        canvas.onWheel(car, x, y, z, 8, shape.steerX[w], hubY, hubZ);
-        canvas.glow(0F);
-        canvas.color(canvas.fog(HUB, s.at[0], s.at[1], s.at[2]));
-        octagon(face + out * 0.1F, shape.hubY[w], shape.hubZ[w], r * 0.28F);
-        canvas.onWheel(car, x, y, z, 8, shape.steerX[w], hubY, hubZ);
-    }
-
-    private void octagon(float px, float py, float pz, float r) {
-        for (int k = 0; k < 8; k++) {
-            float a = k * (TAU / 8F);
-            x[k] = px;
-            y[k] = py + (float) Math.sin(a) * r;
-            z[k] = pz + (float) Math.cos(a) * r;
-        }
-    }
 
     /**
      * The flame at car {@code car}'s exhaust tip {@code pipe}: orange on

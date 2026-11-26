@@ -405,6 +405,24 @@ public final class Features {
         }
     }
 
+    /** True while a feature changes how the cars' own polygons are drawn ({@link CarLook}). */
+    public static boolean carLooks() {
+        return look != null;
+    }
+
+    /** {@link CarLook#onPlane}; a feature that throws is switched off. */
+    public static void carOnPlane(int car, int plane, int rgb, Canvas canvas) {
+        CarLook l = look;
+        if (l == null) {
+            return;
+        }
+        try {
+            l.onPlane(car, plane, rgb, canvas);
+        } catch (RuntimeException e) {
+            fail(lookOwner, e);
+        }
+    }
+
     /** True while a feature draws the cars' bodies elsewhere ({@link CarBody}): the game asks it for their polygons. */
     public static boolean carBodies() {
         return body != null;

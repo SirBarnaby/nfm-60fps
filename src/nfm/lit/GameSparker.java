@@ -965,12 +965,20 @@ public class GameSparker extends Panel implements Runnable {
         }
     }
 
+    /** The view a race starts in: 0 the chase view, or a test run's {@code -Dnfm.startview=around} (1) or {@code watch} (2). */
+    private static final int START_VIEW = switch (System.getProperty("nfm.startview", "").toLowerCase(java.util.Locale.ROOT)) {
+        case "around" -> 1;
+        case "watch" -> 2;
+        default -> 0;
+    };
+
     private void resetView() {
         synchronized (inputLock) {
-            live[0].view = 0;
-            live[1].view = 0;
-            view = 0;
-            view2 = 0;
+            int start = START_VIEW; // the chase view, unless a test run asks for another
+            live[0].view = start;
+            live[1].view = start;
+            view = start;
+            view2 = start;
             boolean helmet = FeatureBridge.helmetAtStart(); // a test run may start in it
             live[0].helmet = live[1].helmet = helmet;
             helmetView[0] = helmetView[1] = helmet;
@@ -6627,6 +6635,8 @@ public class GameSparker extends Panel implements Runnable {
     }
 
     /** -Dnfm.autotest.shots=false: a test run takes no screenshots, so every frame is the game's own. */
+    /** The car the smoke test drives (its number in the car list), or -1 for the first: {@code -Dnfm.autotest.car}. */
+    private static final int TEST_CAR = Integer.getInteger("nfm.autotest.car", -1);
     private static final boolean SHOTS = !"false".equalsIgnoreCase(System.getProperty("nfm.autotest.shots"));
     /**
      * How often the live test takes a race screenshot: rarely, as writing one
@@ -7075,6 +7085,10 @@ public class GameSparker extends Panel implements Runnable {
                 if (phase == Phase.MAINMENU) {
                     // Play Game, wherever the menu came back to from the settings (not Split Screen)
                     ui.opselect = GameUi.MENU_PLAY;
+                }
+                if (phase == Phase.CARSELECT && TEST_CAR >= 0 && TEST_CAR < GameFacts.numberOfCars) {
+                    ui.unlocked = Math.max(ui.unlocked, GameFacts.numberOfStages); // every car is there to pick
+                    ui.sc[0] = TEST_CAR; // -Dnfm.autotest.car: the smoke test drives this car
                 }
                 pressEnter();
                 lastMenuPress = now;

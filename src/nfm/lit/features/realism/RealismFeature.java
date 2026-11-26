@@ -35,7 +35,6 @@ public final class RealismFeature implements Feature, CarLook {
     static final int DEBRIS_KEPT = 400;
     static final int CAR = 2000;
     static final int PER_CAR = 16;
-    static final int DISC = 0;
     static final int FLAME = 4;
     static final int CRACKS = 9;
     static final int SCRATCH = 10;
@@ -74,6 +73,7 @@ public final class RealismFeature implements Feature, CarLook {
     private final HeatEffects heat = new HeatEffects(this);
     private final DamageEffects damage = new DamageEffects(this);
     private final RealismDrawing drawing = new RealismDrawing();
+    private final WheelFace wheelFace = new WheelFace();
     private final float[] p = new float[3];
     private float eyeX;
     private float eyeY;
@@ -195,7 +195,7 @@ public final class RealismFeature implements Feature, CarLook {
     }
 
     /** {@code target} lit as the game lit {@code base} into {@code shown}: the shading kept. */
-    private static int shaded(int target, int shown, int base) {
+    static int shaded(int target, int shown, int base) {
         float lit = light(shown) / Math.max(8F, light(base));
         return scale(target, Math.min(1.6F, lit));
     }
@@ -262,7 +262,13 @@ public final class RealismFeature implements Feature, CarLook {
             return false;
         }
         int w = parts.shape.wheel[plane];
-        if (w < 0 || s.bent[w] <= 0F) {
+        if (w < 0) {
+            return false;
+        }
+        // a face triangle whose hub stood out of the wheel is drawn flat: its point is on the hub (WheelFace)
+        int hub = parts.rimHub[plane];
+        boolean flat = hub >= 0 && hub < n && parts.hubProud[w] > 0F;
+        if (!flat && s.bent[w] <= 0F) {
             return false;
         }
         // tilted about the upright through the hub: spun with the wheel, the tilt goes round, a wobble
@@ -272,13 +278,27 @@ public final class RealismFeature implements Feature, CarLook {
         float hx = parts.shape.hubX[w];
         float hz = parts.shape.hubZ[w];
         for (int k = 0; k < n; k++) {
-            float dx = x[k] - hx;
+            float dx = (flat && k == hub ? WheelFace.flat(parts, w, x[k]) : x[k]) - hx;
             float dz = z[k] - hz;
             outX[k] = Math.round(hx + dx * cos - dz * sin);
             outY[k] = y[k];
             outZ[k] = Math.round(hz + dx * sin + dz * cos);
         }
         return true;
+    }
+
+    /** A wheel's face triangle was drawn: its opening and the brake disc in it ({@link WheelFace}). */
+    @Override
+    public void onPlane(int car, int plane, int rgb, Canvas canvas) {
+        if (car < 0 || car >= cars) {
+            return;
+        }
+        CarState s = states[car];
+        CarParts parts = s.parts;
+        if (parts.shape == null || plane < 0 || plane >= parts.shape.planes || parts.rimHub[plane] < 0) {
+            return;
+        }
+        wheelFace.draw(canvas, car, s, plane, parts.shape.wheel[plane], rgb);
     }
 
     /* ------------------------------------------------------------ drawing */
@@ -314,15 +334,6 @@ public final class RealismFeature implements Feature, CarLook {
         }
         CarParts parts = s.parts;
         int base = CAR + c * PER_CAR;
-        for (int w = 0; w < RaceView.WHEELS; w++) {
-            if (s.brake[w] > HeatEffects.VISIBLE) {
-                float out = parts.shape.hubX[w] < 0F ? -1F : 1F;
-                float face = parts.shape.hubX[w] + out * parts.shape.wheelHalfWidth[w];
-                if (s.faces(face, parts.shape.hubY[w], parts.shape.hubZ[w], out, 0F, 0F, eyeX, eyeY, eyeZ)) {
-                    queue.after(c, base + DISC + w);
-                }
-            }
-        }
         for (int pipe = 0; pipe < parts.pipes; pipe++) {
             if (s.flameReach[pipe] > 0F) {
                 s.world(parts.pipeX[pipe], parts.pipeY[pipe], parts.pipeZ[pipe], p);
@@ -366,7 +377,7 @@ public final class RealismFeature implements Feature, CarLook {
         }
         CarState s = states[c];
         if (part < FLAME) {
-            drawing.disc(canvas, c, s, part - DISC);
+            return; // the discs are drawn in the wheels, as the wheels are drawn (onPlane)
         } else if (part < CRACKS) {
             drawing.flame(canvas, c, s, part - FLAME, nitrous[c]);
         } else if (part == CRACKS) {

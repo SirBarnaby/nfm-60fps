@@ -718,6 +718,12 @@ public class ContO {
                     if (FeatureBridge.lookCar < 0 || !FeatureBridge.hidden()) { // the helmet cam leaves some out
                         plane.d(rd, x - Medium.x, y - Medium.y, z - Medium.z, xz, xy, zy, wxz, wzy, noline, screenSize,
                                 blackout);
+                        if (FeatureBridge.lookDrawn >= 0) {
+                            FeatureBridge.onPlane(); // an extra's own polygons on this one (a wheel's openings)
+                            if (Precise.on) {
+                                Precise.object(this);
+                            }
+                        }
                     }
                     if (plane.master != 0 && stg[plane.master - 1] != 0) {
                         pdust(plane.master - 1, rd, 1);

@@ -35,6 +35,25 @@ final class CarParts {
 
     /* per polygon */
     byte[] role = new byte[0];
+    /**
+     * For a triangle of a wheel's face (the game's wheels have six, from the
+     * rim's corners to the hub): which of its corners is the hub's, 0 to 2;
+     * -1 for every other polygon.
+     */
+    byte[] rimHub = new byte[0];
+    /** Each wheel's face: which way is out along x (-1 or 1; 0 for a wheel with no face triangles). */
+    final float[] faceOut = new float[RaceView.WHEELS];
+    /** Where the face is along x: its rim's corners. */
+    final float[] faceX = new float[RaceView.WHEELS];
+    /**
+     * How far the hub of the game's wheel stands out of its face: 0 for a
+     * flat or dished wheel. A wheel whose hub stands out (a pointed cap, a
+     * spike) is drawn with its face flat and the point on its hub
+     * ({@link WheelFace}).
+     */
+    final float[] hubProud = new float[RaceView.WHEELS];
+    /** From the hub (0) to the rim (1), where the wheel's hub cap ends: wider under a point that stands far out. */
+    final float[] hubEnd = new float[RaceView.WHEELS];
     /** How low on the body: 0 at the top, 1 at the sills (1 for a wheel), where dirt sticks. */
     float[] low = new float[0];
     /** -1 if it is no side face, else the side it faces ({@link #LEFT}, {@link #RIGHT}). */
@@ -155,6 +174,7 @@ final class CarParts {
             extent(s, i);
         }
         classify(s, n);
+        faces(s, n);
         findScreen(s, n);
         findBonnet(s, n);
         place(s, n);
@@ -172,6 +192,7 @@ final class CarParts {
         if (role.length < n) {
             role = new byte[n];
             low = new float[n];
+            rimHub = new byte[n];
             side = new byte[n];
             nx = new float[n];
             ny = new float[n];
@@ -211,9 +232,11 @@ final class CarParts {
         for (int i = 0; i < n; i++) {
             float t = (my[i] - top) / height;
             low[i] = clamp((t - 0.45F) / 0.4F);
+            rimHub[i] = -1;
             if (s.wheel[i] >= 0) {
                 role[i] = WHEEL;
                 low[i] = 1F;
+                rimHub[i] = rimHub(s, i);
             } else if (s.light[i] == 1) {
                 role[i] = LIGHT_FRONT;
             } else if (s.light[i] == 2) {
@@ -229,6 +252,69 @@ final class CarParts {
                 side[i] = (byte) (mx[i] < 0F ? LEFT : RIGHT);
             }
         }
+    }
+
+    /** Each wheel's face from its triangles: where it is, which way is out, how far its hub stands out. */
+    private void faces(CarShape s, int n) {
+        for (int w = 0; w < RaceView.WHEELS; w++) {
+            faceOut[w] = 0F;
+            hubProud[w] = 0F;
+            hubEnd[w] = WheelFace.HUB;
+            // the tyre's middle along x, from its tread (the wheel's four-cornered polygons)
+            float sum = 0F;
+            int points = 0;
+            for (int i = 0; i < n; i++) {
+                if (s.wheel[i] == w && s.count[i] == 4) {
+                    for (int k = 0; k < 4; k++) {
+                        sum += s.x[s.first[i] + k];
+                        points++;
+                    }
+                }
+            }
+            for (int i = 0; i < n; i++) {
+                if (s.wheel[i] != w || rimHub[i] < 0) {
+                    continue;
+                }
+                int f = s.first[i];
+                float face = s.x[f + (rimHub[i] + 1) % 3];
+                float hub = s.x[f + rimHub[i]];
+                float middle = points > 0 ? sum / points : 0F;
+                faceX[w] = face;
+                faceOut[w] = face < middle ? -1F : 1F;
+                hubProud[w] = Math.max(0F, (hub - face) * faceOut[w]);
+                float reach = (float) Math.hypot(s.y[f + (rimHub[i] + 1) % 3] - s.hubY[w],
+                        s.z[f + (rimHub[i] + 1) % 3] - s.hubZ[w]);
+                hubEnd[w] = Math.min(WheelFace.HUB_WIDEST, WheelFace.HUB + 0.06F * hubProud[w] / Math.max(1F, reach));
+                break;
+            }
+        }
+    }
+
+    /**
+     * If wheel polygon {@code i} is a triangle of the wheel's face, the
+     * corner at the hub (the one on the axle; the other two are out on the
+     * rim, both as far from it), else -1.
+     */
+    private static byte rimHub(CarShape s, int i) {
+        if (s.count[i] != 3) {
+            return -1;
+        }
+        int w = s.wheel[i];
+        int f = s.first[i];
+        int hub = -1;
+        float reach = 0F;
+        for (int k = 0; k < 3; k++) {
+            float d = (float) Math.hypot(s.y[f + k] - s.hubY[w], s.z[f + k] - s.hubZ[w]);
+            if (d < 1.5F) {
+                if (hub >= 0) {
+                    return -1; // two corners on the axle: no face triangle
+                }
+                hub = k;
+            } else {
+                reach = Math.max(reach, d);
+            }
+        }
+        return (byte) (reach >= WheelFace.SMALLEST ? hub : -1);
     }
 
     /** The windscreen: the forward-facing glass that faces forward most over the biggest area. */

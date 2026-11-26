@@ -19,7 +19,18 @@ public final class CheckCanvas implements Canvas {
     /** The widest polygon drawn in each colour since the last reset: the farthest two of its corners apart. */
     public final java.util.Map<Integer, Float> spans = new java.util.HashMap<>();
 
+    /** While true, every polygon's corners are kept in {@link #kept} (x, y, z of each in turn) with its colour in {@link #keptColor}. */
+    public boolean keeping;
+    public final java.util.List<float[]> kept = new java.util.ArrayList<>();
+    public final java.util.List<Integer> keptColor = new java.util.ArrayList<>();
+    public final java.util.List<Float> keptGlow = new java.util.ArrayList<>();
+    private float glowNow;
+
     public void reset() {
+        kept.clear();
+        keptColor.clear();
+        keptGlow.clear();
+        glowNow = 0F;
         polygons = 0;
         corners = 0;
         moving = 0;
@@ -58,6 +69,7 @@ public final class CheckCanvas implements Canvas {
     @Override
     public void glow(float level) {
         maxGlow = Math.max(maxGlow, level);
+        glowNow = level;
     }
 
     @Override
@@ -92,6 +104,17 @@ public final class CheckCanvas implements Canvas {
     private void count(float[] x, float[] y, float[] z, int n) {
         polygons++;
         corners += n;
+        if (keeping) {
+            float[] c = new float[n * 3];
+            for (int i = 0; i < n; i++) {
+                c[i * 3] = x[i];
+                c[i * 3 + 1] = y[i];
+                c[i * 3 + 2] = z[i];
+            }
+            kept.add(c);
+            keptColor.add(lastColor);
+            keptGlow.add(glowNow);
+        }
         colors.merge(lastColor, 1, Integer::sum);
         float widest = 0F;
         for (int i = 0; i < n; i++) {
