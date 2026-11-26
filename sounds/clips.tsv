@@ -1,0 +1,38 @@
+# The clips the game plays, cut from sources/ by make.py into src/nfm/lit/features/sounds/<name>.wav.
+# start and seconds are within the file in sources/. rate is the game's: its own effects are 8000 to 22050 Hz.
+# kind: shot (played once; faded out over its last 30 ms) or loop (its end cross-faded into its start, 0.2 s).
+# filter: an ffmpeg audio filter applied before resampling, or - for none.
+# name	source	start	seconds	rate	kind	filter	what it is
+glint	clash	0.00	0.55	22050	shot	highpass=f=250	metal ringing on metal: Sword of Justice's spikes on a ram
+tick	ping	0.03	0.30	22050	shot	-	hot metal ticking as a stopped car cools
+thud	thud	0.00	0.60	11025	shot	lowpass=f=3500	a heavy landing's thud
+scrape	scrape	0.05	1.30	11025	shot	-	metal dragged along the road
+rattle	rattle2	1.90	0.85	11025	shot	-	a damaged car's loose metal over a bump
+knock	knock	0.19	0.30	11025	shot	-	luggage knocking about (Wow Caninaro)
+glass	glass	0.28	0.80	22050	shot	-	a window going
+blast	blast	0.00	2.20	11025	shot	-	dynamite, and a wreck blowing up
+bang	blast2	0.30	2.20	11025	shot	-	the bomb
+pop1	antilag	1.56	0.24	11025	shot	highpass=f=120	an exhaust pop
+pop2	antilag	1.96	0.24	11025	shot	highpass=f=120	an exhaust pop
+pop3	antilag	6.72	0.24	11025	shot	highpass=f=120	an exhaust pop
+backfire	backfire	0.19	0.45	11025	shot	-	a loud backfire
+blowoff	turbo	0.05	1.20	11025	shot	highpass=f=300	a turbo's blow-off when the throttle lifts
+airbrake	airbrake	0.00	1.50	11025	shot	-	a truck's air brakes breathing out (EL KING)
+creak1	creak	0.82	0.48	11025	shot	highpass=f=150	suspension creak
+creak2	creak	5.36	0.48	11025	shot	highpass=f=150	suspension creak
+creak3	creak	17.86	0.42	11025	shot	highpass=f=150	suspension creak
+squeak	creak	12.30	0.40	11025	shot	highpass=f=150	a hurt suspension squeaking in a turn
+washer	wipewet	0.15	0.65	11025	shot	-	the washer's spray
+wipewet	wipewet	3.40	1.45	11025	shot	-	a wiper across wet glass
+wipedry	wipedry	1.30	1.85	11025	shot	-	a wiper across dry glass (CC BY 3.0: NoiseCollector)
+wipemotion	wipemotion	1.25	1.65	11025	shot	-	the wiper motor and arm, one sweep
+turbo	dyno	4.00	2.50	22050	loop	highpass=f=2800	a turbo's whistle, bent by the revs
+blower	blower	1.00	1.10	11025	loop	highpass=f=700	a supercharger's whine, bent by the revs
+whine	revwhine	2.00	2.00	11025	loop	highpass=f=350	the gear whine of reverse (CC BY 3.0: jessepash)
+beep	beep	0.00	1.00	11025	loop	-	a truck's reverse beeper
+road	road	1.00	2.50	11025	loop	highpass=f=60	tyres rolling on a hard road
+gravel	gravel	1.00	2.50	11025	loop	-	tyres rolling on loose ground
+nitro	gashiss	0.50	2.00	11025	loop	-	nitrous rushing out, on the ground
+afterburner	afterburner	0.50	2.50	11025	loop	-	nitrous in the air: an afterburner
+fuse	fuseburn	1.00	2.00	22050	loop	-	the dynamite's fuse burning
+fan	fan	1.00	2.00	11025	loop	-	a radiator fan

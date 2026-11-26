@@ -60,6 +60,9 @@ public final class ExtrasCheck {
         if (wants(only, "helmetcam")) {
             nfm.lit.features.helmetcam.HelmetCheck.run();
         }
+        if (wants(only, "sounds")) {
+            nfm.lit.features.sounds.SoundsCheck.run();
+        }
         if (wants(only, "enginesound")) {
             nfm.lit.features.enginesound.EngineCheck.run();
         }

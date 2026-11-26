@@ -1,0 +1,41 @@
+# The recordings the game's extra sounds are cut from. Each file in sources/ is an excerpt of the
+# recording's preview, fetched 26 Nov 2026 and kept as 24 kHz mono Opus: from "from" seconds for "seconds".
+# name	site id	author	title	license	from	seconds	page
+wipewet	freesound 50905	RutgerMuller	car windshield wipers spray water squeaky.wav	CC0 1.0	0	10.0	https://freesound.org/people/RutgerMuller/sounds/50905/
+wipedry	freesound 55102	NoiseCollector	wiperdryinterior.wav	CC BY 3.0	0	4.8	https://freesound.org/people/NoiseCollector/sounds/55102/
+wipemotion	bigsoundbank 1509	Joseph SARDIN	Windshield wipers, slow #1	CC0 1.0	0	12.2	https://bigsoundbank.com/windshield-wipers-slow-s1509.html
+creak	freesound 86234	nmscher	Car_Suspension_Creak.aif	CC0 1.0	0	22.5	https://freesound.org/people/nmscher/sounds/86234/
+airbrake	freesound 504865	rabbydaw	air_brakes_loud_fade_out.wav	CC0 1.0	0	5.5	https://freesound.org/people/rabbydaw/sounds/504865/
+turbo	freesound 659544	EwanPenman11	Turbo Spooling and Blow Off.WAV	CC0 1.0	0	5.3	https://freesound.org/people/EwanPenman11/sounds/659544/
+dyno	freesound 496171	editboy23	Import car revs on Chassis Dyno with Turbo.wav	CC0 1.0	10	12.0	https://freesound.org/people/editboy23/sounds/496171/
+blower	freesound 529315	derrick.d	Centrifugal Supercharge	CC0 1.0	3	6.0	https://freesound.org/people/derrick.d/sounds/529315/
+antilag	freesound 797835	modusmogulus	Car Antilag (No cleanup, 32float)	CC0 1.0	0	10.5	https://freesound.org/people/modusmogulus/sounds/797835/
+backfire	freesound 105351	CeebFrack	BACKFIRE.ogg	CC0 1.0	0	2.0	https://freesound.org/people/CeebFrack/sounds/105351/
+backfire2	freesound 351738	nsstudios	backfiring vehicle	CC0 1.0	0	3.5	https://freesound.org/people/nsstudios/sounds/351738/
+beep	freesound 878172	Mihacappy	backup_beeper.wav	CC0 1.0	0	1.0	https://freesound.org/people/Mihacappy/sounds/878172/
+revwhine	freesound 275805	jessepash	Car_ReverseWhine_1.wav	CC BY 3.0	0	9.7	https://freesound.org/people/jessepash/sounds/275805/
+road	freesound 556122	rockittt	Vehicle interior in motion repeatable.wav	CC0 1.0	8	6.0	https://freesound.org/people/rockittt/sounds/556122/
+gravel	freesound 251661	OBXJohn	Tires on Gravel Road 1	CC0 1.0	3	5.0	https://freesound.org/people/OBXJohn/sounds/251661/
+blast	freesound 609587	unfa	Grenade Explosion SFX (medium-sized, meaty, realistic)	CC0 1.0	0	3.0	https://freesound.org/people/unfa/sounds/609587/
+blast2	freesound 516914	Kinoton	Explosion, Medium Blast	CC0 1.0	0	4.0	https://freesound.org/people/Kinoton/sounds/516914/
+afterburner	freesound 413312	TiesWijnen	Afterburner	CC0 1.0	0	5.5	https://freesound.org/people/TiesWijnen/sounds/413312/
+gashiss	freesound 453443	kyles	hiss small pipe ext like propane gas.flac	CC0 1.0	4	4.0	https://freesound.org/people/kyles/sounds/453443/
+fuseburn	freesound 483320	craigsmith	R27-34-Fuse Burning.wav	CC0 1.0	6	6.0	https://freesound.org/people/craigsmith/sounds/483320/
+clash	freesound 326868	JohnBuhr	Sword_Clash (7).wav	CC0 1.0	0	1.2	https://freesound.org/people/JohnBuhr/sounds/326868/
+ping	freesound 217461	JarredGibb	Metal Ping 3.wav	CC0 1.0	0	0.4	https://freesound.org/people/JarredGibb/sounds/217461/
+scrape	freesound 488901	Rvgerxini	Metal scrape on concrete.mp3	CC0 1.0	0	2.6	https://freesound.org/people/Rvgerxini/sounds/488901/
+rattle2	freesound 104371	RutgerMuller	Metal Thing Medium-Heavy Rattling.aif	CC0 1.0	5.5	4.0	https://freesound.org/people/RutgerMuller/sounds/104371/
+thud	freesound 332058	qubodup	Collision	CC0 1.0	0	0.9	https://freesound.org/people/qubodup/sounds/332058/
+knock	freesound 288940	toefur	suitcase-down-1.aif	CC0 1.0	0	4.3	https://freesound.org/people/toefur/sounds/288940/
+glass	freesound 221528	unfa	Glass Break	CC0 1.0	0	1.9	https://freesound.org/people/unfa/sounds/221528/
+fan	freesound 783837	chungus43A	Large cooling fan sound	CC0 1.0	0	4.8	https://freesound.org/people/chungus43A/sounds/783837/
+rain	freesound 624645	Rubaoliva	Heavy_Rain_Loop.wav	CC0 1.0	0	6.0	https://freesound.org/people/Rubaoliva/sounds/624645/
+raincar	freesound 671410	Victormaa	heavy rain on car-glass interior.wav	CC0 1.0	5	6.0	https://freesound.org/people/Victormaa/sounds/671410/
+splash	freesound 563021	cookies+policy	Water Puddle Splash	CC0 1.0	0	8.5	https://freesound.org/people/cookies+policy/sounds/563021/
+carwater	freesound 381698	bengomori	16_Car driving through burst water main on Wilton Way.MP3	CC0 1.0	0	9.8	https://freesound.org/people/bengomori/sounds/381698/
+wetpass	freesound 462862	Breviceps	Passing Car (Wet road)	CC0 1.0	0	5.8	https://freesound.org/people/Breviceps/sounds/462862/
+snow	freesound 639269	DigPro120	Walking in hard snow (crunching).WAV	CC0 1.0	0	6.0	https://freesound.org/people/DigPro120/sounds/639269/
+snowhit	freesound 167081	Julien_Matthey	JM_IMPACT_01b - Snow on cement.wav	CC0 1.0	0	1.2	https://freesound.org/people/Julien_Matthey/sounds/167081/
+fire	freesound 565304	chloeg830	Fire Crackling.wav	CC0 1.0	2	5.0	https://freesound.org/people/chloeg830/sounds/565304/
+thunder	freesound 683421	SholeColtis	Short_Thunder_Mid.wav	CC0 1.0	0	6.7	https://freesound.org/people/SholeColtis/sounds/683421/
+wind	freesound 767148	paf60	Wind howling	CC0 1.0	0	6.3	https://freesound.org/people/paf60/sounds/767148/
