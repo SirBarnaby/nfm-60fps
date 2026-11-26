@@ -52,6 +52,13 @@ public interface Canvas {
      */
     void moving(float[] x, float[] y, float[] z, float[] vx, float[] vy, float[] vz, int n);
 
+    /**
+     * A polygon fixed on the picture (a drop on the lens): its corners as
+     * shares of the picture's width and height, (0, 0) its top left corner
+     * and (1, 1) its bottom right. It covers whatever was drawn before it.
+     */
+    void screen(float[] x, float[] y, int n);
+
     /** A polygon on car {@code car}, in the car's own frame (as its model's corners are): it moves with the car. */
     void onCar(int car, float[] x, float[] y, float[] z, int n);
 

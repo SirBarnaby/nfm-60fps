@@ -128,6 +128,16 @@ public final class HelmetCam implements Feature {
                 carZ[item]);
     }
 
+    /** The player whose frame is being drawn from the helmet now, or -1 for a frame from the race's own camera. */
+    public int framing() {
+        return framing;
+    }
+
+    /** True if {@code player}'s car has a roof over the eyes (glass around them): rain drums on it. */
+    public boolean closed(int player) {
+        return ready(player) && cockpits[player].closed;
+    }
+
     /** True while the extra is on in a race and has a head for {@code player}. */
     public boolean ready(int player) {
         return running && player >= 0 && player < players;

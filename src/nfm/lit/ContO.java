@@ -19,6 +19,8 @@ public class ContO {
     public int npl = 0;
     /** Which race car this is while an extra recolours the cars (FeatureBridge), else -1. Drawing only. */
     public int carSlot = -1;
+    /** One of the race's cars (set after each real tick while an extra is on): what lies on the world lies thinner on it. */
+    boolean raceCar;
     public int x = 0;
     public int y = 0;
     public int z = 0;
@@ -711,6 +713,7 @@ public class ContO {
                 }
                 long[] order = polygonOrder();
                 FeatureBridge.lookCar = carSlot; // an extra may recolour this car's polygons (-1: none)
+                Plane.carPart = raceCar;
                 for (int rank = npl - 1; rank >= 0; rank--) {
                     int index = npl - 1 - (int) order[rank];
                     Plane plane = p[index];
@@ -733,6 +736,7 @@ public class ContO {
                     }
                 }
                 FeatureBridge.lookCar = -1;
+                Plane.carPart = false;
 
                 dist = (int) (Math.sqrt((int) Math.sqrt(((Medium.x + Medium.cx) - x) * ((Medium.x + Medium.cx) - x) + (Medium.z - z) * (Medium.z - z)
                         + ((Medium.y + Medium.cy) - y) * ((Medium.y + Medium.cy) - y))) * grounded);

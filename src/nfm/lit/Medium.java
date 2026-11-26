@@ -217,11 +217,49 @@ public class Medium {
      */
     public static void showView() {
         setView(GameFacts.sceneWidth, GameFacts.sceneHeight);
+        showFog();
+    }
+
+    /*
+     * The weather's fog. The fog's distances are part of what the race
+     * keeps and reads (what is too far to be on screen), so an extra never
+     * changes them: drawing alone looks through fog that starts shownFade
+     * times as far off as the stage's (1: the stage's own) and is as dense
+     * as shownFogd (0: the stage's own), from showView() to gameView().
+     */
+    static float shownFade = 1F;
+    static int shownFogd;
+    private static final int[] raceFade = new int[16];
+    private static int raceFogd;
+    private static boolean fogShown;
+
+    private static void showFog() {
+        if (fogShown || shownFade == 1F && shownFogd == 0) {
+            return;
+        }
+        System.arraycopy(fade, 0, raceFade, 0, raceFade.length);
+        raceFogd = fogd;
+        if (shownFade != 1F) {
+            fadeFrom(Math.max(600, Math.round(fade[0] * shownFade)));
+        }
+        if (shownFogd > 0) {
+            fogd = shownFogd;
+        }
+        fogShown = true;
+    }
+
+    private static void raceFog() {
+        if (fogShown) {
+            System.arraycopy(raceFade, 0, fade, 0, raceFade.length);
+            fogd = raceFogd;
+            fogShown = false;
+        }
     }
 
     /** Projects into the game's own view again, the view everything but drawing works in. */
     public static void gameView() {
         setView(GameFacts.GAME_WIDTH, GameFacts.GAME_HEIGHT);
+        raceFog();
     }
 
     private static void setView(int width, int height) {
@@ -245,6 +283,7 @@ public class Medium {
      */
     public static ShownView paneView(int width, int height) {
         setView(width, height);
+        showFog();
         return SHOWN;
     }
 
@@ -405,6 +444,7 @@ public class Medium {
      */
     public static ShownView menuView() {
         setView(GameFacts.screenWidth, GameFacts.screenHeight);
+        showFog();
         return SHOWN;
     }
 

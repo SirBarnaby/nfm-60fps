@@ -1,5 +1,6 @@
 package nfm.lit;
 
+import nfm.lit.features.StageAir;
 import java.util.Arrays;
 import fallk.logmaster.HLogger;
 import nfm.lit.audio.BASSLoader;
@@ -1696,45 +1697,49 @@ public class GameSparker extends Panel implements Runnable {
 
         String unused = "";
 
+        FeatureBridge.airBegin();
         try (BufferedReader bufferedreader = new BufferedReader(new FileReader(GameFiles.file(loadStage)))) {
             for (String line; (line = bufferedreader.readLine()) != null;) {
                 line = line.trim();
 
                 if (line.startsWith("mountains"))
                     Medium.mgen = Utility.getint("mountains", line, 0);
-                if (line.startsWith("snap"))
-                    Medium.setSnap(Utility.getint("snap", line, 0), Utility.getint("snap", line, 1),
-                            Utility.getint("snap", line, 2));
+                // an extra (the weather) may change what the file says of the stage's air, line by line
+                if (line.startsWith("snap")) {
+                    int[] c = FeatureBridge.air(StageAir.SNAP, line, "snap", 3);
+                    Medium.setSnap(c[0], c[1], c[2]);
+                }
                 if (line.startsWith("sky")) {
-                    Medium.setSky(Utility.getint("sky", line, 0), Utility.getint("sky", line, 1),
-                            Utility.getint("sky", line, 2));
+                    int[] c = FeatureBridge.air(StageAir.SKY, line, "sky", 3);
+                    Medium.setSky(c[0], c[1], c[2]);
                     gameUi.snap(checkpoints.stage);
                 }
-                if (line.startsWith("ground"))
-                    Medium.setGround(Utility.getint("ground", line, 0), Utility.getint("ground", line, 1),
-                            Utility.getint("ground", line, 2));
-                if (line.startsWith("polys"))
-                    Medium.setPolys(Utility.getint("polys", line, 0), Utility.getint("polys", line, 1),
-                            Utility.getint("polys", line, 2));
-                if (line.startsWith("fog"))
-                    Medium.setFade(Utility.getint("fog", line, 0), Utility.getint("fog", line, 1),
-                            Utility.getint("fog", line, 2));
+                if (line.startsWith("ground")) {
+                    int[] c = FeatureBridge.air(StageAir.GROUND, line, "ground", 3);
+                    Medium.setGround(c[0], c[1], c[2]);
+                }
+                if (line.startsWith("polys")) {
+                    int[] c = FeatureBridge.air(StageAir.POLYS, line, "polys", 3);
+                    Medium.setPolys(c[0], c[1], c[2]);
+                }
+                if (line.startsWith("fog")) {
+                    int[] c = FeatureBridge.air(StageAir.FOG, line, "fog", 3);
+                    Medium.setFade(c[0], c[1], c[2]);
+                }
                 if (line.startsWith("density"))
-                    Medium.fogd = Utility.getint("density", line, 0);
+                    Medium.fogd = FeatureBridge.air(StageAir.DENSITY, line, "density", 1)[0];
                 if (line.startsWith("texture")) {
-                    Medium.setTexture(Utility.getint("texture", line, 0), Utility.getint("texture", line, 1),
-                            Utility.getint("texture", line, 2),
-                            Utility.getint("texture", line, 3));
+                    int[] c = FeatureBridge.air(StageAir.TEXTURE, line, "texture", 4);
+                    Medium.setTexture(c[0], c[1], c[2], c[3]);
                 }
                 if (line.startsWith("clouds")) {
-                    Medium.setClouds(Utility.getint("clouds", line, 0), Utility.getint("clouds", line, 1),
-                            Utility.getint("clouds", line, 2),
-                            Utility.getint("clouds", line, 3), Utility.getint("clouds", line, 4));
+                    int[] c = FeatureBridge.air(StageAir.CLOUDS, line, "clouds", 5);
+                    Medium.setClouds(c[0], c[1], c[2], c[3], c[4]);
                 }
                 if (line.startsWith("noclouds"))
                     Medium.noclouds = true;
                 if (line.startsWith("fadefrom")) {
-                    Medium.fadeFrom(Utility.getint("fadefrom", line, 0));
+                    Medium.fadeFrom(FeatureBridge.air(StageAir.FADE, line, "fadefrom", 1)[0]);
                     Medium.origfade = Medium.fade[0];
                 }
                 if (line.startsWith("lightson"))
@@ -2032,6 +2037,7 @@ public class GameSparker extends Panel implements Runnable {
                     Medium.detailtype = Utility.getint("detail", line, 0);
                 }
             }
+            FeatureBridge.airEnd();
             Medium.newpolys(l_wall, r_wall - l_wall, b_wall, t_wall - b_wall, trackers, notb);
             Medium.newmountains(l_wall, r_wall, b_wall, t_wall);
             Medium.newclouds(l_wall, r_wall, b_wall, t_wall);
@@ -2718,6 +2724,7 @@ public class GameSparker extends Panel implements Runnable {
             depths.putIn(sceneObjects, nob, helmet || player == 1);
         }
         FeatureBridge.helmetFrame = helmet ? player : -1; // its own car's polygons behind the eyes are not drawn
+        FeatureBridge.framePlayer = player;
         if (helmet && !retainedRecording) {
             vignetteArea(frameVignette, player, pane,
                     FeatureBridge.helmetVignette(player, prevFrameValid ? Math.min(alpha, 1F) : 1F));

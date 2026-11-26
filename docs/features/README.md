@@ -6,8 +6,9 @@ One page per extra. Each lives in `src\nfm\lit\features\<feature>\`, has a switc
 
 - **`Feature`**: `raceStarted`, `afterTick` (every real race tick, never a run-ahead one), `raceEnded`, and per frame `queue` then `draw`.
 - **`RaceView`**: a copy of the race after each tick: each car's place, angles, speed, damage, keys, how long it has been in the air, and per wheel where it meets the ground, whether it touches, the surface and how it slides; plus the tick's hits (car, corner, axis, force). Filled by `nfm.lit.FeatureBridge`; the race's own classes are package-private, so an extra cannot reach them.
-- **`DrawQueue`**: where each thing goes in the game's back-to-front order: `ground` (right after the flat road pieces), `at(x, y, z)` (among the objects by distance) or `after(car)` (right after that car).
+- **`DrawQueue`**: where each thing goes in the game's back-to-front order: `ground` (right after the flat road pieces), `at(x, y, z)` (among the objects by distance) or `after(car)` (right after that car; `afterFirst(car)` before the others there). It also says whose frame it is and where the camera looks (`player`, `look`, `aspect`).
 - **`Canvas`**: polygons fixed in the world (`world`), moving through it (`moving`: placed for every frame from the last tick and a velocity, one for the whole polygon or one per corner so a shape can grow, turn or stretch smoothly, on the graphics card as well), or on a car (`onCar`: follows the car's smooth pose); `fog` for the stage's light and fog, `dither` for see-through (a 4x4 pattern on the card, alpha in software), `glow` for HDR.
+- **The stage's air**: `Feature.air` is asked for each line of a stage's file about its sky, light, fog and ground as it loads (`StageAir`) and may change the numbers; `GameHooks.ground` and `cover` change the ground's colour and what lies on upward faces during a race, `GameHooks.bed` loops a recording around the listener, `Canvas.screen` draws fixed on the picture. `Weather` says what the weather is.
 - **`Dice`**: random numbers from the race's seed and the extra's name.
 - **The cars' own polygons**: `RaceView.shape` holds each car's model as loaded (`CarShape`: corners, colours, glass, lights, wheels with their hubs and radii); a feature that is also a `CarLook` is asked, for every polygon of a race car drawn, what colour it is (`color`, before the fog, on the processor and in the kept scene alike), whether a light is lit (`lamp`) and whether a wheel's polygon is drawn tilted (`bend`, on copies of its points). `Canvas.onWheel` draws on a wheel, steered and spun with it.
 - **Shared between extras**: `CarLooks` (how far each wheel is bent, which the skidmarks read for wavy marks; where debris that stays is kept) and `Debris` (a fixed ring of pieces lying on the road). A particle marked with `Particles.keep` becomes debris where it lands.
@@ -33,3 +34,4 @@ One page per extra. Each lives in `src\nfm\lit\features\<feature>\`, has a switc
 - [Powerups](powerups.md)
 - [Exploding wrecks](wrecks.md)
 - [Suspension handling](handling.md)
+- [The weather](weather.md)

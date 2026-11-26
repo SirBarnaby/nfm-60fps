@@ -53,6 +53,15 @@ public interface Feature {
         return 1F;
     }
 
+    /**
+     * A stage is loading, and its file says {@code what} of its air (one of
+     * {@link StageAir}'s) with the values {@code c}: change them to change
+     * the stage's sky, light, ground or fog (the weather). Asked of every
+     * extra whose switch is on, before any race starts.
+     */
+    default void air(int what, int[] c) {
+    }
+
     /** A race starts (or the feature was switched on during one): forget the last race, read the cars. */
     default void raceStarted(RaceView race) {
     }

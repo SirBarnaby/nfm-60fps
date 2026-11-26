@@ -2,6 +2,7 @@ package nfm.lit;
 
 import java.awt.Graphics2D;
 import nfm.lit.audio.SoundManager;
+import nfm.lit.features.StageAir;
 import nfm.lit.features.CarShape;
 import nfm.lit.features.DrawQueue;
 import nfm.lit.features.Features;
@@ -95,6 +96,96 @@ final class FeatureBridge {
     private FeatureBridge() {
     }
 
+    /* ----------------------------------------------------- the stage's air */
+
+    private static final int[] air = new int[5];
+    private static int airSeen;
+
+    /** A stage's file is about to be read. */
+    static void airBegin() {
+        airSeen = 0;
+        coverRoads = 0;
+        coverCars = 0;
+        Medium.shownFade = 1F;
+        Medium.shownFogd = 0;
+        if (Features.anySwitchedOn()) {
+            Features.air(StageAir.BEGIN, air);
+        }
+    }
+
+    /**
+     * The stage's file says {@code what} of its air (a {@link StageAir}) on
+     * {@code line}, {@code n} numbers after {@code name}: those numbers as
+     * the extras leave them (the weather changes them), to be used at once.
+     * The fog's start and density stay the file's for the race, which keeps
+     * and reads them; what an extra makes of them only drawing sees
+     * ({@code Medium.shownFade}, {@code shownFogd}).
+     */
+    static int[] air(int what, String line, String name, int n) {
+        for (int k = 0; k < n; k++) {
+            air[k] = Utility.getint(name, line, k);
+        }
+        airSeen |= 1 << what;
+        if (Features.anySwitchedOn()) {
+            int file = air[0];
+            Features.air(what, air);
+            if (what == StageAir.FADE) {
+                shownFade(file);
+            } else if (what == StageAir.DENSITY) {
+                shownDensity(file);
+            }
+        }
+        return air;
+    }
+
+    /** The extras made {@code air[0]} of a fog that starts {@code file} off: drawing's share of it, the race's put back. */
+    private static void shownFade(int file) {
+        int capped = Math.min(8000, file); // as Medium.fadeFrom caps it
+        if (air[0] != file && capped > 0) {
+            Medium.shownFade = Math.max(0.05F, air[0] / (float) capped);
+        }
+        air[0] = file;
+    }
+
+    private static void shownDensity(int file) {
+        if (air[0] != file && air[0] > 0) {
+            Medium.shownFogd = air[0];
+        }
+        air[0] = file;
+    }
+
+    /** The stage's file has been read: a stage that says nothing of its fog gets the extras' say on the game's own. */
+    static void airEnd() {
+        if (!Features.anySwitchedOn()) {
+            return;
+        }
+        if ((airSeen & 1 << StageAir.FADE) == 0) {
+            air[0] = Medium.fade[0];
+            Features.air(StageAir.FADE, air);
+            shownFade(Medium.fade[0]);
+        }
+        if ((airSeen & 1 << StageAir.DENSITY) == 0) {
+            air[0] = Medium.fogd;
+            Features.air(StageAir.DENSITY, air);
+            shownDensity(Medium.fogd);
+        }
+        air[0] = Math.round(Medium.fade[0] * Medium.shownFade);
+        air[1] = Medium.shownFogd > 0 ? Medium.shownFogd : Medium.fogd;
+        Features.air(StageAir.END, air);
+    }
+
+    /*
+     * What lies on the world's upward faces (the weather: snow, or the wet
+     * of rain): its colour and how much of it, 0 to 256, on the stage's
+     * pieces and on the cars. Plane.d mixes it into each such polygon's
+     * colour before the fog. Zero unless an extra sets it.
+     */
+    static int coverRoads;
+    static int coverCars;
+    static int coverRed;
+    static int coverGreen;
+    static int coverBlue;
+
     /* ------------------------------------------------------------ the race */
 
     /**
@@ -118,6 +209,19 @@ final class FeatureBridge {
         view.stage = checkpoints.stage;
         view.stageName = checkpoints.name == null ? "" : checkpoints.name;
         view.groundColor = Medium.cgrnd[0] << 16 | Medium.cgrnd[1] << 8 | Medium.cgrnd[2];
+        view.skyColor = Medium.csky[0] << 16 | Medium.csky[1] << 8 | Medium.csky[2];
+        view.fogColor = Medium.cfade[0] << 16 | Medium.cfade[1] << 8 | Medium.cfade[2];
+        view.points = checkpoints.n;
+        if (view.pointX.length < view.points) {
+            view.pointX = new float[view.points];
+            view.pointY = new float[view.points];
+            view.pointZ = new float[view.points];
+        }
+        for (int p = 0; p < view.points; p++) {
+            view.pointX[p] = checkpoints.x[p];
+            view.pointY[p] = checkpoints.y[p];
+            view.pointZ[p] = checkpoints.z[p];
+        }
     }
 
     /** One race tick of the race extras (powerups), after every car drove; run-ahead's and the verifier's too. */
@@ -277,6 +381,7 @@ final class FeatureBridge {
         boolean helmet = HelmetCam.FEATURE.ready(0); // the players' cars say which polygons the eyes see
         for (int c = 0; c < cars; c++) {
             scene[c].carSlot = looking || helmet && c < view.humans ? c : -1;
+            scene[c].raceCar = true;
         }
         Features.afterTick(view);
         hits = 0;
@@ -537,6 +642,8 @@ final class FeatureBridge {
 
     /** The player whose frame is being drawn from the helmet cam, or -1: their car's polygons by the eyes are left out. */
     static int helmetFrame = -1;
+    /** The player whose frame is being drawn (0, or 1 for split screen's second pane). */
+    static int framePlayer;
     private static final double[] helmetPlace = new double[5];
 
     /**
@@ -628,6 +735,8 @@ final class FeatureBridge {
         }
         queue.begin(Medium.x + Medium.cx + Precise.camX, Medium.y + Medium.cy + Precise.camY,
                 Medium.z + Precise.camZ, view.tick, ahead ? 1F : Math.max(0F, Math.min(1F, share)));
+        queue.view(framePlayer, Medium.xz + Precise.camXZ, Medium.zy + Precise.camZY,
+                (Medium.w - Medium.iw) / (float) Math.max(1, Medium.h - Medium.ih));
         HelmetCam.FEATURE.drawingFor(helmetFrame); // from the helmet: its dashboard
         Features.queue(queue);
         if (queue.isEmpty() && !Features.carLooks()) { // a car look draws on the cars' own polygons, queue or not
@@ -923,6 +1032,30 @@ final class FeatureBridge {
                 } else {
                     c.play();
                 }
+            }
+        }
+
+        @Override
+        public void ground(int rgb, int patches) {
+            Medium.setGround(rgb >> 16 & 0xff, rgb >> 8 & 0xff, rgb & 0xff);
+            if (patches >= 0) {
+                Medium.setPolys(patches >> 16 & 0xff, patches >> 8 & 0xff, patches & 0xff);
+            }
+        }
+
+        @Override
+        public void cover(int rgb, float roads, float cars) {
+            coverRed = rgb >> 16 & 0xff;
+            coverGreen = rgb >> 8 & 0xff;
+            coverBlue = rgb & 0xff;
+            coverRoads = Math.max(0, Math.min(256, Math.round(roads * 256F)));
+            coverCars = Math.max(0, Math.min(256, Math.round(cars * 256F)));
+        }
+
+        @Override
+        public void bed(int slot, String clip, float gain, float pitch) {
+            if (!SoundManager.isDiscarding()) {
+                nfm.lit.audio.Sound3D.bed(slot, clip, gain, pitch);
             }
         }
 

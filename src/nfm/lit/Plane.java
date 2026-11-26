@@ -16,6 +16,10 @@ public class Plane {
     public int fs;
     private int disline;
     public boolean road;
+    /** Lies flat enough to hold what falls on it (snow, rain): worked out once from its corners. */
+    boolean flatTop;
+    /** Part of a race car (set as the car is drawn), which holds less of what falls than the stage's pieces do. */
+    static boolean carPart;
     public int light;
     public int master;
     public int wx;
@@ -221,6 +225,26 @@ public class Plane {
         }
     }
 
+    /** True if the polygon's first {@code count} corners lie flatter than about 30 degrees: it is no higher than half its length. */
+    private boolean liesFlat(int count) {
+        int minX = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE;
+        int minY = Integer.MAX_VALUE;
+        int maxY = Integer.MIN_VALUE;
+        int minZ = Integer.MAX_VALUE;
+        int maxZ = Integer.MIN_VALUE;
+        for (int k = 0; k < count; k++) {
+            minX = Math.min(minX, ox[k]);
+            maxX = Math.max(maxX, ox[k]);
+            minY = Math.min(minY, oy[k]);
+            maxY = Math.max(maxY, oy[k]);
+            minZ = Math.min(minZ, oz[k]);
+            maxZ = Math.max(maxZ, oz[k]);
+        }
+        int across = Math.min(maxX - minX, maxZ - minZ);
+        return count >= 3 && across > 0 && (maxY - minY) * 2 < across;
+    }
+
     /** Called with the race seed when a stage is set up, see {@link Medium#seedRace(long)}. */
     static void seedShapes(long raceSeed) {
         shapeJitter.reseed(RaceRandom.derive(raceSeed, RaceRandom.STREAM_SHAPES));
@@ -359,6 +383,7 @@ public class Plane {
             }
         }
         road = isRoad;
+        flatTop = liesFlat(count);
         light = lamp;
         solo = isSolo;
         gr = group;
@@ -1164,6 +1189,13 @@ public class Plane {
                 if (blue < 0) {
                     blue = 0;
                 }
+            }
+            if (FeatureBridge.coverRoads != 0 && flatTop && !glass) {
+                // what lies on the world's upward faces: snow, the wet of rain (an extra, the weather)
+                int cover = wz != 0 ? 0 : carPart ? FeatureBridge.coverCars : FeatureBridge.coverRoads;
+                red += (FeatureBridge.coverRed - red) * cover >> 8;
+                green += (FeatureBridge.coverGreen - green) * cover >> 8;
+                blue += (FeatureBridge.coverBlue - blue) * cover >> 8;
             }
             int lamp = -1;
             if (FeatureBridge.lookCar >= 0) {

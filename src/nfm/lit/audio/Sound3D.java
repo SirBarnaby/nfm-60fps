@@ -752,6 +752,107 @@ public final class Sound3D implements Runnable {
         }
     }
 
+    /*
+     * Beds: an extra's sounds that are all around the listener rather than
+     * at a place (rain, wind): a few looping sources heard as they are. The
+     * game thread says what each plays and how loud; the sound thread
+     * follows over a third of a second, so nothing starts or ends with a
+     * click, and a bed whose clip changes fades out first.
+     */
+    public static final int BEDS = 6;
+    private static final float BED_SMOOTHING = 0.33F;
+    private static final String[] bedClip = new String[BEDS];
+    private static final float[] bedGain = new float[BEDS];
+    private static final float[] bedPitch = new float[BEDS];
+
+    /** Bed {@code slot} plays clip {@code clip} (an extra's, looping) at {@code gain} and {@code pitch}; 0 or null ends it. */
+    public static void bed(int slot, String clip, float gain, float pitch) {
+        if (slot < 0 || slot >= BEDS) {
+            return;
+        }
+        synchronized (bedClip) {
+            bedClip[slot] = clip != null && gain > 0F && extraClips.containsKey(clip) ? clip : null;
+            bedGain[slot] = bedClip[slot] == null ? 0F : gain;
+            bedPitch[slot] = pitch;
+        }
+    }
+
+    /** One bed's source on the sound thread. */
+    private final class BedVoice {
+        final int source = alGenSources();
+        String playing;
+        float now;
+
+        BedVoice() {
+            flat(source);
+            alSourcei(source, AL_LOOPING, AL_TRUE);
+            alSourcef(source, AL_GAIN, 0F);
+        }
+
+        void update(String clip, float gain, float pitch, float dt) {
+            boolean same = clip != null && clip.equals(playing);
+            float want = same ? gain : 0F;
+            now += (want - now) * (1F - (float) Math.exp(-dt / BED_SMOOTHING));
+            boolean on = alGetSourcei(source, AL_SOURCE_STATE) == AL_PLAYING;
+            if (!same && now < 0.003F) {
+                // silent: free to take the new clip
+                if (on) {
+                    alSourceStop(source);
+                    on = false;
+                }
+                now = 0F;
+                playing = null;
+                if (clip != null) {
+                    int b = buffer(clip);
+                    if (b != 0) {
+                        alSourcei(source, AL_BUFFER, b);
+                        playing = clip;
+                    }
+                }
+                return;
+            }
+            if (now < 0.003F && want == 0F) {
+                if (on) {
+                    alSourcePause(source);
+                }
+                return;
+            }
+            alSourcef(source, AL_GAIN, now * bus[BUS_EFFECTS] * everyday);
+            alSourcef(source, AL_PITCH, same ? pitch : 1F);
+            if (!on) {
+                alSourcePlay(source);
+            }
+        }
+
+        void silence() {
+            now = 0F;
+            alSourceStop(source);
+        }
+    }
+
+    private final BedVoice[] beds = new BedVoice[BEDS];
+
+    /** The beds follow what the game thread last said; {@code silent} while nothing may sound (no race, paused, muted). */
+    private void updateBeds(float dt, boolean silent) {
+        for (int i = 0; i < BEDS; i++) {
+            String clip;
+            float gain;
+            float pitch;
+            synchronized (bedClip) {
+                clip = bedClip[i];
+                gain = bedGain[i];
+                pitch = bedPitch[i];
+            }
+            if (beds[i] == null) {
+                if (clip == null || silent) {
+                    continue;
+                }
+                beds[i] = new BedVoice();
+            }
+            beds[i].update(silent ? null : clip, silent ? 0F : gain, pitch, dt);
+        }
+    }
+
     /** Any car skids, from inside the race tick; surface 0 is road. */
     public static void carSkid(int car, int surface, float slide) {
         Sound3D sound = instance;
@@ -2175,6 +2276,15 @@ public final class Sound3D implements Runnable {
         for (EngineVoices e : engines) {
             e.silence();
         }
+        synchronized (bedClip) {
+            java.util.Arrays.fill(bedClip, null);
+            java.util.Arrays.fill(bedGain, 0F);
+        }
+        for (BedVoice b : beds) {
+            if (b != null) {
+                b.silence();
+            }
+        }
     }
 
     /* ------------------------------------------- crashes and skids */
@@ -2455,6 +2565,7 @@ public final class Sound3D implements Runnable {
         for (int i = 0; i < engines.size(); i++) {
             engines.get(i).update(i < cars ? m.cars[i] : null, i, ahead, dt, m.muted);
         }
+        updateBeds(dt, m.muted);
         for (Voice v : effects) {
             if (v.car >= 0 && alGetSourcei(v.source, AL_SOURCE_STATE) == AL_PLAYING) {
                 placeAtCar(v.source, v.car);

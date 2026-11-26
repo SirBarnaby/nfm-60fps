@@ -162,6 +162,12 @@ public final class FeatureSettings {
                         + " damages the cars close to it, like a small dynamite. Off: it burns as it always did."
                         + RACE_1_0,
                 "xtrawreck", Kind.RACE, 0, "Off", "On"),
+        new Switch("weather", "Weather",
+                "Rain, rain with fog, or snow in every race: a grey or pale sky, duller light, rain or snow"
+                        + " falling around you, splashes, drops on the screen (more behind another car), snow that"
+                        + " gets deeper, and its sound with the 3D sound. Only the look and the sound: the road"
+                        + " grips as in the dry. The sky changes with the next race." + LOOK_1_0,
+                "xtraweather", Kind.LOOK, 0, "Off", "Rain", "Rain and fog", "Snow"),
     };
 
     /** Raised by every change, so the features can follow a switch turned during a race. */

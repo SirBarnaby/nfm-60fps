@@ -40,3 +40,10 @@ bell	bell	0.00	0.90	22050	shot	-	a powerup picked up: a bell
 toss	throw	0.06	0.26	22050	shot	-	the dynamite thrown
 bottle	gashiss	2.60	1.00	22050	loop	highpass=f=3000	nitrous held: the bottle under pressure
 clock	clock	0.50	2.00	22050	loop	-	a bomb held: its clock ticking
+rain	rain	0.30	5.00	22050	loop	-	heavy rain all around
+rainroof	raincar	0.30	4.00	22050	loop	-	rain drumming on the roof and the glass, from inside the car
+splash	splash	0.45	0.90	22050	shot	-	a wheel through a puddle
+spray	carwater	4.60	2.60	22050	loop	highpass=f=200	tyres throwing up water on a wet road
+snowwind	wind	0.20	2.50	22050	loop	-	wind in the snowfall
+snowroll	snow	1.30	1.70	22050	loop	-	tyres pressing through snow
+snowhit	snowhit	0.00	0.90	22050	shot	-	a lump of snow landing

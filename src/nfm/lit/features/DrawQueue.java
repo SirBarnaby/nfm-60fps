@@ -14,7 +14,7 @@ import java.util.Arrays;
  * under every ramp, tree and car;
  * <li>{@link #at}: at a point in the world, drawn just before the first
  * object nearer than it, so what is in front covers it;
- * <li>{@link #after}: on a car, drawn right after that car.
+ * <li>{@link #after}: on a car, drawn right after that car ({@link #afterFirst}: before the others there).
  * </ul>
  * The game fills it once per frame drawn and merges it into its own order;
  * nothing is allocated once its arrays have grown.
@@ -24,6 +24,7 @@ public final class DrawQueue {
     private static final int GROUND = 0;
     private static final int DEPTH = 1;
     private static final int AFTER = 2;
+    private static final int AFTER_FIRST = 3;
 
     /** Draws item {@code item} of feature {@code feature}. */
     public interface Drawer {
@@ -68,6 +69,61 @@ public final class DrawQueue {
         this.eyeY = eyeY;
         this.eyeZ = eyeZ;
         this.tick = tick;
+        player = 0;
+        yaw = 0F;
+        pitch = 0F;
+    }
+
+    /* whose frame it is and where the camera looks, for what is drawn around the eye (the weather) */
+    private int player;
+    private float yaw;
+    private float pitch;
+    private float aspect = 16F / 9F;
+
+    /**
+     * After {@link #begin}: the frame is {@code player}'s (0, or 1 for
+     * split screen's second), its camera turned {@code yaw} and tilted
+     * {@code pitch} degrees as the game turns it, the picture
+     * {@code aspect} times as wide as it is high.
+     */
+    public void view(int player, float yaw, float pitch, float aspect) {
+        this.player = player;
+        this.yaw = yaw;
+        this.pitch = pitch;
+        this.aspect = aspect;
+    }
+
+    /** The player whose frame this is. */
+    public int player() {
+        return player;
+    }
+
+    /**
+     * The way the camera looks into {@code out[0..2]}, and the picture's
+     * right and down from there into {@code out[3..5]} and
+     * {@code out[6..8]}, each one unit long.
+     */
+    public void look(float[] out) {
+        double y = Math.toRadians(yaw);
+        double p = Math.toRadians(pitch);
+        float sy = (float) Math.sin(y);
+        float cy = (float) Math.cos(y);
+        float sp = (float) Math.sin(p);
+        float cp = (float) Math.cos(p);
+        out[0] = sy * cp;
+        out[1] = sp;
+        out[2] = cy * cp;
+        out[3] = cy;
+        out[4] = 0F;
+        out[5] = -sy;
+        out[6] = -sy * sp;
+        out[7] = cp;
+        out[8] = -cy * sp;
+    }
+
+    /** How many times as wide as it is high the picture is. */
+    public float aspect() {
+        return aspect;
     }
 
     /** The feature that queues next (for the game). */
@@ -116,6 +172,16 @@ public final class DrawQueue {
     /** Item {@code item} is on car {@code car}. */
     public void after(int car, int item) {
         add(AFTER, item, car);
+        afterCount++;
+    }
+
+    /**
+     * Item {@code item} is on car {@code car}, under what the extras draw
+     * on it with {@link #after}: drawn right after the car, before those
+     * (drops on a windscreen, under the dashboard drawn from the helmet).
+     */
+    public void afterFirst(int car, int item) {
+        add(AFTER_FIRST, item, car);
         afterCount++;
     }
 
@@ -186,6 +252,11 @@ public final class DrawQueue {
     public void after(int car, Drawer drawer) {
         if (afterCount == 0) {
             return;
+        }
+        for (int i = 0; i < count; i++) {
+            if (kinds[i] == AFTER_FIRST && where[i] == car) {
+                drawer.draw(owner[i], items[i]);
+            }
         }
         for (int i = 0; i < count; i++) {
             if (kinds[i] == AFTER && where[i] == car) {

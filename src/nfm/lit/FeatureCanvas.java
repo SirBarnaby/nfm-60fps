@@ -146,6 +146,26 @@ final class FeatureCanvas implements Canvas {
         }
     }
 
+    private final int[] fixedX = new int[MAX_CORNERS];
+    private final int[] fixedY = new int[MAX_CORNERS];
+
+    @Override
+    public void screen(float[] x, float[] y, int n) {
+        if (n < 3 || n > MAX_CORNERS) {
+            return;
+        }
+        int wide = Medium.w - Medium.iw;
+        int high = Medium.h - Medium.ih;
+        for (int k = 0; k < n; k++) {
+            fixedX[k] = Medium.iw + Math.round(x[k] * wide);
+            fixedY[k] = Medium.ih + Math.round(y[k] * high);
+        }
+        if (recorder != null) {
+            recorder.unbind(); // whole pixels, kept where they are in every frame
+        }
+        g.fillPolygon(fixedX, fixedY, n);
+    }
+
     @Override
     public void onCar(int car, float[] x, float[] y, float[] z, int n) {
         if (car >= 0 && car < cars && n >= 3 && n <= MAX_CORNERS

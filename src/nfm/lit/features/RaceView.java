@@ -33,6 +33,18 @@ public final class RaceView {
     public String stageName = "";
     /** The stage's ground colour, 0xRRGGBB (what soft ground and mud look like there). */
     public int groundColor;
+    /** The stage's sky and the colour things fade into with the distance, 0xRRGGBB, as shown. */
+    public int skyColor;
+    public int fogColor;
+    /**
+     * Points along the track (the computer drivers' path and the
+     * checkpoints), in order, filled when the stage loads: what lies along
+     * the road (puddles) is placed by them.
+     */
+    public int points;
+    public float[] pointX = new float[0];
+    public float[] pointY = new float[0];
+    public float[] pointZ = new float[0];
     /**
      * True if a feature may keep files between races (in {@code cache\});
      * false in test runs, recording and verifying, which leave no trace.

@@ -36,6 +36,8 @@ public final class CheckCanvas implements Canvas {
         moving = 0;
         onCar = 0;
         onWheel = 0;
+        onScreen = 0;
+        screenArea = 0F;
         maxGlow = 0F;
         colors.clear();
         spans.clear();
@@ -87,6 +89,24 @@ public final class CheckCanvas implements Canvas {
     public void moving(float[] x, float[] y, float[] z, float[] vx, float[] vy, float[] vz, int n) {
         count(x, y, z, n);
         moving++;
+    }
+
+    /** Polygons fixed on the picture since the last reset, and how much of the picture they cover together (overlaps counted twice). */
+    public int onScreen;
+    public float screenArea;
+
+    @Override
+    public void screen(float[] x, float[] y, int n) {
+        float twice = 0F;
+        for (int k = 0; k < n; k++) {
+            int next = (k + 1) % n;
+            twice += x[k] * y[next] - x[next] * y[k];
+        }
+        screenArea += Math.abs(twice) / 2F;
+        onScreen++;
+        polygons++;
+        corners += n;
+        colors.merge(lastColor, 1, Integer::sum);
     }
 
     @Override

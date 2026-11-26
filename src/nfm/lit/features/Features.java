@@ -27,6 +27,8 @@ public final class Features {
         nfm.lit.features.powerups.PowerupsFeature.FEATURE,
         nfm.lit.features.handling.HandlingFeature.FEATURE,
         nfm.lit.features.wrecks.WrecksFeature.FEATURE,
+        // last: what it lays on the ground is drawn over the marks and craters of those before it
+        nfm.lit.features.weather.WeatherFeature.FEATURE,
     };
 
     private static final boolean[] active = new boolean[ALL.length];
@@ -39,6 +41,9 @@ public final class Features {
     /** The feature that recolours and reshapes the cars' polygons, and its place in {@link #ALL}; null and -1 if none is on. */
     private static CarLook look;
     private static int lookOwner = -1;
+    /** A second feature that recolours the cars and draws on them, after {@link #look} (the weather over the damage), and its place. */
+    private static CarLook look2;
+    private static int look2Owner = -1;
     /** The feature that draws the cars' bodies elsewhere (on their springs), and its place; null and -1 if none. */
     private static CarBody body;
     private static int bodyOwner = -1;
@@ -254,6 +259,25 @@ public final class Features {
         return false;
     }
 
+    /* -------------------------------------------------------- the stage's air */
+
+    /**
+     * While a stage loads: what its file says of its air ({@link StageAir}),
+     * {@code what} with the values {@code c}, as the extras whose switches
+     * are on change it (the weather greys the sky, brings the fog nearer).
+     */
+    public static void air(int what, int[] c) {
+        for (Feature f : ALL) {
+            if (FeatureSettings.on(f.id())) {
+                try {
+                    f.air(what, c);
+                } catch (RuntimeException e) {
+                    HLogger.error("[extras] " + f.id() + " failed on the stage's air: " + e);
+                }
+            }
+        }
+    }
+
     /* ------------------------------------------------------ the race's look */
 
     /** A race starts: the features whose switches are on start with it (a race extra if it plays in it). */
@@ -377,17 +401,30 @@ public final class Features {
             return rgb;
         }
         try {
-            return l.color(car, plane, rgb);
+            rgb = l.color(car, plane, rgb);
         } catch (RuntimeException e) {
             fail(lookOwner, e);
             return rgb;
         }
+        CarLook second = look2;
+        if (second != null) {
+            try {
+                lamp2 = l.lamp();
+                rgb = second.color(car, plane, rgb);
+            } catch (RuntimeException e) {
+                fail(look2Owner, e);
+            }
+        }
+        return rgb;
     }
+
+    /** The first look's lamp, kept while a second look is asked for its colour. */
+    private static int lamp2 = -1;
 
     /** {@link CarLook#lamp} after {@link #carColor}; -1 when no feature recolours the cars. */
     public static int carLamp() {
         CarLook l = look;
-        return l == null ? -1 : l.lamp();
+        return l == null ? -1 : look2 != null ? lamp2 : l.lamp();
     }
 
     /** {@link CarLook#bend}; false when no feature reshapes the cars (or it threw, and is off). */
@@ -421,6 +458,14 @@ public final class Features {
         } catch (RuntimeException e) {
             fail(lookOwner, e);
         }
+        CarLook second = look2;
+        if (second != null) {
+            try {
+                second.onPlane(car, plane, rgb, canvas);
+            } catch (RuntimeException e) {
+                fail(look2Owner, e);
+            }
+        }
     }
 
     /** True while a feature draws the cars' bodies elsewhere ({@link CarBody}): the game asks it for their polygons. */
@@ -447,12 +492,19 @@ public final class Features {
     private static void relook() {
         look = null;
         lookOwner = -1;
+        look2 = null;
+        look2Owner = -1;
         body = null;
         bodyOwner = -1;
         for (int f = 0; f < ALL.length; f++) {
-            if (active[f] && look == null && ALL[f] instanceof CarLook l) {
-                look = l;
-                lookOwner = f;
+            if (active[f] && ALL[f] instanceof CarLook l) {
+                if (look == null) {
+                    look = l;
+                    lookOwner = f;
+                } else if (look2 == null) {
+                    look2 = l;
+                    look2Owner = f;
+                }
             }
             if (active[f] && body == null && ALL[f] instanceof CarBody b) {
                 body = b;
