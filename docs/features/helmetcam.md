@@ -62,14 +62,45 @@ so a wedge whose bonnet is high still shows it below the eyes.
 The game does not cut a polygon where it passes the eyes: it squeezes
 anything nearer than 50 units to 50. So only the car's own polygons wholly
 ahead of the eyes and below them, and not glass, are drawn from them: the
-bonnet, the front wings, the front wheels. A **dashboard** hides the rest:
-a dark wall across the view at the foot of the windscreen (66 units ahead of
-the eyes at least, so it is drawn whole even with the head thrown forward),
-its top level with the top of the bonnet, wide and deep enough to fill the
-bottom of the picture. It is drawn through `Canvas.onCar`, right after the
-car, so it moves with the car's smooth pose and goes into the scene the
-graphics card places. The log names each player's car, its eyes and how many
-of its polygons are drawn from them.
+bonnet, the front wings, the front wheels. The car's **inside** hides the
+rest (below). The log names each player's car, its eyes and how many of its
+polygons are drawn from them.
+
+## The inside
+
+A basic cockpit that fits any car (`Interior`), about 140 flat parts in 25
+colours: a dashboard (a dark scuttle at the foot of the windscreen, a lit
+top, a face with a trim line, an air vent each side, three switches on the
+left and a radio on the right, the footwell below), an instrument hood with
+two dials, a steering wheel, a console between the seats, a door with a lit
+sill each side and, in a car with glass, the windscreen's two pillars and the
+roof's edge. An open car (no glass) has no pillars and no roof. The top of
+the dashboard is seen where the top of the bonnet meets the foot of the
+windscreen, so each car's bonnet shows over it as before.
+
+What moves: the steering wheel turns up to 100 degrees each way with the
+steering keys (a third of the way to where they hold it each tick; a yellow
+mark at the top of the rim shows the turn); the left dial's needle follows
+the speed against the car's top speed, the right one's the power bar.
+
+The game cannot draw anything nearer than 50 units to the eyes, and leaves
+out, whole, an extra's polygon with a corner behind them. So the cockpit is
+not built at its true size around the head. Every part lies on a plane
+across the car ahead of the eyes: the dashboard, doors and roof 102 units
+ahead (or at the foot of the windscreen if that is farther), the instruments
+6 nearer, the steering wheel 16 nearer (86 at least), each as large as it
+has to be to look right from there. The parts shift against each other as
+the head moves on its springs, the wheel most. Places are given as slopes
+from the eyes at rest. The parts that reach to the sides, up and down are
+cut into strips (to the side at slopes 0.55, 1.05, 1.6, 2.4, 3.4 and 8, 83
+degrees), so a strip that has a corner behind the eyes when the head turns
+away is wholly outside the picture, and nothing vanishes in view.
+
+Drawn through `Canvas.onCar`, right after the car, so it moves with the
+car's smooth pose, rolls and pitches with the car while the horizon stays
+level, and goes into the scene the graphics card places. Its colours fade
+into the stage's fog as the car's do. It is drawn for the player only, in
+each player's pane in split screen: the race does not know it is there.
 
 ## The camera
 
@@ -103,8 +134,8 @@ software a cached picture drawn in 64 shades.
 
 Off: one check of a field per frame and per polygon of a race car (a car's
 polygons ask only while a polygon-changing extra or the helmet is on). On:
-the camera worked out twice a frame, the dashboard's one polygon, one more
-draw for the vignette. Arrays are made at race start; nothing per frame.
+the camera worked out twice a frame, the inside's 140 or so small polygons,
+one more draw for the vignette. Arrays are made at race start; nothing per frame.
 
 ## Checks
 
@@ -114,7 +145,17 @@ way (to the outside, looking in), a flight and a landing (up a little, then
 jolted down, settled), the vignette (none at a steady speed or in the air,
 more the harder the braking), the eyes and the polygons drawn from them, and
 the camera lined up with the car (a far point ahead in the middle, 3 degrees
-down; looking back, one behind). The lap in first person waits for the
+down; looking back, one behind). The inside: its parts and colours counted,
+none nearer than 86 ahead of the eyes, a roof only over glass; every point
+of a 16:9 and a 21:9 picture below the dashboard's top on a part, with the
+head at rest and at the ends of its travel and turned 20 degrees either
+way, and no part more than 30% of the picture's lower half; over 5,346 views
+(the head thrown and turned, the car pitched 12 degrees up to 18 down
+against the view) no part the game leaves out is in the picture and no
+corner in view is drawn more than 5% out of place; the wheel's mark and the
+needles move with the steering, the speed and the power. A 32:9 picture
+with the head turned all the way is not covered by the check: its far edge
+looks past 83 degrees to the side. The lap in first person waits for the
 owner. `test\verify-races.ps1 -Features looks -NoGolden` with
 `JAVA_TOOL_OPTIONS=-Dnfm.helmetview=on` shows the races are unchanged in it,
 and a hidden autotest with `-Dnfm.helmetcam=on -Dnfm.helmetview=on

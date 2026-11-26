@@ -11,7 +11,8 @@ import nfm.lit.features.RaceView;
  * The helmet cam (switch {@code helmetcam}): a first-person view from the
  * driver's head, which sits on springs ({@link Head}): braking throws it
  * forward, acceleration back, corners to the side, landings jolt it; it looks
- * into the corner; the edges of the view darken under g-force.
+ * into the corner; the edges of the view darken under g-force. Around the
+ * eyes is the car's inside ({@link Interior}).
  * <p>
  * Drawing only. The view key adds the helmet after the game's three views;
  * while it shows, the race's own view is the chase view (placed, recorded and
@@ -39,8 +40,8 @@ public final class HelmetCam implements Feature {
     /** The one instance, in the extras' list; the game's hooks reach it here. */
     public static final HelmetCam FEATURE = new HelmetCam();
 
-    /** The dashboard's colour, before the stage's light. */
-    static final int DASH_RGB = 0x1e2024;
+    /** How much of the way to where the keys hold it the steering wheel turns in a tick. */
+    static final float STEER_FOLLOW = 0.3F;
 
     private final Head[] heads = {new Head(), new Head()};
     private final Cockpit[] cockpits = {new Cockpit(), new Cockpit()};
@@ -52,9 +53,11 @@ public final class HelmetCam implements Feature {
     private final float[] carX = new float[PLAYERS];
     private final float[] carY = new float[PLAYERS];
     private final float[] carZ = new float[PLAYERS];
-    private final float[] dashX = new float[4];
-    private final float[] dashY = new float[4];
-    private final float[] dashZ = new float[4];
+    /* what the inside shows: the steering wheel's turn (-1 to 1), the speed and the power (0 to 1) */
+    private final float[] steer = new float[PLAYERS];
+    private final float[] speed = new float[PLAYERS];
+    private final float[] power = new float[PLAYERS];
+    private final Interior interior = new Interior();
 
     private HelmetCam() {
     }
@@ -69,6 +72,9 @@ public final class HelmetCam implements Feature {
         players = Math.min(PLAYERS, Math.min(race.humans, race.cars));
         for (int p = 0; p < players; p++) {
             heads[p].reset();
+            steer[p] = 0F;
+            speed[p] = 0F;
+            power[p] = 0F;
             Cockpit c = cockpits[p];
             c.build(race.shape[p]);
             HLogger.info(String.format(Locale.ROOT,
@@ -87,6 +93,10 @@ public final class HelmetCam implements Feature {
             carX[p] = race.x[p];
             carY[p] = race.y[p];
             carZ[p] = race.z[p];
+            float held = (race.right[p] ? 1F : 0F) - (race.left[p] ? 1F : 0F);
+            steer[p] += (held - steer[p]) * STEER_FOLLOW;
+            speed[p] = Math.min(1F, Math.abs(race.speed[p]) / Math.max(1F, race.topSpeed[p]));
+            power[p] = Math.max(0F, Math.min(1F, race.power[p] / 98F));
         }
     }
 
@@ -101,7 +111,7 @@ public final class HelmetCam implements Feature {
         framing = ready(player) ? player : -1;
     }
 
-    /** In a frame from the helmet: the dashboard, right after the player's car, over it. */
+    /** In a frame from the helmet: the car's inside, right after the player's car, over it. */
     @Override
     public void queue(DrawQueue queue) {
         if (framing >= 0) {
@@ -114,17 +124,8 @@ public final class HelmetCam implements Feature {
         if (item < 0 || item >= players) {
             return;
         }
-        Cockpit c = cockpits[item];
-        float w = c.dashHalfWidth;
-        dashX[0] = -w;
-        dashX[1] = w;
-        dashX[2] = w;
-        dashX[3] = -w;
-        dashY[0] = dashY[1] = c.bonnetTop;
-        dashY[2] = dashY[3] = c.dashBottom;
-        java.util.Arrays.fill(dashZ, c.dashZ);
-        canvas.color(canvas.fog(DASH_RGB, carX[item], carY[item], carZ[item]));
-        canvas.onCar(item, dashX, dashY, dashZ, 4);
+        interior.draw(canvas, item, cockpits[item], steer[item], speed[item], power[item], carX[item], carY[item],
+                carZ[item]);
     }
 
     /** True while the extra is on in a race and has a head for {@code player}. */
@@ -188,6 +189,11 @@ public final class HelmetCam implements Feature {
         float felt = head.feltBefore + (head.felt - head.feltBefore) * t;
         float strength = (felt - VIGNETTE_FROM) / (VIGNETTE_FULL - VIGNETTE_FROM);
         return Math.max(0F, Math.min(1F, strength)) * VIGNETTE_MOST;
+    }
+
+    /** How far {@code player}'s steering wheel is turned, -1 to 1, for the check. */
+    float steer(int player) {
+        return steer[player];
     }
 
     /** {@code player}'s head, for the check. */

@@ -13,8 +13,9 @@ import nfm.lit.features.CarShape;
  * that are not glass, the bonnet, the front wings and wheels. The game does
  * not cut a polygon where it passes the eyes, it stretches it across the
  * picture, so the roof, the sides and the back (which reach past the eyes)
- * and the glass (which the eyes look through) are left out, and a dashboard
- * hides what the eyes would see of the inside below the bonnet's foot.
+ * and the glass (which the eyes look through) are left out, and the car's
+ * inside ({@link Interior}) hides what the eyes would see below the
+ * bonnet's foot.
  */
 final class Cockpit {
 
@@ -23,25 +24,18 @@ final class Cockpit {
     static final float BELOW = 2F;
     /** Over an open car's body (and its bonnet), how high the eyes are, units; with glass, a third of its height. */
     static final float OVER_OPEN_BODY = 6F;
-    /**
-     * How far ahead of the eyes the dashboard is at least, units: the game
-     * draws nothing nearer than 50 to the eyes as it is (it squeezes it to 50),
-     * and the head comes up to 16 nearer under braking.
-     */
+    /** How far ahead of the eyes the foot of the windscreen is taken to be at least, units. */
     static final float DASH_AHEAD = 66F;
-    /** How far below the car's lowest point the dashboard reaches, and how many times the car's half width it is wide. */
-    static final float DASH_BELOW = 120F;
-    static final float DASH_WIDE = 4F;
 
     /** The eyes, in the car's own numbers (x right, y down, z forward). */
     float eyeX;
     float eyeY;
     float eyeZ;
-    /** The top of the bonnet (its least y), and the dashboard: across the car at dashZ, from the bonnet's top down to dashBottom. */
+    /** The top of the bonnet (its least y), and how far along the car the foot of the windscreen is: where the dashboard's top is seen. */
     float bonnetTop;
     float dashZ;
-    float dashBottom;
-    float dashHalfWidth;
+    /** The car has glass: a roof and pillars around the eyes; false for an open car. */
+    boolean closed;
     /** Per polygon (the game's numbers): drawn from the eyes. */
     boolean[] shown = new boolean[0];
     int polygons;
@@ -70,7 +64,8 @@ final class Cockpit {
         }
         float bonnetFrom;
         float over;
-        if (glassTop < glassBottom && glassBack < glassFront) {
+        closed = glassTop < glassBottom && glassBack < glassFront;
+        if (closed) {
             over = (glassBottom - glassTop) / 3F;
             eyeY = glassTop + over;
             eyeZ = (glassBack + glassFront) / 2F;
@@ -127,17 +122,12 @@ final class Cockpit {
     }
 
     /**
-     * The dashboard: a dark wall across the view at the foot of the
-     * windscreen (or far enough from the eyes to be drawn whole, see
-     * {@link #DASH_AHEAD}), its top level with the top of the bonnet, wide
-     * and deep enough to fill the bottom of the picture. It hides the inside
-     * of the car the eyes would look down into, and the car's own polygons
-     * by the eyes that are not drawn.
+     * Where the dashboard's top is seen: at the foot of the windscreen (at
+     * least {@link #DASH_AHEAD} from the eyes), level with the top of the
+     * bonnet. {@link Interior} draws the car's inside from there down.
      */
     private void dash(CarShape s, float from) {
         dashZ = Math.max(from, eyeZ + DASH_AHEAD);
-        dashBottom = Math.max(s.maxY, bonnetTop) + DASH_BELOW;
-        dashHalfWidth = DASH_WIDE * Math.max(Math.abs(s.minX), Math.abs(s.maxX));
     }
 
     /** No glass: the eyes a little over the body, at its middle along the car. */

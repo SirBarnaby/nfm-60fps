@@ -4,7 +4,9 @@ import static nfm.lit.features.ExtrasCheck.check;
 import static nfm.lit.features.ExtrasCheck.n;
 import static nfm.lit.features.ExtrasCheck.waiting;
 
+import java.util.List;
 import nfm.lit.features.CarShape;
+import nfm.lit.features.CheckCanvas;
 import nfm.lit.features.RaceView;
 
 /**
@@ -22,6 +24,11 @@ public final class HelmetCheck {
     private static final int CY = 360;
     private static final int CZ = 50;
     private static final float FOCUS = 400F;
+    /** In a race the game's focus is 500: the picture's bottom edge is this slope below the middle of the view. */
+    private static final float HALF_HIGH = 360F / 500F;
+    /** The game leaves an extra's polygon out whole when a corner is nearer than this, and draws a nearer point as if at 50. */
+    private static final float DROPPED = 10F;
+    private static final float SQUEEZED = 50F;
 
     private final HelmetCam cam = HelmetCam.FEATURE;
     private RaceView v;
@@ -46,6 +53,10 @@ public final class HelmetCheck {
             c.vignette();
             c.cockpit();
             c.camera();
+            c.interiorParts();
+            c.interiorCovers();
+            c.interiorNeverClips();
+            c.interiorMoves();
             waiting(F, "a lap in first person", "the owner drives a lap with hard braking, a fast corner, a jump"
                     + " and a landing in the helmet cam (Extras tab, then the view key) and signs it off");
         } finally {
@@ -294,6 +305,284 @@ public final class HelmetCheck {
         double ry = CY + (py - place[1] - CY) * Math.cos(zy) - (rz - CZ) * Math.sin(zy);
         double depth = CZ + (py - place[1] - CY) * Math.sin(zy) + (rz - CZ) * Math.cos(zy);
         return new double[] {rx, ry, depth};
+    }
+
+    /* -------------------------------------------------------- the inside */
+
+    /** The parts of the inside as drawn for the made-up car, the wheel turned {@code steer}. */
+    private CheckCanvas inside(Cockpit c, float steer, float speed, float power) {
+        CheckCanvas canvas = new CheckCanvas();
+        canvas.keeping = true;
+        new Interior().draw(canvas, 0, c, steer, speed, power, 0F, 0F, 0F);
+        return canvas;
+    }
+
+    /** The inside is many parts in many colours, none nearer the eyes than the game can draw; an open car has no roof. */
+    private void interiorParts() {
+        start();
+        Cockpit c = cam.cockpit(0);
+        CheckCanvas canvas = inside(c, 0F, 0.5F, 0.5F);
+        float nearest = Float.MAX_VALUE;
+        for (float[] p : canvas.kept) {
+            for (int k = 2; k < p.length; k += 3) {
+                nearest = Math.min(nearest, p[k] - c.eyeZ);
+            }
+        }
+        int roofed = canvas.drawn(Interior.PILLAR) + canvas.drawn(Interior.ROOF);
+        // the same car with no glass: an open car
+        CarShape open = box();
+        java.util.Arrays.fill(open.glass, false);
+        Cockpit o = new Cockpit();
+        o.build(open);
+        CheckCanvas openCanvas = inside(o, 0F, 0.5F, 0.5F);
+        int openRoofed = openCanvas.drawn(Interior.PILLAR) + openCanvas.drawn(Interior.ROOF);
+        check(F, "the inside of the car: a dashboard, instruments, a steering wheel, doors; a roof only over glass",
+                canvas.polygons >= 60 && canvas.colors.size() >= 15 && nearest >= Interior.NEAREST && c.closed
+                        && roofed > 0 && !o.closed && openRoofed == 0 && openCanvas.polygons >= 60,
+                canvas.polygons + " parts in " + canvas.colors.size() + " colours, the nearest " + n(nearest)
+                        + " ahead of the eyes (the game draws from 50, the head comes 16 forward); " + roofed
+                        + " parts of pillars and roof with glass, " + openRoofed + " in an open car ("
+                        + openCanvas.polygons + " parts)");
+    }
+
+    /**
+     * From the eyes at rest and thrown as far as the springs let them,
+     * looking as far aside as the head turns: every point of the picture
+     * below the top of the dashboard is on a part, in a 16:9 and a 21:9
+     * picture, and no one part is much of the picture's lower half.
+     */
+    private void interiorCovers() {
+        start();
+        Cockpit c = cam.cockpit(0);
+        List<float[]> parts = inside(c, 0F, 0.5F, 0.5F).kept;
+        float far = Interior.ahead(c);
+        float cowl = Interior.cowl(c);
+        int holes = 0;
+        int looked = 0;
+        float most = 0F;
+        int seenParts = 0;
+        float[] aspects = {16F / 9F, 21F / 9F};
+        float[] px = new float[parts.size() * 12];
+        float[] py = new float[parts.size() * 12];
+        boolean[] dropped = new boolean[parts.size()];
+        for (float aspect : aspects) {
+            float halfWide = HALF_HIGH * aspect;
+            for (int state = 0; state < 3 * 3 * 3 * 3 * 2; state++) {
+                float ox = (state % 3 - 1) * Head.LIMIT[0];
+                float oy = (state / 3 % 3 - 1) * Head.LIMIT[1];
+                float oz = (state / 9 % 3 - 1) * Head.LIMIT[2];
+                float look = (state / 27 % 3 - 1) * Head.LOOK_MAX;
+                float pitch = state / 81 == 0 ? HelmetCam.LOOK_DOWN : HelmetCam.LOOK_DOWN + Head.NOD * Head.LIMIT[2];
+                boolean rest = ox == 0F && oy == 0F && oz == 0F && look == 0F && state / 81 == 0;
+                project(parts, c, ox, oy, oz, look, pitch, px, py, dropped);
+                int[] top = new int[parts.size()];
+                int lower = 0;
+                double yaw = Math.toRadians(look);
+                double down = Math.toRadians(pitch);
+                for (int row = 0; row < 36; row++) {
+                    for (int col = 0; col < 64; col++) {
+                        float sx = ((col + 0.5F) / 32F - 1F) * halfWide;
+                        float sy = ((row + 0.5F) / 18F - 1F) * HALF_HIGH;
+                        // the ray through this point of the picture, in the car's frame: the camera's turns undone
+                        double ry = sy * Math.cos(down) + Math.sin(down);
+                        double rz1 = -sy * Math.sin(down) + Math.cos(down);
+                        double rx = sx * Math.cos(yaw) + rz1 * Math.sin(yaw);
+                        double rz = -sx * Math.sin(yaw) + rz1 * Math.cos(yaw);
+                        int on = -1;
+                        for (int i = 0; i < parts.size(); i++) {
+                            if (!dropped[i] && within(px, py, i * 12, parts.get(i).length / 3, sx, sy)) {
+                                on = i;
+                            }
+                        }
+                        if (rest && sy > 0F) {
+                            lower++;
+                            if (on >= 0) {
+                                top[on]++;
+                            }
+                        }
+                        if (rz <= 0.001D) {
+                            continue;
+                        }
+                        // where the ray meets the dashboard's plane, as slopes from the eyes at rest
+                        double t = (far - oz) / rz;
+                        double hx = (ox + rx * t) / far;
+                        double hy = (oy + ry * t) / far;
+                        if (hy > cowl + 0.01D && hy < Interior.FLOOR && Math.abs(hx) < 8D) {
+                            looked++;
+                            holes += on < 0 ? 1 : 0;
+                        }
+                    }
+                }
+                if (rest) {
+                    for (int count : top) {
+                        most = Math.max(most, count / (float) lower);
+                        seenParts += count > 0 ? 1 : 0;
+                    }
+                }
+            }
+        }
+        check(F, "below the dashboard's top the picture is covered, by many parts, however the head is thrown",
+                holes == 0 && looked > 20000 && most < 0.3F && seenParts >= 40,
+                holes + " of " + looked + " points open (16:9 and 21:9; the head at rest and at the ends of its"
+                        + " travel, turned up to " + n(Head.LOOK_MAX) + " degrees); at rest the largest part is "
+                        + Math.round(most * 100F) + "% of the picture's lower half, which shows " + seenParts / 2
+                        + " parts");
+    }
+
+    /**
+     * The game leaves out, whole, a polygon with a corner behind the eyes.
+     * However the head is thrown and turned and the car pitched against
+     * the view, a part left out is one wholly outside the picture, so
+     * nothing vanishes in view; and no corner in view is drawn nearer than
+     * it is by more than a little.
+     */
+    private void interiorNeverClips() {
+        start();
+        Cockpit c = cam.cockpit(0);
+        List<float[]> parts = inside(c, 1F, 0.5F, 0.5F).kept;
+        int vanishing = 0;
+        int leftOut = 0;
+        int frames = 0;
+        float squeeze = 1F;
+        float[] v = new float[3];
+        for (float aspect : new float[] {16F / 9F, 21F / 9F}) {
+            float halfWide = HALF_HIGH * aspect;
+            for (int state = 0; state < 27; state++) {
+                float ox = (state % 3 - 1) * Head.LIMIT[0];
+                float oy = (state / 3 % 3 - 1) * Head.LIMIT[1];
+                float oz = (state / 9 % 3 - 1) * Head.LIMIT[2];
+                for (float look = -Head.LOOK_MAX; look <= Head.LOOK_MAX; look += 5F) {
+                    for (float pitch = -12F; pitch <= 18F; pitch += 3F) {
+                        frames++;
+                        for (float[] p : parts) {
+                            int n = p.length / 3;
+                            boolean out = false;
+                            int sides = 15;
+                            for (int k = 0; k < n; k++) {
+                                turn(p, k, c, ox, oy, oz, look, pitch, v);
+                                out |= v[2] < DROPPED;
+                                int side;
+                                if (v[2] > 0.5F) {
+                                    side = (v[0] / v[2] > halfWide ? 1 : 0) | (v[0] / v[2] < -halfWide ? 2 : 0)
+                                            | (v[1] / v[2] > HALF_HIGH ? 4 : 0) | (v[1] / v[2] < -HALF_HIGH ? 8 : 0);
+                                    if (side == 0 && v[2] < SQUEEZED) {
+                                        squeeze = Math.max(squeeze, SQUEEZED / v[2]);
+                                    }
+                                } else {
+                                    side = (v[0] > 0F ? 1 : 2) | (v[1] > 0F ? 4 : 8);
+                                }
+                                sides &= side;
+                            }
+                            if (out) {
+                                leftOut++;
+                                vanishing += sides == 0 ? 1 : 0;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        check(F, "the inside never clips: a part the game leaves out is always outside the picture",
+                vanishing == 0 && leftOut > 0 && squeeze < 1.05F,
+                vanishing + " of " + leftOut + " parts left out were in the picture, over " + frames
+                        + " views (16:9 and 21:9; the head at the ends of its travel, turned up to "
+                        + n(Head.LOOK_MAX) + " degrees, the car pitched 12 up to 18 down against the view); a"
+                        + " corner in view is drawn at most " + Math.round((squeeze - 1F) * 100F) + "% out of place");
+    }
+
+    /** The steering wheel turns with the steering; the needles follow the speed and the power. */
+    private void interiorMoves() {
+        start();
+        Cockpit c = cam.cockpit(0);
+        float[] markX = new float[3];
+        float[] needle = new float[2];
+        for (int k = 0; k < 3; k++) {
+            CheckCanvas canvas = inside(c, k - 1F, k == 0 ? 0F : 1F, k == 0 ? 0F : 1F);
+            int needles = 0;
+            for (int i = 0; i < canvas.kept.size(); i++) {
+                float[] p = canvas.kept.get(i);
+                if (canvas.keptColor.get(i) == Interior.MARK) {
+                    markX[k] = (p[0] + p[3] + p[6] + p[9]) / 4F - c.eyeX;
+                } else if (canvas.keptColor.get(i) == Interior.NEEDLE && needles++ == 0 && k != 1) {
+                    // the first needle is the speed's, on the left dial: its tip against the dial's middle
+                    float d = Math.max(Interior.NEAREST, Interior.ahead(c) - Interior.INSTRUMENTS_NEARER);
+                    needle[k / 2] = (p[0] - c.eyeX) / d + Interior.DIAL_ASIDE;
+                }
+            }
+        }
+        // the wheel in the game follows the keys
+        cruise(30F, 5);
+        v.right[0] = true;
+        for (int t = 0; t < 20; t++) {
+            tick(0F, 0F, 0F);
+        }
+        float held = cam.steer(0);
+        v.right[0] = false;
+        v.left[0] = true;
+        tick(0F, 0F, 0F);
+        float turning = cam.steer(0);
+        v.left[0] = false;
+        check(F, "the steering wheel turns with the steering, the needles with the speed and the power",
+                markX[0] < -8F && Math.abs(markX[1]) < 0.01F && markX[2] > 8F && needle[0] < -0.02F && needle[1] > 0.02F
+                        && held > 0.95F && turning < held && turning > -0.5F,
+                "the mark on the rim " + n(markX[0]) + ", " + n(markX[1]) + ", " + n(markX[2])
+                        + " to the side at full left, straight, full right; the speed's needle points "
+                        + (needle[0] < 0F ? "left" : "right") + " at rest and " + (needle[1] > 0F ? "right" : "left")
+                        + " at top speed; right held a second turns the wheel " + Math.round(held * 100F)
+                        + "% of its lock, and a tick of left brings it to " + Math.round(turning * 100F) + "%");
+    }
+
+    /**
+     * Corner {@code k} of part {@code p} (the car's frame) as the eyes see
+     * it, into {@code v}: across, down and ahead of them, the head moved
+     * {@code (ox, oy, oz)} from rest and turned {@code look} degrees to
+     * the right, the view {@code pitch} degrees down against the car.
+     */
+    private static void turn(float[] p, int k, Cockpit c, float ox, float oy, float oz, float look, float pitch,
+            float[] v) {
+        double dx = p[k * 3] - c.eyeX - ox;
+        double dy = p[k * 3 + 1] - c.eyeY - oy;
+        double dz = p[k * 3 + 2] - c.eyeZ - oz;
+        double yaw = Math.toRadians(look);
+        double down = Math.toRadians(pitch);
+        double x1 = dx * Math.cos(yaw) - dz * Math.sin(yaw);
+        double z1 = dx * Math.sin(yaw) + dz * Math.cos(yaw);
+        v[0] = (float) x1;
+        v[1] = (float) (dy * Math.cos(down) - z1 * Math.sin(down));
+        v[2] = (float) (dy * Math.sin(down) + z1 * Math.cos(down));
+    }
+
+    /** Every part as the game would put it in the picture (slopes from its middle), 12 corners' room each; {@code dropped}: left out. */
+    private static void project(List<float[]> parts, Cockpit c, float ox, float oy, float oz, float look, float pitch,
+            float[] px, float[] py, boolean[] dropped) {
+        float[] v = new float[3];
+        for (int i = 0; i < parts.size(); i++) {
+            float[] p = parts.get(i);
+            dropped[i] = false;
+            for (int k = 0; k < p.length / 3; k++) {
+                turn(p, k, c, ox, oy, oz, look, pitch, v);
+                dropped[i] |= v[2] < DROPPED;
+                float depth = Math.max(v[2], SQUEEZED);
+                px[i * 12 + k] = v[0] / depth;
+                py[i * 12 + k] = v[1] / depth;
+            }
+        }
+    }
+
+    /** True if {@code (x, y)} is in the convex polygon of {@code n} corners from {@code at}. */
+    private static boolean within(float[] px, float[] py, int at, int n, float x, float y) {
+        boolean positive = false;
+        boolean negative = false;
+        for (int k = 0; k < n; k++) {
+            int next = at + (k + 1) % n;
+            float cross = (px[next] - px[at + k]) * (y - py[at + k]) - (py[next] - py[at + k]) * (x - px[at + k]);
+            positive |= cross > 0F;
+            negative |= cross < 0F;
+            if (positive && negative) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /* ------------------------------------------------------------ the car */
