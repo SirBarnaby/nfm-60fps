@@ -157,6 +157,11 @@ public final class FeatureSettings {
                         + " turning that lets go smoothly, so a slide can be held; weight forward under braking and"
                         + " outward in corners; a drift assist that keeps slides catchable. Stunts stay." + RACE_1_0,
                 "xtragrip", Kind.RACE, 0, "Off", "On"),
+        new Switch("wrecks", "Exploding wrecks",
+                "A wasted car burns for two seconds, then explodes: the blast dents the ground and throws and"
+                        + " damages the cars close to it, like a small dynamite. Off: it burns as it always did."
+                        + RACE_1_0,
+                "xtrawreck", Kind.RACE, 0, "Off", "On"),
     };
 
     /** Raised by every change, so the features can follow a switch turned during a race. */

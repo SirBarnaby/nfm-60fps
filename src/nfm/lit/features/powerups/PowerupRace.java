@@ -76,14 +76,7 @@ final class PowerupRace {
     private static final int OWN_CAR_AFTER = 12;
     /** It blows up by itself after this long. */
     private static final int FLIGHT = 45;
-    /** How far a blast reaches, how hard it throws a wheel away and up, and how much of the most damage it does. */
-    static final float BLAST_RADIUS = 520F;
-    private static final float BLAST_PUSH = 55F;
-    private static final float BLAST_LIFT = 30F;
-    private static final float BLAST_TIP = 15F;
-    static final float BLAST_DAMAGE = 0.25F;
-    /** A blast this near the ground dents it. */
-    static final float CRATER_HEIGHT = 150F;
+    /* its blast: BlastPush's stick */
     static final int STICKS = 8;
 
     /* the bomb */
@@ -652,8 +645,8 @@ final class PowerupRace {
     private void blast(RaceTick race, int s, float x, float y, float z, float ground) {
         int owner = stickOwner[s];
         stickOwner[s] = -1;
-        BlastPush.throwCars(race, x, y, z, BLAST_RADIUS, BLAST_PUSH, BLAST_LIFT, BLAST_TIP, BLAST_DAMAGE, -1, -1);
-        boolean dents = ground - y < CRATER_HEIGHT;
+        BlastPush.stick(race, x, y, z);
+        boolean dents = ground - y < BlastPush.CRATER_HEIGHT;
         event(BLAST, owner, dents ? 1 : 0, x, dents ? ground : y, z, ground);
     }
 

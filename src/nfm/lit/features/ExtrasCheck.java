@@ -69,6 +69,9 @@ public final class ExtrasCheck {
         if (wants(only, "powerups")) {
             nfm.lit.features.powerups.PowerupsCheck.run();
         }
+        if (wants(only, "wrecks")) {
+            nfm.lit.features.wrecks.WrecksCheck.run();
+        }
         if (wants(only, "handling")) {
             nfm.lit.features.handling.HandlingCheck.run();
         }

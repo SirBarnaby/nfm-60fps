@@ -13,6 +13,7 @@ One page per extra. Each lives in `src\nfm\lit\features\<feature>\`, has a switc
 - **Shared between extras**: `CarLooks` (how far each wheel is bent, which the skidmarks read for wavy marks; where debris that stays is kept) and `Debris` (a fixed ring of pieces lying on the road). A particle marked with `Particles.keep` becomes debris where it lands.
 - **Recordings**: `sounds.Recordings` gives the 3D sound an extra's clip from a recording in `src\nfm\lit\features\sounds\` (16-bit mono WAVs at the game's rates, cut by `sounds\make.py` from the sources `sounds\sources.tsv` names with their makers and licenses). An extra's sound is a recording, not a synthesized stand-in.
 - **Touches**: `RaceView.touchX/touchZ`, the strongest push on each corner from a wall or a car in the tick, however light (a scrape), besides the hits.
+- **Explosions**: `BlastPush` (in the race: throws and damages the cars near one), `Explosions` (the look: fireball, crater, flash, sound, and smoke that the wind, the ground, the cars and later explosions move) and `Wind` (one wind a race, from its seed) are shared by every extra that explodes. `CheckRace` is the made-up race their checks play on.
 - **`FeatureSettings`**: the switches: `-Dnfm.<switch>`, `-Dnfm.features`, the cookies (`xtra...`), the settings rows and `extras` in the developer console.
 
 ## Rules
@@ -20,7 +21,7 @@ One page per extra. Each lives in `src\nfm\lit\features\<feature>\`, has a switc
 - Look and sound extras only read the race: `test\verify-races.ps1 -Features looks -NoGolden` must give 20 matched.
 - Nothing allocated per frame or per tick once a race runs: fixed rings and pools, made at race start.
 - Everything drawn goes through `Canvas`, so the graphics card draws it in the kept scene.
-- Race extras (powerups, the suspension) keep their state in the race state and take their dice from a race stream of their own; a recording notes which were on.
+- Race extras (powerups, exploding wrecks, the suspension) keep their state in the race state and take their dice from a race stream of their own; a recording notes which were on.
 
 ## Pages
 
@@ -30,4 +31,5 @@ One page per extra. Each lives in `src\nfm\lit\features\<feature>\`, has a switc
 - [The helmet cam](helmetcam.md)
 - [The rebuilt engine sound](enginesound.md)
 - [Powerups](powerups.md)
+- [Exploding wrecks](wrecks.md)
 - [Suspension handling](handling.md)

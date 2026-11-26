@@ -4,17 +4,17 @@ import static nfm.lit.features.ExtrasCheck.check;
 import static nfm.lit.features.ExtrasCheck.n;
 
 import nfm.lit.features.CheckCanvas;
+import nfm.lit.features.CheckRace;
 import nfm.lit.features.Explosions;
 import nfm.lit.features.Features;
 import nfm.lit.features.GameHooks;
 import nfm.lit.features.RaceInts;
-import nfm.lit.features.RaceTick;
 import nfm.lit.features.RaceView;
 
 /**
  * The powerups' checks ({@link nfm.lit.features.ExtrasCheck}): the race
  * half played on a made-up straight with checkpoints, through a
- * {@link RaceTick} of plain arrays, and the look half drawn into a canvas
+ * {@link CheckRace} of plain arrays, and the look half drawn into a canvas
  * that counts. Each requirement's situation: the rows of boxes and how rare
  * they are, a pickup, nitrous's burst, two nitrous at once, the grip nitrous
  * leaves, dynamite thrown two seconds after the pickup, its aim and its
@@ -49,7 +49,7 @@ public final class PowerupsCheck {
 
     /** A row of three boxes over the road at one checkpoint in four. */
     private static void boxes() {
-        Track t = new Track(2, 8);
+        CheckRace t = new CheckRace(2, 8);
         PowerupRace r = new PowerupRace();
         r.setUp(t, 1L);
         boolean over = true;
@@ -73,7 +73,7 @@ public final class PowerupsCheck {
         int first = 0;
         StringBuilder each = new StringBuilder();
         for (int gates : laps) {
-            Track t = new Track(1, gates);
+            CheckRace t = new CheckRace(1, gates);
             PowerupRace r = new PowerupRace();
             r.setUp(t, 7L + gates);
             int got = 0;
@@ -107,7 +107,7 @@ public final class PowerupsCheck {
 
     /** Driving through a box: the car holds a powerup, the box is gone four seconds, a pickup event. */
     private static void pickup() {
-        Track t = new Track(2, 4);
+        CheckRace t = new CheckRace(2, 4);
         PowerupRace r = new PowerupRace();
         r.setUp(t, 2L);
         t.x[0] = r.boxX[1];
@@ -122,7 +122,7 @@ public final class PowerupsCheck {
 
     /** Nitrous on a press: more boost for two seconds, fading to none a second later. */
     private static void nitrous() {
-        Track t = new Track(2, 4);
+        CheckRace t = new CheckRace(2, 4);
         PowerupRace r = new PowerupRace();
         r.setUp(t, 3L);
         r.held[0] = PowerupRace.NITROUS;
@@ -148,7 +148,7 @@ public final class PowerupsCheck {
     private static void twoNitrous() {
         PowerupsFeature f = PowerupsFeature.FEATURE;
         PowerupRace r = f.race;
-        Track t = new Track(2, 4);
+        CheckRace t = new CheckRace(2, 4);
         r.setUp(t, 8L);
         RaceView v = view(t);
         f.raceStarted(v);
@@ -203,7 +203,7 @@ public final class PowerupsCheck {
      * by the grip at most) with and without it.
      */
     private static void slippery() {
-        Track t = new Track(2, 4);
+        CheckRace t = new CheckRace(2, 4);
         PowerupRace r = new PowerupRace();
         r.setUp(t, 9L);
         float before = r.grip(0);
@@ -253,7 +253,7 @@ public final class PowerupsCheck {
 
     /** Dynamite: thrown forwards 2 s after the pickup; its blast throws a car near it and dents the ground. */
     private static void dynamite() {
-        Track t = new Track(2, 4);
+        CheckRace t = new CheckRace(2, 4);
         PowerupRace r = new PowerupRace();
         r.setUp(t, 4L);
         r.held[0] = PowerupRace.DYNAMITE;
@@ -282,7 +282,7 @@ public final class PowerupsCheck {
     }
 
     /** Ticks until a blast's event, at most {@code most}: the event's place in the ring, or -1. */
-    private static int blastAfter(PowerupRace r, Track t, int most) {
+    private static int blastAfter(PowerupRace r, CheckRace t, int most) {
         for (int k = 0; k < most; k++) {
             int before = r.events;
             r.tick(t);
@@ -320,7 +320,7 @@ public final class PowerupsCheck {
      * {@code pushed[0]}, if given, how hard its blast pushes car 1.
      */
     private static float thrownToward(float degrees, float far, float[] pushed) {
-        Track t = new Track(2, 4);
+        CheckRace t = new CheckRace(2, 4);
         PowerupRace r = new PowerupRace();
         r.setUp(t, 10L);
         t.x[0] = 0F;
@@ -348,7 +348,7 @@ public final class PowerupsCheck {
     private static void bomb() {
         PowerupsFeature f = PowerupsFeature.FEATURE;
         PowerupRace r = f.race;
-        Track t = new Track(4, 4);
+        CheckRace t = new CheckRace(4, 4);
         // the bomb will lie 180 behind car 0 (its radius and 60): one car waits beside that, one far away, one behind
         float lying = -(t.radius(0) + 60F);
         float[][] places = {{0F, 0F}, {0F, lying - 1100F}, {200F, lying}, {3000F, lying}};
@@ -400,7 +400,7 @@ public final class PowerupsCheck {
 
     /** The car that dropped a bomb can back onto it in the first second; after that it gets the bang as anyone. */
     private static void ownBomb() {
-        Track t = new Track(2, 4);
+        CheckRace t = new CheckRace(2, 4);
         PowerupRace r = new PowerupRace();
         r.setUp(t, 12L);
         t.x[0] = 0F;
@@ -422,7 +422,7 @@ public final class PowerupsCheck {
 
     /** A computer car drops its bomb with a car close behind it in line, and keeps it with nobody behind. */
     private static void computerDrops() {
-        Track t = new Track(2, 4);
+        CheckRace t = new CheckRace(2, 4);
         PowerupRace r = new PowerupRace();
         r.setUp(t, 13L);
         t.x[1] = 0F;
@@ -450,7 +450,7 @@ public final class PowerupsCheck {
         int[][] got = new int[3][4];
         for (int place = 0; place < 3; place++) {
             for (long seed = 1; seed <= 400; seed++) {
-                Track t = new Track(3, 4);
+                CheckRace t = new CheckRace(3, 4);
                 PowerupRace r = new PowerupRace();
                 r.setUp(t, seed);
                 t.place[0] = place;
@@ -480,7 +480,7 @@ public final class PowerupsCheck {
     private static void explosion() {
         PowerupsFeature f = PowerupsFeature.FEATURE;
         PowerupRace r = f.race;
-        Track t = new Track(2, 4);
+        CheckRace t = new CheckRace(2, 4);
         r.setUp(t, 14L);
         t.x[0] = 0F;
         t.z[0] = 0F;
@@ -611,7 +611,7 @@ public final class PowerupsCheck {
 
     /** Saved, played on and restored, the state plays on exactly as before (run-ahead and rollback). */
     private static void rewind() {
-        Track t = new Track(3, 4);
+        CheckRace t = new CheckRace(3, 4);
         PowerupRace r = new PowerupRace();
         r.setUp(t, 6L);
         r.held[0] = PowerupRace.DYNAMITE;
@@ -624,7 +624,7 @@ public final class PowerupsCheck {
         saved.startSaving();
         r.sync(saved);
         saved.endSaving();
-        Track copy = t.copy();
+        CheckRace copy = t.copy();
         for (int k = 0; k < 70; k++) {
             r.tick(t);
         }
@@ -650,7 +650,7 @@ public final class PowerupsCheck {
     /* ------------------------------------------------------------ helpers */
 
     /** A copy of the made-up race for the look half, as the game makes one after a real tick. */
-    private static RaceView view(Track t) {
+    private static RaceView view(CheckRace t) {
         RaceView v = new RaceView();
         v.fit(t.cars);
         v.cars = t.cars;
@@ -661,7 +661,7 @@ public final class PowerupsCheck {
         return v;
     }
 
-    private static void look(Track t, RaceView v) {
+    private static void look(CheckRace t, RaceView v) {
         for (int c = 0; c < t.cars; c++) {
             v.x[c] = t.x[c];
             v.y[c] = t.y[c];
@@ -671,195 +671,10 @@ public final class PowerupsCheck {
     }
 
     /** One real tick: the race half, then the look half from a fresh copy. */
-    private static void tick(PowerupsFeature f, Track t, RaceView v) {
+    private static void tick(PowerupsFeature f, CheckRace t, RaceView v) {
         f.race.tick(t);
         v.tick++;
         look(t, v);
         f.afterTick(v);
-    }
-
-    /** A straight along z with a checkpoint every 1500 units, the cars on it, as plain arrays. */
-    private static final class Track implements RaceTick {
-        final int cars;
-        final int gates;
-        final float[] x;
-        final float[] y;
-        final float[] z;
-        final int[] place;
-        final boolean[] key;
-        final float[] pushed;
-        final float[] damaged;
-
-        Track(int cars, int gates) {
-            this.cars = cars;
-            this.gates = gates;
-            x = new float[cars];
-            y = new float[cars];
-            z = new float[cars];
-            place = new int[cars];
-            key = new boolean[cars];
-            pushed = new float[cars];
-            damaged = new float[cars];
-            for (int c = 0; c < cars; c++) {
-                x[c] = -900F - 400F * c; // beside the boxes
-                y[c] = 220F;
-                z[c] = -3000F;
-                place[c] = c;
-            }
-        }
-
-        Track copy() {
-            Track t = new Track(cars, gates);
-            System.arraycopy(x, 0, t.x, 0, cars);
-            System.arraycopy(y, 0, t.y, 0, cars);
-            System.arraycopy(z, 0, t.z, 0, cars);
-            System.arraycopy(place, 0, t.place, 0, cars);
-            return t;
-        }
-
-        @Override
-        public int cars() {
-            return cars;
-        }
-
-        @Override
-        public int humans() {
-            return 1;
-        }
-
-        @Override
-        public float x(int car) {
-            return x[car];
-        }
-
-        @Override
-        public float y(int car) {
-            return y[car];
-        }
-
-        @Override
-        public float z(int car) {
-            return z[car];
-        }
-
-        @Override
-        public int yaw(int car) {
-            return 0;
-        }
-
-        @Override
-        public float speed(int car) {
-            return 0F;
-        }
-
-        @Override
-        public float topSpeed(int car) {
-            return 100F;
-        }
-
-        @Override
-        public float vx(int car) {
-            return 0F;
-        }
-
-        @Override
-        public float vy(int car) {
-            return 0F;
-        }
-
-        @Override
-        public float vz(int car) {
-            return 0F;
-        }
-
-        @Override
-        public int radius(int car) {
-            return 120;
-        }
-
-        @Override
-        public float wheelX(int car, int wheel) {
-            return x[car] + ((wheel & 1) == 0 ? -40F : 40F);
-        }
-
-        @Override
-        public float wheelZ(int car, int wheel) {
-            return z[car] + (wheel < 2 ? 70F : -70F);
-        }
-
-        @Override
-        public boolean grounded(int car) {
-            return true;
-        }
-
-        @Override
-        public boolean wasted(int car) {
-            return false;
-        }
-
-        @Override
-        public boolean throttle(int car) {
-            return false;
-        }
-
-        @Override
-        public boolean steering(int car) {
-            return false;
-        }
-
-        @Override
-        public boolean useKey(int car) {
-            return car == 0 && key[0];
-        }
-
-        @Override
-        public int place(int car) {
-            return place[car];
-        }
-
-        @Override
-        public int wheelDrop(int car) {
-            return 30;
-        }
-
-        @Override
-        public int points() {
-            return gates * 2;
-        }
-
-        @Override
-        public float pointX(int point) {
-            return 0F;
-        }
-
-        @Override
-        public float pointY(int point) {
-            return 250F;
-        }
-
-        @Override
-        public float pointZ(int point) {
-            return point * 750F;
-        }
-
-        @Override
-        public int pointKind(int point) {
-            return point % 2 == 1 ? 1 : 0;
-        }
-
-        @Override
-        public float ground(float px, float py, float pz) {
-            return 250F;
-        }
-
-        @Override
-        public void push(int car, int wheel, float vx, float vy, float vz) {
-            pushed[car] += (float) Math.sqrt(vx * vx + vy * vy + vz * vz);
-        }
-
-        @Override
-        public void damage(int car, int wheel, float share) {
-            damaged[car] += share;
-        }
     }
 }

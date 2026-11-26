@@ -9,7 +9,34 @@ package nfm.lit.features;
  */
 public final class BlastPush {
 
+    /* a dynamite stick: how far it reaches, how hard it throws a wheel away and up, and its share of the most damage */
+    public static final float STICK_RADIUS = 520F;
+    public static final float STICK_PUSH = 55F;
+    public static final float STICK_LIFT = 30F;
+    public static final float STICK_TIP = 15F;
+    public static final float STICK_DAMAGE = 0.25F;
+
+    /* a wreck blowing up: a small dynamite */
+    public static final float WRECK_RADIUS = 400F;
+    public static final float WRECK_PUSH = 35F;
+    public static final float WRECK_LIFT = 20F;
+    public static final float WRECK_TIP = 10F;
+    public static final float WRECK_DAMAGE = 0.15F;
+
+    /** An explosion this near the ground dents it. */
+    public static final float CRATER_HEIGHT = 150F;
+
     private BlastPush() {
+    }
+
+    /** A dynamite stick blows up at {@code (x, y, z)}; returns how many cars it reached. */
+    public static int stick(RaceTick race, float x, float y, float z) {
+        return throwCars(race, x, y, z, STICK_RADIUS, STICK_PUSH, STICK_LIFT, STICK_TIP, STICK_DAMAGE, -1, -1);
+    }
+
+    /** A wreck blows up at {@code (x, y, z)}: a small dynamite; returns how many cars it reached. */
+    public static int wreck(RaceTick race, float x, float y, float z) {
+        return throwCars(race, x, y, z, WRECK_RADIUS, WRECK_PUSH, WRECK_LIFT, WRECK_TIP, WRECK_DAMAGE, -1, -1);
     }
 
     /**

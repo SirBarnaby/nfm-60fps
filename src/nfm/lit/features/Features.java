@@ -26,6 +26,7 @@ public final class Features {
         nfm.lit.features.enginesound.EngineSound.FEATURE,
         nfm.lit.features.powerups.PowerupsFeature.FEATURE,
         nfm.lit.features.handling.HandlingFeature.FEATURE,
+        nfm.lit.features.wrecks.WrecksFeature.FEATURE,
     };
 
     private static final boolean[] active = new boolean[ALL.length];
