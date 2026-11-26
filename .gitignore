@@ -41,3 +41,7 @@ desktop.ini
 !/mods/README.txt
 
 # openspec/ (the owner's specs) and .agents/, .claude/ (the OpenSpec skills) stay tracked
+
+# The Linux (cloud) workspace: fetched natives and its own golden frames
+/cloud/natives/
+/cloud/golden/
