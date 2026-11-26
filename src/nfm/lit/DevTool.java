@@ -242,6 +242,11 @@ public class DevTool {
                     debugstat = false;
                 }
                 break;
+            case "unlockall":
+                xt.unlockAllAsked = true;
+                print("Every stage and car is unlocked (saved), from the next main menu frame."
+                        + " On the main menu, typing " + GameSparker.CHEAT_UNLOCK + " does the same.");
+                break;
             case "unlocked":
                 if (args.length == 1) {
                     try {
@@ -810,6 +815,7 @@ public class DevTool {
         commandDescriptions.put("spectate", "Spectates a specified car. Usage: spectate <n>");
         commandDescriptions.put("god", "Toggles god mode.");
         commandDescriptions.put("unlocked", "Sets the unlocked value in GameUi. Usage: unlocked <n>");
+        commandDescriptions.put("unlockall", "Unlocks every stage and car and saves it, as typing the cheat code on the main menu does.");
         commandDescriptions.put("fase", "Sets the game state (phase). Usage: fase <n>");
         commandDescriptions.put("nfm", "Sets the NFM mode. Usage: nfm <n>");
         commandDescriptions.put("map", "Loads a stage from the specified path. Usage: map <path-to-.txt>");

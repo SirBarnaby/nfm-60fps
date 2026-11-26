@@ -4389,10 +4389,21 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         fitScreen();
     }
 
+    /** The cheat code was typed on the main menu (see GameSparker.noteTyped): unlock on the next menu frame. */
+    volatile boolean unlockAllAsked;
+    /** Menu frames left of the line saying everything is unlocked. */
+    private int unlockAllShown;
+
     public void maini(Control control, CheckPoints checkpoints, Madness drivers[], ContO models[], ContO scene[]) {
         // might redo the entire menu its horrible
 
         int menuItems = MENU_ITEMS;
+
+        if (unlockAllAsked) {
+            unlockAllAsked = false;
+            app.unlockEverything();
+            unlockAllShown = 120;
+        }
 
         if (GameSparker.DEBUG) {
             if (!devtriggered) {
@@ -4524,6 +4535,12 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
             rd.drawRoundRect(x, menuY[item], MENU_WIDTH[item], main_menu_button_height, 7, 20);
         }
         rd.drawImage(opti, Utility.centeredImageX(opti), 250 + main_menu_height_origin, null);
+        if (unlockAllShown > 0) {
+            unlockAllShown--;
+            boolean bright = unlockAllShown / 6 % 2 == 0;
+            drawcs(232 + main_menu_height_origin, "Every stage and car is unlocked!", bright ? 247 : 176,
+                    bright ? 255 : 196, bright ? 165 : 0, 3);
+        }
         SettingsScreen.drawMenuItem(rd, "Split Screen", GameFacts.screenWidth / 2F, menuY[MENU_SPLIT] + 18);
         SettingsScreen.drawMenuItem(rd, "Settings", GameFacts.screenWidth / 2F, menuY[MENU_SETTINGS] + 18);
         SettingsScreen.drawMenuItem(rd, "Exit Game", GameFacts.screenWidth / 2F, menuY[MENU_EXIT] + 18);

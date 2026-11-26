@@ -763,6 +763,37 @@ public class GameSparker extends Panel implements Runnable {
     /** The keys down, keyboard and virtual, and the player and action each does, {@code player << 8 | action} (inputLock). */
     private final java.util.Map<Integer, Integer> keysDown = new java.util.HashMap<>();
 
+    /**
+     * The cheat code (settings, "A cheat code unlocks everything"): typed on the main menu, it unlocks every
+     * stage and car. Its letters do nothing else there, with the game's own keys (no M or N, which mute).
+     */
+    static final String CHEAT_UNLOCK = "radical";
+    /** The last letters typed on the main menu (inputLock). */
+    private final StringBuilder typedLetters = new StringBuilder();
+
+    /** A key typed: on the main menu its letter may finish the cheat code. Under inputLock. */
+    private void noteTyped(int legacy) {
+        GameUi menu = ui;
+        if (menu == null || menu.fase != Phase.MAINMENU || !Character.isLetter(legacy)) {
+            typedLetters.setLength(0);
+            return;
+        }
+        typedLetters.append(Character.toLowerCase((char) legacy));
+        if (typedLetters.length() > CHEAT_UNLOCK.length()) {
+            typedLetters.delete(0, typedLetters.length() - CHEAT_UNLOCK.length());
+        }
+        if (typedLetters.toString().equals(CHEAT_UNLOCK)) {
+            typedLetters.setLength(0);
+            menu.unlockAllAsked = true; // the game thread unlocks, on its next menu frame
+        }
+    }
+
+    /** Unlocks every stage and car and saves it (the cheat code, or the console's unlockall). On the game thread. */
+    void unlockEverything() {
+        ui.unlocked = GameFacts.numberOfStages;
+        savecookie("unlocked", "" + ui.unlocked);
+    }
+
     private void press(int id, int legacy, int player, int action, boolean alt, long age) {
         if (legacy >= 0 && SettingsScreen.typeKey(legacy)) {
             return; // a size being typed on the settings screen takes every key
@@ -777,6 +808,7 @@ public class GameSparker extends Panel implements Runnable {
             return;
         }
         synchronized (inputLock) {
+            noteTyped(legacy);
             boolean fullscreenKey = legacy == GameInput.F11 || legacy == 10 && alt;
             if (fullscreenKey) {
                 RunApp.toggleFullscreen();
