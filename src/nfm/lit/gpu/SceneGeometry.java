@@ -98,25 +98,26 @@ final class SceneGeometry {
         to.duplicate().order(ByteOrder.LITTLE_ENDIAN).asIntBuffer().put(vertices, 0, vertexCount * INTS);
     }
 
+    /** The draws, those of {@link #stencilBands} while it is on. */
     int draws() {
-        return draws;
+        return stencilBands ? stencilDraws : draws;
     }
 
     int kind(int draw) {
-        return drawKind[draw];
+        return stencilBands ? stencilKind[draw] : drawKind[draw];
     }
 
     int start(int draw) {
-        return drawStart[draw];
+        return stencilBands ? stencilStart[draw] : drawStart[draw];
     }
 
     int count(int draw) {
-        return drawCount[draw];
+        return stencilBands ? stencilCount[draw] : drawCount[draw];
     }
 
     /** How much the draw's polygons glow, 0 to 255. */
     int glow(int draw) {
-        return drawGlow[draw];
+        return stencilBands ? stencilGlow[draw] : drawGlow[draw];
     }
 
     /**
@@ -124,7 +125,7 @@ final class SceneGeometry {
      * in the picture's pixels into {@code into}; false if it is not in one.
      */
     boolean pane(int draw, int[] into) {
-        int p = drawPane[draw];
+        int p = stencilBands ? stencilPane[draw] : drawPane[draw];
         if (p < 0) {
             return false;
         }
@@ -159,6 +160,10 @@ final class SceneGeometry {
         polygon = 0;
         vertexCount = 0;
         draws = 0;
+        bandCount = 0;
+        fanCount = 0;
+        stencilDraws = 0;
+        stencilBands = false;
         evenOddPolygons = 0;
         antialiased = 0;
         scaleX = 2F / width;
@@ -276,8 +281,13 @@ final class SceneGeometry {
         boolean convex = isConvex(px, py, n);
         if (projecting) {
             if (!convex) {
-                if (scanEdges(n) && earClip(which, n) || bandFill(n)) {
+                if (scanEdges(n) && earClip(which, n)) {
                     return; // plain triangles the card places: no stencil, and in the same draw call as the rest
+                }
+                int from = vertexCount;
+                if (bandFill(n)) {
+                    keepFan(n, from);
+                    return; // the same, while the frames are placed for the span it was cut for
                 }
                 evenOddPolygons++;
             }
@@ -1477,6 +1487,24 @@ final class SceneGeometry {
     private float[] extra = new float[ScenePoints.STRIDE * 1024];
     private int extraCount;
 
+    /*
+     * For frames placed for another span than the scene was cut for (decision 17): each band polygon's vertices as
+     * cut (from, to) and where its fan starts in fans, which the stencil fills from its corners instead; and the
+     * draws that do so, the plain ones split around those polygons.
+     */
+    private int[] bandRanges = new int[3 * 256];
+    private int bandCount;
+    private int[] fans = new int[PROJECTED_INTS * 4096];
+    private int fanCount;
+    private int[] stencilKind = new int[256];
+    private int[] stencilStart = new int[256];
+    private int[] stencilCount = new int[256];
+    private int[] stencilGlow = new int[256];
+    private int[] stencilPane = new int[256];
+    private int stencilDraws;
+    /** The draws read are the ones that fill band polygons with the stencil, see {@link #stencilBands(boolean)}. */
+    private boolean stencilBands;
+
     /**
      * Builds a kept scene's triangles once for all its frames, for the card
      * to place: each vertex names the points its position comes from, and
@@ -1498,10 +1526,99 @@ final class SceneGeometry {
         }
         try {
             build(list, width, height, 1F, -1L);
+            stencilDraws();
         } finally {
             projecting = false;
             scenePoints = null;
         }
+    }
+
+    /**
+     * Whether the frames now are placed for another span than the one the
+     * last {@link #buildProjected} cut its band polygons for (the next
+     * tick's, handed over before its scene is made): then the draws read
+     * fill those polygons with the stencil from their corners, exact wherever
+     * they go, the rest as before (decision 17).
+     */
+    void stencilBands(boolean on) {
+        stencilBands = on && bandCount > 0;
+    }
+
+    /** Vertices built for the card, the band polygons' fans after the rest. */
+    int projectedVertexCount() {
+        return vertexCount + fanCount;
+    }
+
+    /** Band polygon's corners as a fan too, its pieces cut from vertex {@code from} on, see {@link #stencilBands}. */
+    private void keepFan(int n, int from) {
+        if (vertexCount == from) {
+            return; // covers nothing
+        }
+        int at = 3 * bandCount;
+        if (at + 3 > bandRanges.length) {
+            bandRanges = Arrays.copyOf(bandRanges, bandRanges.length * 2);
+        }
+        bandRanges[at] = from;
+        bandRanges[at + 1] = vertexCount;
+        bandRanges[at + 2] = fanCount;
+        bandCount++;
+        for (int k = 1; k + 1 < n; k++) {
+            fanVertex(0);
+            fanVertex(k);
+            fanVertex(k + 1);
+        }
+    }
+
+    /** As {@link #cornerVertex}, into the fans. */
+    private void fanVertex(int k) {
+        int at = fanCount * PROJECTED_INTS;
+        if (at + PROJECTED_INTS > fans.length) {
+            fans = Arrays.copyOf(fans, fans.length * 2);
+        }
+        putVertex(fans, at, 0F, 0F, refX[k], refY[k], refX[k], refY[k], ROLE_FILL);
+        fanCount++;
+    }
+
+    /**
+     * The draws of {@link #stencilBands}: the same in the same order, but
+     * each band polygon's pieces left out of its plain draw and its fan
+     * filled with the stencil in their place.
+     */
+    private void stencilDraws() {
+        stencilDraws = 0;
+        int b = 0;
+        for (int d = 0; d < draws; d++) {
+            int at = drawStart[d];
+            int end = at + drawCount[d];
+            for (; b < bandCount && bandRanges[3 * b] < end; b++) {
+                int fan = bandRanges[3 * b + 2];
+                int fanEnd = b + 1 < bandCount ? bandRanges[3 * b + 5] : fanCount;
+                stencilDraw(PLAIN, at, bandRanges[3 * b] - at, d);
+                stencilDraw(EVEN_ODD, vertexCount + fan, fanEnd - fan, d);
+                at = bandRanges[3 * b + 1];
+            }
+            stencilDraw(drawKind[d], at, end - at, d);
+        }
+    }
+
+    private void stencilDraw(int kind, int start, int count, int like) {
+        if (count == 0) {
+            return;
+        }
+        if (stencilDraws == stencilKind.length) {
+            int size = stencilDraws * 2;
+            stencilKind = Arrays.copyOf(stencilKind, size);
+            stencilStart = Arrays.copyOf(stencilStart, size);
+            stencilCount = Arrays.copyOf(stencilCount, size);
+            stencilGlow = Arrays.copyOf(stencilGlow, size);
+            stencilPane = Arrays.copyOf(stencilPane, size);
+        }
+        stencilKind[stencilDraws] = kind;
+        stencilStart[stencilDraws] = start;
+        stencilCount[stencilDraws] = count;
+        stencilGlow[stencilDraws] = drawGlow[like];
+        stencilPane[stencilDraws] = drawPane[like];
+        stencilDraws++;
     }
 
     /** The points made for fixed values by the last {@link #buildProjected}, ScenePoints.STRIDE floats each. */
@@ -1513,9 +1630,10 @@ final class SceneGeometry {
         return extraCount;
     }
 
-    /** Copies the vertices built for the card to {@code to}, which holds {@link #vertexCount} of them. */
+    /** Copies the vertices built for the card to {@code to}, which holds {@link #projectedVertexCount} of them. */
     void copyProjected(ByteBuffer to) {
-        to.duplicate().order(ByteOrder.LITTLE_ENDIAN).asIntBuffer().put(projected, 0, vertexCount * PROJECTED_INTS);
+        to.duplicate().order(ByteOrder.LITTLE_ENDIAN).asIntBuffer().put(projected, 0, vertexCount * PROJECTED_INTS)
+                .put(fans, 0, fanCount * PROJECTED_INTS);
     }
 
     /**
@@ -1604,7 +1722,13 @@ final class SceneGeometry {
         if (at + PROJECTED_INTS > projected.length) {
             projected = Arrays.copyOf(projected, projected.length * 2);
         }
-        int[] v = projected;
+        putVertex(projected, at, x, y, ax, ay, bx, by, role);
+        vertexCount++;
+        drawCount[open]++;
+    }
+
+    /** A vertex placed on the card, into {@code v} at {@code at}, in the current colour. */
+    private void putVertex(int[] v, int at, float x, float y, int ax, int ay, int bx, int by, int role) {
         v[at] = Float.floatToRawIntBits(x);
         v[at + 1] = Float.floatToRawIntBits(y);
         v[at + 2] = abgr;
@@ -1614,7 +1738,5 @@ final class SceneGeometry {
         v[at + 5] = Float.floatToRawIntBits(bx);
         v[at + 6] = Float.floatToRawIntBits(by);
         v[at + 7] = Float.floatToRawIntBits(role);
-        vertexCount++;
-        drawCount[open]++;
     }
 }

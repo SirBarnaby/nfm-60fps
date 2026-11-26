@@ -383,6 +383,13 @@ public class GameSparker extends Panel implements Runnable {
      * keep their times.
      */
     private boolean raceOnScreen;
+    /**
+     * The frames shown since the last race frame were all the pause menu's
+     * over that race: the race going on after it is the same race, so its
+     * first scene keeps the ticks' times as {@link #raceOnScreen} does (the
+     * next tick due as before the pause; a key pressed then is in it).
+     */
+    private boolean racePaused;
 
     /** Set by the autotest thread; the next race tick jumps to the post-race highlight. */
     private volatile boolean autotestHighlightRequested;
@@ -2958,7 +2965,8 @@ public class GameSparker extends Panel implements Runnable {
      */
     private boolean handOverKept() {
         warmUpKept = null; // the presenter's own from here: a warm-up scene not drawn by now is not needed
-        boolean firstScene = !raceOnScreen; // nothing of this race on the screen yet
+        // nothing of this race on the screen yet (the pause menu's frames do not end it)
+        boolean firstScene = !raceOnScreen && !(racePaused && ui.fase == Phase.INGAME);
         boolean ahead = aheadPossible();
         boolean stale = keptStale || keptAhead != ahead;
         long aheadNanos = 0L;
@@ -3237,6 +3245,8 @@ public class GameSparker extends Panel implements Runnable {
             BufferedImage hud;
             boolean flash;
             long version;
+            /** The span its scene was made for ({@link Presenter#spanVersion}); see {@link #stencilBands}. */
+            long spanVersion;
 
             /** Its {@link #panes}, made the first time a split-screen race needs them. */
             KeptPanes panes() {
@@ -3272,6 +3282,19 @@ public class GameSparker extends Panel implements Runnable {
                     panes.place(first, second);
                 } else {
                     scene.realize(first, recorder.list().data());
+                }
+            }
+
+            /**
+             * Whether its band polygons are filled with the stencil this frame:
+             * when the frame is placed for a later span than its scene was
+             * made for (the next tick's, handed over before that tick's scene
+             * is made), whose corners its bands were not checked for.
+             */
+            void stencilBands(long placedSpan) {
+                boolean on = placedSpan != spanVersion;
+                for (nfm.lit.gpu.ProjectedScene p : cardScenes()) {
+                    p.stencilBands(on);
                 }
             }
 
@@ -3403,10 +3426,11 @@ public class GameSparker extends Panel implements Runnable {
             }
         }
 
-        /** Game thread: {@code k} is the scene for the frames from now on. */
+        /** Game thread: {@code k} is the scene for the frames from now on, made for the span handed over last. */
         void handOver(Kept k) {
             synchronized (lock) {
                 k.version = ++keptVersion;
+                k.spanVersion = spanVersion;
                 latest = k;
                 lock.notifyAll();
             }
@@ -3554,6 +3578,7 @@ public class GameSparker extends Panel implements Runnable {
             }
             if (onCard) {
                 // the card places every point: only what the frame's moment changes goes to it
+                k.stencilBands(placedSpanVersion);
                 k.frameConstants(pose, pose2);
                 if (projectionTests > 0 && ++projectionTestFrame % 30 == 0) {
                     projectionTests--;
@@ -4153,6 +4178,12 @@ public class GameSparker extends Panel implements Runnable {
 
     /** The settings screen is open over a paused race, which the frames draw behind it (game thread). */
     private static boolean raceUnderSettings;
+
+    /** The pause menu over a race, or what it opens (see {@link #racePaused}). */
+    private static boolean pauseMenu(Phase phase) {
+        return phase == Phase.PAUSETRIGGER || phase == Phase.PAUSEMENU || phase == Phase.NOTENOUGHREPLAYDATA
+                || phase == Phase.SETTINGS;
+    }
 
     private static long tickNanosFor(Phase phase) {
         return isScenePhase(phase) || phase == Phase.DRAWENVIRONMENT ? SCENE_TICK_NANOS : MENU_TICK_NANOS;
@@ -7895,6 +7926,7 @@ public class GameSparker extends Panel implements Runnable {
             }
             if (presented) {
                 raceOnScreen = true;
+                racePaused = false;
             } else {
                 keptStale = true; // the presenter starts again from a scene handed over then
             }
@@ -7992,6 +8024,7 @@ public class GameSparker extends Panel implements Runnable {
 
                 long presentStart = System.nanoTime();
                 presentFrame(capture);
+                racePaused = !scenePhase && (raceOnScreen || racePaused) && pauseMenu(gameUi.fase);
                 raceOnScreen = scenePhase;
                 gpuSceneFrame = false;
                 if (capture) {

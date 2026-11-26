@@ -106,6 +106,13 @@ Windows turns the display off after 10 idle minutes here. With it off, the card 
 - Counted as one number, the fix looked nearly done; counted as filled outside and missed inside, the holes were gone and something still filled outside. One dumped case showed why: a fan triangle flat where it was cut, left out of the check, folding over the tip of a notch. A check with exceptions has holes: the pieces went to strips, whose triangles are never flat, and the check needed none.
 - How: `test\geometry-check.ps1` (random polygons, and with `-Motion` the game's own from `-Dnfm.motiontest` scenes) fails on any sample wrong away from the outline; with `-NoProbe` it shows the card before the check.
 
+### 15. A check holds for what it was checked against: list every way the checked thing is used
+
+- Decision 16 checked each band polygon for its own scene's span. The presenter also places that scene, for a frame or two, for the next tick's span, handed over early so that keys show at once, and nothing had checked those frames. Listing where a kept scene is placed (for its own span; for the next one's before its scene comes; the warm-up) finds it in a minute.
+- The fix keeps a second set of draws instead of handing the span over later, because that earliness is input lag, and the owner ruled on lag.
+- The pause menu is a menu, but the race behind it is the same race: a rule keyed on "the frame before was not a race's" needs the case where the race only stopped.
+- How: `test\geometry-check.ps1` places scenes for another span than they were cut for and draws them as the card does; a check's own fill rule must give a sample on an edge two triangles share to one of them, or it reports holes that are not there.
+
 ## How to find the next one
 
 - `-Dnfm.framelog.csv=true` also writes `ticks-NN-<part>.csv`: per tick, when it was due, how late it began, the race step, the run-ahead, when the poses were handed to the presenter, the kept scene, the card and when it was done. A tick whose `done_ms` passes 53 makes frames stand still; an empty `handed_ms` is a hand-over skipped to catch up.

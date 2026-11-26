@@ -5,7 +5,8 @@
 # places them, and what its triangles cover is compared with what the
 # even-odd rule fills (see test\geometry\nfm\lit\gpu\BandCheck.java).
 #
-#   .\test\geometry-check.ps1                  random polygons, corners moved in several ways
+#   .\test\geometry-check.ps1                  random polygons, corners moved in several ways, and
+#                                              scenes placed for another span than they were cut for
 #   .\test\geometry-check.ps1 -Motion <dir>[,<dir>]  also the game's own polygons, from the scenes
 #                                              -Dnfm.motiontest=<dir> writes (motion-*.bin),
 #                                              and what the check costs a scene
@@ -65,6 +66,11 @@ try {
     foreach ($case in $cases) {
         $move, $mode = $case -split ' '
         & $java @props -cp $classes nfm.lit.gpu.BandCheck random $move $mode 2000 1
+        if ($LASTEXITCODE -ne 0) { $failed = $true }
+    }
+    # frames placed for another span than their scene was cut for (the next tick's, before its scene comes)
+    foreach ($move in @('0.5', '2', '5')) {
+        & $java @props -cp $classes nfm.lit.gpu.BandCheck stencil $move 2000 1
         if ($LASTEXITCODE -ne 0) { $failed = $true }
     }
     if ($Motion) {

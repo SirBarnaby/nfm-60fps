@@ -595,7 +595,7 @@ public final class GpuDisplay {
         SceneGeometry g = projected.geometry;
         lastGeometry = g;
         ByteBuffer vertices = projected.vertices();
-        int vertexCount = g.vertexCount();
+        int vertexCount = g.projectedVertexCount();
         if (vertexCount > 0) {
             if (!isValid(held.buffer)) {
                 held.buffer = bgfx_create_dynamic_vertex_buffer(Math.max(vertexCount, 65536), projectedLayout,
