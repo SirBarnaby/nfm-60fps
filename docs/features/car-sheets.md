@@ -43,3 +43,10 @@ reports the sheets as waiting for the owner.
 
 A car with no line (a mod's own car) gets a front-engined V8 with a radiator,
 discs and two pipes.
+
+## Traits
+
+After the eight columns a line can carry traits, `name=value`, for what only
+some cars have. So far: `spikes=yes` (Sword of Justice), which throws a metal
+glint and sparks whenever the car rams another. `CarSheet.is`, `trait` and
+`number` read them; a trait a car does not name is its fallback.

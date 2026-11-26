@@ -9,6 +9,8 @@
 #   turbo     yes or no (a supercharger counts as yes)
 #   brakes    drum, disc or carbon
 #   exhausts  1 or 2 pipes at the back, or stacks (upright pipes behind the cab)
+# and after them, for the cars that have one, traits written name=value:
+#   spikes=yes   the car has spikes: a glint and sparks whenever it rams another car
 #
 # Suggested by Claude from each car's look, 23 Nov 2026, for the owner to correct.
 # Once the owner has looked them over and put them right, the next line says yes
@@ -26,7 +28,7 @@ maxrevenge     V8      front  front    yes    disc    2
 leadoxide      V8      front  front    yes    drum    2
 koolkat        V8      front  front    no     drum    2
 drifter        I6      front  front    yes    disc    1
-policecops     V8      front  front    no     disc    2
+policecops     V8      front  front    no     disc    2         spikes=yes
 mustang        V8      front  front    no     disc    2
 king           V8      front  front    yes    disc    stacks
 audir8         V8      mid    sides    no     carbon  2

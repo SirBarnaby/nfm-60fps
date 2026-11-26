@@ -5,11 +5,10 @@ import nfm.lit.features.Canvas;
 
 /**
  * Draws what damage and heat put on a car: glowing discs on the wheels,
- * flames at the exhaust tips, the open bonnet, a hanging bumper, the
- * windscreen's cracks, the scratches, drawn brake lights. Each is a few
- * flat polygons on the car ({@link Canvas#onCar}, so it moves with it), on
- * a wheel ({@link Canvas#onWheel}) or, for the flapping bonnet, moving
- * through the world between the ticks. Nothing is allocated.
+ * flames at the exhaust tips, the windscreen's cracks, the scratches, drawn
+ * brake lights. Each is a few flat polygons on the car ({@link Canvas#onCar},
+ * so it moves with it) or on a wheel ({@link Canvas#onWheel}). Nothing is
+ * allocated.
  */
 final class RealismDrawing {
 
@@ -107,34 +106,6 @@ final class RealismDrawing {
             y[k] = ty + alongY * along + acrossY * across;
             z[k] = tz + alongZ * along + acrossZ * across;
         }
-    }
-
-    /** Car {@code car}'s open bonnet, moving between the ticks as it flaps. */
-    void bonnet(Canvas canvas, CarState s) {
-        CarParts p = s.parts;
-        float shade = 1F - 0.35F * (float) Math.sin(s.bonnetAngle * (TAU / 360F));
-        canvas.color(canvas.fog(RealismFeature.scale(p.bonnetRgb, shade), s.flapX[0], s.flapY[0], s.flapZ[0]));
-        canvas.moving(s.flapX, s.flapY, s.flapZ, s.flapVX, s.flapVY, s.flapVZ, 4);
-    }
-
-    /** Car {@code car}'s bumper {@code b} (0 front, 1 rear), one end hanging to the road. */
-    void bumper(Canvas canvas, int car, CarState s, int b) {
-        CarParts p = s.parts;
-        int hang = s.bumper[b];
-        float bar = Math.max(1.5F, p.height * 0.08F);
-        float top = p.bottom - p.height * 0.2F;
-        float end = b == 0 ? p.front + 0.4F : p.rear - 0.4F;
-        float inward = b == 0 ? -2F : 2F;
-        float fixedX = -hang * p.halfWidth * 0.9F;
-        float hangX = hang * p.halfWidth * 0.9F;
-        int rgb = b == 0 ? p.bumperFrontRgb : p.bumperRearRgb;
-        canvas.color(canvas.fog(rgb, s.at[0], s.at[1], s.at[2]));
-        quad(fixedX, top, end, hangX, p.ground - bar, end, hangX, p.ground, end, fixedX, top + bar, end);
-        canvas.onCar(car, x, y, z, 4);
-        canvas.color(canvas.fog(RealismFeature.scale(rgb, 0.75F), s.at[0], s.at[1], s.at[2]));
-        quad(fixedX, top, end, hangX, p.ground - bar, end, hangX, p.ground - bar, end + inward, fixedX, top,
-                end + inward);
-        canvas.onCar(car, x, y, z, 4);
     }
 
     /** The cracks on car {@code car}'s windscreen: each star's rays and a ring across them. */

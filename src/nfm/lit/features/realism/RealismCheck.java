@@ -66,8 +66,9 @@ public final class RealismCheck {
         c.smoke();
         c.exhaust();
         c.ticking();
-        c.bonnet();
-        c.bumper();
+        c.noBonnetNoBumper();
+        c.repair();
+        c.spikes();
         c.glass();
         c.wheels();
         c.dirt();
@@ -237,6 +238,7 @@ public final class RealismCheck {
         v.airTicks[0] = any ? 0 : v.airTicks[0] + 1;
         real.afterTick(v);
         v.hits = 0;
+        v.rams = 0;
         Arrays.fill(v.touchX, 0F);
         Arrays.fill(v.touchZ, 0F);
     }
@@ -316,7 +318,7 @@ public final class RealismCheck {
         float[] before = {v.x[0], v.y[0], v.z[0], v.speed[0], v.vz[0], v.damage[0], v.hitForce[0], v.touchX[0]};
         real.afterTick(v);
         float[] after = {v.x[0], v.y[0], v.z[0], v.speed[0], v.vz[0], v.damage[0], v.hitForce[0], v.touchX[0]};
-        check(F, "cosmetic only", Arrays.equals(before, after) && s.bonnetOpen,
+        check(F, "cosmetic only", Arrays.equals(before, after) && s.stars > 0,
                 "the race view is the same after a tick with a heavy hit; in the game, test\\verify-races.ps1 "
                         + "-Features realism plays every recorded race with it on");
     }
@@ -413,7 +415,7 @@ public final class RealismCheck {
     private void smoke() {
         start();
         int[] counts = new int[3];
-        float[] damage = {0.35F, 0.65F, 0.9F};
+        float[] damage = {0.58F, 0.78F, 0.95F};
         int[] colors = {0xbdbdbd, 0x7b8696, 0x2c2c2e};
         float[] where = null;
         for (int level = 0; level < 3; level++) {
@@ -431,11 +433,24 @@ public final class RealismCheck {
         }
         float off = Math.abs(where[2] - s.parts.engine[2]);
         start(new CarSheet("mid", "V8", CarSheet.MID, CarSheet.SIDE_PODS, false, CarSheet.DISC, 2), true);
-        v.damage[0] = 0.35F;
+        v.damage[0] = 0.58F;
         for (int t = 0; t < 30; t++) {
             drive(0F, false, false);
         }
         float[] mid = meanLocal(colors[0]);
+        // it takes some effort: a third of the car's damage and two hard rams on the engine's end smoke nothing
+        start();
+        v.damage[0] = 0.35F;
+        hit(0, 2, -100F);
+        drive(30F, true, false);
+        hit(1, 2, -100F);
+        for (int t = 0; t < 60; t++) {
+            drive(30F, true, false);
+        }
+        int early = particles(colors[0]) + particles(colors[1]) + particles(colors[2]);
+        check(F, "light damage does not smoke", early == 0, early + " puffs of smoke at 35% damage after two hard"
+                + " rams on the engine's end (the engine hurt " + n(s.ram) + ", smoke from "
+                + n(DamageEffects.WISPS_FROM) + ")");
         boolean ok = counts[0] > 0 && counts[1] > 0 && counts[2] > 0 && off < 6F && mid[2] < 0F;
         check(F, "a damaged engine smokes", ok, "wisps " + counts[0] + ", blue-grey on throttle " + counts[1]
                 + ", dark puffs " + counts[2] + " (each alone at its level); " + n(off)
@@ -494,59 +509,160 @@ public final class RealismCheck {
                 + Arrays.toString(windows));
     }
 
-    /** The bonnet flaps after a heavy front hit, faster at speed, and tears off on the next heavy hit. */
-    private void bonnet() {
+    /** No bonnets or bumpers: a heavy hit on either end stands nothing up, hangs nothing and drags no sparks. */
+    private void noBonnetNoBumper() {
         start();
         drive(30F, true, false);
         hit(0, 2, -200F);
-        drive(20F, true, false);
-        float slow = swing(20F);
-        float lowest = s.bonnetAngle;
-        float fast = swing(100F);
+        drive(60F, true, false);
+        hit(2, 2, 200F);
+        int sparks = 0;
+        for (int t = 0; t < 20; t++) {
+            drive(60F, true, false);
+            sparks += sparksNear(0F, carZ + s.parts.rear, 30F) + sparksNear(0F, carZ + s.parts.front, 30F);
+        }
         real.particles.clear();
         frame(0F, GROUND - 60F, carZ + 400F);
-        int flap = canvas.moving;
-        int bay = real.color(0, BONNET, BONNET_RGB);
-        hit(1, 2, -200F);
-        drive(100F, true, false);
-        boolean gone = s.bonnetGone && particles(BONNET_RGB) == 1;
-        boolean ok = s.bonnetOpen && lowest > 15F && fast > slow * 1.5F && flap == 1 && light(bay) < light(BONNET_RGB)
-                && gone;
-        check(F, "the bonnet flaps", ok, "open " + s.bonnetOpen + ", standing " + n(lowest) + " degrees; swings "
-                + n(slow) + " degrees in 2 s slow, " + n(fast) + " fast; drawn " + flap + "; bay darker "
-                + (light(bay) < light(BONNET_RGB)) + "; torn off by the next heavy hit " + gone);
-    }
-
-    /** How far the bonnet swings in 40 ticks at engine speed {@code sp}, degrees in all. */
-    private float swing(float sp) {
-        float sum = 0F;
-        float last = s.bonnetAngle;
-        for (int t = 0; t < 40; t++) {
-            drive(sp, true, false);
-            sum += Math.abs(s.bonnetAngle - last);
-            last = s.bonnetAngle;
-        }
-        return sum;
-    }
-
-    /** A bumper drags after a hard rear hit, throwing sparks where it scrapes. */
-    private void bumper() {
-        start();
-        drive(40F, true, false);
-        hit(2, 2, 120F);
-        drive(40F, true, false);
-        int hangs = s.bumper[1];
-        int sparks = 0;
-        for (int t = 0; t < 10; t++) {
-            drive(40F, true, false);
-            sparks += sparksNear(-0.9F * s.parts.halfWidth, carZ + s.parts.rear, 12F);
-        }
-        real.particles.clear();
+        int moving = canvas.moving;
+        int front = canvas.drawn(BUMPER_RGB) + canvas.drawn(BONNET_RGB);
         frame(0F, GROUND - 20F, carZ - 400F);
-        int drawn = canvas.drawn(BUMPER_RGB);
-        boolean ok = hangs == -1 && s.bumper[0] == 0 && sparks > 5 && drawn > 0;
-        check(F, "a bumper drags", ok, "rear bumper hangs at the " + (hangs < 0 ? "left" : "right") + " end, front "
-                + s.bumper[0] + "; " + sparks + " sparks at the dragging end; " + drawn + " polygons drawn");
+        int rear = canvas.drawn(BUMPER_RGB) + canvas.drawn(BONNET_RGB);
+        int bonnet = real.color(0, BONNET, BONNET_RGB);
+        boolean ok = moving == 0 && front == 0 && rear == 0 && sparks == 0 && bonnet == BONNET_RGB;
+        check(F, "no bonnets or bumpers", ok, "after heavy hits on both ends: " + moving + " flapping panels, "
+                + (front + rear) + " bonnet or bumper polygons drawn, " + sparks + " sparks at the ends, the bonnet's"
+                + " colour " + (bonnet == BONNET_RGB ? "as it was" : "changed"));
+    }
+
+    /** A repair hoop fixes all damage: the radiator, the engine, the glass, the lights, the wheels, the scratches. */
+    private void repair() {
+        start();
+        drive(60F, true, false);
+        hit(0, 2, -230F); // a heavy front hit: radiator, engine, front lights, a bent flat wheel, cracks
+        drive(60F, true, false);
+        hit(2, 2, 120F); // the rear lights
+        drive(60F, true, false);
+        hit(1, 0, -200F); // the right window
+        drive(60F, true, false);
+        v.touchX[0] = 30F; // a scrape along the left side
+        drive(60F, true, false);
+        v.damage[0] = 0.95F;
+        for (int t = 0; t < 20; t++) {
+            drive(60F, true, false);
+        }
+        String before = damaged();
+        v.damage[0] = 0F;
+        v.repaired[0] = true;
+        drive(60F, true, false);
+        v.repaired[0] = false;
+        real.particles.clear();
+        for (int t = 0; t < 60; t++) {
+            drive(60F, true, false);
+        }
+        String after = damaged();
+        int smoke = particles(0xbdbdbd) + particles(0x7b8696) + particles(0x2c2c2e) + particles(0xe9edf0);
+        boolean ok = !before.equals("nothing") && after.equals("nothing") && smoke == 0
+                && CarLooks.bent(0, 0) == 0F;
+        check(F, "repair hoops fix all damage", ok, "before the hoop: " + before + "; after it: " + after + ", "
+                + smoke + " puffs of smoke or steam in the next 3 s");
+    }
+
+    /** A car with spikes glints and sparks whenever it rams another car; a car without them never does. */
+    private void spikes() {
+        int[] bursts = new int[2];
+        int[] glints = new int[2];
+        for (int kind = 0; kind < 2; kind++) {
+            CarSheet sheet = kind == 0 ? CarSheets.parseLine("spiky V8 front front no disc 2 spikes=yes")
+                    : CarSheet.DEFAULT;
+            v = new RaceView();
+            v.fit(2);
+            v.cars = 2;
+            v.humans = 1;
+            v.seed = 11L;
+            v.groundColor = 0x7a8a50;
+            for (int c = 0; c < 2; c++) {
+                v.topSpeed[c] = 100F;
+                v.wheelDrop[c] = DROP;
+                v.radius[c] = 60;
+                v.shape[c] = box(true);
+                v.y[c] = GROUND - DROP;
+                v.z[c] = c * 110F; // the second car right ahead of the first
+                for (int w = 0; w < RaceView.WHEELS; w++) {
+                    int at = c * RaceView.WHEELS + w;
+                    v.keyX[at] = KEY_X[w];
+                    v.keyZ[at] = KEY_Z[w];
+                    v.wheelX[at] = KEY_X[w];
+                    v.wheelY[at] = GROUND;
+                    v.wheelZ[at] = v.z[c] + KEY_Z[w];
+                    v.contact[at] = true;
+                }
+                v.grounded[c] = true;
+            }
+            real = new RealismFeature();
+            heard.clear();
+            real.ears = (car, clip, gain, pitch) -> heard.add(clip);
+            real.raceStarted(v);
+            real.states[0].parts.build(v.shape[0], sheet, DROP);
+            for (int ram = 0; ram < 3; ram++) {
+                v.tick++;
+                v.rams = 1;
+                v.ramCar[0] = 0;
+                v.ramWheel[0] = 0; // its front left corner into the other's rear left
+                v.ramOther[0] = 1;
+                v.ramOtherWheel[0] = 2;
+                v.ramPush[0] = 12F;
+                real.afterTick(v);
+                v.rams = 0;
+                int sparks = 0;
+                for (int i = 0; i < real.particles.capacity(); i++) {
+                    if (real.particles.isSpark(i) && real.particles.position(i, p)
+                            && Math.hypot(p[0] - KEY_X[0], p[2] - 55F) < 40F) {
+                        sparks++;
+                    }
+                }
+                bursts[kind] += sparks > 4 ? 1 : 0;
+                for (int t = 0; t < 12; t++) {
+                    v.tick++;
+                    real.afterTick(v); // the sparks die away before the next ram
+                }
+            }
+            glints[kind] = heardOf(RealismSounds.GLINT);
+        }
+        boolean ok = bursts[0] == 3 && glints[0] == 3 && bursts[1] == 0 && glints[1] == 0;
+        check(F, "Sword of Justice sparks when it rams", ok, "three rams by a car with spikes: " + bursts[0]
+                + " bursts of sparks where they touched, " + glints[0] + " glints heard; by a car without: "
+                + bursts[1] + " and " + glints[1]);
+    }
+
+    /** What is damaged on the car now, in words ("nothing" for a whole car). */
+    private String damaged() {
+        StringBuilder out = new StringBuilder();
+        if (s.crush > 0F || s.leaking[0] || s.leaking[1] || s.coolant < 1F) {
+            out.append("radiator ");
+        }
+        if (s.ram > 0F) {
+            out.append("engine ");
+        }
+        if (s.stars > 0) {
+            out.append("cracks ");
+        }
+        if (s.windowBroken[0] || s.windowBroken[1]) {
+            out.append("window ");
+        }
+        if (s.frontBroken || s.rearBroken) {
+            out.append("lights ");
+        }
+        boolean wheels = false;
+        for (int w = 0; w < RaceView.WHEELS; w++) {
+            wheels |= s.bent[w] > 0F || s.flat[w];
+        }
+        if (wheels) {
+            out.append("wheels ");
+        }
+        if (s.scratches[0] + s.scratches[1] > 0) {
+            out.append("scratches ");
+        }
+        return out.length() == 0 ? "nothing" : out.toString().trim();
     }
 
     /** Glass: the windscreen cracks after a hit; a heavy side hit shatters that side's window into bits on the road. */

@@ -5,8 +5,7 @@ import nfm.lit.features.RaceView;
 
 /**
  * One car's heat and damage as the effects show them: the temperatures, the
- * coolant, the bonnet, the bumpers, the glass, the lights, the dirt and the
- * scratches. Worked out from the race after each real tick and never read
+ * coolant, the glass, the lights, the dirt and the scratches. Worked out from the race after each real tick and never read
  * by it. Also where the car is after the tick (its axes in the world), so
  * the effects can place what they draw.
  */
@@ -46,24 +45,6 @@ final class CarState {
     /** How badly the engine is hurt by rams on its end. */
     float ram;
 
-    /* the bonnet */
-    boolean bonnetOpen;
-    boolean bonnetGone;
-    float bonnetAngle;
-    float flapPhase;
-    int fastTicks;
-    /** The open bonnet's corners in the world after the tick, and their move over it. */
-    final float[] flapX = new float[4];
-    final float[] flapY = new float[4];
-    final float[] flapZ = new float[4];
-    final float[] flapVX = new float[4];
-    final float[] flapVY = new float[4];
-    final float[] flapVZ = new float[4];
-    boolean flapKnown;
-
-    /** Each bumper (0 front, 1 rear): 0 in place, else which end hangs, -1 the left, 1 the right. */
-    final int[] bumper = new int[2];
-
     /* the windscreen's crack stars: middles and ray ends in the glass's own across and up */
     int stars;
     final float[] starU = new float[STARS];
@@ -101,6 +82,8 @@ final class CarState {
     float lastVy;
     int lastAir;
     int rattleWait;
+    /** Ticks before a spiked car's next glint. */
+    int spikeWait;
 
     /** Forgets the last race: a cold, clean, whole car. */
     void reset(int groundRgb) {
@@ -112,31 +95,33 @@ final class CarState {
         flame = 0;
         Arrays.fill(flameReach, 0F);
         idleTicks = 0;
+        repair();
+        dirt = 0F;
+        dirtRgb = groundRgb;
+        lastVy = 0F;
+        lastAir = 0;
+        rattleWait = 0;
+        spikeWait = 0;
+    }
+
+    /**
+     * A repair hoop: every kind of damage is fixed (the radiator and its coolant, the engine, the glass, the
+     * lights, the wheels, the scratches). Heat and dirt are not damage: they stay.
+     */
+    void repair() {
         crush = 0F;
         Arrays.fill(leaking, false);
         coolant = 1F;
         ram = 0F;
-        bonnetOpen = false;
-        bonnetGone = false;
-        bonnetAngle = 0F;
-        flapPhase = 0F;
-        fastTicks = 0;
-        flapKnown = false;
-        Arrays.fill(bumper, 0);
         stars = 0;
         Arrays.fill(windowBroken, false);
         frontBroken = false;
         rearBroken = false;
         Arrays.fill(bent, 0F);
         Arrays.fill(flat, false);
-        dirt = 0F;
-        dirtRgb = groundRgb;
         Arrays.fill(scratches, 0);
         Arrays.fill(scratchNext, 0);
         Arrays.fill(scratchTick, 0);
-        lastVy = 0F;
-        lastAir = 0;
-        rattleWait = 0;
     }
 
     /** Car {@code c}'s place and axes after the tick, from {@code race}. */

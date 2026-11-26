@@ -18,7 +18,7 @@ import nfm.lit.features.RaceView;
  * small state per car ({@link CarState}) and shows it: as particles (steam,
  * smoke, haze, sparks, glass), as debris that stays, as polygons on the car
  * ({@link RealismDrawing}), and by recolouring the car's own polygons (dirt,
- * the open bonnet's bay, lights, broken glass) and tilting a bent wheel's
+ * lights, broken glass) and tilting a bent wheel's
  * ({@link CarLook}). Its sounds play through the 3D sound only.
  * <p>
  * Each car's sheet ({@link CarSheets}) says where its engine, radiators and
@@ -37,15 +37,12 @@ public final class RealismFeature implements Feature, CarLook {
     static final int PER_CAR = 16;
     static final int DISC = 0;
     static final int FLAME = 4;
-    static final int BONNET = 6;
-    static final int BUMPER = 7;
     static final int CRACKS = 9;
     static final int SCRATCH = 10;
     static final int LAMPS = 12;
     /** Farther than this from the eye a car's parts are not drawn. */
     private static final float FAR = 12000F;
 
-    private static final int BAY = 0x1e1c1a;
     private static final int EMPTY_FRAME = 0x1c1e22;
     private static final int BRAKE_LIGHT = 0xff3020;
     private static final int SPARK = 0xffc860;
@@ -231,11 +228,6 @@ public final class RealismFeature implements Feature, CarLook {
                     return shaded(EMPTY_FRAME, rgb, base);
                 }
             }
-            case CarParts.BONNET -> {
-                if (s.bonnetOpen || s.bonnetGone) {
-                    out = mix(rgb, shaded(BAY, rgb, base), 0.85F);
-                }
-            }
             default -> {
                 // the body and the wheels: only dirt
             }
@@ -327,16 +319,6 @@ public final class RealismFeature implements Feature, CarLook {
                 queue.at(p[0], p[1], p[2], base + FLAME + pipe);
             }
         }
-        if (s.bonnetOpen && !s.bonnetGone && s.flapKnown) {
-            queue.at((s.flapX[0] + s.flapX[2]) / 2F, (s.flapY[0] + s.flapY[2]) / 2F, (s.flapZ[0] + s.flapZ[2]) / 2F,
-                    base + BONNET);
-        }
-        for (int b = 0; b < 2; b++) {
-            if (s.bumper[b] != 0) {
-                s.world(0F, parts.bottom, b == 0 ? parts.front : parts.rear, p);
-                queue.at(p[0], p[1], p[2], base + BUMPER + b);
-            }
-        }
         if (s.stars > 0 && s.faces(parts.screenMid[0], parts.screenMid[1], parts.screenMid[2], parts.screenN[0],
                 parts.screenN[1], parts.screenN[2], eyeX, eyeY, eyeZ)) {
             queue.after(c, base + CRACKS);
@@ -375,12 +357,8 @@ public final class RealismFeature implements Feature, CarLook {
         CarState s = states[c];
         if (part < FLAME) {
             drawing.disc(canvas, c, s, part - DISC);
-        } else if (part < BONNET) {
-            drawing.flame(canvas, c, s, part - FLAME, nitrous[c]);
-        } else if (part == BONNET) {
-            drawing.bonnet(canvas, s);
         } else if (part < CRACKS) {
-            drawing.bumper(canvas, c, s, part - BUMPER);
+            drawing.flame(canvas, c, s, part - FLAME, nitrous[c]);
         } else if (part == CRACKS) {
             drawing.cracks(canvas, c, s);
         } else if (part < LAMPS) {

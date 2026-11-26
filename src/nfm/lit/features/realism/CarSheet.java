@@ -1,6 +1,7 @@
 package nfm.lit.features.realism;
 
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * A car's short sheet (realism, "Each car has a short sheet"): its engine's
@@ -37,8 +38,16 @@ final class CarSheet {
     final int brakes;
     /** 1 or 2 pipes at the back, or {@link #STACKS}. */
     final int exhausts;
+    /** The car's own traits, written after the columns as {@code name=value} (such as {@code spikes=yes}). */
+    final Map<String, String> traits;
 
     CarSheet(String car, String engine, int sits, int cooling, boolean turbo, int brakes, int exhausts) {
+        this(car, engine, sits, cooling, turbo, brakes, exhausts, Map.of());
+    }
+
+    CarSheet(String car, String engine, int sits, int cooling, boolean turbo, int brakes, int exhausts,
+            Map<String, String> traits) {
+        this.traits = traits;
         this.car = car;
         this.engine = engine;
         this.sits = sits;
@@ -46,6 +55,26 @@ final class CarSheet {
         this.turbo = turbo;
         this.brakes = brakes;
         this.exhausts = exhausts;
+    }
+
+    /** True if the sheet gives trait {@code name} as yes. */
+    boolean is(String name) {
+        return "yes".equals(traits.get(name));
+    }
+
+    /** Trait {@code name}, or {@code fallback} if the sheet does not give it. */
+    String trait(String name, String fallback) {
+        return traits.getOrDefault(name, fallback);
+    }
+
+    /** Trait {@code name} as a number, or {@code fallback} if the sheet does not give one. */
+    float number(String name, float fallback) {
+        try {
+            String text = traits.get(name);
+            return text == null ? fallback : Float.parseFloat(text);
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
     }
 
     /** How fast the brakes take heat: drums, closed in, the most; carbon the least. */
@@ -79,6 +108,6 @@ final class CarSheet {
         return String.format(Locale.ROOT, "%-14s %-7s %-6s %-8s %-6s %-7s %s", car, engine,
                 new String[] {"front", "mid", "rear"}[sits], new String[] {"front", "sides", "air"}[cooling],
                 turbo ? "yes" : "no", new String[] {"drum", "disc", "carbon"}[brakes],
-                exhausts == STACKS ? "stacks" : Integer.toString(exhausts));
+                exhausts == STACKS ? "stacks" : Integer.toString(exhausts)).trim();
     }
 }

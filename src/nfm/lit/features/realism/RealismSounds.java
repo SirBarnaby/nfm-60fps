@@ -22,6 +22,7 @@ final class RealismSounds {
     static final String THUD = "xtra-thud";
     static final String SCRAPE = "xtra-scrape";
     static final String RATTLE = "xtra-rattle";
+    static final String GLINT = "xtra-glint";
 
     static final int RATE = 22050;
     /** The clips' peak, a share of full scale: about -3 dB. */
@@ -39,6 +40,7 @@ final class RealismSounds {
         Sound3D.extraClip(THUD, thud(), RATE);
         Sound3D.extraClip(SCRAPE, scrape(), RATE);
         Sound3D.extraClip(RATTLE, rattle(), RATE);
+        Sound3D.extraClip(GLINT, tick(), RATE); // until the recordings: the metal tick stands in for the glint
     }
 
     /** A metal tick: a bright ring a few milliseconds long. */

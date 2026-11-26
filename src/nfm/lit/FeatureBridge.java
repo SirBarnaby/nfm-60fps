@@ -68,6 +68,15 @@ final class FeatureBridge {
 
     /* every touch of the tick (a wall, another car), the strongest push along each world axis per corner */
     private static final float[] touchX = new float[Precise.MAX_CARS * RaceView.WHEELS];
+    /** The tick's rams: who pushed whom, corner to corner, and how hard. */
+    private static int rams;
+    private static final int[] ramCar = new int[RaceView.MAX_RAMS];
+    private static final int[] ramWheel = new int[RaceView.MAX_RAMS];
+    private static final int[] ramOther = new int[RaceView.MAX_RAMS];
+    private static final int[] ramOtherWheel = new int[RaceView.MAX_RAMS];
+    private static final float[] ramPush = new float[RaceView.MAX_RAMS];
+    /** The cars that went through a repair hoop in the tick. */
+    private static final boolean[] repairedNow = new boolean[Precise.MAX_CARS];
     private static final float[] touchZ = new float[Precise.MAX_CARS * RaceView.WHEELS];
 
     /* the race extras (powerups): the race itself, read and moved inside the race tick */
@@ -219,12 +228,36 @@ final class FeatureBridge {
         }
     }
 
+    /**
+     * Car {@code car}'s corner {@code wheel} pushed car {@code other}'s corner {@code otherWheel} by
+     * {@code push} units a tick: a ram, as the game works it out between two cars that touch.
+     */
+    static void ram(int car, int wheel, int other, int otherWheel, float push) {
+        if (rams == RaceView.MAX_RAMS || SoundManager.isDiscarding()) {
+            return;
+        }
+        ramCar[rams] = car;
+        ramWheel[rams] = wheel;
+        ramOther[rams] = other;
+        ramOtherWheel[rams] = otherWheel;
+        ramPush[rams++] = push;
+    }
+
+    /** Car {@code car} went through a repair hoop this tick: everything about it is fixed. */
+    static void repaired(int car) {
+        if (car >= 0 && car < repairedNow.length && !SoundManager.isDiscarding()) {
+            repairedNow[car] = true;
+        }
+    }
+
     /** A real race tick has ended: the view is filled and handed to the extras. */
     static void afterTick(Madness[] racers, Control[] controls, ContO[] scene, Trackers trackers, int ticks) {
         if (!starting && !Features.anyActive() && !Features.anySwitchedOn()) {
             hits = 0;
             java.util.Arrays.fill(touchX, 0F);
             java.util.Arrays.fill(touchZ, 0F);
+            java.util.Arrays.fill(repairedNow, false);
+            rams = 0;
             return;
         }
         fill(racers, controls, scene, trackers, ticks);
@@ -244,6 +277,8 @@ final class FeatureBridge {
         hits = 0;
         java.util.Arrays.fill(touchX, 0F);
         java.util.Arrays.fill(touchZ, 0F);
+        java.util.Arrays.fill(repairedNow, false);
+        rams = 0;
     }
 
     private static void fill(Madness[] racers, Control[] controls, ContO[] scene, Trackers trackers, int ticks) {
@@ -281,6 +316,7 @@ final class FeatureBridge {
             view.handbrake[c] = k.handb;
             view.power[c] = m.power;
             view.nitrous[c] = PowerupsFeature.FEATURE.nitrous(c);
+            view.repaired[c] = c < repairedNow.length && repairedNow[c];
             view.radius[c] = o.maxR;
             view.wheelDrop[c] = o.grat;
             wheels(c, m, o, trackers);
@@ -294,6 +330,12 @@ final class FeatureBridge {
         java.util.Arrays.fill(view.touchZ, 0F);
         System.arraycopy(touchX, 0, view.touchX, 0, touched);
         System.arraycopy(touchZ, 0, view.touchZ, 0, touched);
+        view.rams = rams;
+        System.arraycopy(ramCar, 0, view.ramCar, 0, rams);
+        System.arraycopy(ramWheel, 0, view.ramWheel, 0, rams);
+        System.arraycopy(ramOther, 0, view.ramOther, 0, rams);
+        System.arraycopy(ramOtherWheel, 0, view.ramOtherWheel, 0, rams);
+        System.arraycopy(ramPush, 0, view.ramPush, 0, rams);
         view.hits = hits;
         System.arraycopy(hitCar, 0, view.hitCar, 0, hits);
         System.arraycopy(hitWheel, 0, view.hitWheel, 0, hits);

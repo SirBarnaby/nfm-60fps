@@ -129,7 +129,7 @@ public final class FeatureSettings {
                 "Thin white vapour from the Radical One's wing tips while you steer it in the air." + LOOK_1_0,
                 "xtrawing", Kind.LOOK, 0, "Off", "On"),
         new Switch("realism", "Damage and heat",
-                "Glowing brakes, steam, smoke, flames from the exhaust, a flapping bonnet, a dragging bumper, cracked"
+                "Glowing brakes, steam, smoke, flames from the exhaust, cracked"
                         + " glass, bent wheels, dirt and scratches. Only the look: the car drives as always."
                         + LOOK_1_0,
                 "xtrareal", Kind.LOOK, 0, "Off", "On"),

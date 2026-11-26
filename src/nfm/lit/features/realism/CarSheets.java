@@ -87,7 +87,7 @@ final class CarSheets {
         return out;
     }
 
-    /** One line: car, engine, sits, cooling, turbo, brakes, exhausts; null if it is not one. */
+    /** One line: car, engine, sits, cooling, turbo, brakes, exhausts, then any {@code name=value} traits; null if it is not one. */
     static CarSheet parseLine(String line) {
         String[] t = line.toLowerCase(Locale.ROOT).split("\\s+");
         if (t.length < 7) {
@@ -101,7 +101,16 @@ final class CarSheets {
         if (sits < 0 || cooling < 0 || turbo < 0 || brakes < 0 || exhausts < 0) {
             return null;
         }
-        return new CarSheet(t[0], line.trim().split("\\s+")[1], sits, cooling, turbo == 1, brakes, exhausts);
+        Map<String, String> traits = new HashMap<>();
+        for (int k = 7; k < t.length; k++) {
+            int eq = t[k].indexOf('=');
+            if (eq <= 0 || eq == t[k].length() - 1) {
+                return null;
+            }
+            traits.put(t[k].substring(0, eq), t[k].substring(eq + 1));
+        }
+        return new CarSheet(t[0], line.trim().split("\\s+")[1], sits, cooling, turbo == 1, brakes, exhausts,
+                Map.copyOf(traits));
     }
 
     private static int indexOf(String word, String... words) {

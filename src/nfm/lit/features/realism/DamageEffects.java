@@ -4,9 +4,9 @@ import nfm.lit.features.CarLooks;
 import nfm.lit.features.RaceView;
 
 /**
- * Damage as it shows (realism: the radiator, the engine, the bonnet, the
- * bumpers, the glass, the wheels, the lights, the scratches, bottoming out,
- * rattling and dirt), worked out from the race after each real tick: which
+ * Damage as it shows (realism: the radiator, the engine, the glass, the
+ * wheels, the lights, the scratches, bottoming out, rattling and dirt),
+ * worked out from the race after each real tick: which
  * corner was hit, along the car or across it, and how hard.
  * <p>
  * A hit's push is along the world's x or z; turned into the car's own frame
@@ -17,9 +17,9 @@ import nfm.lit.features.RaceView;
  */
 final class DamageEffects {
 
-    /** A hit this hard breaks a light, hangs a bumper, crushes a radiator, bends a wheel. */
+    /** A hit this hard breaks a light, crushes a radiator, bends a wheel. */
     static final float HARD = 90F;
-    /** This hard pops the bonnet and shatters a side window. */
+    /** This hard shatters a side window. */
     static final float HEAVY = 170F;
     /** A wheel hit this hard goes flat. */
     static final float FLAT = HEAVY * 1.3F;
@@ -32,12 +32,26 @@ final class DamageEffects {
     static final int BOTTOM_OUT_AIR = 6;
     /** A touch lighter than this leaves no scratch. */
     static final float SCRAPE = 6F;
+    /**
+     * The engine smokes from this much damage (the car's own, or its rams): light wisps, blue-grey on the
+     * throttle, dark puffs. It takes some effort: half the car's damage, or three hard rams on the engine's end.
+     */
+    static final float WISPS_FROM = 0.5F;
+    static final float BLUE_FROM = 0.7F;
+    static final float DARK_FROM = 0.88F;
+    /** What one hard ram on the engine's end adds to its hurt, before the force above {@link #HARD}. */
+    static final float RAM = 0.15F;
 
     private static final float DEG = (float) (Math.PI / 180D);
     private static final int STEAM = 0xe9edf0;
     private static final int WISPS = 0xbdbdbd;
     private static final int BLUE_SMOKE = 0x7b8696;
     private static final int DARK_SMOKE = 0x2c2c2e;
+    private static final int GLINT = 0xfff6dc;
+    private static final int SPIKE_SPARK = 0xffd070;
+    /** A ram pushing at least this hard glints, and the ticks before the same car glints again. */
+    static final float SPIKE_PUSH = 2F;
+    static final int SPIKE_WAIT = 3;
     private static final int GLASS_BITS = 0xcfe4ea;
     private static final int GLASS_BITS_DARK = 0xa9c8d2;
 
@@ -53,6 +67,12 @@ final class DamageEffects {
         float yaw = race.xz[c] * DEG;
         float sin = (float) Math.sin(yaw);
         float cos = (float) Math.cos(yaw);
+        if (race.repaired[c]) {
+            s.repair(); // a repair hoop fixes everything
+            for (int w = 0; w < RaceView.WHEELS; w++) {
+                CarLooks.bend(c, w, 0F, s.parts.shape == null ? 0F : s.parts.shape.wheelRadius[w]);
+            }
+        }
         for (int h = 0; h < race.hits; h++) {
             if (race.hitCar[h] != c) {
                 continue;
@@ -70,11 +90,11 @@ final class DamageEffects {
             }
         }
         touches(race, c, s, sin, cos);
+        spikes(race, c, s);
         float share = RealismFeature.speedShare(race, c);
         steam(race, c, s, share);
         smoke(race, c, s);
         sparks(race, c, s);
-        bonnet(race, c, s, share);
         rattle(race, c, s, share);
         landing(race, c, s);
         dirt(race, c, s, share);
@@ -95,14 +115,9 @@ final class DamageEffects {
             }
             boolean engineEnd = sheet.sits == CarSheet.FRONT ? front : !front;
             if (!across && engineEnd) {
-                s.ram = Math.min(1F, s.ram + 0.25F + (force - HARD) / 300F);
+                s.ram = Math.min(1F, s.ram + RAM + (force - HARD) / 400F);
             }
             if (!across) {
-                int b = front ? 0 : 1;
-                if (s.bumper[b] == 0) {
-                    s.bumper[b] = side == CarParts.LEFT ? -1 : 1;
-                    bumperBits(race, c, s, b, side);
-                }
                 if (front) {
                     s.frontBroken = true;
                 } else {
@@ -121,18 +136,48 @@ final class DamageEffects {
                 crack(s);
             }
         }
-        if (force >= HEAVY) {
-            if (!across && front && parts.hasBonnet) {
-                if (!s.bonnetOpen) {
-                    s.bonnetOpen = true;
-                    s.bonnetAngle = 28F;
-                } else if (!s.bonnetGone) {
-                    tearOff(race, c, s);
-                }
+        if (force >= HEAVY && across && parts.hasWindow[side] && !s.windowBroken[side]) {
+            shatter(race, c, s, side);
+        }
+    }
+
+    /**
+     * A car with spikes (Sword of Justice) rams another: a light metal glint and sparks where they touch,
+     * every time (at most one burst a corner each {@link #SPIKE_WAIT} ticks, so a long push keeps glinting).
+     */
+    private void spikes(RaceView race, int c, CarState s) {
+        if (s.spikeWait > 0) {
+            s.spikeWait--;
+        }
+        if (!s.parts.sheet.is("spikes") || s.spikeWait > 0) {
+            return;
+        }
+        for (int r = 0; r < race.rams; r++) {
+            if (race.ramCar[r] != c || Math.abs(race.ramPush[r]) < SPIKE_PUSH) {
+                continue;
             }
-            if (across && parts.hasWindow[side] && !s.windowBroken[side]) {
-                shatter(race, c, s, side);
+            int mine = c * RaceView.WHEELS + race.ramWheel[r];
+            int theirs = race.ramOther[r] * RaceView.WHEELS + race.ramOtherWheel[r];
+            if (race.ramOther[r] < 0 || race.ramOther[r] >= race.cars) {
+                continue;
             }
+            // between the two corners that met, at the height of the body's middle
+            float x = (race.wheelX[mine] + race.wheelX[theirs]) / 2F;
+            float z = (race.wheelZ[mine] + race.wheelZ[theirs]) / 2F;
+            float y = (race.wheelY[mine] + race.wheelY[theirs]) / 2F - s.parts.height * 0.5F;
+            float vx = (race.vx[c] + race.vx[race.ramOther[r]]) / 2F;
+            float vz = (race.vz[c] + race.vz[race.ramOther[r]]) / 2F;
+            // the glint: one bright point that flares and is gone in two ticks
+            f.particles.add(x, y, z, vx, 0F, vz, 2.2F, 5F, 0.8F, GLINT, 1F, 0.3F, 0F, true);
+            int sparks = 5 + f.dice.below(4);
+            for (int k = 0; k < sparks; k++) {
+                f.particles.add(x, y, z, vx * 0.5F + f.dice.between(-2.6F, 2.6F), -f.dice.between(0.4F, 2.8F),
+                        vz * 0.5F + f.dice.between(-2.6F, 2.6F), f.dice.between(4F, 8F), f.dice.between(0.3F, 0.6F),
+                        0.25F, f.dice.next() < 0.5F ? GLINT : SPIKE_SPARK, 1F, 0.08F, -0.5F, true);
+            }
+            f.sound(c, RealismSounds.GLINT, 0.35F + 0.2F * f.dice.next(), 0.9F + 0.3F * f.dice.next());
+            s.spikeWait = SPIKE_WAIT;
+            return;
         }
     }
 
@@ -242,36 +287,6 @@ final class DamageEffects {
         }
     }
 
-    /** Bits of a bumper broken off at hit corner {@code side} of end {@code b}: they stay where they fall. */
-    private void bumperBits(RaceView race, int c, CarState s, int b, int side) {
-        CarParts parts = s.parts;
-        float floor = RealismFeature.groundUnder(race, c, s);
-        int rgb = b == 0 ? parts.bumperFrontRgb : parts.bumperRearRgb;
-        float x = (side == CarParts.LEFT ? -0.75F : 0.75F) * parts.halfWidth;
-        float z = b == 0 ? parts.front : parts.rear;
-        for (int k = 0; k < 3; k++) {
-            s.world(x + f.dice.between(-3F, 3F), parts.bottom - parts.height * 0.15F, z, p);
-            int slot = f.particles.add(p[0], p[1], p[2], race.vx[c] * 0.6F + f.dice.between(-1F, 1F),
-                    -f.dice.between(0.5F, 2F), race.vz[c] * 0.6F + f.dice.between(-1F, 1F),
-                    f.dice.between(30F, 50F), f.dice.between(0.9F, 1.8F), 1.2F, rgb, 1F, 0.05F, -FALL, false);
-            f.particles.floor(slot, floor);
-            f.particles.keep(slot);
-        }
-    }
-
-    /** The bonnet comes off and falls to the road, where it stays. */
-    private void tearOff(RaceView race, int c, CarState s) {
-        CarParts parts = s.parts;
-        s.bonnetGone = true;
-        float across = (parts.bonnetRight - parts.bonnetLeft) / 2F;
-        s.world((parts.bonnetLeft + parts.bonnetRight) / 2F, parts.bonnetY - 2F,
-                (parts.hingeZ + parts.bonnetFront) / 2F, p);
-        int slot = f.particles.add(p[0], p[1], p[2], race.vx[c] * 0.6F, race.vy[c] * 0.4F - 3F, race.vz[c] * 0.6F,
-                70F, across * 0.7F, across * 0.7F, parts.bonnetRgb, 1F, 0.06F, -FALL, false);
-        f.particles.floor(slot, RealismFeature.groundUnder(race, c, s));
-        f.particles.keep(slot);
-    }
-
     /** A leaking radiator steams from its corner: back over the bonnet at speed, straight up when stopped. */
     private void steam(RaceView race, int c, CarState s, float share) {
         CarParts parts = s.parts;
@@ -299,7 +314,7 @@ final class DamageEffects {
     /** A hurt engine smokes from where it sits: wisps, then blue-grey on throttle, then dark puffs. */
     private void smoke(RaceView race, int c, CarState s) {
         float level = Math.max(race.damage[c], s.ram);
-        if (level <= 0.3F) {
+        if (level <= WISPS_FROM) {
             return;
         }
         boolean throttle = race.up[c] && !race.wasted[c];
@@ -307,12 +322,12 @@ final class DamageEffects {
         float cover;
         float size;
         float chance;
-        if (level > 0.8F) {
+        if (level > DARK_FROM) {
             rgb = DARK_SMOKE;
             cover = 0.6F;
             size = throttle ? 15F : 11F;
             chance = 0.9F;
-        } else if (level > 0.55F && throttle) {
+        } else if (level > BLUE_FROM && throttle) {
             rgb = BLUE_SMOKE;
             cover = 0.45F;
             size = 11F;
@@ -321,7 +336,7 @@ final class DamageEffects {
             rgb = WISPS;
             cover = 0.25F;
             size = 7F;
-            chance = 0.35F;
+            chance = 0.25F;
         }
         if (f.dice.next() >= chance) {
             return;
@@ -332,17 +347,10 @@ final class DamageEffects {
                 race.vz[c] * 0.85F, f.dice.between(22F, 34F), size * 0.22F, size, rgb, cover, 0.15F, 0.05F);
     }
 
-    /** Sparks where a hanging bumper or a flat tyre's rim drags on the road. */
+    /** Sparks where a flat tyre's rim drags on the road. */
     private void sparks(RaceView race, int c, CarState s) {
         if (race.groundSpeed(c) < 3F || !race.grounded[c]) {
             return;
-        }
-        CarParts parts = s.parts;
-        for (int b = 0; b < 2; b++) {
-            if (s.bumper[b] != 0 && f.dice.next() < 0.85F) {
-                s.world(s.bumper[b] * parts.halfWidth * 0.9F, parts.ground, b == 0 ? parts.front : parts.rear, p);
-                f.spark(race, c, p[0], p[1], p[2]);
-            }
         }
         for (int w = 0; w < RaceView.WHEELS; w++) {
             int at = c * RaceView.WHEELS + w;
@@ -350,43 +358,6 @@ final class DamageEffects {
                 f.spark(race, c, race.wheelX[at], race.wheelY[at], race.wheelZ[at]);
             }
         }
-    }
-
-    /** An open bonnet flaps in the wind, faster with speed, and tears off flat out or on the next heavy hit. */
-    private void bonnet(RaceView race, int c, CarState s, float share) {
-        if (!s.bonnetOpen || s.bonnetGone) {
-            s.flapKnown = false;
-            return;
-        }
-        s.flapPhase += 0.5F + 1.9F * share;
-        float flutter = (float) Math.sin(s.flapPhase) * (3F + 16F * share);
-        float target = 30F + 30F * share + flutter;
-        s.bonnetAngle = Math.max(5F, Math.min(85F, s.bonnetAngle + (target - s.bonnetAngle) * 0.6F));
-        s.fastTicks = share > 0.85F ? s.fastTicks + 1 : Math.max(0, s.fastTicks - 2);
-        if (s.fastTicks > 120) {
-            tearOff(race, c, s); // about six seconds flat out
-            s.flapKnown = false;
-            return;
-        }
-        CarParts parts = s.parts;
-        float a = s.bonnetAngle * DEG;
-        float reach = parts.bonnetFront - parts.hingeZ;
-        float fz = parts.hingeZ + reach * (float) Math.cos(a);
-        float fy = parts.bonnetY - 0.3F - reach * (float) Math.sin(a);
-        float inset = (parts.bonnetRight - parts.bonnetLeft) * 0.03F;
-        for (int k = 0; k < 4; k++) {
-            float x = k == 0 || k == 3 ? parts.bonnetLeft + (k == 3 ? inset : 0F)
-                    : parts.bonnetRight - (k == 2 ? inset : 0F);
-            boolean hinge = k < 2;
-            s.world(x, hinge ? parts.bonnetY - 0.3F : fy, hinge ? parts.hingeZ : fz, p);
-            s.flapVX[k] = s.flapKnown ? p[0] - s.flapX[k] : 0F;
-            s.flapVY[k] = s.flapKnown ? p[1] - s.flapY[k] : 0F;
-            s.flapVZ[k] = s.flapKnown ? p[2] - s.flapZ[k] : 0F;
-            s.flapX[k] = p[0];
-            s.flapY[k] = p[1];
-            s.flapZ[k] = p[2];
-        }
-        s.flapKnown = true;
     }
 
     /** A damaged car rattles over bumps, more often at speed; a whole one never does. */

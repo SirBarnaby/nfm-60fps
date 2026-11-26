@@ -86,6 +86,8 @@ public final class RaceView {
     public int[] wheelDrop = new int[0];
     /** Nitrous burns in the car's engine (the powerups' nitrous). */
     public boolean[] nitrous = new boolean[0];
+    /** The car went through a repair hoop this tick: all its damage is fixed. */
+    public boolean[] repaired = new boolean[0];
     /** Each car's model as loaded (its polygons), filled when the race starts. */
     public CarShape[] shape = new CarShape[0];
 
@@ -135,6 +137,21 @@ public final class RaceView {
     public final int[] hitAxis = new int[MAX_HITS];
     public final float[] hitForce = new float[MAX_HITS];
 
+    /* ---------------------------------------------------------- the rams */
+
+    /** At most this many rams are kept per tick. */
+    public static final int MAX_RAMS = 32;
+    /**
+     * Rams in the last tick: car {@code ramCar}'s corner {@code ramWheel} pushed car {@code ramOther}'s
+     * corner {@code ramOtherWheel} by {@code ramPush} units a tick, along the world's x or z.
+     */
+    public int rams;
+    public final int[] ramCar = new int[MAX_RAMS];
+    public final int[] ramWheel = new int[MAX_RAMS];
+    public final int[] ramOther = new int[MAX_RAMS];
+    public final int[] ramOtherWheel = new int[MAX_RAMS];
+    public final float[] ramPush = new float[MAX_RAMS];
+
     /** Room for {@code n} cars. */
     public void fit(int n) {
         if (model.length >= n) {
@@ -169,6 +186,7 @@ public final class RaceView {
         radius = new int[n];
         wheelDrop = new int[n];
         nitrous = new boolean[n];
+        repaired = new boolean[n];
         CarShape[] shapes = new CarShape[n];
         for (int c = 0; c < n; c++) {
             shapes[c] = c < shape.length ? shape[c] : new CarShape();

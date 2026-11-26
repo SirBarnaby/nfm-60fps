@@ -423,6 +423,7 @@ class Madness {
                                 colider = im;
                             }
                             other.regx(otherWheel, pushX * stat.moment * heavyX, otherCar);
+                            FeatureBridge.ram(im, myWheel, other.im, otherWheel, pushX); // the extras see who rammed whom
                             if (other.colidim)
                                 other.colidim = false;
                             scx[myWheel] -= pushBackX;
@@ -456,6 +457,7 @@ class Madness {
                                 colider = im;
                             }
                             other.regz(otherWheel, pushZ * stat.moment * heavyZ, otherCar);
+                            FeatureBridge.ram(im, myWheel, other.im, otherWheel, pushZ);
                             if (other.colidim)
                                 other.colidim = false;
                             scz[myWheel] -= pushBackZ;
@@ -1751,6 +1753,7 @@ class Madness {
             cntdest = 0;
             dest = false;
             newcar = true;
+            FeatureBridge.repaired(im); // the extras' own damage is fixed with the car's
         }
         if (!mtouch) {
             if (trcnt != 1) {

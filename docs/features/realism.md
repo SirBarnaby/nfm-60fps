@@ -9,8 +9,7 @@ Code: `src\nfm\lit\features\realism\`. Checks: `test\extras-check.ps1 realism`
 Cars heat up, get damaged and show it, in a cosmetic way only. After each real
 race tick the extra reads the race (speed, keys, which corner was hit, along
 the car or across it, and how hard, every light touch of a wall) and keeps a
-small state per car (`CarState`): temperatures, coolant, the bonnet, the
-bumpers, the glass, the lights, each wheel, dirt and scratches. It never
+small state per car (`CarState`): temperatures, coolant, the glass, the lights, each wheel, dirt and scratches. It never
 writes the race: `test\verify-races.ps1 -Features looks -NoGolden` plays every
 recorded race with it on.
 
@@ -45,8 +44,8 @@ its end) or across it (a hit on its side).
 | Force | Along the car (an end) | Across (a side) |
 | --- | --- | --- |
 | any, while moving | | a scratch where it touched |
-| from 90 (**hard**) | radiator crushed (front-cooled, front end), the engine hurt (its own end), that end's bumper hangs and its lights break, the wheel at that corner bends 3 to 9 degrees, the windscreen cracks (front end) | radiator crushed (side pods), the wheel bends |
-| from 170 (**heavy**, the loud crash) | the bonnet pops open, or tears off if it already is (front end); the windscreen cracks | that side's window shatters; the windscreen cracks |
+| from 90 (**hard**) | radiator crushed (front-cooled, front end), the engine hurt (its own end), that end's lights break, the wheel at that corner bends 3 to 9 degrees, the windscreen cracks (front end) | radiator crushed (side pods), the wheel bends |
+| from 170 (**heavy**, the loud crash) | the windscreen cracks | that side's window shatters; the windscreen cracks |
 | from 221 | the wheel at that corner goes flat | the same |
 
 A roll onto the roof (a vertical hit from 170) cracks the windscreen.
@@ -84,15 +83,18 @@ scratches are kept per side.
   straight up when the car stands. The coolant runs out over 30 s to a minute,
   and the steam thins with it.
 - **Smoke**: the engine's damage is the car's damage, or more after rams on
-  its own end. Above 0.3 light grey wisps, above 0.55 blue-grey smoke on the
-  throttle, above 0.8 dark puffs, from where the engine sits.
-- **Bonnet**: stands up about 30 degrees and flaps in the wind, higher and
-  faster with speed; the panels under it show the dark bay. It tears off on
-  the next heavy front hit or after six seconds flat out and falls to the
-  road, where it stays. The flapping panel moves between the ticks
-  (`Canvas.moving` with each corner's move), so it is smooth at any frame rate.
-- **Bumper**: one end hangs to the road, the other stays on; sparks where it
-  drags while the car moves; three bits fall off where it was hit.
+  its own end. Above 0.5 light grey wisps, above 0.7 blue-grey smoke on the
+  throttle, above 0.88 dark puffs, from where the engine sits. A ram on the
+  engine's end adds 0.15 and more with the force, so one knock no longer
+  smokes.
+- **No bonnets, no bumpers**: nothing stands up, hangs or tears off (Owner,
+  2026-11-26).
+- **Repair hoops**: a car the game repairs (`Madness`, the hoop's seventh
+  tick) is repaired here too, all of it: coolant, engine, glass, lights, bent
+  and flat wheels, scratches. Heat and dirt stay; they are not damage.
+- **Rams with spikes**: a car whose sheet says `spikes=yes` (Sword of
+  Justice) throws a metal glint and 5 to 8 sparks from where it touches a car
+  it rams, with a ring, once every three ticks at most.
 - **Glass**: each crack is a star of six rays and a ring across them, standing
   just off the windscreen (three stars at most). A shattered side window shows
   its empty frame; 12 to 16 bits fly out and fall to the road.
@@ -112,7 +114,7 @@ scratches are kept per side.
   throws 8 to 20 sparks from under the car, with a thud and a scrape.
 - **Rattle**: a car more than a quarter damaged rattles over bumps (bumpy
   ground, or a jolt), more often at speed; a whole car never does.
-- **Debris**: glass, bumper bits, a torn-off bonnet and the skidmarks' clods
+- **Debris**: glass and the skidmarks' clods
   stay where they fall for the rest of the race, 400 at most, the oldest going
   first. On a ramp or a raised road they are drawn among the objects.
 
