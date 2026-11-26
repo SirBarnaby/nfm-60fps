@@ -5,6 +5,8 @@
 #   cloud/check.sh                 races + extras
 #   cloud/check.sh races [args]    only the recorded races; extra -D options are passed on,
 #                                  e.g. cloud/check.sh races -Dnfm.verify.rollback=50
+#   cloud/check.sh looks           the recorded races with every look and sound extra on, no golden
+#                                  frames: they must still match tick for tick
 #   cloud/check.sh extras [name]   only the extras' checks (all, or one extra)
 #
 # Golden frames are compared with cloud/golden (made on Linux: its fonts differ
@@ -17,10 +19,12 @@ jdk=${JDK_HOME:-/usr/lib/jvm/java-25-openjdk-amd64}
 cp="madness.jar:$(ls cloud/natives/*.jar 2>/dev/null | tr '\n' ':')"
 what=${1:-all}; shift || true
 status=0
-if [ "$what" = all ] || [ "$what" = races ]; then
+if [ "$what" = all ] || [ "$what" = races ] || [ "$what" = looks ]; then
     mkdir -p cloud/golden
+    golden=-Dnfm.verify.golden=cloud/golden
+    [ "$what" = looks ] && golden=-Dnfm.features=looks
     xvfb-run -a "$jdk/bin/java" -XX:-DontCompileHugeMethods --enable-native-access=ALL-UNNAMED -Dnfm.debug=false \
-        -Dnfm.verify=test/races -Dnfm.verify.golden=cloud/golden "$@" -cp "$cp" nfm.lit.RunApp 2>&1 \
+        -Dnfm.verify=test/races $golden "$@" -cp "$cp" nfm.lit.RunApp 2>&1 \
         | grep -E '^\[verify\] ([0-9]+ matched|golden frames:)|CHANGED|ERROR|FAILED|DIFFER' | tee /tmp/nfm-verify.txt
     grep -q ' 0 differed, 0 could not be run' /tmp/nfm-verify.txt || status=1
     grep -q 'CHANGED\|ERROR' /tmp/nfm-verify.txt && status=1
