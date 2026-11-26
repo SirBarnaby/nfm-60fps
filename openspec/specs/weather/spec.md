@@ -1,7 +1,7 @@
 # Weather
 
 ## Purpose
-Weather for the races: rain, with atmospheric fog, and snow. Until now there was only the time of day. The inspiration for the look of the rain is Driveclub. It changes the look and may change races, so it comes after 1.0 (see Release 1.0).
+Weather for the races: rain, with atmospheric fog, and snow. Until now there was only the time of day. The inspiration for the look of the rain is Driveclub. It changes the look and the sound, never how the cars drive.
 
 ## Requirements
 
@@ -11,6 +11,13 @@ The game SHALL have weather: rain and snow. With rain can come atmospheric fog. 
 #### Scenario: Check: a race in each weather
 - **WHEN** a race is started in rain, and another in snow
 - **THEN** rain falls in the first, with fog when it is set, and snow in the second
+
+### Requirement: Weather never changes how the cars drive
+Rain and snow SHALL change the looks and the sound only. They SHALL NOT change how the cars drive: the road is no more slippery in rain or snow than in the dry. (Owner, 2026-11-26: picked "Looks and sound only".)
+
+#### Scenario: Check: the same race in every weather
+- **WHEN** a recorded race is replayed in the dry, in rain and in snow
+- **THEN** every car ends where it ended in the recording, in all three
 
 ### Requirement: Rain looks good and intensive
 Rain SHALL look good and intensive, and SHALL react with the environment as much as possible. The inspiration for its look is Driveclub. (Owner, 2026-11-26.)

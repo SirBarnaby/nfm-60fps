@@ -34,6 +34,13 @@ The improved sound SHALL be built with approach A, "Rebuilt originals": the game
 - **WHEN** the new improved sound changes what `test\verify-sound.ps1` hears
 - **THEN** its baseline is renewed only after the owner has listened and agreed
 
+### Requirement: Engines keep their own voice under the real layers
+Each car SHALL keep its original NFM engine voice, from the game's own recordings. What is laid over it SHALL come from real recordings: the turbo, the supercharger, the exhaust pops, the gear whine, the road and the suspension. (Owner, 2026-11-26: picked "Game engines plus real layers".)
+
+#### Scenario: Check: a car with a turbo drives past
+- **WHEN** a car with a turbo drives past with the improved sound
+- **THEN** its engine is recognisably that car's engine from the original game, and the turbo over it is a recording, not a synthesized stand-in
+
 ### Requirement: Sound effects come from real recordings
 The sound effects SHALL NOT sound synthesized or fake. Sources SHALL be found for at least some of them, and the sound system SHALL be built over these sources. A recording that is used SHALL be sampled down to the game's sample rate, so it sounds more like the game, and its license SHALL be respected (the creator and source credited and the edits named where the license asks for it). (Owner, 2026-11-26.)
 

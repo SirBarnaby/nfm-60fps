@@ -44,6 +44,13 @@ The third powerup SHALL be a bomb, instead of the magnet: a standard bomb-lookin
 - **WHEN** a car drives onto a bomb
 - **THEN** there is a bang, the car takes around 30% damage and is thrown around slightly
 
+### Requirement: The bomb is dropped behind the car
+The bomb SHALL be picked up like nitro. When the driver presses the powerup key it SHALL land on the road behind the car, and any car that drives onto it SHALL get the bang. (Owner, 2026-11-26: picked "You drop it behind you" of three ways.)
+
+#### Scenario: Check: dropping a bomb
+- **WHEN** a car that holds a bomb presses the powerup key
+- **THEN** the bomb lies on the road behind that car, and the next car that drives onto it gets the bang
+
 ### Requirement: Powerups are rare
 Powerups SHALL be about 4 times more rare than in the first build (three boxes at each checkpoint, back after 4 seconds). (Owner, 2026-11-26.)
 
@@ -96,3 +103,10 @@ A new setting SHALL make a wasted car, instead of only being on fire, light on f
 #### Scenario: Check: the setting off
 - **WHEN** a car is wasted with the setting off
 - **THEN** it burns as it always did and does not explode
+
+### Requirement: An exploding wreck hurts like a small dynamite
+The explosion of a wasted car SHALL push the cars close to the wreck and do some damage to them, like a small dynamite, besides denting the ground. (Owner, 2026-11-26: picked "Yes, like a small dynamite".)
+
+#### Scenario: Check: a car next to an exploding wreck
+- **WHEN** a wreck explodes with another car close to it
+- **THEN** that car is pushed away and takes some damage, less than from a dynamite stick, and a car far from the wreck is untouched
