@@ -58,7 +58,7 @@ public final class ProjectedScene {
         SceneGeometry g = geometry;
         // the size only scales vertices placed here; the card places these with its own
         g.buildProjected(list, points, 1, 1);
-        int bytes = g.vertexCount() * SceneGeometry.PROJECTED_STRIDE;
+        int bytes = g.projectedVertexCount() * SceneGeometry.PROJECTED_STRIDE;
         if (vertices == null || vertices.capacity() < bytes) {
             int size = Math.max(bytes, vertices == null ? 1 << 20 : vertices.capacity() * 2);
             MemoryUtil.memFree(vertices);
@@ -101,6 +101,18 @@ public final class ProjectedScene {
         f.position(floats).flip();
         built = true;
         buildNanos = System.nanoTime() - start;
+    }
+
+    /**
+     * Whether the frame is placed for another span than the scene was built
+     * for: the next tick's, handed to the presenter before its own scene is
+     * made. Its polygons that cross themselves were cut in bands checked for
+     * this scene's span only, so then the stencil fills them from their
+     * corners, exact wherever they go (decision 17). Before each frame, by
+     * the thread drawing it.
+     */
+    public void stencilBands(boolean on) {
+        geometry.stencilBands(on);
     }
 
     /** The split-screen pane it is drawn in, null for the whole picture. */

@@ -33,6 +33,10 @@ import java.util.Random;
  *     probe's far end is the last moment carried on to reach (1.5 in the game), at pixel centres
  * BandCheck time motion-*.bin...
  *     what the check costs: the same polygons built without the probe and with it, again and again
+ * BandCheck stencil &lt;move&gt; [scenes] [seed]
+ *     scenes of several polygons over each other, placed for another span than they were cut for (the frames between
+ *     a tick's span and its scene): the draws for that, which fill band polygons with the stencil, against the
+ *     even-odd rule polygon by polygon in order; the bands' own draws are counted beside them
  * </pre>
  */
 public final class BandCheck {
@@ -58,8 +62,11 @@ public final class BandCheck {
                 time(List.of(args).subList(1, args.length));
                 return;
             }
+            case "stencil" -> stencil(Double.parseDouble(args[1]), args.length > 2 ? Integer.parseInt(args[2]) : 2000,
+                    args.length > 3 ? Long.parseLong(args[3]) : 1L, byDistance);
             default -> {
-                System.out.println("BandCheck random <move> <mode> [cases] [seed] | motion <files> | time <files>");
+                System.out.println("BandCheck random <move> <mode> [cases] [seed] | motion <files> | time <files>"
+                        + " | stencil <move> [scenes] [seed]");
                 System.exit(2);
             }
         }
@@ -90,8 +97,9 @@ public final class BandCheck {
         for (int d = 0; d < g.draws(); d++) {
             stencil |= g.kind(d) != SceneGeometry.PLAIN;
         }
-        int count = g.vertexCount();
-        ByteBuffer bytes = ByteBuffer.allocate(count * SceneGeometry.PROJECTED_STRIDE).order(ByteOrder.LITTLE_ENDIAN);
+        int count = g.vertexCount(); // the bands' own; the fans the build keeps for another span come after them
+        ByteBuffer bytes = ByteBuffer.allocate(g.projectedVertexCount() * SceneGeometry.PROJECTED_STRIDE)
+                .order(ByteOrder.LITTLE_ENDIAN);
         g.copyProjected(bytes);
         return new Built(count, bytes, g.extraPoints(), stencil);
     }
@@ -297,6 +305,293 @@ public final class BandCheck {
             }
             default -> throw new IllegalArgumentException("mode " + mode);
         }
+    }
+
+    /* ------------------------------------------------------------------ placed for another span */
+
+    /**
+     * Scenes of 3-8 polygons over each other, each its own grey. Those that cross themselves are cut in bands checked
+     * for a tick's span (the probe: their corners where cut, and moved a tenth of a pixel), then placed for another
+     * span, each of their corners moved about {@code move} pixels; the others move whole by as much, which keeps how
+     * they were cut. Drawn in order as the card does, the draws for another span
+     * ({@link SceneGeometry#stencilBands}) must show what the even-odd rule fills polygon by polygon; the bands' own
+     * draws are counted beside them, wrong where a band no longer holds.
+     */
+    private static void stencil(double move, int scenes, long seed, long[] byDistance) {
+        Random r = new Random(seed);
+        SceneGeometry g = new SceneGeometry();
+        int size = (int) (100 / STEP);
+        long bandsWrong = 0;
+        long stencilWrong = 0;
+        long samples = 0;
+        int crossing = 0;
+        int all = 0;
+        int bandScenes = 0;
+        int shown = 0;
+        for (int s = 0; s < scenes; s++) {
+            int count = 3 + r.nextInt(6);
+            float[][] cutX = new float[count][];
+            float[][] cutY = new float[count][];
+            float[][] movedX = new float[count][];
+            float[][] movedY = new float[count][];
+            float[][] endX = new float[count][];
+            float[][] endY = new float[count][];
+            for (int p = 0; p < count; p++) {
+                int n = 3 + r.nextInt(6);
+                float[] x = new float[n];
+                float[] y = new float[n];
+                for (int k = 0; k < n; k++) {
+                    x[k] = 10F + r.nextFloat() * 80F;
+                    y[k] = 10F + r.nextFloat() * 80F;
+                }
+                boolean crosses = !SceneGeometry.isSimple(x, y, n);
+                crossing += crosses ? 1 : 0;
+                float[] mx = new float[n];
+                float[] my = new float[n];
+                float[] ex = new float[n];
+                float[] ey = new float[n];
+                double dx = r.nextGaussian() * move;
+                double dy = r.nextGaussian() * move;
+                for (int k = 0; k < n; k++) {
+                    mx[k] = (float) (x[k] + (crosses ? r.nextGaussian() * move : dx));
+                    my[k] = (float) (y[k] + (crosses ? r.nextGaussian() * move : dy));
+                    ex[k] = (float) (x[k] + r.nextGaussian() * 0.1);
+                    ey[k] = (float) (y[k] + r.nextGaussian() * 0.1);
+                }
+                cutX[p] = x;
+                cutY[p] = y;
+                movedX[p] = mx;
+                movedY[p] = my;
+                endX[p] = ex;
+                endY[p] = ey;
+            }
+            all += count;
+            Input in = scene(cutX, cutY);
+            in.points().probe = probe(new float[][] { flat(cutX), flat(cutY), flat(endX), flat(endY) });
+            g.buildProjected(in.list(), in.points(), 1, 1);
+            int total = g.projectedVertexCount();
+            ByteBuffer bytes = ByteBuffer.allocate(total * SceneGeometry.PROJECTED_STRIDE).order(ByteOrder.LITTLE_ENDIAN);
+            g.copyProjected(bytes);
+            Built b = new Built(total, bytes, g.extraPoints(), false);
+            float[] mx = flat(movedX);
+            float[] my = flat(movedY);
+            float[] vx = new float[total];
+            float[] vy = new float[total];
+            place(b, mx.length, mx, my, vx, vy);
+            int[] want = new int[size * size];
+            for (int p = 0; p < count; p++) {
+                for (int j = 0; j < size; j++) {
+                    for (int i = 0; i < size; i++) {
+                        if (insideEvenOdd(movedX[p], movedY[p], (i + 0.5) * STEP - 0.25, (j + 0.5) * STEP - 0.25)) {
+                            want[j * size + i] = p + 1;
+                        }
+                    }
+                }
+            }
+            samples += want.length;
+            g.stencilBands(false);
+            int[] bands = draw(g, bytes, vx, vy, size);
+            g.stencilBands(true);
+            bandScenes += g.draws() != drawCount(g, false) ? 1 : 0;
+            int[] stencil = draw(g, bytes, vx, vy, size);
+            for (int q = 0; q < want.length; q++) {
+                bandsWrong += bands[q] != want[q] ? 1 : 0;
+                if (stencil[q] != want[q]) {
+                    stencilWrong++;
+                    double sx = (q % size + 0.5) * STEP - 0.25;
+                    double sy = (q / size + 0.5) * STEP - 0.25;
+                    double d = Double.MAX_VALUE;
+                    for (int p = 0; p < count; p++) {
+                        d = Math.min(d, outlineDistance(movedX[p], movedY[p], sx, sy));
+                    }
+                    byDistance[d < 1e-4 ? 0 : d < 1e-2 ? 1 : d < 0.1 ? 2 : d < 0.5 ? 3 : 4]++;
+                    if (d >= 1e-4 && shown++ < 5) {
+                        System.out.printf("  scene %d at %.2f, %.2f (%.4f px from an outline): polygon %d shows, %d"
+                                + " should%n", s, sx, sy, d, stencil[q] - 1, want[q] - 1);
+                        for (int p = 0; p < count; p++) {
+                            System.out.printf("    polygon %d: %s%n    moved %s%n", p, corners(cutX[p], cutY[p]),
+                                    corners(movedX[p], movedY[p]));
+                        }
+                    }
+                }
+            }
+        }
+        double px2 = STEP * STEP;
+        System.out.printf("another span, moved %.2f: %d scenes, %d polygons, %d of them cross themselves, %d scenes with"
+                + " bands; wrong with the bands' draws %.1f px^2, with the draws for another span %.1f px^2, of %.0f px^2"
+                + "%n", move, scenes, all, crossing, bandScenes, bandsWrong * px2, stencilWrong * px2, samples * px2);
+    }
+
+    /** The draws {@code g} has with {@link SceneGeometry#stencilBands} at {@code on}; leaves it on. */
+    private static int drawCount(SceneGeometry g, boolean on) {
+        g.stencilBands(on);
+        int draws = g.draws();
+        g.stencilBands(true);
+        return draws;
+    }
+
+    /**
+     * Draws {@code g}'s draws in order, as the card does, at samples every {@link #STEP}: a plain draw's triangles
+     * colour what they cover, an even-odd one's flip the stencil and colour where it ended odd. Each sample holds the
+     * grey of the last polygon over it (the polygon's number plus one), 0 for none.
+     */
+    private static int[] draw(SceneGeometry g, ByteBuffer bytes, float[] vx, float[] vy, int size) {
+        int[] picture = new int[size * size];
+        boolean[] odd = new boolean[size * size];
+        for (int d = 0; d < g.draws(); d++) {
+            int start = g.start(d);
+            int end = start + g.count(d);
+            if (end == start) {
+                continue;
+            }
+            // a plain draw holds the triangles of many polygons, each in its own colour; an even-odd one, one polygon's
+            int grey = bytes.getInt(start * SceneGeometry.PROJECTED_STRIDE + 8) & 0xff;
+            boolean plain = g.kind(d) == SceneGeometry.PLAIN;
+            if (!plain) {
+                java.util.Arrays.fill(odd, false);
+            }
+            for (int v = start; v + 2 < end; v += 3) {
+                int own = bytes.getInt(v * SceneGeometry.PROJECTED_STRIDE + 8) & 0xff;
+                if (plain) {
+                    covering(size, vx[v], vy[v], vx[v + 1], vy[v + 1], vx[v + 2], vy[v + 2], q -> picture[q] = own);
+                } else {
+                    flipping(size, vx[v], vy[v], vx[v + 1], vy[v + 1], vx[v + 2], vy[v + 2], q -> odd[q] = !odd[q]);
+                }
+            }
+            if (!plain) {
+                for (int q = 0; q < odd.length; q++) {
+                    if (odd[q]) {
+                        picture[q] = grey;
+                    }
+                }
+            }
+        }
+        return picture;
+    }
+
+    /** Polygons x[p], y[p] in one list, each in grey p + 1, their corners recorded points numbered in order. */
+    private static Input scene(float[][] x, float[][] y) {
+        SceneList list = new SceneList();
+        int total = 0;
+        for (float[] corners : x) {
+            total += corners.length;
+        }
+        ScenePoints p = new ScenePoints();
+        p.kinds = new int[total];
+        p.points = new float[total * ScenePoints.STRIDE];
+        p.pointCount = total;
+        p.polygons = new int[3 * x.length];
+        p.polygonCount = x.length;
+        p.codes = new int[2 * total];
+        int id = 0;
+        for (int q = 0; q < x.length; q++) {
+            int n = x[q].length;
+            list.setColor((q + 1) * 0x010101);
+            int at = list.size();
+            int[] xs = new int[n];
+            int[] ys = new int[n];
+            for (int k = 0; k < n; k++) {
+                xs[k] = Math.round(x[q][k]);
+                ys[k] = Math.round(y[q][k]);
+            }
+            list.polygon(SceneList.FILL_POLYGON, xs, ys, n, x[q], y[q]);
+            p.polygons[3 * q] = at + 2 + 2 * n;
+            p.polygons[3 * q + 1] = n;
+            p.polygons[3 * q + 2] = 2 * id;
+            for (int k = 0; k < n; k++) {
+                p.kinds[id + k] = ScenePoints.CONSTANT;
+                p.points[(id + k) * ScenePoints.STRIDE] = x[q][k];
+                p.points[(id + k) * ScenePoints.STRIDE + 1] = y[q][k];
+                p.codes[2 * id + k] = 2 * (id + k);
+                p.codes[2 * id + n + k] = 2 * (id + k) + 1;
+            }
+            id += n;
+        }
+        return new Input(list, p);
+    }
+
+    private static String corners(float[] x, float[] y) {
+        StringBuilder out = new StringBuilder();
+        for (int k = 0; k < x.length; k++) {
+            out.append(String.format("%s(%.3f, %.3f)", k == 0 ? "" : " ", x[k], y[k]));
+        }
+        return out.toString();
+    }
+
+    private static float[] flat(float[][] parts) {
+        int total = 0;
+        for (float[] part : parts) {
+            total += part.length;
+        }
+        float[] out = new float[total];
+        int at = 0;
+        for (float[] part : parts) {
+            System.arraycopy(part, 0, out, at, part.length);
+            at += part.length;
+        }
+        return out;
+    }
+
+    /**
+     * The samples (every {@link #STEP} from 0, size by size) triangle 0-1-2 covers, each handed to {@code at}, edges
+     * included. Each edge is worked out from its upper end whichever way it runs, so two triangles that share it get
+     * exactly opposite values and a sample on it is not lost between them to rounding (the diagonal of two ear
+     * triangles, for one).
+     */
+    private static void covering(int size, float x0, float y0, float x1, float y1, float x2, float y2,
+            java.util.function.IntConsumer at) {
+        samples(size, x0, y0, x1, y1, x2, y2, false, at);
+    }
+
+    /**
+     * As {@link #covering}, for the stencil: a sample on an edge two triangles of a fan share is handed over once, as
+     * the card's fill rule has it, not by both (which would flip it back). The edge is worked out the same way in both
+     * triangles, from its upper end, so the two get exactly opposite values; one exactly on it goes to the triangle on
+     * the edge's positive side.
+     */
+    private static void flipping(int size, float x0, float y0, float x1, float y1, float x2, float y2,
+            java.util.function.IntConsumer at) {
+        samples(size, x0, y0, x1, y1, x2, y2, true, at);
+    }
+
+    /** {@link #covering} ({@code once} false) and {@link #flipping} (true). */
+    private static void samples(int size, float x0, float y0, float x1, float y1, float x2, float y2, boolean once,
+            java.util.function.IntConsumer at) {
+        double area = (x1 - x0) * (double) (y2 - y0) - (y1 - y0) * (double) (x2 - x0);
+        if (area == 0) {
+            return;
+        }
+        double sign = Math.signum(area);
+        int a0 = Math.max(0, (int) Math.floor(Math.min(x0, Math.min(x1, x2)) / STEP) - 1);
+        int a1 = Math.min(size - 1, (int) Math.ceil(Math.max(x0, Math.max(x1, x2)) / STEP) + 1);
+        int b0 = Math.max(0, (int) Math.floor(Math.min(y0, Math.min(y1, y2)) / STEP) - 1);
+        int b1 = Math.min(size - 1, (int) Math.ceil(Math.max(y0, Math.max(y1, y2)) / STEP) + 1);
+        for (int j = b0; j <= b1; j++) {
+            double sy = (j + 0.5) * STEP;
+            for (int i = a0; i <= a1; i++) {
+                double sx = (i + 0.5) * STEP;
+                if (onSide(x0, y0, x1, y1, sx, sy, sign, once) && onSide(x1, y1, x2, y2, sx, sy, sign, once)
+                        && onSide(x2, y2, x0, y0, sx, sy, sign, once)) {
+                    at.accept(j * size + i);
+                }
+            }
+        }
+    }
+
+    /**
+     * True if sample sx, sy is on the inside of edge a-b of a triangle turning {@code sign}; one exactly on it is, unless
+     * {@code once}, then only for the triangle on the edge's positive side (see {@link #flipping}).
+     */
+    private static boolean onSide(float ax, float ay, float bx, float by, double sx, double sy, double sign,
+            boolean once) {
+        boolean flip = ay > by || ay == by && ax > bx;
+        double px = flip ? bx : ax;
+        double py = flip ? by : ay;
+        double qx = flip ? ax : bx;
+        double qy = flip ? ay : by;
+        double e = (qx - px) * (sy - py) - (qy - py) * (sx - px);
+        double side = flip ? -sign : sign;
+        return e * side > 0 || e == 0 && (!once || side > 0);
     }
 
     /* ------------------------------------------------------------------ the game's polygons */
