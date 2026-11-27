@@ -121,7 +121,7 @@ final class RaceLog {
     End end = End.CLOSED;
     /** The tick on which the player passed the last checkpoint of the last lap, or -1. */
     int finishTick = -1;
-    /** A custom game's choices: always empty on this branch, kept so format 6 files read the same everywhere. */
+    /** A custom game's choices, see {@link nfm.lit.features.customgame.CustomGame#recorded}: empty for any other race. */
     String custom = "";
     /** The race extras that played, see {@link nfm.lit.features.Features#raceIds}: empty for a race without them. */
     String extras = "";

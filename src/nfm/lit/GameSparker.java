@@ -5,6 +5,10 @@ import java.util.Arrays;
 import fallk.logmaster.HLogger;
 import nfm.lit.audio.BASSLoader;
 import nfm.lit.audio.SoundManager;
+import nfm.lit.features.customgame.CustomGame;
+import nfm.lit.features.customgame.CustomGameCheck;
+import nfm.lit.features.customgame.CustomGameTest;
+import nfm.lit.features.customgame.StaggeredStart;
 import nfm.lit.gpu.GpuDisplay;
 import nfm.lit.gpu.NativeWindow;
 
@@ -2087,21 +2091,25 @@ public class GameSparker extends Panel implements Runnable {
         gameUi.resetstat(checkpoints.stage);
         // split screen: the players side by side on the second row, a computer car on the first
         boolean split = SplitRace.on;
+        world.startGroups = StaggeredStart.groupsFor(GameFacts.numberOfPlayers);
         racer = 0;
         do {
             int slot = split && racer < 3 ? (racer + 1) % 3 : racer;
-            if (slot % 3 == 0) {
-                scene[racer] = new ContO(models[gameUi.sc[racer]], 0, 250 - models[gameUi.sc[racer]].grat,
-                        -760 + ((slot / 3) * 760), 0);
+            int x;
+            int z;
+            if (world.staggered()) {
+                // a big custom game: the computer cars in groups of six across, the player behind them
+                int[] place = StaggeredStart.gridPlace(racer, GameFacts.numberOfPlayers);
+                x = place[0];
+                z = place[1];
+            } else if (slot % 3 == 0) {
+                x = 0;
+                z = -760 + slot / 3 * 760;
+            } else {
+                x = slot % 3 == 1 ? -350 : 350;
+                z = -380 + slot / 3 * 760;
             }
-            if (slot % 3 == 1) {
-                scene[racer] = new ContO(models[gameUi.sc[racer]], -350, 250 - models[gameUi.sc[racer]].grat,
-                        -380 + ((int) (slot / 3) * 760), 0);
-            }
-            if (slot % 3 == 2) {
-                scene[racer] = new ContO(models[gameUi.sc[racer]], 350, 250 - models[gameUi.sc[racer]].grat,
-                        -380 + ((int) (slot / 3) * 760), 0);
-            }
+            scene[racer] = new ContO(models[gameUi.sc[racer]], x, 250 - models[gameUi.sc[racer]].grat, z, 0);
             drivers[racer].reseto(gameUi.sc[racer], scene[racer], checkpoints);
         } while (++racer < GameFacts.numberOfPlayers);
         if (split) {
@@ -2810,6 +2818,10 @@ public class GameSparker extends Panel implements Runnable {
         drawSimulationStep();
 
         if (ui.starcnt == 0) {
+            StaggeredStart.beforeDrive(world, u, GameFacts.numberOfPlayers); // a big custom game's groups not yet gone wait
+            if (launchWatch != null) {
+                launchWatch.beforeDrive(world.ticksSinceGo, u); // the hidden custom test (CustomGameCheck.Launches)
+            }
             int car = 0;
             do {
                 int other = 0;
@@ -2831,15 +2843,19 @@ public class GameSparker extends Panel implements Runnable {
             while (++car < GameFacts.numberOfPlayers);
             raceCheckpoints.checkstat(racers, sceneObjects, raceRecord, GameFacts.numberOfPlayers);
 
-            // This starts the AI code for all the cars (in split screen, from car 2: car 1 is Player 2's).
+            // This starts the AI code for all the cars (in split screen, from car 2: car 1 is Player 2's). None
+            // in a custom game's practice race: slot 1 is then no car of this race, and outside the race state.
             GameFacts.paceCar = paceCar();
             car = GameFacts.humans;
-            if (car == 1 || car < GameFacts.numberOfPlayers) {
-                do
-                    u[car].preform(racers[car], sceneObjects[car], raceCheckpoints, raceTrackers,
-                            GameFacts.numberOfPlayers);
-                while (++car < GameFacts.numberOfPlayers);
+            if (car < GameFacts.numberOfPlayers) {
+                do {
+                    if (StaggeredStart.drivesNext(world, car, GameFacts.numberOfPlayers)) {
+                        u[car].preform(racers[car], sceneObjects[car], raceCheckpoints, raceTrackers,
+                                GameFacts.numberOfPlayers);
+                    }
+                } while (++car < GameFacts.numberOfPlayers);
             }
+            StaggeredStart.afterDrive(world);
         } else {
             if (ui.starcnt == 130) {
                 Medium.adv = 1900;
@@ -2889,7 +2905,9 @@ public class GameSparker extends Panel implements Runnable {
                 ui.blendude((BufferedImage) pictureAtGameSize());
             }
         } else {
-            if (GameFacts.numberOfPlayers < 5)
+            if (world.staggered())
+                Medium.around(sceneObjects[StaggeredStart.flybyCar(GameFacts.numberOfPlayers)], true);
+            else if (GameFacts.numberOfPlayers < 5)
                 Medium.around(sceneObjects[0], true);
             else
                 Medium.around(sceneObjects[3], true);
@@ -6003,8 +6021,8 @@ public class GameSparker extends Panel implements Runnable {
     }
 
     /* replays keep where each car was, not how it was driven: the 3D sound works its engine out from that */
-    private final float[][] replayPlace = new float[GameFacts.numberOfPlayers][3];
-    private final float[] replaySpeed = new float[GameFacts.numberOfPlayers];
+    private final float[][] replayPlace = new float[FramePose.SLOTS][3];
+    private final float[] replaySpeed = new float[FramePose.SLOTS];
     private boolean replayHeard;
 
     /**
@@ -6773,6 +6791,8 @@ public class GameSparker extends Panel implements Runnable {
         Thread thread = new Thread(() -> {
             if (SPLIT_TEST != null) {
                 runSplitTest(directory);
+            } else if (CUSTOM_TEST != null) {
+                runCustomTest(directory);
             } else {
                 runAutoTest(directory);
             }
@@ -6784,23 +6804,28 @@ public class GameSparker extends Panel implements Runnable {
     /* what the frame log's part was named for, game thread only (see followFrameLog) */
     private Phase framePhase;
     private boolean frameCountdown;
+    private boolean frameWaiting;
     private boolean frameSplit;
     private String framePart = "start";
 
     /**
      * Keeps the frame log's part with the game, every frame: one for each
-     * phase, a race's countdown apart from the race, and split screen's
-     * races apart from the others. Game thread.
+     * phase, a race's countdown apart from the race, a big custom game's
+     * staggered start (the player waiting for their group) apart from both,
+     * and split screen's races apart from the others. Game thread.
      */
     private void followFrameLog() {
         Phase phase = ui.fase;
         boolean countdown = phase == Phase.INGAME && ui.starcnt > 0;
+        boolean waiting = phase == Phase.INGAME && !countdown
+                && StaggeredStart.playerWaiting(world, GameFacts.numberOfPlayers);
         boolean split = SplitRace.active != null;
-        if (phase != framePhase || countdown != frameCountdown || split != frameSplit) {
+        if (phase != framePhase || countdown != frameCountdown || waiting != frameWaiting || split != frameSplit) {
             framePhase = phase;
             frameCountdown = countdown;
+            frameWaiting = waiting;
             frameSplit = split;
-            String name = phase == Phase.INGAME ? countdown ? "countdown" : "race"
+            String name = phase == Phase.INGAME ? countdown ? "countdown" : waiting ? "staggered start" : "race"
                     : phase.name().toLowerCase(java.util.Locale.ROOT);
             framePart = split && phase == Phase.INGAME ? "split " + name : name;
         }
@@ -7026,6 +7051,60 @@ public class GameSparker extends Panel implements Runnable {
         System.out.println("[autotest] split test ran out of time in " + ui.fase);
         finishAutoTest(directory);
         System.exit(0);
+    }
+
+    /** The hidden custom test, see {@link CustomGameTest}: -Dnfm.autotest.custom=computer cars[,lineup], or saved. */
+    private static final String CUSTOM_TEST = System.getProperty("nfm.autotest.custom");
+
+    /** The custom test's watch on a staggered start, fed by the race tick (see CustomGameCheck.Launches); else null. */
+    private volatile CustomGameCheck.Launches launchWatch;
+
+    /** Runs the hidden custom test through this game's own test helpers. */
+    private void runCustomTest(File directory) {
+        System.out.println("[autotest] screenshots -> " + directory.getAbsolutePath());
+        new CustomGameTest(CUSTOM_TEST, new CustomGameTest.Host() {
+            @Override public Phase phase() { return ui.fase; }
+            @Override public long menuHoldMillis() { return MENU_HOLD_MILLIS; }
+            @Override public long shotEvery(long usual) { return LIVE ? LIVE_SHOT_MILLIS : usual; }
+            @Override public void shot(String name) { saveFrame(directory, name); }
+            @Override public void clickPastLoading(Phase phase, long held) { GameSparker.this.clickPastLoading(phase, held); }
+            @Override public void pressEnter() { GameSparker.this.pressEnter(); }
+            @Override public void holdKeys(boolean up, boolean left, boolean right) { holdTestKeys(up, left, right); }
+            @Override public void chooseCustomGame() { ui.opselect = GameUi.MENU_CUSTOM; }
+            @Override public void selectRow(String label) { ui.selectCustomGameRow(label); }
+            @Override public void leavePage() { SettingsScreen.noteEscape(); }
+            @Override public int starcnt() { return ui.starcnt; }
+            @Override public boolean raceOver() { return ui.raceOver(); }
+            @Override public boolean won() { return ui.winner; }
+            @Override public void finishRace() { autotestHighlightRequested = true; }
+            @Override public World world() { return world; }
+            @Override public int[] field() { return java.util.Arrays.copyOf(ui.sc, GameFacts.numberOfPlayers); }
+            @Override public int stage() { return raceCheckpoints.stage; }
+            @Override public int unlocked() { return ui.unlocked; }
+            @Override public void watch(CustomGameCheck.Launches launches) { launchWatch = launches; }
+            @Override public void finish() { finishAutoTest(directory); }
+
+            @Override
+            public float[] gridZ() {
+                float[] z = new float[GameFacts.numberOfPlayers];
+                for (int car = 0; car < z.length; car++) {
+                    z[car] = sceneObjects[car].z;
+                }
+                return z;
+            }
+        }).run();
+    }
+
+    /** The arrows a test run holds down, as the keyboard holds them: the next race tick latches them. */
+    private void holdTestKeys(boolean up, boolean left, boolean right) {
+        synchronized (inputLock) {
+            live[0].up = up;
+            live[0].left = left;
+            live[0].right = right;
+            if (!latching) {
+                applyLiveKeys();
+            }
+        }
     }
 
     private void runAutoTest(File directory) {
@@ -7380,6 +7459,7 @@ public class GameSparker extends Panel implements Runnable {
         loadAudioEffects();
         loadKeys();
         loadSplit();
+        CustomGame.load(GameSparker::readcookie, GameSparker::readcookieText);
         loadRunAhead();
         loadFullscreenResolution();
         loadRenderer();
@@ -7476,6 +7556,7 @@ public class GameSparker extends Panel implements Runnable {
                 saveVsyncIfChanged();
                 saveKeysIfChanged();
                 saveSplitIfChanged();
+                CustomGame.saveIfChanged(this::savecookie);
                 saveAudioEffectsIfChanged();
                 fitPicture(now);
                 ticksRun++;
@@ -7628,7 +7709,16 @@ public class GameSparker extends Panel implements Runnable {
                 if (SplitRace.on) {
                     endSplit();
                 }
+                CustomGame.on = false; // back from a custom game: the next race is the classic one
                 gameUi.maini(u[0], checkpoints, drivers, models, scene);
+                gameUi.ctachm(xm, ym, mouses, u[0]);
+                if (mouses == 2)
+                    mouses = 0;
+                if (mouses == 1)
+                    mouses = 2;
+            }
+            if (gameUi.fase == Phase.CUSTOMGAME) {
+                gameUi.customGame(u[0]);
                 gameUi.ctachm(xm, ym, mouses, u[0]);
                 if (mouses == 2)
                     mouses = 0;
@@ -7666,12 +7756,16 @@ public class GameSparker extends Panel implements Runnable {
             if (gameUi.fase == Phase.SAVEGAME) { // save the fucking game properly
 
                 if (checkpoints.stage == gameUi.unlocked && gameUi.winner
-                        && gameUi.unlocked != GameFacts.numberOfStages + 1)
+                        && gameUi.unlocked != GameFacts.numberOfStages + 1 && !CustomGame.on)
                     savecookie("unlocked", "" + gameUi.unlocked);
                 savecookie("gameprfact", "" + (int) perfFactor);
                 savecookie("usercar", "" + gameUi.sc[0]);
 
-                gameUi.fase = Phase.MAINMENU;
+                if (CustomGame.on) {
+                    gameUi.openCustomGame(); // after a custom race, its page again: race again or change it
+                } else {
+                    gameUi.fase = Phase.MAINMENU;
+                }
             }
             if (gameUi.fase == Phase.POSTGAME) {
                 gameUi.finish(checkpoints, models, u[0]);
@@ -7906,6 +8000,9 @@ public class GameSparker extends Panel implements Runnable {
                 FeatureBridge.afterTick(racers, u, sceneObjects, raceTrackers, raceTicks); // real ticks only
                 if (FeatureBridge.takeFlash()) {
                     pendingWhiteFlash = true; // an extra's flash (a dynamite blast near a player)
+                }
+                if (launchWatch != null) {
+                    launchWatch.afterRealTick(world.ticksSinceGo, car -> Math.abs(racers[car].speed) > 1F);
                 }
 
                 if (session != null) {

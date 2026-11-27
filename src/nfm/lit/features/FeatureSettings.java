@@ -180,6 +180,11 @@ public final class FeatureSettings {
                         + " gets deeper, and its sound with the 3D sound. Only the look and the sound: the road"
                         + " grips as in the dry. The sky changes with the next race." + LOOK_1_0,
                 "xtraweather", Kind.LOOK, 0, "Off", "Rain", "Rain and fog", "Snow"),
+        new Switch("customgame", "Custom game",
+                "Adds Custom Game to the main menu: up to 32 computer cars, whose cars they drive (Default, Novice,"
+                        + " Pro, or picked one by one), and above 9 a start in groups of six, a second apart, with you"
+                        + " last. Not in split screen." + RACE_1_0,
+                "xtracustom", Kind.RACE, 0, "Off", "On"),
     };
 
     /** Raised by every change, so the features can follow a switch turned during a race. */

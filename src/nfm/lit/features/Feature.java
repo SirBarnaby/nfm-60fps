@@ -24,6 +24,15 @@ public interface Feature {
         return false;
     }
 
+    /**
+     * False for an extra that is only a way into a race (the custom game):
+     * it has a switch, but no part in a race's calls, and a recording does
+     * not name it.
+     */
+    default boolean playsInRaces() {
+        return true;
+    }
+
     /*
      * A race extra (changesRaces) is also called inside the race: set up when
      * the stage loads, ticked in every race tick (run-ahead's and the

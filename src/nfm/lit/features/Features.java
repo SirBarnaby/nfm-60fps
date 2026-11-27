@@ -1,6 +1,7 @@
 package nfm.lit.features;
 
 import fallk.logmaster.HLogger;
+import nfm.lit.features.customgame.CustomGameFeature;
 
 /**
  * The extras the game knows, which are on in the race being played, and the
@@ -18,6 +19,7 @@ public final class Features {
 
     /** Every feature, one line each. */
     private static final Feature[] ALL = {
+        new CustomGameFeature(),
         new nfm.lit.features.skidmarks.SkidmarksFeature(),
         new nfm.lit.features.skidmarks.SkidZonesFeature(),
         new nfm.lit.features.wingtrail.WingTrailFeature(),
@@ -103,7 +105,7 @@ public final class Features {
             switchedVersion = v;
             switchedOn = false;
             for (Feature f : ALL) {
-                switchedOn |= FeatureSettings.on(f.id());
+                switchedOn |= f.playsInRaces() && FeatureSettings.on(f.id());
             }
         }
         return switchedOn;
@@ -150,7 +152,7 @@ public final class Features {
         for (int f = 0; f < ALL.length; f++) {
             Feature feature = ALL[f];
             raceFailed[f] = false;
-            racePlays[f] = feature.changesRaces()
+            racePlays[f] = feature.changesRaces() && feature.playsInRaces()
                     && (recorded != null ? listed(recorded, feature.id()) : FeatureSettings.on(feature.id()));
             if (racePlays[f]) {
                 raceAny = true;

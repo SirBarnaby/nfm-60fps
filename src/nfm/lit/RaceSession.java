@@ -18,6 +18,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import nfm.lit.features.customgame.CustomGame;
 
 /**
  * Developer tooling that records races and plays them back to prove the game
@@ -339,6 +340,7 @@ final class RaceSession {
         log.unlocked = ui.unlocked;
         log.carsBefore = Arrays.copyOf(carsBefore, players);
         log.carsAfter = Arrays.copyOf(ui.sc, players);
+        log.custom = CustomGame.recorded();
         log.mountains = mountainsBefore;
         log.note = (autopilot != null ? "autopilot " + autopilot.describe() : "played")
                 + (unpaced ? ", unpaced" : ", real time") + ", " + timestamp()
@@ -490,7 +492,8 @@ final class RaceSession {
     }
 
     /** Sets up a race from the main menu without going through the menus' screens. */
-    static void setUpRace(Host host, int stage, int nfmmode, int players, int unlocked, int[] cars) {
+    static void setUpRace(Host host, int stage, int nfmmode, int players, int unlocked, int[] cars, String custom) {
+        CustomGame.replay(custom);
         GameUi ui = host.ui();
         ui.unlocked = unlocked;
         ui.nfmmode = nfmmode;
@@ -598,7 +601,7 @@ final class RaceSession {
             started++;
             int[] cars = Arrays.copyOf(host.ui().sc, host.ui().sc.length);
             cars[0] = car;
-            setUpRace(host, stage, host.ui().nfmmode, 7, GameFacts.numberOfStages, cars);
+            setUpRace(host, stage, host.ui().nfmmode, 7, GameFacts.numberOfStages, cars, "");
         }
 
         private void drive(int raceTick) {
@@ -809,7 +812,7 @@ final class RaceSession {
             System.out.println(TAG_VERIFY + file.getName() + ": stage " + log.stage + ", " + log.players + " cars, "
                     + log.ticks() + " ticks, " + log.end.name().toLowerCase(Locale.ROOT) + " (" + log.note + ")");
             nfm.lit.features.Features.playRecorded(log.extras); // the race extras it was recorded with, whatever the switches
-            setUpRace(host, log.stage, log.nfmmode, log.players, log.unlocked, log.carsBefore);
+            setUpRace(host, log.stage, log.nfmmode, log.players, log.unlocked, log.carsBefore, log.custom);
         }
 
         void stageLoaded(int[] cars) {

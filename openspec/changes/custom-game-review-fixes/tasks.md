@@ -1,0 +1,36 @@
+## 1. Into the extras framework
+
+- [x] 1.1 `src\nfm\lit\features\customgame\`: `CustomGameFeature`, `CustomGame`, `StaggeredStart`, `CustomGamePage`, `CustomGameCheck`; `CustomGame` moved out of `nfm.lit`
+- [x] 1.2 The `customgame` switch (race extra, off until 1.0) in `FeatureSettings`, the feature in `Features.ALL`
+- [x] 1.3 `nfm.lit.features.Page` and `SettingsScreen.page`; the page's rows out of `SettingsScreen`
+- [x] 1.4 The main menu shows Custom Game only with the switch on, the classic menu otherwise
+- [x] 1.5 The console command, the saved choices and the HUD's countdown moved into the folder; calls left in `GameUi`, `GameSparker`, `DevTool`, `RaceSession`
+
+## 2. The findings
+
+- [x] 2.1 A held computer car's AI runs from the tick before its group starts (`drivesNext`)
+- [x] 2.2 `test\live.ps1 -Custom` takes one string or several and checks it
+- [x] 2.3 The hidden custom test fails on a wrong field, the player not last, an early or late group, a skipped highlight or results
+- [x] 2.4 The frame log's `staggered start` part, graded and asked for by `test\live.ps1`
+- [x] 2.5 Only the choices changed are saved
+- [x] 2.6 The archived `custom-game` change: no claim of a measurement not made; task 5.4 names `test\live.ps1 -Split`
+- [x] 2.7 README, `docs\features\customgame.md`, lessons in `docs\solutions\custom-game-big-fields.md`
+- [x] 2.8 The hidden test tells a held car pushed from one driving off, by its controls (the 32-car Pro run failed on a push)
+
+## 3. Gates
+
+- [ ] 3.1 `build.ps1 -Quick`; `test\verify-races.ps1`; `test\verify-races.ps1 -Features races -NoGolden`; `test\verify-sound.ps1`; `test\spec-check.ps1`
+- [ ] 3.2 Hidden custom runs with the switch off by default: 0 (a practice race), 9 Default, 12 Novice, 20 Custom picks, 32 Pro; the 0, 12 and 32-car races recorded and played back, with and without `-Rollback 7`; the plain hidden run's main menu after Settings
+- [ ] 3.3 `test\perf.ps1`; `test\live.ps1 -Custom 32,pro`, `test\live.ps1` and `test\live.ps1 -Split` on the owner's PC
+- [ ] 3.4 `test\blind-review.ps1 -Base <the commit before the custom game>`
+
+## 4. The second blind review (`docs\reviews\2026-11-23-1744-ce5cd34.md`)
+
+- [x] 4.1 A practice race runs no AI for slot 1, and its wasted counts leave slot 1 out
+- [x] 4.2 A race's choices are fixed with its field (`CustomGame.fixField`): cars, recording and check use them
+- [x] 4.3 The start is watched on the game thread, in real ticks, from the controls the cars drive with: every car of a group on one tick, the player with the last group
+- [x] 4.4 Leaving Settings puts the main menu's choice on Split Screen, as the classic game does
+- [x] 4.5 The hidden test in the folder (`CustomGameTest`), through a small host
+- [x] 4.6 The design states the gate results expected; tasks 3.1 and 3.2 hold the actual lines, from the revision they ran on
+
+Not changed, by design decision 10: with 9 or fewer computer cars the start is the classic one, its first-tick AI lag included.

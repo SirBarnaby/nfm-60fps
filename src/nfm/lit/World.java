@@ -26,8 +26,28 @@ public final class World {
         return random.next();
     }
 
+    /**
+     * The groups a custom game's staggered start sends off one after another
+     * (see {@link nfm.lit.features.customgame.StaggeredStart}), set when the grid is laid out; 0
+     * when every car starts at once, as in every other race.
+     */
+    public int startGroups;
+
+    /**
+     * Race ticks since the start's "Go!", counted only in a staggered start:
+     * each group of computer cars, and the player last, goes from it.
+     */
+    public int ticksSinceGo;
+
     /** Starts the race stream for a new race, before the stage draws from it. */
     public void seed(long seed) {
         random.reseed(seed);
+        startGroups = 0;
+        ticksSinceGo = 0;
+    }
+
+    /** True if this race has a staggered start. */
+    public boolean staggered() {
+        return startGroups > 0;
     }
 }

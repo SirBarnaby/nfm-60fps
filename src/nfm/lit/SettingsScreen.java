@@ -25,6 +25,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 import java.util.function.IntFunction;
 import java.util.function.IntSupplier;
@@ -34,6 +35,7 @@ import nfm.lit.audio.Sound3D;
 import nfm.lit.audio.StreamMusic;
 import nfm.lit.features.FeatureSettings;
 import nfm.lit.features.Features;
+import nfm.lit.features.Page;
 import nfm.lit.gpu.GpuDisplay;
 
 import javax.imageio.ImageIO;
@@ -153,15 +155,34 @@ final class SettingsScreen {
     private int lastMouseX = -1;
     private int lastMouseY = -1;
     private int backPressed;
+    /** The lettering over the box: "Settings", or a feature page's own title (see {@link #page}). */
+    private final String title;
 
     SettingsScreen(Image[] back) {
+        this(back, "Settings");
+        build();
+        layout();
+    }
+
+    private SettingsScreen(Image[] back, String title) {
         this.back = back;
+        this.title = title;
         Map<TextAttribute, Object> letters = Map.of(TextAttribute.TRACKING, 0.06F);
         font = new Font("Adventure", Font.PLAIN, 18).deriveFont(letters);
         smallFont = new Font("Adventure", Font.PLAIN, 15).deriveFont(letters);
         titleFont = new Font("Adventure", Font.PLAIN, 21).deriveFont(Map.of(TextAttribute.TRACKING, 0.04F));
-        build();
-        layout();
+    }
+
+    /**
+     * A feature's own page (see {@link Page}), such as the custom game's: the
+     * rows {@code rows} lays out, in the settings' own box, keys and look,
+     * under {@code title}. Back, or Escape, leaves it.
+     */
+    static SettingsScreen page(Image[] back, String title, Consumer<Page> rows) {
+        SettingsScreen page = new SettingsScreen(back, title);
+        rows.accept(page.new FeatureRows());
+        page.layout();
+        return page;
     }
 
     /** Stacks each tab's rows, with room for the headings, and notes how tall each list is. */
@@ -605,6 +626,39 @@ final class SettingsScreen {
     /* the tab and the heading the next rows go under, while building */
     private int buildingTab = -1;
     private String nextHeading;
+
+    /** How a feature lays out the rows of its own page ({@link #page}): onto this screen's tabs. */
+    private final class FeatureRows implements Page {
+        private Row last;
+
+        @Override
+        public void tab(String name, String help) {
+            SettingsScreen.this.tab(name, help);
+        }
+
+        @Override
+        public void group(String heading) {
+            SettingsScreen.this.group(heading);
+        }
+
+        @Override
+        public void button(String label, String action, String help, Runnable run) {
+            last = new Button(label, action, help, run);
+            add(last);
+        }
+
+        @Override
+        public void choice(String label, String help, Supplier<String> status, int[] values, IntFunction<String> names,
+                IntSupplier get, IntConsumer set) {
+            last = new Choice(label, help, status, values, names, get, set);
+            add(last);
+        }
+
+        @Override
+        public void onlyWhen(BooleanSupplier when, String why) {
+            last.when(when, why);
+        }
+    }
 
     private void tab(String name, String help) {
         tabNames.add(name);
@@ -1072,7 +1126,7 @@ final class SettingsScreen {
         Shape clip = rd.getClip();
         drawBox(rd);
         rd.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        drawTitle(rd, "Settings", GameFacts.GAME_WIDTH / 2F, BOX_Y + 38);
+        drawTitle(rd, title, GameFacts.GAME_WIDTH / 2F, BOX_Y + 38);
         flash = !flash;
         drawTabs(rd);
         rd.clipRect(LIST_X - 2, LIST_TOP - 2, LIST_W + 4, LIST_BOTTOM - LIST_TOP + 4);

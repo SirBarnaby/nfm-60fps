@@ -17,6 +17,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import nfm.lit.features.customgame.CustomGame;
 
 /**
  * Developer console for Need For Madness
@@ -676,6 +677,9 @@ public class DevTool {
             case "split":
                 print(split(args));
                 break;
+            case "custom":
+                print(CustomGame.console(args, xt.names));
+                break;
             case "clear":
                 textArea.setText("");
                 break;
@@ -822,6 +826,7 @@ public class DevTool {
         commandDescriptions.put("stagesubdir", "Sets the stage subdirectory. Usage: stagesubdir <subdir>");
         commandDescriptions.put("status", "Displays the current game state.");
         commandDescriptions.put("hdr", "HDR output on a monitor that has HDR turned on in Windows: the game looks as it does in SDR, at the brightness Windows shows SDR white at, and flames, lamps, sparks, stars and lightning shine brighter than white, rolling off smoothly into the display's peak. hdr white sets how bright the game's white is in nits (auto: Windows' SDR content brightness); hdr peak sets the display's peak in nits (auto: what the monitor tells Windows). Needs the gpu renderer. Usage: hdr <auto|off>, hdr white <auto|80-500>, hdr peak <auto|200-10000>");
+        commandDescriptions.put("custom", CustomGame.CONSOLE_HELP);
         commandDescriptions.put("split", "Split screen's choices, as on its Settings tab: how the window is shared,"
                 + " the computer cars, where the players are heard, each player's controller and keys. Usage: split,"
                 + " split view <auto|side|stacked>, split cars <0-5>, split sound <one|events|each>,"
@@ -838,7 +843,7 @@ public class DevTool {
         commandDescriptions.put("keys", "Which keys do what. keys lists them; keys <action> <key> [second key] gives an action its keys (- for none), taking them from wherever they were; keys reset puts back the game's own. Actions: accelerate, brake, left, right, handbrake, look, lookother, view, pause, arrow, music, sounds. Keys: a letter or digit, or a name such as space, shift, ctrl, alt, up, num8. Escape, Enter, F3, F11, Page Up, Page Down and Tab stay the game's. Usage: keys [reset | <action> <key> [second key]]");
         commandDescriptions.put("vsync", "Whether frames wait for the display's refresh. auto (the default): with the match and vrr frame rates, which are paced to it; not with a cap or unlimited, where each frame goes out the moment it is ready, for the least lag, and the picture may tear. on always waits (no tearing, at most the display's rate); off never does. Only for the gpu renderer. Usage: vsync <auto|on|off>");
         commandDescriptions.put("overlay", "The performance overlay: frames a second, frame time and the graphics card's share of it, the 90% and 99% frame times, memory, video memory, the caches on disk and a frame time graph, in a corner of the picture. Settings, Advanced chooses the readouts; all turns every one on. F3 shows and hides it. Usage: overlay <on|all|off|topleft|topright|bottomleft|bottomright>");
-        commandDescriptions.put("extras", "Lists the extras' switches (skidmarks, wing trail, damage and heat, helmet cam, rebuilt engine sound, powerups, suspension, exploding wrecks, tailwhip, weather, car personalities), or sets one; until 1.0 each is off by default. Usage: extras [<switch> <on|off|value>]");
+        commandDescriptions.put("extras", "Lists the extras' switches (skidmarks, wing trail, damage and heat, helmet cam, rebuilt engine sound, powerups, suspension, exploding wrecks, tailwhip, weather, car personalities, custom game), or sets one; until 1.0 each is off by default. Usage: extras [<switch> <on|off|value>]");
         commandDescriptions.put("effects", "Dust and flying debris move on every frame (smooth) or once a game tick, as the original drew them. Usage: effects smooth <on|off>");
         commandDescriptions.put("runahead", "Shows race frames one tick ahead with the keys held now, for 53 ms less input lag. Usage: runahead <on|off>");
         commandDescriptions.put("fps", "Sets the frame rate limit. auto matches the monitor; vrr, for G-Sync and FreeSync monitors, holds frames just under its refresh rate so they stay in the variable-refresh range; unlimited removes the cap. On battery frames are held to 60 a second unless fps battery says otherwise. Usage: fps <auto|vrr|unlimited|30-1000>, fps battery <off|30-1000>");

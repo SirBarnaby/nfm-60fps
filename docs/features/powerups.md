@@ -89,8 +89,8 @@ Powerups change races, so everything `PowerupRace` changes is race state:
   reflected driver for the same reason.
 - Its dice are a SplitMix64 seeded from `RaceRandom.derive(seed, 7)`; the
   race's own stream is never drawn from. Trigonometry is `StrictMath`.
-- `RaceLog` format 7 writes the extras that played (ids), after an empty
-  `custom` field (the Custom Game branch's format 6), and the input byte's
+- `RaceLog` format 7 writes the extras that played (ids), after the
+  `custom` field (a custom game's choices, format 6), and the input byte's
   bit 64 is the key (masked out of the canonical state). The verifier plays a
   recording with the extras it names, whatever the switches.
 - The boost is one line in `Madness.drive` after the game's own:

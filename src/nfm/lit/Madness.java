@@ -205,6 +205,11 @@ class Madness {
         }
     }
 
+    /** The race this car is in. */
+    World world() {
+        return world;
+    }
+
     public Madness(Record record, RaceEvents events, World world, int index) {
         cn = 0;
         im = 0;

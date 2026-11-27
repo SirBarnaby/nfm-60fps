@@ -113,7 +113,7 @@ final class Precise {
     }
 
     /* the cars placed between two ticks, and how far past their whole values each really is */
-    static final int MAX_CARS = 16;
+    static final int MAX_CARS = FramePose.SLOTS;
     private static final ContO[] cars = new ContO[MAX_CARS];
     private static final int[] carSlots = new int[MAX_CARS];
     private static final float[][] fractions = new float[MAX_CARS][8];
