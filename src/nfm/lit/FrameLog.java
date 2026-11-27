@@ -352,9 +352,13 @@ final class FrameLog {
         }
     }
 
-    /** True if ticks are kept for the CSV: {@link #tick} and {@link #handedOver} only cost anything then. */
+    /**
+     * True if ticks are kept: for the log's line of a race part (how late
+     * the game thread handed the presenter its frames, and what took the
+     * time), and with CSV for the file. A few clock readings a tick.
+     */
     static boolean tracingTicks() {
-        return CSV && on;
+        return on;
     }
 
     /**
@@ -713,7 +717,57 @@ final class FrameLog {
             double share = 100D * e.getValue() / total;
             s.append(", ").append(e.getKey()).append(share < 1D ? " under 1%" : String.format(Locale.ROOT, " %.0f%%", share));
         }
+        if (m.frames > 0) {
+            s.append(ticks(p));
+        }
         return s.toString();
+    }
+
+    /** A hand-over this long after its tick was due leaves the presenter a moment without the race's next step. */
+    private static final long TICK_LATE_NANOS = 15_000_000L;
+
+    /**
+     * The game thread's side of a race part, for the log: how long after a
+     * tick was due the presenter had its frames (the whole of the tick, the
+     * tick played ahead, the extras, recording the kept scene and making it
+     * ready for the card), and the longest of each. Uneven motion with
+     * these all short is the presenter's or the card's; with these long it
+     * is the game thread's.
+     */
+    private static String ticks(Part p) {
+        int n = 0;
+        int late = 0;
+        long worst = 0L;
+        long sum = 0L;
+        long tick = 0L;
+        long ahead = 0L;
+        long kept = 0L;
+        long card = 0L;
+        for (int k = 0; k < p.tickCount; k++) {
+            int at = k * TICK_FIELDS;
+            long[] t = p.ticks;
+            if (t[at + T_DUE] == 0L || t[at + T_DONE] == 0L) {
+                continue;
+            }
+            long done = t[at + T_DONE] - t[at + T_DUE];
+            n++;
+            sum += done;
+            worst = Math.max(worst, done);
+            if (done > TICK_LATE_NANOS) {
+                late++;
+            }
+            tick = Math.max(tick, t[at + T_ENDED] - t[at + T_BEGAN]);
+            ahead = Math.max(ahead, t[at + T_AHEAD]);
+            kept = Math.max(kept, t[at + T_KEPT]);
+            card = Math.max(card, t[at + T_CARD]);
+        }
+        if (n == 0) {
+            return "";
+        }
+        return String.format(Locale.ROOT, ", ticks: handed over %.1f ms after due (worst %.0f ms, %d of %d over %d ms;"
+                + " longest tick %.1f ms, tick ahead %.1f ms, kept scene %.1f ms, for the card %.1f ms)",
+                sum / 1e6D / n, worst / 1e6D, late, n, TICK_LATE_NANOS / 1_000_000L, tick / 1e6D, ahead / 1e6D,
+                kept / 1e6D, card / 1e6D);
     }
 
     private static String describe(Times t, Motion m) {

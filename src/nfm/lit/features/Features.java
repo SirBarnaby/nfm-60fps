@@ -78,6 +78,93 @@ public final class Features {
     private Features() {
     }
 
+    /*
+     * -Dnfm.extras.cost=true: how long each extra's work takes, summed up in
+     * the log when the race ends (a developer's look at a stutter; the
+     * timing itself costs a little, so it is off otherwise). Per tick: its
+     * part of the race tick and what it does after one. Per scene drawn:
+     * what it asks to have drawn, drawing it, and its share of the cars'
+     * own polygons (recolouring, bending, moving them).
+     */
+    private static final boolean COST = Boolean.getBoolean("nfm.extras.cost");
+    private static final int C_RACE = 0;
+    private static final int C_AFTER = 1;
+    private static final int C_QUEUE = 2;
+    private static final int C_DRAW = 3;
+    private static final int C_CARS = 4;
+    private static final int C_KINDS = 5;
+    private static final String[] COST_NAME = {"race tick", "after a tick", "queueing", "drawing", "the cars' polygons"};
+    private static final long[] costSum = new long[ALL.length * C_KINDS];
+    private static final long[] costWorst = new long[ALL.length * C_KINDS];
+    private static final long[] costNow = new long[ALL.length * C_KINDS];
+    /** A tick's or a scene's work this long is counted: long enough to be felt on a slower machine. */
+    private static final long COST_LONG = 2_000_000L;
+    private static final long[] costLong = new long[ALL.length * C_KINDS];
+    private static final long[] costItems = new long[ALL.length];
+    private static long costTicks;
+    private static long costScenes;
+    private static long sceneSum;
+    private static long sceneWorst;
+
+    private static void cost(int f, int kind, long from) {
+        costNow[f * C_KINDS + kind] += System.nanoTime() - from;
+    }
+
+    /** Folds what was timed since the last fold into the sums: the kinds {@code from} to {@code to}, once a tick or a scene. */
+    private static long costFold(int from, int to) {
+        long all = 0L;
+        for (int f = 0; f < ALL.length; f++) {
+            for (int k = from; k <= to; k++) {
+                int i = f * C_KINDS + k;
+                costSum[i] += costNow[i];
+                costWorst[i] = Math.max(costWorst[i], costNow[i]);
+                if (costNow[i] > COST_LONG) {
+                    costLong[i]++;
+                }
+                all += costNow[i];
+                costNow[i] = 0L;
+            }
+        }
+        return all;
+    }
+
+    private static void costReport() {
+        if (costTicks == 0L && costScenes == 0L) {
+            return;
+        }
+        costFold(C_RACE, C_CARS);
+        StringBuilder line = new StringBuilder();
+        for (int f = 0; f < ALL.length; f++) {
+            line.setLength(0);
+            for (int k = 0; k < C_KINDS; k++) {
+                long sum = costSum[f * C_KINDS + k];
+                if (sum == 0L) {
+                    continue;
+                }
+                long times = k <= C_AFTER ? costTicks : costScenes;
+                line.append(line.length() == 0 ? "" : "; ").append(COST_NAME[k]).append(' ')
+                        .append(String.format(java.util.Locale.ROOT, "%.3f ms (worst %.2f, %d over 2 ms)",
+                                sum / 1e6 / Math.max(1L, times), costWorst[f * C_KINDS + k] / 1e6,
+                                costLong[f * C_KINDS + k]));
+            }
+            if (line.length() > 0) {
+                HLogger.info("[extras] cost of " + ALL[f].id() + ": " + line + (costItems[f] > 0
+                        ? ", " + costItems[f] / Math.max(1L, costScenes) + " items a scene" : ""));
+            }
+        }
+        HLogger.info(String.format(java.util.Locale.ROOT, "[extras] cost: %d ticks, %d scenes drawn; the extras' "
+                + "drawing %.3f ms a scene, worst %.2f ms", costTicks, costScenes,
+                sceneSum / 1e6 / Math.max(1L, costScenes), sceneWorst / 1e6));
+        java.util.Arrays.fill(costSum, 0L);
+        java.util.Arrays.fill(costWorst, 0L);
+        java.util.Arrays.fill(costLong, 0L);
+        java.util.Arrays.fill(costItems, 0L);
+        costTicks = 0L;
+        costScenes = 0L;
+        sceneSum = 0L;
+        sceneWorst = 0L;
+    }
+
     /** True if feature {@code id} exists (its switch is shown). */
     public static boolean registered(String id) {
         for (Feature f : ALL) {
@@ -202,10 +289,14 @@ public final class Features {
         }
         for (int f = 0; f < ALL.length; f++) {
             if (racePlays[f]) {
+                long from = COST ? System.nanoTime() : 0L;
                 try {
                     ALL[f].raceTick(race);
                 } catch (RuntimeException e) {
                     raceFail(f, e);
+                }
+                if (COST) {
+                    cost(f, C_RACE, from);
                 }
             }
         }
@@ -355,12 +446,20 @@ public final class Features {
         }
         for (int f = 0; f < ALL.length; f++) {
             if (active[f]) {
+                long from = COST ? System.nanoTime() : 0L;
                 try {
                     ALL[f].afterTick(race);
                 } catch (RuntimeException e) {
                     fail(f, e);
                 }
+                if (COST) {
+                    cost(f, C_AFTER, from);
+                }
             }
+        }
+        if (COST) {
+            costFold(C_RACE, C_AFTER);
+            costTicks++;
         }
     }
 
@@ -390,6 +489,9 @@ public final class Features {
             return;
         }
         racing = false;
+        if (COST) {
+            costReport();
+        }
         for (int f = 0; f < ALL.length; f++) {
             if (active[f]) {
                 stop(f, race != null ? race : lastView);
@@ -406,13 +508,23 @@ public final class Features {
 
     /** Asks every feature that is on what it draws in this frame. */
     public static void queue(DrawQueue queue) {
+        if (COST) { // a new scene: the one before is summed up
+            long scene = costFold(C_QUEUE, C_CARS);
+            sceneSum += scene;
+            sceneWorst = Math.max(sceneWorst, scene);
+            costScenes++;
+        }
         for (int f = 0; f < ALL.length; f++) {
             if (active[f]) {
                 queue.owner(f);
+                long from = COST ? System.nanoTime() : 0L;
                 try {
                     ALL[f].queue(queue);
                 } catch (RuntimeException e) {
                     fail(f, e);
+                }
+                if (COST) {
+                    cost(f, C_QUEUE, from);
                 }
             }
         }
@@ -423,10 +535,15 @@ public final class Features {
         if (!active[feature]) {
             return;
         }
+        long from = COST ? System.nanoTime() : 0L;
         try {
             ALL[feature].draw(canvas, item);
         } catch (RuntimeException e) {
             fail(feature, e);
+        }
+        if (COST) {
+            cost(feature, C_DRAW, from);
+            costItems[feature]++;
         }
     }
 
@@ -440,6 +557,7 @@ public final class Features {
         lamp = -1;
         for (int k = 0; k < lookCount; k++) {
             CarLook l = looks[k];
+            long from = COST ? System.nanoTime() : 0L;
             try {
                 rgb = l.color(car, plane, rgb);
                 if (lamp < 0) {
@@ -448,6 +566,9 @@ public final class Features {
             } catch (RuntimeException e) {
                 fail(lookOwners[k], e);
                 return rgb;
+            }
+            if (COST) {
+                cost(lookOwners[k], C_CARS, from);
             }
         }
         return rgb;
@@ -470,6 +591,7 @@ public final class Features {
             int[] outZ) {
         boolean bent = false;
         for (int k = 0; k < lookCount; k++) {
+            long from = COST ? System.nanoTime() : 0L;
             try {
                 if (!bent) {
                     bent = looks[k].bend(car, plane, x, y, z, n, outX, outY, outZ);
@@ -480,6 +602,9 @@ public final class Features {
             } catch (RuntimeException e) {
                 fail(lookOwners[k], e);
                 return bent;
+            }
+            if (COST) {
+                cost(lookOwners[k], C_CARS, from);
             }
         }
         return bent;
@@ -505,11 +630,15 @@ public final class Features {
     /** {@link CarLook#onPlane} of each; a feature that throws is switched off. */
     public static void carOnPlane(int car, int plane, int rgb, Canvas canvas) {
         for (int k = 0; k < lookCount; k++) {
+            long from = COST ? System.nanoTime() : 0L;
             try {
                 looks[k].onPlane(car, plane, rgb, canvas);
             } catch (RuntimeException e) {
                 fail(lookOwners[k], e);
                 return;
+            }
+            if (COST) {
+                cost(lookOwners[k], C_CARS, from);
             }
         }
     }
@@ -527,11 +656,15 @@ public final class Features {
             return false;
         }
         boolean moved;
+        long from = COST ? System.nanoTime() : 0L;
         try {
             moved = b.body(car, plane, x, y, z, n, outX, outY, outZ);
         } catch (RuntimeException e) {
             fail(bodyOwner, e);
             return false;
+        }
+        if (COST) {
+            cost(bodyOwner, C_CARS, from);
         }
         CarBody second = body2;
         if (second != null) {

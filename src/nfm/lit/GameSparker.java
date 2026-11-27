@@ -6714,6 +6714,97 @@ public class GameSparker extends Panel implements Runnable {
         }
     }
     /**
+     * {@code -Dnfm.autotest.keys=<tick>:<keys>,...}: a test run's player
+     * holds these keys from each tick after the race's start on (U the throttle, D the brake, L
+     * and R, H the handbrake; none lets go), for example
+     * {@code 0:U,80:UL,100:U,130:UR}. The keys are pressed as a recording's
+     * or the autopilot's are. {@code -Dnfm.autotest.telemetry=<file>}, with
+     * it or with the autopilot, writes every race tick's car 0 there: its
+     * keys, where it is, where it points, where it goes and how fast. For
+     * looking at the handling.
+     */
+    private static final String TEST_KEYS = System.getProperty("nfm.autotest.keys");
+    private static final String TEST_TELEMETRY = System.getProperty("nfm.autotest.telemetry");
+    private static final int[] SCRIPT_KEY = {1004, 1005, 1006, 1007, 32};
+    private static final String SCRIPT_LETTER = "UDLRH";
+    private int[] scriptTick;
+    private int[] scriptHeld;
+    private int scriptNow;
+    private int scriptLast = -1;
+    private int scriptStart = -1;
+    private java.io.PrintWriter telemetry;
+    private int telemetryTick;
+
+    /** The key script's keys for the race tick about to be latched, and the tick before's telemetry. Game thread. */
+    private void keyScript(GameUi gameUi) {
+        if (scriptTick == null) {
+            String[] parts = TEST_KEYS == null || TEST_KEYS.isBlank() ? new String[0] : TEST_KEYS.split(",");
+            scriptTick = new int[parts.length];
+            scriptHeld = new int[parts.length];
+            for (int i = 0; i < parts.length; i++) {
+                int colon = parts[i].indexOf(':');
+                scriptTick[i] = Integer.parseInt(parts[i].substring(0, colon).trim());
+                for (char letter : parts[i].substring(colon + 1).toUpperCase(java.util.Locale.ROOT).toCharArray()) {
+                    int key = SCRIPT_LETTER.indexOf(letter);
+                    if (key >= 0) {
+                        scriptHeld[i] |= 1 << key;
+                    }
+                }
+            }
+        }
+        if (raceTicks < scriptLast) {
+            scriptStart = -1; // a new race: its keys start again
+        }
+        scriptLast = raceTicks;
+        if (gameUi.starcnt > 0) {
+            return;
+        }
+        if (scriptStart < 0) {
+            scriptStart = raceTicks;
+        }
+        int tick = raceTicks - scriptStart;
+        int held = 0;
+        for (int i = 0; i < scriptTick.length && scriptTick[i] <= tick; i++) {
+            held = scriptHeld[i];
+        }
+        for (int key = 0; key < SCRIPT_KEY.length; key++) {
+            int bit = 1 << key;
+            if ((held & bit) != 0 && (scriptNow & bit) == 0) {
+                pressKey(SCRIPT_KEY[key], false, 0L);
+            } else if ((held & bit) == 0 && (scriptNow & bit) != 0) {
+                releaseKey(SCRIPT_KEY[key], 0L);
+            }
+        }
+        scriptNow = held;
+    }
+
+    /** One line of telemetry for the race tick about to be played: car 0 as the last tick left it. Game thread. */
+    private void telemetry(GameUi gameUi) {
+        if (gameUi.starcnt > 0) {
+            telemetryTick = 0;
+            return;
+        }
+        try {
+            if (telemetry == null) {
+                telemetry = new java.io.PrintWriter(new java.io.FileWriter(TEST_TELEMETRY), true);
+                telemetry.println("tick keys x y z heading speed vx vz going skid ground capsized steer touch car stage wasted");
+            }
+            Madness m = racers[0];
+            ContO car = sceneObjects[0];
+            Control c = u[0];
+            int held = (c.up ? 1 : 0) | (c.down ? 2 : 0) | (c.left ? 4 : 0) | (c.right ? 8 : 0) | (c.handb ? 16 : 0);
+            float vx = (m.scx[0] + m.scx[1] + m.scx[2] + m.scx[3]) / 4F;
+            float vz = (m.scz[0] + m.scz[1] + m.scz[2] + m.scz[3]) / 4F;
+            telemetry.println(telemetryTick++ + " " + held + " " + car.x + " " + car.y + " " + car.z + " " + car.xz + " "
+                    + m.speed + " " + vx + " " + vz + " " + m.mxz + " " + m.skid + " " + (m.mtouch ? 1 : 0) + " "
+                    + (m.capsized ? 1 : 0) + " " + car.wxz + " " + (m.wtouch ? 1 : 0) + " " + m.cn + " "
+                    + raceCheckpoints.stage + " " + (m.dest ? 1 : 0));
+        } catch (java.io.IOException e) {
+            System.out.println("[autotest] telemetry: " + e);
+        }
+    }
+
+    /**
      * How often the live test takes a race screenshot: rarely, as writing one
      * takes a processor core from the frames it measures (split screen's
      * countdown went uneven with one every 2 s).
@@ -7234,12 +7325,14 @@ public class GameSparker extends Panel implements Runnable {
                 inGameMillis += 100L;
 
                 if (!pauseRequested) {
-                    u[0].up = true;
-                    // Small steering nudges exercise rotation interpolation without
-                    // driving the car off the track or into the sea.
                     long cycle = inGameMillis % 4000L;
-                    u[0].right = cycle > 2200L && cycle < 2500L;
-                    u[0].left = cycle > 3400L && cycle < 3700L;
+                    if (TEST_KEYS == null) { // -Dnfm.autotest.keys drives by race tick instead
+                        u[0].up = true;
+                        // Small steering nudges exercise rotation interpolation without
+                        // driving the car off the track or into the sea.
+                        u[0].right = cycle > 2200L && cycle < 2500L;
+                        u[0].left = cycle > 3400L && cycle < 3700L;
+                    }
                     if (now - lastShot >= (LIVE ? LIVE_SHOT_MILLIS : 1000L)) {
                         saveFrame(directory, String.format("%02d-ingame-%04dms.png", shots++, inGameMillis));
                         lastShot = now;
@@ -7963,6 +8056,12 @@ public class GameSparker extends Panel implements Runnable {
             if (gameUi.fase == Phase.INGAME) {
                 if (TEST_WHIP > 0) {
                     whipScript(gameUi);
+                }
+                if (TEST_KEYS != null) {
+                    keyScript(gameUi);
+                }
+                if (TEST_TELEMETRY != null) {
+                    telemetry(gameUi);
                 }
                 latchRaceInput();
                 if (session != null) {
