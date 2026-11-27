@@ -1152,7 +1152,11 @@ final class FeatureBridge {
         @Override
         public String useKey(int player) {
             if (SplitRace.active != null) {
-                return SplitKeys.name(SplitKeys.key(player, KeyBindings.USE_POWERUP, 0));
+                // by its place among the split keys, not KeyBindings' number: that one is past the table's end
+                // (the owner's split race of 2026-11-27: a pickup's text failed and powerups went off for the race)
+                int action = SplitKeys.indexOf(KeyBindings.USE_POWERUP);
+                return action < 0 || player < 0 || player >= SplitKeys.PLAYERS ? ""
+                        : SplitKeys.name(SplitKeys.key(player, action, 0));
             }
             return KeyBindings.name(KeyBindings.key(KeyBindings.USE_POWERUP, 0));
         }

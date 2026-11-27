@@ -724,7 +724,14 @@ public final class Features {
     }
 
     private static void fail(int f, RuntimeException e) {
-        HLogger.error("[extras] " + ALL[f].id() + " failed and is off for this race: " + e);
+        // where it failed goes in the log too: the game has no console to print a stack trace to
+        StringBuilder where = new StringBuilder();
+        StackTraceElement[] stack = e.getStackTrace();
+        for (int k = 0; k < stack.length && k < 6; k++) {
+            where.append(k == 0 ? " at " : " < ").append(stack[k].getClassName().replace("nfm.lit.", "")).append('.')
+                    .append(stack[k].getMethodName()).append(':').append(stack[k].getLineNumber());
+        }
+        HLogger.error("[extras] " + ALL[f].id() + " failed and is off for this race: " + e + where);
         e.printStackTrace();
         broken[f] = true;
         if (active[f]) {
