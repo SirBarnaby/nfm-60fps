@@ -27,6 +27,13 @@ The game SHALL NOT stutter: not at the start of a race, not during it, not in me
 - **WHEN** the owner starts a race at 1080p fullscreen
 - **THEN** the countdown and the first seconds of the race run without a visible stutter
 
+### Requirement: The new features do not make the game stutter
+The new features (the extras) SHALL NOT make races stutter. (Owner, 2026-11-27: "I encountered some stutters while playing. Possible from the new features? Test on cloud, try to fix.")
+
+#### Scenario: Check: a race with every extra on
+- **WHEN** the owner drives a race with every extra on, plugged in, and the game's log is read afterwards
+- **THEN** the race's line shows its motion as even as a race with the extras off, and its ticks handed over on time
+
 ### Requirement: The game always stays optimised
 Every change, graphical ones included, SHALL keep the frame rate high. A change that lowers it below the target is a defect to fix, not a trade-off to accept. Up to 1.0 there are no exceptions; after 1.0, complex changes may lower the frame rate. (Owner, 2026-11-21, R1 Q3, Q13.)
 

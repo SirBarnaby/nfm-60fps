@@ -1262,15 +1262,18 @@ public final class WeatherCheck {
         frame(v.x[0], 100F, v.z[0] - 500F, 0F, 0F);
         int relief = snow.drawnRelief;
         int polygons = canvas.polygons;
-        frame(v.x[0], 100F, v.z[0] - 4500F, 0F, 0F);
+        frame(v.x[0], 100F, v.z[0] - 4000F, 0F, 0F);
         int far = snow.drawnRelief;
         int farRuts = snow.drawnRuts;
+        frame(v.x[0], 100F, v.z[0] - 6000F, 0F, 0F);
+        int farthest = snow.drawnRuts;
         check(F, "a car leaves its marks in the bed anywhere on the map", ruts >= 20 && channels >= 5 && relief >= 20
-                && polygons >= relief * 3 && far == 0 && farRuts >= 20,
+                && polygons >= relief * 3 && far == 0 && farRuts >= 20 && farthest > 0 && farthest <= channels,
                 "61000 across and 47000 back from the start: " + ruts + " pieces of trail after 30 ticks, " + channels
                         + " of them the channel its body cuts (it stands " + n(snow.clearance(0)) + " high in a bed "
                         + n(SnowBed.deep(weather.depth)) + " deep); " + relief + " drawn as cuts with walls near"
-                        + " the eye, flat strips from 4500 away (" + farRuts + ")");
+                        + " the eye, flat strips from 4000 away (" + farRuts + ", " + far + " of them cuts), from 6000 away the channels only ("
+                        + farthest + ": a wheel's trail is a pixel or two there)");
     }
 
     /** A landing presses the car's own outline into the bed, turned as the car is; a car at rest on its roof leaves its shape too. */

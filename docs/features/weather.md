@@ -272,8 +272,8 @@ Looks and sound only, from the race's copy; in snow, not in rain.
   computer car its rear wheels' while within 9000 units of a player; none
   from a wheel in the air or on a ramp. A piece is laid every two ticks'
   way (30 to 160 units) and the snowfall fills it in again within a minute.
-  The 8192 newest pieces are kept; those within 7000 units of the eye are
-  drawn.
+  The 8192 newest pieces are kept; a wheel's within 4500 units of the eye
+  are drawn, a body's channel (below) within 7000.
 - **Heaps**: low mounds with sides and a top (six sides, a ring and a peak;
   the sides turned to the light paler than the others), up to 62 units wide
   and 24 high, 160 at most. A wheel sliding sideways faster than 4 units a
@@ -318,10 +318,14 @@ a race starts and 38 after four minutes (the same depth "Snow gets deeper"
 has). Nothing of it is part of the race: grip and the cars' way are as in
 the dry.
 
-- **Trails are cut into the bed**: within 2600 units of the eye a wheel's
+- **Trails are cut into the bed**: within 1300 units of the eye a wheel's
   trail is drawn as a cut with a floor (darker, the ground showing through
   thin snow), a lit and a shaded wall and a pale lip on each side; farther
-  off as the flat strip it was. Deeper snow gives a deeper, darker cut.
+  off as the flat strip it was (a body's channel is a cut within 2600).
+  Deeper snow gives a deeper, darker cut. The distances are a wheel's
+  trail's own since 27 Nov 2026: a tyre's cut is too narrow to tell from
+  the strip beyond them, and a scene has 385 of these polygons where it
+  had 630.
 - **The body's channel**: where the bed is more than a unit deeper than
   the car's clearance, the body ploughs a channel as wide as the car (94%
   of it) between the wheel trails, drawn the same way, and breaks lumps

@@ -53,6 +53,13 @@ final class Snow {
      * light bright and the other in shade. Farther off it is a flat strip.
      */
     static final float RELIEF = 2600F;
+    /**
+     * A wheel's own trail is a strip a hand wide: past these it and its
+     * walls are no more than a pixel or two, and are left out (a body's
+     * channel, car wide, is drawn out to {@link #SEEN} and {@link #RELIEF}).
+     */
+    static final float WHEEL_SEEN = 4500F;
+    static final float WHEEL_RELIEF = 1300F;
     static final int FLOOR = 0xb4c0d0;
     /** What shows through a trail where the race tells no colour of the ground. */
     static final int UNDER = 0x6e7682;
@@ -1027,11 +1034,11 @@ final class Snow {
                     }
                     continue;
                 }
-                if (!near(rutX[i * 4], rutZ[i * 4], SEEN)) {
+                if (!near(rutX[i * 4], rutZ[i * 4], rutWide[i] ? SEEN : WHEEL_SEEN)) {
                     continue;
                 }
                 float left = 1F - age / (float) RUT_FILLS;
-                if (near(rutX[i * 4], rutZ[i * 4], RELIEF)) {
+                if (near(rutX[i * 4], rutZ[i * 4], rutWide[i] ? RELIEF : WHEEL_RELIEF)) {
                     relief(canvas, i, left);
                 } else {
                     for (int k = 0; k < 4; k++) {
