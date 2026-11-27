@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" alt="NFM:LIT logo" width="160" />
+  <img src="assets/social-preview.png" alt="Need For Madness: LIT poster: the title beside a photocopied race scene" width="100%" />
 </p>
 
 <h1 align="center">Need For Madness: LIT</h1>
