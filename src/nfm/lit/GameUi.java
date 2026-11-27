@@ -5246,6 +5246,11 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
      * checks it at several sizes (RaceSession.Verifier.checkCarSelect).
      */
     static void drawSelectCar(Graphics2D g, ContO model) {
+        drawSelectCar(g, model, -1);
+    }
+
+    /** As {@link #drawSelectCar(Graphics2D, ContO)}, the car being car {@code car}: with what the extras fit it with (wipers, an exhaust pipe). */
+    static void drawSelectCar(Graphics2D g, ContO model, int car) {
         Medium.crs = true;
         Medium.x = -GameFacts.GAME_WIDTH / 2;
         Medium.y = -(int) (GameFacts.GAME_HEIGHT * 0.83);
@@ -5254,7 +5259,9 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         Medium.zy = 10;
         Medium.ground = 570;
         try (var _ = Medium.menuView()) {
+            FeatureBridge.showroom(g, model, car, false);
             model.d(g);
+            FeatureBridge.showroom(g, model, car, true);
         }
     }
 
@@ -5271,7 +5278,7 @@ public class GameUi extends Panel implements Runnable, RaceEvents {
         }
         intertrack.play();
         rd.drawImage(selectcar, Utility.centeredImageX(selectcar), 12, null);
-        drawSelectCar(rd, models[sc[0]]);
+        drawSelectCar(rd, models[sc[0]], sc[0]);
 
         if (GameSparker.DEBUG) {
             if (debugmode) {

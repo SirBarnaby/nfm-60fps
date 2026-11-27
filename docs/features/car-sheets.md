@@ -57,7 +57,8 @@ trait a car does not name is its fallback.
 | --- | --- | --- |
 | `spikes=yes` | A metal glint, a ring and sparks whenever the car rams another | Sword of Justice |
 | `charger=blower` | Its "turbo yes" is a supercharger: a whine that follows the revs. Without it, a turbo: a whistle that spools up and blows off | MAX Revenge, Lead Oxide, DR Monstaa |
-| `pipes=side` | The exhaust is heard from the car's side, not its tail | MAX Revenge, Lead Oxide |
+| `pipes=side` | The exhaust is heard from the car's side, not its tail, and its fitted pipes run along the sills | MAX Revenge, Lead Oxide |
+| `pipe=own` | Its model has exhaust pipes of its own, so none is drawn on it. Every other car is fitted with pipes where its exhaust ends | Lead Oxide, EL KING, M A S H E E N |
 | `beeps=yes` | A truck: it beeps while it reverses | EL KING, M A S H E E N, DR Monstaa |
 | `pops=yes` or `no` | Its exhaust pops when the throttle lifts at high revs, each pop a sound and a flash. The fallback is its turbo column | yes: Formula 7, La Vite Crab, High Rider, Mighty Eight |
 | `loud=0.5` to `1.6` | How loud its engine is and how far it carries (1 for most) | 0.6 Nimi to 1.5 M A S H E E N and DR Monstaa |

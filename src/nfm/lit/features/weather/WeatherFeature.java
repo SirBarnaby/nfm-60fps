@@ -46,6 +46,21 @@ public final class WeatherFeature implements Feature {
     static final int SPRAY_ITEMS = 200;
     static final int WIPER_ITEMS = 800;
     static final int HELMET_WIPER_ITEM = 900;
+
+    private static final float[] HELMET_SCREEN = new float[5];
+    private static final float[] HELMET_X = new float[4];
+    private static final float[] HELMET_Y = new float[4];
+    private static final float[] HELMET_Z = new float[4];
+
+    /**
+     * Player {@code car}'s wipers as their helmet sees them, {@code sweep}
+     * through their wipe, in the canvas's colour: for another extra whose
+     * wipers run when it does not rain (the damage's electrics). Returns
+     * the polygons drawn. Game thread only.
+     */
+    public static int helmetWipers(Canvas canvas, int car, float sweep) {
+        return Wiping.helmetBlades(canvas, car, sweep, HELMET_SCREEN, HELMET_X, HELMET_Y, HELMET_Z);
+    }
     static final int SNOW_GROUND_ITEM = 92;
     static final int SNOW_CAR_ITEMS = 1000;
     static final int SNOW_HEAP_ITEMS = 1200;

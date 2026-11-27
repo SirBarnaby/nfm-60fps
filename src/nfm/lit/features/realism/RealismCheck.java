@@ -7,12 +7,14 @@ import static nfm.lit.features.ExtrasCheck.waiting;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import nfm.lit.features.CarLooks;
 import nfm.lit.features.CarShape;
 import nfm.lit.features.CheckCanvas;
 import nfm.lit.features.RaceView;
 import nfm.lit.features.Weather;
+import nfm.lit.features.Wipers;
 
 /**
  * Damage and heat's checks (realism, every requirement): a made-up car,
@@ -79,6 +81,8 @@ public final class RealismCheck {
     private CarState s;
     private float carZ;
     private final List<String> heard = new ArrayList<>();
+    /** The loudest each clip was played since the car was made. */
+    private final Map<String, Float> gains = new java.util.HashMap<>();
     private final CheckCanvas canvas = new CheckCanvas();
     private final float[] p = new float[3];
 
@@ -109,6 +113,11 @@ public final class RealismCheck {
         c.lights();
         c.haze();
         c.rattle();
+        c.fitted();
+        c.electrics();
+        c.oilLeak();
+        c.brokenExhaust();
+        c.squeak();
         c.sheets();
         c.parts();
         CarLooks.keepDebris(null);
@@ -238,10 +247,15 @@ public final class RealismCheck {
         place(0F, 0F, true);
         real = new RealismFeature();
         heard.clear();
-        real.ears = (car, clip, gain, pitch) -> heard.add(clip);
+        gains.clear();
+        real.ears = (car, clip, gain, pitch) -> {
+            heard.add(clip);
+            gains.merge(clip, gain, Math::max);
+        };
         real.raceStarted(v);
         s = real.states[0];
         s.parts.build(v.shape[0], sheet, DROP);
+        s.fitted.build(v.shape[0], s.parts);
     }
 
     /** The car on the flat ground at length {@code carZ}, heading along z, its engine at {@code sp}, moving {@code vz} a tick. */
@@ -834,6 +848,13 @@ public final class RealismCheck {
         v.touchX[0] = 30F; // a scrape along the left side
         drive(60F, true, false);
         v.damage[0] = 0.95F;
+        // and the further damage, each of which its own check brings about by a hit
+        s.electric = true;
+        s.washer = 500;
+        s.leak = true;
+        s.harsh = true;
+        s.pipeBroken = true;
+        s.suspension = true;
         for (int t = 0; t < 20; t++) {
             drive(60F, true, false);
         }
@@ -948,6 +969,18 @@ public final class RealismCheck {
         }
         if (s.scratches[0] + s.scratches[1] > 0) {
             out.append("scratches ");
+        }
+        if (s.electric) {
+            out.append("electrics ");
+        }
+        if (s.leak || s.harsh) {
+            out.append("oil ");
+        }
+        if (s.pipeBroken) {
+            out.append("exhaust ");
+        }
+        if (s.suspension) {
+            out.append("suspension ");
         }
         return out.length() == 0 ? "nothing" : out.toString().trim();
     }
@@ -1250,6 +1283,357 @@ public final class RealismCheck {
             tick();
         }
         return heardOf(RealismSounds.RATTLE);
+    }
+
+    /* ------------------------------------------------- the further damage */
+
+    /**
+     * Every car has wipers and an exhaust pipe: the made-up car carries two
+     * simple wipers on its windscreen and pipes where its sheet says its
+     * exhaust ends (out of the tail, upright behind the cab, along the
+     * sills), each a square tube with a dark mouth; a car whose model has
+     * pipes of its own is given none; and the car select's car has them too.
+     */
+    private void fitted() {
+        String[] lines = {"tail V8 front front no disc 2", "single I4 front front no disc 1",
+                "truck V8 front front no drum stacks", "sider V8 front front no disc 2 pipes=side",
+                "own V8 front front no disc 2 pipe=own"};
+        int[] want = {2, 1, 2, 2, 0};
+        int[] kind = {Fitted.BACK, Fitted.BACK, Fitted.UP, Fitted.SIDE, -1};
+        StringBuilder said = new StringBuilder();
+        boolean ok = true;
+        int most = 0;
+        for (int k = 0; k < lines.length; k++) {
+            start(CarSheets.parseLine(lines[k]), true);
+            Fitted f = s.fitted;
+            CarParts parts = s.parts;
+            boolean placed = f.pipes == want[k] && (want[k] == 0 || f.kind == kind[k]);
+            for (int pipe = 0; pipe < f.pipes; pipe++) {
+                if (f.kind == Fitted.BACK) {
+                    // out of the tail: it starts in the body and its mouth stands out behind it
+                    placed &= f.toZ[pipe] < parts.rear && f.fromZ[pipe] >= parts.rear
+                            && Math.abs(f.toX[pipe]) < parts.halfWidth && f.toY[pipe] <= parts.bottom
+                            && f.toY[pipe] >= parts.top;
+                } else if (f.kind == Fitted.UP) {
+                    // behind the windscreen, its mouth above the roof
+                    placed &= f.toY[pipe] < parts.top && f.fromY[pipe] > f.toY[pipe] && f.toZ[pipe] < 0F
+                            && Math.abs(f.toX[pipe]) < parts.halfWidth;
+                } else {
+                    // outside the sill, ending ahead of the rear wheel
+                    placed &= Math.abs(f.toX[pipe]) > parts.halfWidth && f.toZ[pipe] > KEY_Z[2] + 8F
+                            && f.toZ[pipe] < 0F && f.fromZ[pipe] > f.toZ[pipe];
+                }
+                // the flames and pops come out of the mouth
+                placed &= parts.pipeX[pipe] == f.toX[pipe] && parts.pipeY[pipe] == f.toY[pipe]
+                        && parts.pipeZ[pipe] == f.toZ[pipe];
+                canvas.reset();
+                most = Math.max(most, f.draw(canvas, 0, pipe, 60F, -150F, -300F, Fitted.STEEL, Fitted.MOUTH));
+            }
+            // seen from behind, above and a little to the right: every mouth; from ahead: the wipers
+            frame(60F, GROUND - 150F, carZ - 300F);
+            int mouths = canvas.drawn(Fitted.MOUTH);
+            frame(0F, GROUND - 60F, carZ + 300F);
+            int blades = canvas.drawn(Wipers.RGB);
+            ok &= placed && mouths == want[k] && blades == 4 && f.wipers.has;
+            said.append(lines[k].split(" ")[0]).append(' ').append(f.pipes).append(placed ? "" : " (misplaced)")
+                    .append('/').append(mouths).append('/').append(blades).append(", ");
+        }
+        // the car select's car: a view of the one car, nothing of a race
+        start();
+        RealismFeature shop = new RealismFeature();
+        canvas.reset();
+        shop.showroom(v, canvas, 60F, GROUND - 150F, carZ - 300F, false);
+        shop.showroom(v, canvas, 60F, GROUND - 150F, carZ - 300F, true);
+        int shopMouths = canvas.drawn(Fitted.MOUTH);
+        canvas.reset();
+        shop.showroom(v, canvas, 0F, GROUND - 60F, carZ + 300F, false);
+        shop.showroom(v, canvas, 0F, GROUND - 60F, carZ + 300F, true);
+        int shopBlades = canvas.drawn(Wipers.RGB);
+        // a car with no windscreen has nothing to carry wipers
+        start();
+        CarShape open = wheelsOf(CAR_WHEELS[0]);
+        Fitted bare = new Fitted();
+        CarParts bareParts = new CarParts();
+        bareParts.build(open, CarSheet.DEFAULT, DROP);
+        bare.build(open, bareParts);
+        ok &= shopMouths == shop.shown().fitted.pipes && shopMouths > 0 && shopBlades == 4 && most <= 5;
+        // the game's own cars, each model as the game's files have it
+        List<String> noWipers = new ArrayList<>();
+        List<String> noPipe = new ArrayList<>();
+        int read = 0;
+        int ownPipes = 0;
+        for (String car : CARS) {
+            nfm.lit.ModelShapes.Loaded model = nfm.lit.ModelShapes.car(car);
+            if (model == null) {
+                continue;
+            }
+            read++;
+            CarParts carParts = new CarParts();
+            carParts.build(model.shape(), CarSheets.of(car), model.wheelDrop());
+            Fitted f = new Fitted();
+            f.build(model.shape(), carParts);
+            boolean own = "own".equals(CarSheets.of(car).trait("pipe", "fitted"));
+            ownPipes += own ? 1 : 0;
+            if (!f.wipers.has) {
+                noWipers.add(car);
+            }
+            if (f.pipes == 0 && !own) {
+                noPipe.add(car);
+            }
+        }
+        ok &= read == CARS.length && noWipers.isEmpty() && noPipe.isEmpty();
+        check(F, "every car has wipers and an exhaust pipe", ok, "of the game's " + read + " car models "
+                + (read - noWipers.size()) + " have wipers" + (noWipers.isEmpty() ? "" : " (none: " + noWipers
+                + ", which has no windscreen to carry them)") + " and " + (read - noPipe.size()) + " an exhaust pipe ("
+                + ownPipes + " their model's own" + (noPipe.isEmpty() ? "" : ", none: " + noPipe) + "); made-up cars,"
+                + " pipes fitted/mouths seen from behind/wiper polygons seen from ahead: " + said + "a pipe is " + most
+                + " polygons at most; the car select's car shows " + shopMouths + " pipes and " + shopBlades
+                + " wiper polygons; a model with no windscreen has wipers: " + bare.wipers.has);
+    }
+
+    /**
+     * Electrical damage sets the wipers off: a badly damaged car hit by its
+     * windscreen starts wiping on its own, the washer spraying the glass
+     * with every wipe and a wet wipe heard; after two to three minutes the
+     * water is gone, the spray stops and a quieter dry wipe is heard. A car
+     * not badly damaged, and one hit at the tail, keeps its electrics.
+     */
+    private void electrics() {
+        start();
+        v.damage[0] = 0.4F;
+        for (int k = 0; k < 20; k++) {
+            hit(k % 2, 2, -150F);
+            drive(40F, true, false);
+        }
+        boolean lightHeld = !s.electric;
+        start();
+        v.damage[0] = 0.65F;
+        for (int k = 0; k < 20; k++) {
+            hit(2 + k % 2, 2, 150F);
+            drive(40F, true, false);
+        }
+        boolean tailHeld = !s.electric;
+        start();
+        v.damage[0] = 0.65F;
+        int hits = 0;
+        while (!s.electric && hits < 40) {
+            hit(hits % 2, 2, -150F);
+            drive(40F, true, false);
+            hits++;
+        }
+        boolean went = s.electric;
+        gains.clear();
+        int wet = 0;
+        int dry = 0;
+        int sprays = 0;
+        int lastWet = -1;
+        int firstDry = -1;
+        int waterSeen = 0;
+        float least = 1F;
+        float highest = 0F;
+        int total = 19 * 200;
+        for (int t = 0; t < total; t++) {
+            heard.clear();
+            drive(40F, true, false);
+            if (heard.contains(RealismSounds.WIPE_WET)) {
+                wet++;
+                lastWet = t;
+            }
+            if (heard.contains(RealismSounds.WIPE_DRY)) {
+                dry++;
+                firstDry = firstDry < 0 ? t : firstDry;
+            }
+            sprays += heard.contains(RealismSounds.WASHER) ? 1 : 0;
+            if (t == 4) {
+                waterSeen = particles(DamageEffects.WASHER_WATER);
+            }
+            float sweep = Wipers.sweep(s.wiping);
+            least = Math.min(least, sweep);
+            highest = Math.max(highest, sweep);
+        }
+        int waterAfter = particles(DamageEffects.WASHER_WATER);
+        frame(0F, GROUND - 60F, carZ + 300F);
+        int blades = canvas.drawn(Wipers.RGB);
+        float wetGain = gains.getOrDefault(RealismSounds.WIPE_WET, 0F);
+        float dryGain = gains.getOrDefault(RealismSounds.WIPE_DRY, 0F);
+        boolean ok = lightHeld && tailHeld && went && wet > 60 && sprays == wet && waterSeen > 0 && waterAfter == 0
+                && lastWet >= DamageEffects.WATER_LEAST - Wipers.CYCLE && lastWet <= DamageEffects.WATER_MOST
+                && firstDry > lastWet && dry > 5 && dryGain > 0F && dryGain < wetGain * 0.7F && least < 0.05F
+                && highest > 0.95F && blades == 4;
+        check(F, "electrical damage sets the wipers off", ok, "at 40% damage 20 hits by the windscreen: electrics hold "
+                + lightHeld + "; at 65% hit at the tail: hold " + tailHeld + "; hit by the windscreen: they go after "
+                + hits + " hits, " + wet + " wet wipes each with a spray (" + sprays + "), " + waterSeen
+                + " drops of washer water in the air; the last wet wipe after " + n(lastWet / 19F) + " s, then " + dry
+                + " dry wipes at " + n(dryGain) + " against " + n(wetGain) + " and " + waterAfter
+                + " drops; the blades sweep " + n(least) + " to " + n(highest));
+    }
+
+    /**
+     * An oil leak: a car with low HP hit from underneath starts to leak,
+     * leaves spots of oil on the track as it drives on (and they stay), and
+     * after two to three minutes its engine runs harsh. A car with more HP
+     * does not leak.
+     */
+    private void oilLeak() {
+        start();
+        v.damage[0] = 0.5F;
+        for (int k = 0; k < 20; k++) {
+            hit(k % 4, 1, 60F);
+            drive(40F, true, false);
+        }
+        boolean held = !s.leak && real.oil.count() == 0;
+        start();
+        v.damage[0] = 0.75F;
+        int hits = 0;
+        while (!s.leak && hits < 40) {
+            hit(hits % 4, 1, 60F);
+            drive(40F, true, false);
+            hits++;
+        }
+        boolean leaks = s.leak;
+        int harshTick = -1;
+        int early = 0;
+        float startZ = carZ;
+        for (int t = 0; t < 19 * 200; t++) {
+            drive(40F, true, false);
+            if (t == 19 * 10) {
+                early = real.oil.count();
+            }
+            if (harshTick < 0 && real.harsh(0) > 0F) {
+                harshTick = t;
+            }
+        }
+        // the spots lie on the ground along where it drove, none ahead of it
+        int onTrack = 0;
+        int kept = real.oil.count();
+        for (int k = 0; k < kept; k++) {
+            real.oil.position(real.oil.slot(k), p);
+            onTrack += Math.abs(p[1] - GROUND) < 1F && Math.abs(p[0]) < 20F && p[2] > startZ - 60F && p[2] < carZ + 60F
+                    ? 1 : 0;
+        }
+        frame(0F, GROUND - 200F, carZ - 500F);
+        int seen = canvas.drawn(DamageEffects.OIL);
+        boolean ok = held && leaks && early > 5 && s.spots > 100 && kept > 100 && onTrack == kept && seen > 3
+                && harshTick >= DamageEffects.WATER_LEAST - 2 && harshTick <= DamageEffects.WATER_MOST;
+        check(F, "an oil leak", ok, "at 50% damage 20 hits underneath: no leak " + held + "; at 75% it leaks after "
+                + hits + " hits: " + early + " spots in the first 10 s, " + s.spots + " in 200 s, the last " + kept
+                + " kept, " + onTrack + " of them on the ground where it drove, " + seen + " seen behind the car; the"
+                + " engine runs harsh after " + n(harshTick / 19F) + " s (" + n(real.harsh(0)) + ")");
+    }
+
+    /**
+     * A broken exhaust: a car with low HP hit where its exhaust is (the
+     * tail; a side for side pipes; the stacks of a truck on its roof) blats
+     * from then on, and no two of the game's cars at the same pitch. A hit
+     * elsewhere, or with more HP, leaves it whole.
+     */
+    private void brokenExhaust() {
+        start();
+        v.damage[0] = 0.5F;
+        hit(2, 2, 150F);
+        drive(40F, true, false);
+        hit(3, 2, 150F);
+        drive(40F, true, false);
+        boolean healthy = real.rasp(0) == 0F;
+        start();
+        v.damage[0] = 0.75F;
+        hit(0, 2, -150F);
+        drive(40F, true, false);
+        boolean nose = real.rasp(0) == 0F;
+        hit(2, 2, 150F);
+        drive(40F, true, false);
+        float tail = real.rasp(0);
+        start(CarSheets.parseLine("sider V8 front front no disc 2 pipes=side"), true);
+        v.damage[0] = 0.75F;
+        hit(2, 2, 150F);
+        drive(40F, true, false);
+        boolean sideAlong = real.rasp(0) == 0F;
+        hit(2, 0, 150F);
+        drive(40F, true, false);
+        float side = real.rasp(0);
+        start(CarSheets.parseLine("truck V8 front front no drum stacks loud=1.4"), true);
+        v.damage[0] = 0.75F;
+        hit(2, 2, 150F);
+        drive(40F, true, false);
+        boolean stacksTail = real.rasp(0) == 0F;
+        place(0F, 0F, true);
+        v.xy[0] = 180; // on its roof
+        hit(0, 1, 60F);
+        tick();
+        float stacks = real.rasp(0);
+        // each car its own: the game's sixteen, by their sheets
+        float nearest = Float.MAX_VALUE;
+        float low = Float.MAX_VALUE;
+        float high = 0F;
+        String pair = "";
+        for (int a = 0; a < CARS.length; a++) {
+            float pa = RealismFeature.raspPitch(CarSheets.of(CARS[a]));
+            low = Math.min(low, pa);
+            high = Math.max(high, pa);
+            for (int b = a + 1; b < CARS.length; b++) {
+                float gap = Math.abs(pa - RealismFeature.raspPitch(CarSheets.of(CARS[b])));
+                if (gap < nearest) {
+                    nearest = gap;
+                    pair = CARS[a] + " and " + CARS[b];
+                }
+            }
+        }
+        boolean recordings = nfm.lit.features.sounds.Recordings.clip("rasp") != null
+                && nfm.lit.features.sounds.Recordings.clip("crackle") != null;
+        boolean ok = healthy && nose && tail > 0F && sideAlong && side > 0F && stacksTail && stacks > tail
+                && nearest >= CarSheets.RASP_APART - 0.0005F && high - low > 0.3F && recordings;
+        check(F, "a broken exhaust", ok, "at 50% damage hit at the tail: whole " + healthy + "; at 75% hit at the nose:"
+                + " whole " + nose + ", at the tail: blats at " + n(tail) + "; side pipes hit along: whole " + sideAlong
+                + ", from the side: " + n(side) + "; stacks hit at the tail: whole " + stacksTail + ", on its roof: "
+                + n(stacks) + " (a loud engine's louder); the sixteen cars' pitches " + n(low) + " to " + n(high)
+                + ", the two nearest (" + pair + ") " + String.format(Locale.ROOT, "%.3f", nearest) + " apart");
+    }
+
+    /**
+     * A damaged suspension squeaks: a car with low HP whose suspension took
+     * a hard hit squeaks faintly while it turns, not driving straight and
+     * not standing; a car whose suspension is whole never does.
+     */
+    private void squeak() {
+        start();
+        v.damage[0] = 0.75F;
+        int whole = turning(100, 3, 40F);
+        start();
+        v.damage[0] = 0.5F;
+        hit(0, 2, -150F);
+        drive(40F, true, false);
+        boolean healthy = !s.suspension;
+        start();
+        v.damage[0] = 0.75F;
+        hit(0, 2, -150F);
+        drive(40F, true, false);
+        boolean hurt = s.suspension;
+        gains.clear();
+        int straight = turning(100, 0, 40F);
+        int turned = turning(100, 3, 40F);
+        int standing = turning(100, 3, 0F);
+        float gain = gains.getOrDefault(RealismSounds.SQUEAK, 0F);
+        boolean ok = whole == 0 && healthy && hurt && straight == 0 && turned >= 5 && turned <= 15 && standing == 0
+                && gain > 0F && gain <= 0.2F;
+        check(F, "a damaged suspension squeaks", ok, "a whole car at 75% damage turning 5 s: " + whole + " squeaks;"
+                + " a hard hit at 50%: suspension whole " + healthy + ", at 75%: hurt " + hurt + "; then 5 s straight "
+                + straight + ", 5 s turning " + turned + " at " + n(gain) + " at most (a crash's thud is 0.9), turning"
+                + " on the spot " + standing);
+    }
+
+    /** {@code ticks} ticks at engine speed {@code sp}, turning {@code degrees} a tick: the squeaks heard. */
+    private int turning(int ticks, int degrees, float sp) {
+        int before = heardOf(RealismSounds.SQUEAK);
+        for (int t = 0; t < ticks; t++) {
+            float vz = sp * 0.4F;
+            carZ += vz;
+            place(sp, vz, true);
+            v.xz[0] = (v.tick * degrees) % 360;
+            v.up[0] = true;
+            v.down[0] = false;
+            tick();
+        }
+        return heardOf(RealismSounds.SQUEAK) - before;
     }
 
     /** Each car has a short sheet; the owner looks the values over. */

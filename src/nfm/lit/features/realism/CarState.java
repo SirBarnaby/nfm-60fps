@@ -19,6 +19,8 @@ final class CarState {
     static final int CHIPS = 3;
 
     final CarParts parts = new CarParts();
+    /** Its wipers and the exhaust pipes drawn on it. */
+    final Fitted fitted = new Fitted();
 
     /* where the car is after the tick: its middle and its own axes in the world */
     final float[] at = new float[3];
@@ -83,6 +85,35 @@ final class CarState {
     final float[] chipZ = new float[2 * SCRATCHES * CHIPS];
     final float[] chipSize = new float[2 * SCRATCHES * CHIPS];
 
+    /*
+     * electrical damage: the wipers run on their own and the washer sprays
+     * until its water is gone. Ticks of water left; ticks the wipers have
+     * run, after the last tick and the one before.
+     */
+    boolean electric;
+    int washer;
+    int wiping;
+    int wipingWas;
+
+    /* the oil leak: ticks since it began, the tick count at which the engine turns harsh, how far to the next spot */
+    boolean leak;
+    int leakTicks;
+    int harshAt;
+    float nextSpot;
+    /** The engine runs harsh for want of oil. */
+    boolean harsh;
+    /** The exhaust is broken. */
+    boolean pipeBroken;
+    /** The suspension is damaged: it squeaks in turns. Ticks before the next squeak, and the heading a tick ago. */
+    boolean suspension;
+    int squeakWait;
+    int lastXz;
+
+    /** For the checks: ticks the washer sprayed, spots of oil left and squeaks made since the race started. */
+    int sprayed;
+    int spots;
+    int squeaks;
+
     /* landing and rattling */
     float lastVy;
     int lastAir;
@@ -110,11 +141,16 @@ final class CarState {
         lastAir = 0;
         rattleWait = 0;
         spikeWait = 0;
+        sprayed = 0;
+        spots = 0;
+        squeaks = 0;
+        lastXz = 0;
     }
 
     /**
      * A repair hoop: every kind of damage is fixed (the radiator and its coolant, the engine, the glass, the
-     * lights, the wheels, the scratches). Heat and dirt are not damage: they stay.
+     * lights, the wheels, the scratches, the electrics, the oil leak, the exhaust and the suspension). Heat and
+     * dirt are not damage: they stay.
      */
     void repair() {
         crush = 0F;
@@ -130,6 +166,16 @@ final class CarState {
         Arrays.fill(scratches, 0);
         Arrays.fill(scratchNext, 0);
         Arrays.fill(scratchTick, 0);
+        electric = false;
+        washer = 0;
+        wiping = 0;
+        wipingWas = 0;
+        leak = false;
+        leakTicks = 0;
+        harsh = false;
+        pipeBroken = false;
+        suspension = false;
+        squeakWait = 0;
     }
 
     /** Car {@code c}'s place and axes after the tick, from {@code race}. */

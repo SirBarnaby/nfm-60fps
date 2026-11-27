@@ -227,6 +227,11 @@ public final class Wipers {
         }
     }
 
+    /** How far down the glass from its middle its foot is. */
+    public float foot() {
+        return foot;
+    }
+
     /** Where blade {@code k}'s end is {@code sweep} through its wipe, across and down the glass from its middle, into {@code uv}. */
     public void end(int k, float sweep, float[] uv) {
         double a = Math.toRadians(PARKED + (SWEPT - PARKED) * sweep);

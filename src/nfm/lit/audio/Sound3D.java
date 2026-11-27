@@ -129,6 +129,15 @@ public final class Sound3D implements Runnable {
          * ground, 4 two at once in the air; 0 for none.
          */
         public int nitro;
+        /**
+         * Damage heard under the engine (the damage extra): how loud its
+         * broken exhaust blats and how harsh it runs for want of oil, each
+         * 0 for none to about 1, and the pitch both are played at, the
+         * car's own (about 1), before the revs.
+         */
+        public float rasp;
+        public float harsh;
+        public float raspPitch = 1F;
 
         float skid(int wheel) {
             return switch (wheel) {
@@ -2804,6 +2813,72 @@ public final class Sound3D implements Runnable {
         }
     }
 
+    /** The loops laid under a damaged car's engine: a broken exhaust's blat, and an engine running harsh. */
+    public static final String RASP_CLIP = "xtra-rasp";
+    public static final String HARSH_CLIP = "xtra-harsh";
+    /** How loud they are against the engines, and how quickly they follow the car, in seconds. */
+    private static final float ROUGH_LEVEL = 0.9F;
+    private static final float ROUGH_SMOOTHING = 0.18F;
+
+    /**
+     * One of those loops on a car (the damage extra): a looping source that
+     * follows the car, louder on the throttle, its pitch rising with the
+     * revs from the car's own.
+     */
+    private final class RoughVoice {
+        final int source;
+        final String clip;
+        boolean loaded;
+        float gain;
+
+        RoughVoice(String clip) {
+            this.clip = clip;
+            source = alGenSources();
+            world(source);
+            alSourcei(source, AL_LOOPING, AL_TRUE);
+        }
+
+        /** Plays at {@code level} (0 for none) and {@code pitch} from {@code position}; null keeps the place. */
+        void update(float level, float pitch, float throttle, float[] position, float[] velocity, float dt) {
+            if (level > 0F && !loaded) {
+                int buffer = buffer(clip);
+                if (buffer == 0) {
+                    level = 0F;
+                } else {
+                    alSourcei(source, AL_BUFFER, buffer);
+                    loaded = true;
+                }
+            }
+            float target = level * (0.45F + 0.55F * throttle);
+            gain += (target - gain) * (1F - (float) Math.exp(-dt / ROUGH_SMOOTHING));
+            boolean on = alGetSourcei(source, AL_SOURCE_STATE) == AL_PLAYING;
+            if (!loaded || target == 0F && gain < 0.002F) {
+                if (on) {
+                    alSourcePause(source);
+                }
+                return;
+            }
+            alSourcef(source, AL_GAIN, gain * ROUGH_LEVEL * engineLevel);
+            alSourcef(source, AL_PITCH, Math.max(0.5F, Math.min(2F, pitch)));
+            if (position != null) {
+                alSource3f(source, AL_POSITION, position[0], position[1], position[2]);
+                alSource3f(source, AL_VELOCITY, velocity[0], velocity[1], velocity[2]);
+            }
+            if (!on) {
+                alSourcePlay(source);
+            }
+        }
+
+        void silence() {
+            gain = 0F;
+            alSourceStop(source);
+        }
+
+        void delete() {
+            alDeleteSources(source);
+        }
+    }
+
     /** The clips of nitrous burning: gas rushing out, and an afterburner. */
     public static final String NITRO_HISS = "pwr-nitro-hiss";
     public static final String NITRO_BURNER = "pwr-nitro-burner";
@@ -2938,6 +3013,9 @@ public final class Sound3D implements Runnable {
         HumVoice hum;
         /** Nitrous burning in the car, made the first time it burns. */
         NitroVoice nitro;
+        /** A broken exhaust's blat and a harsh engine's crackle, each made the first time the car has it. */
+        RoughVoice rasp;
+        RoughVoice harsh;
 
         EngineVoices() {
             for (int i = 0; i < 5; i++) {
@@ -2962,6 +3040,12 @@ public final class Sound3D implements Runnable {
                 }
                 if (nitro != null) {
                     nitro.update(0, null, null, dt);
+                }
+                if (rasp != null) {
+                    rasp.update(0F, 1F, 0F, null, null, dt);
+                }
+                if (harsh != null) {
+                    harsh.update(0F, 1F, 0F, null, null, dt);
                 }
                 return;
             }
@@ -2989,6 +3073,20 @@ public final class Sound3D implements Runnable {
                     nitro = new NitroVoice();
                 }
                 nitro.update(muted || !car.running ? 0 : car.nitro, position, velocity, dt);
+            }
+            if (car.rasp > 0F || rasp != null) {
+                if (rasp == null) {
+                    rasp = new RoughVoice(RASP_CLIP);
+                }
+                rasp.update(muted || !car.running ? 0F : car.rasp, car.raspPitch * (0.75F + 0.6F * bandShare(car)),
+                        throttle, position, velocity, dt);
+            }
+            if (car.harsh > 0F || harsh != null) {
+                if (harsh == null) {
+                    harsh = new RoughVoice(HARSH_CLIP);
+                }
+                harsh.update(muted || !car.running ? 0F : car.harsh,
+                        car.raspPitch * (0.7F + 0.5F * bandShare(car)), throttle, position, velocity, dt);
             }
             float k = 1F - (float) Math.exp(-dt / ENGINE_SMOOTHING);
             float kt = 1F - (float) Math.exp(-dt / THROTTLE_SMOOTHING);
@@ -3179,6 +3277,12 @@ public final class Sound3D implements Runnable {
             if (nitro != null) {
                 nitro.silence();
             }
+            if (rasp != null) {
+                rasp.silence();
+            }
+            if (harsh != null) {
+                harsh.silence();
+            }
         }
 
         void delete() {
@@ -3193,6 +3297,12 @@ public final class Sound3D implements Runnable {
             }
             if (nitro != null) {
                 nitro.delete();
+            }
+            if (rasp != null) {
+                rasp.delete();
+            }
+            if (harsh != null) {
+                harsh.delete();
             }
             if (filter != 0) {
                 EXTEfx.alDeleteFilters(filter);

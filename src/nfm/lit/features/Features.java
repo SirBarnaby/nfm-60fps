@@ -21,7 +21,7 @@ public final class Features {
         new nfm.lit.features.skidmarks.SkidmarksFeature(),
         new nfm.lit.features.skidmarks.SkidZonesFeature(),
         new nfm.lit.features.wingtrail.WingTrailFeature(),
-        new nfm.lit.features.realism.RealismFeature(),
+        nfm.lit.features.realism.RealismFeature.FEATURE,
         nfm.lit.features.helmetcam.HelmetCam.FEATURE,
         nfm.lit.features.enginesound.EngineSound.FEATURE,
         nfm.lit.features.powerups.PowerupsFeature.FEATURE,

@@ -204,15 +204,28 @@ final class Wiping {
 
     /** Draws player {@code c}'s wipers as their helmet sees them: beyond the dashboard, over the windscreen. */
     void drawHelmet(Canvas canvas, int c, float share) {
-        if (c < 0 || c >= cars || !HelmetCam.FEATURE.windscreen(c, screen)) {
+        if (c < 0 || c >= cars) {
             return;
         }
         int at = c * 6;
         canvas.color(canvas.fog(Wipers.RGB, glass[at], glass[at + 1], glass[at + 2]));
+        helmetBlades(canvas, c, Wipers.sweep(into(c, share)), screen, x, y, z);
+    }
+
+    /**
+     * Player {@code c}'s wipers as their helmet sees them, {@code sweep}
+     * through their wipe (0 parked to 1), in the canvas's colour: four
+     * polygons on the car, or none if the helmet has no windscreen ahead.
+     * The arrays are scratch: five numbers, and four corners each.
+     */
+    static int helmetBlades(Canvas canvas, int c, float sweep, float[] screen, float[] x, float[] y, float[] z) {
+        if (!HelmetCam.FEATURE.windscreen(c, screen)) {
+            return 0;
+        }
         float ahead = screen[3] + BEYOND_DASH;
         float cowl = screen[4];
         float length = bladeLength(cowl);
-        double a = Math.toRadians(PARKED + (SWEPT - PARKED) * Wipers.sweep(into(c, share)));
+        double a = Math.toRadians(PARKED + (SWEPT - PARKED) * sweep);
         float du = (float) Math.cos(a);
         float dv = (float) -Math.sin(a);
         float pu = -dv * BLADE_HALF;
@@ -220,21 +233,23 @@ final class Wiping {
         for (int k = 0; k < 2; k++) {
             float u0 = PIVOT_ASIDE[k];
             float v0 = cowl - PIVOT_UP;
-            corner(0, ahead, u0 + pu * 0.9F, v0 + pv * 0.9F);
-            corner(1, ahead, u0 + du * length * 0.6F, v0 + dv * length * 0.6F);
-            corner(2, ahead, u0 - pu * 0.9F, v0 - pv * 0.9F);
+            corner(x, y, z, screen, 0, ahead, u0 + pu * 0.9F, v0 + pv * 0.9F);
+            corner(x, y, z, screen, 1, ahead, u0 + du * length * 0.6F, v0 + dv * length * 0.6F);
+            corner(x, y, z, screen, 2, ahead, u0 - pu * 0.9F, v0 - pv * 0.9F);
             canvas.onCar(c, x, y, z, 3);
             float from = 0.16F * length;
-            corner(0, ahead, u0 + du * from + pu, v0 + dv * from + pv);
-            corner(1, ahead, u0 + du * length + pu, v0 + dv * length + pv);
-            corner(2, ahead, u0 + du * length - pu, v0 + dv * length - pv);
-            corner(3, ahead, u0 + du * from - pu, v0 + dv * from - pv);
+            corner(x, y, z, screen, 0, ahead, u0 + du * from + pu, v0 + dv * from + pv);
+            corner(x, y, z, screen, 1, ahead, u0 + du * length + pu, v0 + dv * length + pv);
+            corner(x, y, z, screen, 2, ahead, u0 + du * length - pu, v0 + dv * length - pv);
+            corner(x, y, z, screen, 3, ahead, u0 + du * from - pu, v0 + dv * from - pv);
             canvas.onCar(c, x, y, z, 4);
         }
+        return 4;
     }
 
     /** Corner {@code k} at slopes {@code (sx, sy)} from the eyes, on the plane {@code ahead} of them. */
-    private void corner(int k, float ahead, float sx, float sy) {
+    private static void corner(float[] x, float[] y, float[] z, float[] screen, int k, float ahead, float sx,
+            float sy) {
         x[k] = screen[0] + sx * ahead;
         y[k] = screen[1] + sy * ahead;
         z[k] = screen[2] + ahead;

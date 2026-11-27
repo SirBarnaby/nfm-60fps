@@ -159,6 +159,7 @@ public final class CheckCanvas implements Canvas {
         DrawQueue.Drawer drawer = (f, item) -> feature.draw(this, item);
         queue.before(Integer.MAX_VALUE, false, drawer);
         for (int car = 0; car < 16; car++) {
+            queue.under(car, drawer);
             queue.after(car, drawer);
         }
         queue.end(drawer);

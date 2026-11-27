@@ -2334,7 +2334,7 @@ public class GameSparker extends Panel implements Runnable {
         Arrays.sort(drawKeys, 0, count);
         for (int k = count - 1; k >= 0; k--) {
             int i = (int) drawKeys[k];
-            if (extras) FeatureBridge.beforeObject((int) (drawKeys[k] >>> 32), sceneObjects[i]);
+            if (extras) FeatureBridge.beforeObject((int) (drawKeys[k] >>> 32), i, sceneObjects[i]);
             sceneObjects[i].d(g);
             if (extras) FeatureBridge.afterObject(i, sceneObjects[i]);
         }

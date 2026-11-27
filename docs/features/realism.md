@@ -1,10 +1,11 @@
 # Damage and heat
 
 Switch: **Damage and heat** (`realism`, cookie `xtrareal`), off by default
-until 1.0. Requirements: `openspec\specs\realism` (all eighteen).
+until 1.0. Requirements: `openspec\specs\realism`.
 
 Code: `src\nfm\lit\features\realism\`. Checks: `test\extras-check.ps1 realism`
-(one per requirement, on a made-up car).
+(one per requirement, on a made-up car; "every car has wipers and an exhaust
+pipe" also reads the game's own sixteen models).
 
 Cars heat up, get damaged and show it, in a cosmetic way only. After each real
 race tick the extra reads the race (speed, keys, which corner was hit, along
@@ -51,6 +52,17 @@ its end) or across it (a hit on its side).
 | from 221 | the wheel at that corner goes flat | the same |
 
 A roll onto the roof (a vertical hit from 170) cracks the windscreen.
+
+The further damage (below) reads the same hits and the car's damage as the
+game counts it (0 whole, 1 wasted): **badly damaged** is 0.6 or more, **low
+HP** 0.7 or more.
+
+| What is hit | When | What may happen |
+| --- | --- | --- |
+| By the windscreen: a hard hit on a front corner, or a vertical hit from 45 on a car on its roof | badly damaged | one time in two the electrics go |
+| Underneath: a vertical hit from 30 on a car on its wheels, or bottoming out | low HP | one time in two an oil leak; one time in two the suspension is hurt |
+| Where the exhaust is: a hard hit on a rear corner along the car (pipes out of the tail), across it on a rear corner (side pipes), or a vertical hit from 45 on its roof (stacks) | low HP | the exhaust breaks |
+| Any corner, hard | low HP | the suspension is hurt |
 
 Light touches, below a dent, still reach the extra (`FeatureBridge.touch`, the
 strongest push per corner each tick, `RaceView.touchX/touchZ`): a side touch
@@ -148,6 +160,58 @@ scratches are kept per side.
   stay where they fall for the rest of the race, 400 at most, the oldest going
   first. On a ramp or a raised road they are drawn among the objects.
 
+## Wipers and pipes on every car
+
+`Fitted` finds a place for them on the model when a race starts, and the car
+select does the same for the car it shows (`FeatureBridge.showroom`, around
+`GameUi.drawSelectCar`'s `model.d`).
+
+- **Wipers**: two blades parked at the foot of the windscreen (`Wipers`, the
+  weather's; in the rain the weather draws them wiping). A model with no
+  windscreen has nothing to carry them: of the game's sixteen that is
+  Formula 7, and the requirement's check fails on it until the owner says
+  what it should have.
+- **Pipes**: a square tube in steel with a dark mouth, five polygons (the
+  sides turned to the eye and the mouth are drawn). Its half width is 2.5% of
+  the body's width (1.2 to 4 units). Where, by the sheet: **out of the tail**
+  (1 or 2, low on the rear face where the exhaust ends, three widths out),
+  **stacks** (upright behind the cab, from what they stand on to a little
+  above the roof) or **side pipes** (`pipes=side`: along each sill, ending
+  ahead of the rear wheel). A car whose sheet says `pipe=own` has pipes in
+  its model and gets none: Lead Oxide, EL KING, M A S H E E N. The flames,
+  pops and shimmer come out of the drawn mouths.
+- A pipe the car would hide is drawn right before the car
+  (`DrawQueue.under`), one seen from behind where it comes out right after it.
+- The log names what each model got when it first races (`[extras] damage:
+  nimi is fitted with wipers on its windscreen, 1 pipe out of the tail`).
+
+## The further damage
+
+- **Electrical damage**: the wipers wipe on by themselves, a wipe every 24
+  ticks, and the washer sprays the glass at the start of each (two jets of
+  pale drops up the glass). The water lasts 2 to 3 minutes (the dice say how
+  long); after it the blades rub over dry glass. Heard from the car: a wipe
+  over wet glass with the spray, then a quieter dry one (0.15 against 0.34).
+  From the helmet of a closed car the player sees their own blades sweep. A
+  car with no wipers has no such damage.
+- **An oil leak**: a spot of oil under the engine every 90 to 210 units driven
+  (a drip every 3 s standing), flat on the track, kept for the race (the 600
+  latest). Only seen: the race never reads them. After 2 to 3 minutes the
+  engine runs harsh: a crackling loop under its own sound.
+- **A broken exhaust**: a blatting loop under the engine's sound from then
+  on, louder for a loud engine (`loud`), its pitch following the revs. Each
+  car has its own pitch (`CarSheets.raspPitch`): by how its engine revs and
+  its cylinders, a little by its name, and then set at least 2% from the
+  next car's, from 0.85 for a truck to 1.41 for a screamer.
+- **A damaged suspension**: while the car turns 1.5 degrees a tick or more on
+  the ground at 4 units a tick or more, a faint metallic squeak every 7 to 13
+  ticks (gain 0.1 to 0.18; a crash's thud is up to 1).
+- A repair hoop mends all four; a wasted car's wipers stop.
+
+The two loops are laid under the car's engine by the 3D sound
+(`Sound3D.RoughVoice`, `Car.rasp/harsh/raspPitch`), so they are heard with
+the 3D sound only, from the car, and from the computer's cars too.
+
 ## The game's hooks
 
 - `ContO.carSlot` (set by the bridge while an extra recolours the cars) tells
@@ -167,7 +231,8 @@ scratches are kept per side.
   (`RealismSounds` gives them from `features\sounds`: a metal ping for the
   tick, a collision for the thud, metal on concrete for the scrape, loose
   metal for the rattle, swords for the spikes' ring, exhaust pops and a
-  backfire; `sounds\README.md`), played at the car by the 3D sound only.
+  backfire, wipers over wet and dry glass, a washer, a squeak;
+  `sounds\README.md`), played at the car by the 3D sound only.
   Classic sound never hears them.
 - `Particles.keep`: a particle stays as debris where it lands
   (`CarLooks.debris`).
@@ -175,6 +240,6 @@ scratches are kept per side.
 ## Cost
 
 Off, nothing runs and every hook is one check. On, the state is a few dozen
-numbers per car, fixed pools (900 particles, 400 pieces of debris) and a few
+numbers per car, fixed pools (900 particles, 400 pieces of debris, 600 spots of oil) and a few
 polygons per damaged car; nothing is allocated per frame or tick (the sounds'
 commands excepted, a few a second at most).

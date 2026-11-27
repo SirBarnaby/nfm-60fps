@@ -43,6 +43,28 @@ final class DamageEffects {
     /** What one hard ram on the engine's end adds to its hurt, before the force above {@link #HARD}. */
     static final float RAM = 0.15F;
 
+    /** "Badly damaged": this much of the damage a car can take. "Low HP": this much. */
+    static final float BADLY = 0.6F;
+    static final float LOW_HP = 0.7F;
+    /** A badly damaged car hit near its windscreen: how likely its electrics go. A car with low HP hit underneath: how likely it leaks. */
+    static final float ELECTRIC_CHANCE = 0.5F;
+    static final float LEAK_CHANCE = 0.5F;
+    /** The washer's water lasts two to three minutes, in ticks; a leaking engine turns harsh after as long. */
+    static final int WATER_LEAST = 19 * 120;
+    static final int WATER_MOST = 19 * 180;
+    /** The washer sprays for this many ticks at the start of every wipe. */
+    static final int SPRAY_TICKS = 9;
+    /** A spot of oil every so many units driven, and every so many ticks standing. */
+    static final float SPOT_EVERY = 150F;
+    static final int SPOT_STANDING = 19 * 3;
+    /** A vertical hit this hard on a car on its wheels is a hit underneath. */
+    static final float UNDERNEATH = 30F;
+    /** A hurt suspension squeaks while the car turns this many degrees a tick or more, at this speed or more. */
+    static final float SQUEAK_TURN = 1.5F;
+    static final float SQUEAK_SPEED = 4F;
+
+    static final int OIL = 0x16130f;
+    static final int WASHER_WATER = 0xd6e8f2;
     private static final float DEG = (float) (Math.PI / 180D);
     private static final int STEAM = 0xe9edf0;
     private static final int WISPS = 0xbdbdbd;
@@ -84,6 +106,7 @@ final class DamageEffects {
                 if (Math.abs(force) >= HEAVY) {
                     crack(s); // a roll onto the roof
                 }
+                vertical(race, c, s, Math.abs(force));
             } else if (w >= 0 && w < RaceView.WHEELS) {
                 float lx = race.hitAxis[h] == 2 ? force * sin : force * cos;
                 float lz = race.hitAxis[h] == 2 ? force * cos : -force * sin;
@@ -99,6 +122,168 @@ final class DamageEffects {
         rattle(race, c, s, share);
         landing(race, c, s);
         dirt(race, c, s, share);
+        electrics(race, c, s);
+        oil(race, c, s);
+        squeak(race, c, s);
+    }
+
+    /* ------------------------------------------------- the further damage */
+
+    /** True if car {@code c} is on its wheels' side: a hit from below meets its underside, not its roof. */
+    private static boolean upright(RaceView race, int c) {
+        return Math.cos(race.xy[c] * DEG) * Math.cos(race.zy[c] * DEG) > 0.5D;
+    }
+
+    /**
+     * A vertical hit of force {@code force}: on a car on its wheels it is
+     * a hit underneath (an oil leak, a hurt suspension), on one on its roof
+     * a hit by the windscreen (the electrics) and on its stacks.
+     */
+    private void vertical(RaceView race, int c, CarState s, float force) {
+        if (upright(race, c)) {
+            if (force >= UNDERNEATH) {
+                underneath(race, c, s);
+            }
+        } else if (force >= HARD / 2F) {
+            nearScreen(race, c, s);
+            if (s.fitted.kind == Fitted.UP || s.parts.stacks) {
+                breakPipe(race, c, s);
+            }
+        }
+    }
+
+    /** A car with low HP is hit underneath: it may spring an oil leak, and its suspension may be hurt. */
+    void underneath(RaceView race, int c, CarState s) {
+        if (race.damage[c] < LOW_HP || race.wasted[c]) {
+            return;
+        }
+        if (!s.leak && f.dice.next() < LEAK_CHANCE) {
+            s.leak = true;
+            s.leakTicks = 0;
+            s.harshAt = WATER_LEAST + f.dice.below(WATER_MOST - WATER_LEAST + 1);
+            s.nextSpot = 0F;
+        }
+        if (!s.suspension && f.dice.next() < LEAK_CHANCE) {
+            s.suspension = true;
+        }
+    }
+
+    /** A badly damaged car is hit near its windscreen: its electrics may go, and the wipers and washer run on their own. */
+    void nearScreen(RaceView race, int c, CarState s) {
+        if (race.damage[c] < BADLY || race.wasted[c] || s.electric || !s.fitted.wipers.has) {
+            return;
+        }
+        if (f.dice.next() < ELECTRIC_CHANCE) {
+            s.electric = true;
+            s.washer = WATER_LEAST + f.dice.below(WATER_MOST - WATER_LEAST + 1);
+            s.wiping = 0;
+            s.wipingWas = 0;
+        }
+    }
+
+    /** A car with low HP is hit where its exhaust is: it breaks, and the car sounds raspier from then on. */
+    void breakPipe(RaceView race, int c, CarState s) {
+        if (race.damage[c] >= LOW_HP && !race.wasted[c]) {
+            s.pipeBroken = true;
+        }
+    }
+
+    /**
+     * Electrical damage: the wipers wipe on, wipe after wipe, and at the
+     * start of each the washer sprays the glass while it has water. Each
+     * wipe is heard: over wet glass, and once the water is gone the quieter
+     * rub of a blade over dry glass. A wasted car's stop.
+     */
+    private void electrics(RaceView race, int c, CarState s) {
+        s.wipingWas = s.wiping;
+        if (!s.electric || race.wasted[c]) {
+            return;
+        }
+        Fitted fitted = s.fitted;
+        int into = s.wiping % nfm.lit.features.Wipers.CYCLE;
+        boolean wet = s.washer > 0;
+        if (into == 0) {
+            f.sound(c, wet ? RealismSounds.WIPE_WET : RealismSounds.WIPE_DRY, wet ? 0.34F : 0.15F,
+                    0.96F + 0.08F * f.dice.next());
+            if (wet) {
+                f.sound(c, RealismSounds.WASHER, 0.22F, 0.95F + 0.1F * f.dice.next());
+            }
+        }
+        if (wet && into < SPRAY_TICKS) {
+            // two jets from the foot of the glass, up it, carried with the car
+            nfm.lit.features.Wipers w = fitted.wipers;
+            for (int jet = -1; jet <= 1; jet += 2) {
+                float u = jet * 0.22F * w.length + f.dice.between(-0.6F, 0.6F);
+                float up = f.dice.between(0.5F, 1.1F);
+                float lx = w.mid[0] + w.across[0] * u + w.down[0] * w.foot() + w.out[0] * 0.8F;
+                float ly = w.mid[1] + w.across[1] * u + w.down[1] * w.foot() + w.out[1] * 0.8F;
+                float lz = w.mid[2] + w.across[2] * u + w.down[2] * w.foot() + w.out[2] * 0.8F;
+                // up the glass and a little off it, in the world
+                float dx = -w.down[0] * up + w.out[0] * 0.25F;
+                float dy = -w.down[1] * up + w.out[1] * 0.25F;
+                float dz = -w.down[2] * up + w.out[2] * 0.25F;
+                f.puff(s, lx, ly, lz, race.vx[c] + s.right[0] * dx + s.down[0] * dy + s.ahead[0] * dz,
+                        race.vy[c] + s.right[1] * dx + s.down[1] * dy + s.ahead[1] * dz,
+                        race.vz[c] + s.right[2] * dx + s.down[2] * dy + s.ahead[2] * dz, f.dice.between(4F, 7F), 0.8F,
+                        2.4F, WASHER_WATER, 0.55F, 0.02F, -0.12F);
+            }
+            s.sprayed++;
+        }
+        if (wet) {
+            s.washer--;
+        }
+        s.wiping++;
+    }
+
+    /**
+     * The oil leak: spots of oil on the track under the engine as the car
+     * drives on (and a slow drip while it stands); after two to three
+     * minutes the engine runs harsh for want of it.
+     */
+    private void oil(RaceView race, int c, CarState s) {
+        if (!s.leak) {
+            return;
+        }
+        s.leakTicks++;
+        if (!s.harsh && s.leakTicks >= s.harshAt && !race.wasted[c]) {
+            s.harsh = true;
+        }
+        if (!race.grounded[c]) {
+            return;
+        }
+        float moved = race.groundSpeed(c);
+        s.nextSpot -= moved < 1F ? SPOT_EVERY / SPOT_STANDING : moved;
+        if (s.nextSpot > 0F) {
+            return;
+        }
+        s.nextSpot = SPOT_EVERY * f.dice.between(0.6F, 1.4F);
+        CarParts parts = s.parts;
+        s.world(parts.engine[0] + f.dice.between(-0.25F, 0.25F) * parts.halfWidth, parts.ground, parts.engine[2], p);
+        float floor = RealismFeature.groundUnder(race, c, s);
+        f.oil.drop(p[0], floor, p[2], f.dice.between(5F, 10F), OIL, 6 + f.dice.below(2), f.dice.next() * 6.2831855F);
+        s.spots++;
+    }
+
+    /** A hurt suspension squeaks, faintly, while the car turns on the ground. */
+    private void squeak(RaceView race, int c, CarState s) {
+        int turned = race.xz[c] - s.lastXz;
+        s.lastXz = race.xz[c];
+        while (turned > 180) {
+            turned -= 360;
+        }
+        while (turned < -180) {
+            turned += 360;
+        }
+        if (s.squeakWait > 0) {
+            s.squeakWait--;
+        }
+        if (!s.suspension || s.squeakWait > 0 || race.wasted[c] || !race.grounded[c]
+                || Math.abs(turned) < SQUEAK_TURN || race.groundSpeed(c) < SQUEAK_SPEED) {
+            return;
+        }
+        f.sound(c, RealismSounds.SQUEAK, 0.1F + 0.08F * f.dice.next(), 0.9F + 0.3F * f.dice.next());
+        s.squeakWait = 7 + f.dice.below(7);
+        s.squeaks++;
     }
 
     /** A hit of force {@code f} on corner {@code w}, pushing {@code (lx, lz)} in the car's own frame. */
@@ -135,6 +320,18 @@ final class DamageEffects {
             }
             if (front || force >= HEAVY) {
                 crack(s);
+            }
+            if (front) {
+                nearScreen(race, c, s);
+            }
+            // where the exhaust is: the tail for pipes at the back, a side for side pipes
+            boolean atPipe = s.fitted.kind == Fitted.SIDE || "side".equals(sheet.trait("pipes", "back")) ? across && !front
+                    : !parts.stacks && !front && !across;
+            if (atPipe) {
+                breakPipe(race, c, s);
+            }
+            if (race.damage[c] >= LOW_HP && !race.wasted[c]) {
+                s.suspension = true; // the wheel is bent, and what holds it with it
             }
         }
         if (force >= HEAVY && across && parts.hasWindow[side] && !s.windowBroken[side]) {
@@ -393,6 +590,7 @@ final class DamageEffects {
             float loud = Math.min(1F, 0.4F + (s.lastVy - BOTTOM_OUT) / 30F);
             f.sound(c, RealismSounds.THUD, loud, 0.9F + 0.15F * f.dice.next());
             f.sound(c, RealismSounds.SCRAPE, loud * 0.6F, 0.9F + 0.2F * f.dice.next());
+            underneath(race, c, s); // the road meets the sump
         }
         s.lastAir = race.airTicks[c];
         s.lastVy = race.vy[c];

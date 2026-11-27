@@ -10,6 +10,11 @@ import nfm.lit.features.DrawQueue;
 import nfm.lit.features.Feature;
 import nfm.lit.features.Particles;
 import nfm.lit.features.RaceView;
+import nfm.lit.features.CarShape;
+import nfm.lit.features.Weather;
+import nfm.lit.features.Wipers;
+import nfm.lit.features.helmetcam.HelmetCam;
+import nfm.lit.features.weather.WeatherFeature;
 
 /**
  * Damage and heat (realism, every requirement): cars that heat up, get
@@ -27,6 +32,8 @@ import nfm.lit.features.RaceView;
 public final class RealismFeature implements Feature, CarLook {
 
     public static final String ID = "realism";
+    /** The game's own (the checks make theirs). */
+    public static final RealismFeature FEATURE = new RealismFeature();
 
     /** Items: particles, then debris, then each car's parts. */
     static final int PARTICLE = 0;
@@ -39,6 +46,15 @@ public final class RealismFeature implements Feature, CarLook {
     static final int CRACKS = 9;
     static final int SCRATCH = 10;
     static final int LAMPS = 12;
+    /** A car's two pipes, its wipers, and its wipers as the helmet sees them. */
+    static final int PIPE = 13;
+    static final int WIPERS = 15;
+    static final int WIPERS_HELMET = 8;
+    /** The spots of oil a leaking car left, after every car's parts. */
+    static final int OIL = 4000;
+    static final int OIL_KEPT = 600;
+    /** Farther than this from the eye a car's wipers and pipes are not drawn: too small to see. */
+    private static final float FITTED_FAR = 4500F;
     /** Farther than this from the eye a car's parts are not drawn. */
     private static final float FAR = 12000F;
 
@@ -55,6 +71,11 @@ public final class RealismFeature implements Feature, CarLook {
 
     final Particles particles = new Particles(PARTICLES);
     final Debris debris = new Debris(DEBRIS_KEPT);
+    final Debris oil = new Debris(OIL_KEPT);
+    /** The models whose fitting the log already has. */
+    private final java.util.Set<String> fittedLogged = new java.util.HashSet<>();
+    /** True between a race's start and its end. */
+    private boolean racing;
     final Dice dice = new Dice(0L, ID);
     Ears ears = RealismFeature::toSound;
 
@@ -99,15 +120,23 @@ public final class RealismFeature implements Feature, CarLook {
         dice.reset(race.seed, ID);
         particles.clear();
         debris.clear();
+        oil.clear();
         CarLooks.clear(cars);
         CarLooks.keepDebris(debris);
         for (int c = 0; c < cars; c++) {
             CarState s = states[c];
             s.parts.build(race.shape[c], CarSheets.of(race.modelName[c]), race.wheelDrop[c]);
+            s.fitted.build(race.shape[c], s.parts);
+            if (race.modelName[c] != null && !race.modelName[c].isEmpty() && race.shape[c] != null && fittedLogged.add(race.modelName[c])) {
+                fallk.logmaster.HLogger.info("[extras] damage: " + race.modelName[c] + " is fitted with "
+                        + s.fitted.describe(s.parts));
+            }
             s.reset(race.groundColor);
+            s.lastXz = race.xz[c];
             s.pose(race, c, p);
         }
         RealismSounds.make();
+        racing = true;
     }
 
     @Override
@@ -131,6 +160,36 @@ public final class RealismFeature implements Feature, CarLook {
         CarLooks.clear(cars);
         particles.clear();
         debris.clear();
+        oil.clear();
+        racing = false;
+    }
+
+    /* ------------------------------------------------- for the 3D sound */
+
+    /** How loud car {@code c}'s broken exhaust blats, 0 while it is whole (or no race is on): louder for a loud engine. */
+    public float rasp(int c) {
+        if (!racing || c < 0 || c >= cars || !states[c].pipeBroken) {
+            return 0F;
+        }
+        return 0.7F * Math.max(0.6F, Math.min(1.5F, states[c].parts.sheet.number("loud", 1F)));
+    }
+
+    /** How harsh car {@code c}'s engine runs for want of oil, 0 while it has it. */
+    public float harsh(int c) {
+        if (!racing || c < 0 || c >= cars || !states[c].harsh) {
+            return 0F;
+        }
+        return 0.6F * Math.max(0.6F, Math.min(1.5F, states[c].parts.sheet.number("loud", 1F)));
+    }
+
+    /** The pitch of car {@code c}'s rasp: each car its own, by how its engine revs, its cylinders and its name. */
+    public float raspPitch(int c) {
+        return c < 0 || c >= cars ? 1F : raspPitch(states[c].parts.sheet);
+    }
+
+    /** As {@link #raspPitch(int)}, from a sheet: a truck's low, a screamer's high, no two cars' the same. */
+    static float raspPitch(CarSheet sheet) {
+        return CarSheets.raspPitch(sheet);
     }
 
     /* ------------------------------------------------------------ helpers */
@@ -342,9 +401,127 @@ public final class RealismFeature implements Feature, CarLook {
                 queue.ground(DEBRIS + i);
             }
         }
+        for (int k = 0; k < oil.count(); k++) {
+            int i = oil.slot(k);
+            if (oil.raised(i)) {
+                oil.position(i, p);
+                queue.at(eyeX + (p[0] - eyeX) * 0.85F, eyeY + (p[1] - eyeY) * 0.85F, eyeZ + (p[2] - eyeZ) * 0.85F,
+                        OIL + i);
+            } else {
+                queue.ground(OIL + i);
+            }
+        }
+        share = queue.share();
+        int helmet = HelmetCam.FEATURE.framing();
         for (int c = 0; c < cars; c++) {
             queueCar(queue, c, states[c]);
+            queueFitted(queue, c, states[c], c == helmet);
         }
+    }
+
+    /** The frame is this far from the tick before the last to the last. */
+    private float share = 1F;
+    private final float[] eye = new float[3];
+
+    /** The eye in car state {@code s}'s own numbers, into {@link #eye}. */
+    private void localEye(CarState s) {
+        float dx = eyeX - s.at[0];
+        float dy = eyeY - s.at[1];
+        float dz = eyeZ - s.at[2];
+        eye[0] = s.right[0] * dx + s.right[1] * dy + s.right[2] * dz;
+        eye[1] = s.down[0] * dx + s.down[1] * dy + s.down[2] * dz;
+        eye[2] = s.ahead[0] * dx + s.ahead[1] * dy + s.ahead[2] * dz;
+    }
+
+    /** Car {@code c}'s pipes, over or under the car by where the eye is, and its wipers if its windscreen faces the eye. */
+    private void queueFitted(DrawQueue queue, int c, CarState s, boolean helmet) {
+        Fitted fitted = s.fitted;
+        float dx = s.at[0] - eyeX;
+        float dy = s.at[1] - eyeY;
+        float dz = s.at[2] - eyeZ;
+        if (dx * dx + dy * dy + dz * dz > FITTED_FAR * FITTED_FAR || s.parts.shape == null) {
+            return;
+        }
+        int base = CAR + c * PER_CAR;
+        localEye(s);
+        if (!helmet) {
+            for (int pipe = 0; pipe < fitted.pipes; pipe++) {
+                if (fitted.over(pipe, eye[0], eye[1], eye[2])) {
+                    queue.after(c, base + PIPE + pipe);
+                } else {
+                    queue.under(c, base + PIPE + pipe);
+                }
+            }
+        }
+        Wipers w = fitted.wipers;
+        if (!w.has || Weather.raining()) {
+            return; // in the rain the weather draws them wiping
+        }
+        if (helmet) {
+            if (s.electric && HelmetCam.FEATURE.closed(c)) {
+                queue.afterFirst(c, base + WIPERS_HELMET);
+            }
+        } else if (s.faces(w.mid[0], w.mid[1], w.mid[2], w.out[0], w.out[1], w.out[2], eyeX, eyeY, eyeZ)) {
+            queue.after(c, base + WIPERS);
+        }
+    }
+
+    /** How far through their wipe car state {@code s}'s wipers are in this frame: parked unless its electrics are damaged. */
+    private float sweep(CarState s) {
+        return s.electric ? Wipers.sweep(s.wipingWas + (s.wiping - s.wipingWas) * share) : 0F;
+    }
+
+    /* ------------------------------------------------- the car select */
+
+    private final CarState shown = new CarState();
+    private CarShape shownShape;
+    private String shownModel = "";
+
+    /**
+     * The car select's car (car 0 of {@code one}, a view of just that car)
+     * seen from {@code (ex, ey, ez)}: its pipes that the car hides
+     * ({@code over} false, before the car is drawn) or that lie over it and
+     * its wipers, parked ({@code over} true, after it). Nothing of the race
+     * is touched.
+     */
+    public void showroom(RaceView one, Canvas canvas, float ex, float ey, float ez, boolean over) {
+        CarState s = shown;
+        if (one.shape[0] != shownShape || !shownModel.equals(one.modelName[0])) {
+            shownShape = one.shape[0];
+            shownModel = one.modelName[0];
+            s.parts.build(shownShape, CarSheets.of(shownModel), one.wheelDrop[0]);
+            s.fitted.build(shownShape, s.parts);
+        }
+        if (s.parts.shape == null) {
+            return;
+        }
+        s.pose(one, 0, p);
+        float keptX = eyeX;
+        float keptY = eyeY;
+        float keptZ = eyeZ;
+        eyeX = ex;
+        eyeY = ey;
+        eyeZ = ez;
+        localEye(s);
+        Fitted fitted = s.fitted;
+        for (int pipe = 0; pipe < fitted.pipes; pipe++) {
+            if (fitted.over(pipe, eye[0], eye[1], eye[2]) == over) {
+                fitted.draw(canvas, 0, pipe, eye[0], eye[1], eye[2], Fitted.STEEL, Fitted.MOUTH);
+            }
+        }
+        Wipers w = fitted.wipers;
+        if (over && w.has && s.faces(w.mid[0], w.mid[1], w.mid[2], w.out[0], w.out[1], w.out[2], ex, ey, ez)) {
+            canvas.color(Wipers.RGB);
+            w.draw(canvas, 0, 0F);
+        }
+        eyeX = keptX;
+        eyeY = keptY;
+        eyeZ = keptZ;
+    }
+
+    /** The car select's car as last shown, for the checks. */
+    CarState shown() {
+        return shown;
     }
 
     private void queueCar(DrawQueue queue, int c, CarState s) {
@@ -392,6 +569,13 @@ public final class RealismFeature implements Feature, CarLook {
             }
             return;
         }
+        if (item >= OIL) {
+            int i = item - OIL;
+            if (i < oil.capacity()) {
+                oil.draw(canvas, i);
+            }
+            return;
+        }
         int c = (item - CAR) / PER_CAR;
         int part = (item - CAR) % PER_CAR;
         if (c < 0 || c >= cars) {
@@ -400,6 +584,17 @@ public final class RealismFeature implements Feature, CarLook {
         CarState s = states[c];
         if (part < FLAME) {
             return; // the discs are drawn in the wheels, as the wheels are drawn (onPlane)
+        } else if (part == WIPERS) {
+            canvas.color(canvas.fog(Wipers.RGB, s.at[0], s.at[1], s.at[2]));
+            s.fitted.wipers.draw(canvas, c, sweep(s));
+        } else if (part == WIPERS_HELMET) {
+            canvas.color(canvas.fog(Wipers.RGB, s.at[0], s.at[1], s.at[2]));
+            WeatherFeature.helmetWipers(canvas, c, sweep(s));
+        } else if (part >= PIPE && part < PIPE + 2) {
+            localEye(s);
+            s.fitted.draw(canvas, c, part - PIPE, eye[0], eye[1], eye[2],
+                    canvas.fog(Fitted.STEEL, s.at[0], s.at[1], s.at[2]),
+                    canvas.fog(Fitted.MOUTH, s.at[0], s.at[1], s.at[2]));
         } else if (part < CRACKS) {
             drawing.flame(canvas, c, s, part - FLAME, nitrous[c]);
         } else if (part == CRACKS) {

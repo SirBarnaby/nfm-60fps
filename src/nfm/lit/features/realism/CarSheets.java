@@ -41,6 +41,42 @@ public final class CarSheets {
         return sheet != null ? sheet : CarSheet.DEFAULT;
     }
 
+    /** A broken exhaust's pitches are at least this far apart from car to car: a third of a semitone. */
+    static final float RASP_APART = 0.02F;
+
+    private static Map<String, Float> rasps;
+
+    /**
+     * The pitch a car with sheet {@code sheet} blats at once its exhaust is
+     * broken: by how its engine revs and its cylinders (a truck's low, a
+     * screamer's high) and a little by its name, and then every car with a
+     * sheet set at least {@link #RASP_APART} from the next, so no two sound
+     * the same.
+     */
+    static synchronized float raspPitch(CarSheet sheet) {
+        if (rasps == null) {
+            of(""); // reads the sheets
+            List<CarSheet> all = new java.util.ArrayList<>(sheets.values());
+            all.sort(java.util.Comparator.comparingDouble((CarSheet c) -> rawRasp(c)).thenComparing(c -> c.car));
+            Map<String, Float> out = new java.util.HashMap<>();
+            float last = -1F;
+            for (CarSheet c : all) {
+                last = Math.max(rawRasp(c), last + RASP_APART);
+                out.put(c.car, last);
+            }
+            rasps = out;
+        }
+        Float known = rasps.get(sheet.car);
+        return known != null ? known : rawRasp(sheet);
+    }
+
+    private static float rawRasp(CarSheet sheet) {
+        int cylinders = sheet.cylinders();
+        float own = ((sheet.car.hashCode() * 0x9E3779B1) >>> 24) / 255F - 0.5F;
+        return 0.62F + 0.11F * sheet.number("revs", 4F) + (cylinders <= 4 ? 0.12F : cylinders >= 10 ? 0.1F : 0F)
+                + 0.1F * own;
+    }
+
     /** The resource's lines, or null (logged) if it is missing or cannot be read. */
     static List<String> lines() {
         try (InputStream in = CarSheets.class.getResourceAsStream(RESOURCE)) {

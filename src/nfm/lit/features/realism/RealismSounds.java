@@ -23,6 +23,12 @@ final class RealismSounds {
     static final String POP = "xtra-pop";
     static final String BACKFIRE = "xtra-backfire";
 
+    /** The further damage: a wipe over wet glass and over dry, the washer's spray, a hurt suspension's squeak. */
+    static final String WIPE_WET = "xtra-wipewet";
+    static final String WIPE_DRY = "xtra-wipedry";
+    static final String WASHER = "xtra-washer";
+    static final String SQUEAK = "xtra-squeak";
+
     private RealismSounds() {
     }
 
@@ -33,6 +39,13 @@ final class RealismSounds {
         Recordings.give(SCRAPE, "scrape", false);
         Recordings.give(RATTLE, "rattle", false);
         Recordings.give(GLINT, "glint", false);
+        Recordings.give(WIPE_WET, "wipewet", false);
+        Recordings.give(WIPE_DRY, "wipedry", false);
+        Recordings.give(WASHER, "washer", false);
+        Recordings.give(SQUEAK, "squeak", false);
+        // the two loops the 3D sound lays under a car's engine: a broken exhaust, an engine short of oil
+        Recordings.give(nfm.lit.audio.Sound3D.RASP_CLIP, "rasp", false);
+        Recordings.give(nfm.lit.audio.Sound3D.HARSH_CLIP, "crackle", false);
         Recordings.give(EngineLayers.BACKFIRE_CLIP, "backfire", false);
         for (int i = 0; i < EngineLayers.POP_CLIPS.length; i++) {
             Recordings.give(EngineLayers.POP_CLIPS[i], "pop" + (i + 1), false);

@@ -16,6 +16,8 @@ pop1	antilag	1.56	0.24	11025	shot	highpass=f=120	an exhaust pop
 pop2	antilag	1.96	0.24	11025	shot	highpass=f=120	an exhaust pop
 pop3	antilag	6.72	0.24	11025	shot	highpass=f=120	an exhaust pop
 backfire	backfire	0.19	0.45	11025	shot	-	a loud backfire
+rasp	backfire2	0.15	2.40	11025	loop	highpass=f=70	a broken exhaust, a vehicle running rough and blatting
+crackle	antilag	1.05	1.90	11025	loop	highpass=f=200	an engine running harsh and crackling
 blowoff	turbo	0.05	1.20	11025	shot	highpass=f=300	a turbo's blow-off when the throttle lifts
 airbrake	airbrake	0.00	1.50	11025	shot	-	a truck's air brakes breathing out (EL KING)
 creak1	creak	0.82	0.48	11025	shot	highpass=f=150	suspension creak

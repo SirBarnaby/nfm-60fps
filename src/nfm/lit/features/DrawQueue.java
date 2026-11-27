@@ -25,6 +25,7 @@ public final class DrawQueue {
     private static final int DEPTH = 1;
     private static final int AFTER = 2;
     private static final int AFTER_FIRST = 3;
+    private static final int UNDER = 4;
 
     /** Draws item {@code item} of feature {@code feature}. */
     public interface Drawer {
@@ -64,6 +65,7 @@ public final class DrawQueue {
         count = 0;
         depthCount = 0;
         afterCount = 0;
+        underCount = 0;
         groundDrawn = false;
         this.eyeX = eyeX;
         this.eyeY = eyeY;
@@ -185,6 +187,18 @@ public final class DrawQueue {
         afterCount++;
     }
 
+    /**
+     * Item {@code item} is on car {@code car} where the car hides it: drawn
+     * right before the car, so the car's own polygons cover what of it they
+     * are in front of (a pipe sticking out behind a car seen from ahead).
+     */
+    public void under(int car, int item) {
+        add(UNDER, item, car);
+        underCount++;
+    }
+
+    private int underCount;
+
     /** The game's distance measure of world point {@code (x, y, z)}: the square root of how far it is from the eye. */
     public int depth(float x, float y, float z) {
         float dx = eyeX - x;
@@ -245,6 +259,18 @@ public final class DrawQueue {
         while (nextDepth >= 0 && (int) (order[nextDepth] >> 32) >= dist) {
             int i = count - 1 - (int) order[nextDepth--];
             drawer.draw(owner[i], items[i]);
+        }
+    }
+
+    /** Before the game draws car {@code car}: what it hides ({@link #under(int, int)}). */
+    public void under(int car, Drawer drawer) {
+        if (underCount == 0) {
+            return;
+        }
+        for (int i = 0; i < count; i++) {
+            if (kinds[i] == UNDER && where[i] == car) {
+                drawer.draw(owner[i], items[i]);
+            }
         }
     }
 

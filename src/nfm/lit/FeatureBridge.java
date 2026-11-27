@@ -373,7 +373,7 @@ final class FeatureBridge {
         if (starting) {
             starting = false;
             for (int c = 0; c < cars; c++) {
-                shape(view.shape[c], scene[c]);
+                ModelShapes.shape(view.shape[c], scene[c]);
             }
             Features.raceStarted(view);
         }
@@ -528,79 +528,57 @@ final class FeatureBridge {
         view.grounded[c] = any;
     }
 
-    /** Car model {@code o}'s polygons into {@code s}: corners, colours, glass, lights, wheels; the body's extent. */
-    private static void shape(CarShape s, ContO o) {
-        int corners = 0;
-        for (int i = 0; i < o.npl; i++) {
-            corners += o.p[i].n;
+    /* ------------------------------------------------ the car select */
+
+    private static final RaceView showView = new RaceView();
+    private static final CarShape showShape = new CarShape();
+    private static final ContO[] showScene = new ContO[1];
+    private static ContO shownModel;
+
+    /**
+     * The car select draws car model {@code car} ({@code model}, where it
+     * stands): what the damage extra fits every car with, its wipers and
+     * exhaust pipes, drawn on it; before the car is drawn ({@code over}
+     * false) what the car hides, after it the rest. Nothing with the extra
+     * off.
+     */
+    static void showroom(Graphics2D g, ContO model, int car, boolean over) {
+        if (car < 0 || model == null || !FeatureSettings.on(nfm.lit.features.realism.RealismFeature.ID)) {
+            return;
         }
-        s.fit(o.npl, corners);
-        float[] sumX = new float[RaceView.WHEELS];
-        int[] pointsOf = new int[RaceView.WHEELS];
-        float[] lowX = {Float.MAX_VALUE, Float.MAX_VALUE, Float.MAX_VALUE, Float.MAX_VALUE};
-        float[] highX = {-Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE};
-        java.util.Arrays.fill(s.wheelRadius, 0F);
-        java.util.Arrays.fill(s.steerX, 0);
-        s.minX = s.minY = s.minZ = Float.MAX_VALUE;
-        s.maxX = s.maxY = s.maxZ = -Float.MAX_VALUE;
-        int at = 0;
-        for (int i = 0; i < o.npl; i++) {
-            Plane p = o.p[i];
-            s.first[i] = at;
-            s.count[i] = p.n;
-            s.rgb[i] = (p.c[0] & 0xff) << 16 | (p.c[1] & 0xff) << 8 | p.c[2] & 0xff;
-            s.glass[i] = p.glass;
-            s.light[i] = p.light;
-            int wheel = p.wz != 0 ? nearestWheel(o, p) : -1;
-            s.wheel[i] = wheel;
-            for (int k = 0; k < p.n; k++, at++) {
-                s.x[at] = p.ox[k];
-                s.y[at] = p.oy[k];
-                s.z[at] = p.oz[k];
-                if (wheel >= 0) {
-                    sumX[wheel] += p.ox[k];
-                    pointsOf[wheel]++;
-                    lowX[wheel] = Math.min(lowX[wheel], p.ox[k]);
-                    highX[wheel] = Math.max(highX[wheel], p.ox[k]);
-                    s.hubY[wheel] = p.wy;
-                    s.hubZ[wheel] = p.wz;
-                    s.steerX[wheel] = p.wx;
-                    s.wheelRadius[wheel] = Math.max(s.wheelRadius[wheel],
-                            (float) Math.hypot(p.oy[k] - p.wy, p.oz[k] - p.wz));
-                } else {
-                    s.minX = Math.min(s.minX, p.ox[k]);
-                    s.maxX = Math.max(s.maxX, p.ox[k]);
-                    s.minY = Math.min(s.minY, p.oy[k]);
-                    s.maxY = Math.max(s.maxY, p.oy[k]);
-                    s.minZ = Math.min(s.minZ, p.oz[k]);
-                    s.maxZ = Math.max(s.maxZ, p.oz[k]);
-                }
+        try {
+            if (shownModel != model) {
+                shownModel = model;
+                ModelShapes.shape(showShape, model);
+                showView.fit(1);
+                showView.cars = 1;
+                showView.shape[0] = showShape;
             }
-        }
-        for (int w = 0; w < RaceView.WHEELS; w++) {
-            s.hubX[w] = pointsOf[w] > 0 ? sumX[w] / pointsOf[w] : o.keyx[w];
-            s.wheelHalfWidth[w] = pointsOf[w] > 0 ? (highX[w] - lowX[w]) / 2F : 0F;
+            showView.modelName[0] = GameSparker.carModel(car);
+            showView.wheelDrop[0] = model.grat;
+            showView.x[0] = model.x;
+            showView.y[0] = model.y;
+            showView.z[0] = model.z;
+            showView.xz[0] = model.xz;
+            showView.xy[0] = model.xy;
+            showView.zy[0] = model.zy;
+            showScene[0] = model;
+            FeatureCanvas c = showCanvas;
+            Precise.cameraAngles(); // the menu's camera: the race's last is no longer it
+            c.begin(g, 1F, 1F, showScene, 1);
+            c.startItem();
+            nfm.lit.features.realism.RealismFeature.FEATURE.showroom(showView, c, Medium.x + Medium.cx,
+                    Medium.y + Medium.cy, Medium.z, over);
+            c.endItem();
+            c.end();
+        } catch (RuntimeException e) {
+            fallk.logmaster.HLogger.error("[extras] the car select's car could not be fitted: " + e);
+        } finally {
+            showScene[0] = null;
         }
     }
 
-    /** Which of {@code o}'s wheels wheel polygon {@code p} belongs to: the nearest to its hub. */
-    private static int nearestWheel(ContO o, Plane p) {
-        float mx = 0F;
-        for (int k = 0; k < p.n; k++) {
-            mx += p.ox[k];
-        }
-        mx /= Math.max(1, p.n);
-        int best = 0;
-        float bestDistance = Float.MAX_VALUE;
-        for (int w = 0; w < RaceView.WHEELS; w++) {
-            float d = Math.abs(o.keyx[w] - mx) + Math.abs(o.keyz[w] - p.wz);
-            if (d < bestDistance) {
-                bestDistance = d;
-                best = w;
-            }
-        }
-        return best;
-    }
+    private static final FeatureCanvas showCanvas = new FeatureCanvas();
 
     /** The colour {@link #lookCar}'s polygon {@link #lookPlane} is drawn in (Plane.d, before the fog); sets {@link #lookLamp}. */
     static int look(int red, int green, int blue) {
@@ -724,6 +702,11 @@ final class FeatureBridge {
             sound.skids(c, car);
         }
         car.hum = replay ? 0 : PowerupsFeature.FEATURE.hum(c); // the powerup the car holds hums
+        // the damage heard under the engine: a broken exhaust, an engine short of oil
+        nfm.lit.features.realism.RealismFeature damage = nfm.lit.features.realism.RealismFeature.FEATURE;
+        car.rasp = replay ? 0F : damage.rasp(c);
+        car.harsh = replay ? 0F : damage.harsh(c);
+        car.raspPitch = damage.raspPitch(c);
         // nitrous burning: one of four sounds, by one or two at once and by the ground or the air
         int burns = replay ? 0 : PowerupsFeature.FEATURE.nitrousKind(c);
         car.nitro = burns == 0 ? 0 : (burns - 1) * 2 + (car.grounded ? 1 : 2);
@@ -755,9 +738,12 @@ final class FeatureBridge {
         drawing = true;
     }
 
-    /** Before the game draws {@code o}, last measured {@code dist} away. */
-    static void beforeObject(int dist, ContO o) {
+    /** Before the game draws object {@code index} ({@code o}), last measured {@code dist} away. */
+    static void beforeObject(int dist, int index, ContO o) {
         queue.before(dist, o.flat(), DRAWER);
+        if (index < cars) {
+            queue.under(index, DRAWER);
+        }
     }
 
     /** After the game drew object {@code index} ({@code o}). */
