@@ -421,12 +421,29 @@ public class Plane {
         return array;
     }
 
+    /** The corners a wheel's face is drawn with, last measured {@code av} from the eye. */
+    static int masterCorners(int av) {
+        return av > 1500 ? 8 : 16;
+    }
+
     public void d(Graphics2D rd, int x, int y, int z, int yaw, int roll, int pitch, int wheelTurn, int wheelSpin, boolean noOutline, int objectSize, boolean blackout) {
         int[][] slots = SCRATCH.get();
         // the corners drawn: the model's, or an extra's (a bent wheel's, tilted); never written back
         int[] ox = this.ox;
         int[] oy = this.oy;
         int[] oz = this.oz;
+        /*
+         * A wheel's face has 16 corners near the eye and its first 8 far off.
+         * How many is settled before an extra is asked for its corners: asked
+         * with the count the last drawing left (8, from the other player's
+         * far-off camera) and then drawn with 16, a bent wheel's last eight
+         * corners were whatever polygon was bent before it, another wheel's,
+         * and the wheel stretched across the car and out of it (the owner's
+         * split screen races of 2026-11-27).
+         */
+        if (master != 0) {
+            n = masterCorners(av);
+        }
         // a wheel's corners an extra gave as they lie after the spin and the steering: not turned again
         boolean baked = false;
         if (FeatureBridge.lookCar >= 0 && (wz != 0 ? FeatureBridge.bend(ox, oy, oz, n, wheelTurn, wheelSpin)
@@ -442,13 +459,6 @@ public class Plane {
         if (Precise.on) {
             Precise.recorder.unbind();
             Precise.recorder.tag(this, 0);
-        }
-        if (master != 0) {
-            if (av > 1500) {
-                n = 8;
-            } else {
-                n = 16;
-            }
         }
         int px[] = scratch(slots, 0, n);
         int pz[] = scratch(slots, 1, n);

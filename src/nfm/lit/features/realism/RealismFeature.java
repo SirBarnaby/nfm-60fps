@@ -94,6 +94,8 @@ public final class RealismFeature implements Feature, CarLook {
     private final HeatEffects heat = new HeatEffects(this);
     private final DamageEffects damage = new DamageEffects(this);
     private final RealismDrawing drawing = new RealismDrawing();
+    /** -Dnfm.damage.show=true: every car starts the race with all four wheels bent as far as they go, for a look at them. */
+    private static final boolean SHOW = Boolean.getBoolean("nfm.damage.show");
     private final WheelFace wheelFace = new WheelFace();
     private final float[] p = new float[3];
     private float eyeX;
@@ -132,6 +134,12 @@ public final class RealismFeature implements Feature, CarLook {
                         + s.fitted.describe(s.parts));
             }
             s.reset(race.groundColor);
+            if (SHOW && s.parts.shape != null) {
+                for (int w = 0; w < RaceView.WHEELS; w++) {
+                    s.bent[w] = DamageEffects.MOST_BENT;
+                    CarLooks.bend(c, w, s.bent[w], s.parts.shape.wheelRadius[w]);
+                }
+            }
             s.lastXz = race.xz[c];
             s.pose(race, c, p);
         }

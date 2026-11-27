@@ -151,6 +151,14 @@ scratches are kept per side.
   the game dents, are never written); spun with the wheel, the tilt goes round
   and the wheel wobbles. The skidmarks read the same bend (`CarLooks`), so its
   marks are wavy. A flat tyre throws sparks from its rim.
+  A wheel's face has 16 corners near the eye and 8 far off, and `Plane.d`
+  settles which before it asks for the bent corners: asked with the count
+  the last drawing left, a bent wheel seen near by one player and far by the
+  other in split screen was drawn with eight corners of whatever polygon was
+  bent before it, stretched across the car and out of it (owner, 27 Nov
+  2026; counted 17,000 times in a short hidden split race before the fix).
+  `-Dnfm.damage.show=true` starts every car with all four wheels bent, for a
+  look at them.
 - **Lights**: braking (the brake key while moving forward, or the handbrake)
   lights the rear lights with a lamp's glow; a hard hit on an end leaves that
   end's lights dark. A car with no rear lights in its model (M A S H E E N)

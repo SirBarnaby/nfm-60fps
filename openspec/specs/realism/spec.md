@@ -205,3 +205,10 @@ The rear exhaust pipes SHALL NOT be visible from the sides and the front, where 
 #### Scenario: Check: the shape of a pipe
 - **WHEN** a fitted pipe is looked at from close by
 - **THEN** it is a round tube with an open end, not a block
+
+### Requirement: Damage never warps a wheel out of the car
+The damage model SHALL NOT warp wheels outside the car's bounding box. (Owner, 2026-11-27: "Playtesting in split screen found that the damage model sometimes warps wheels far outside the cars bounding box, looks quite broken. This needs to be fixed.")
+
+#### Scenario: Check: a bent wheel seen by two players
+- **WHEN** a car with a bent wheel is close to one player's camera and far from the other's in split screen
+- **THEN** in both pictures every corner of the wheel stays at the wheel, within the car's bounding box
