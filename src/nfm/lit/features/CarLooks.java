@@ -17,6 +17,17 @@ public final class CarLooks {
     private static float[] radius = new float[0];
     /** Where pieces that stay are dropped, or null while no extra keeps them. */
     private static Debris debris;
+    /**
+     * While {@link CarLook#bend} is asked about a wheel's polygon: how far
+     * the game is about to spin that wheel about its axle and steer it,
+     * degrees. A feature that wants the polygon drawn as it lies after the
+     * spin and the steering (a tyre flattened against the ground) turns the
+     * corners itself and sets {@link #baked}: the game then draws them as
+     * given, without turning them again.
+     */
+    public static int spin;
+    public static int turn;
+    public static boolean baked;
 
     private CarLooks() {
     }

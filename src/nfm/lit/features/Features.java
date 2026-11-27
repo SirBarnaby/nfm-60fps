@@ -27,6 +27,7 @@ public final class Features {
         nfm.lit.features.powerups.PowerupsFeature.FEATURE,
         nfm.lit.features.handling.HandlingFeature.FEATURE,
         nfm.lit.features.wrecks.WrecksFeature.FEATURE,
+        nfm.lit.features.personality.PersonalityFeature.FEATURE,
         // last: what it lays on the ground is drawn over the marks and craters of those before it
         nfm.lit.features.weather.WeatherFeature.FEATURE,
     };
@@ -38,15 +39,24 @@ public final class Features {
     private static boolean racing;
     private static int seenVersion = -1;
     private static RaceView lastView;
-    /** The feature that recolours and reshapes the cars' polygons, and its place in {@link #ALL}; null and -1 if none is on. */
-    private static CarLook look;
-    private static int lookOwner = -1;
-    /** A second feature that recolours the cars and draws on them, after {@link #look} (the weather over the damage), and its place. */
-    private static CarLook look2;
-    private static int look2Owner = -1;
+    /**
+     * The features on now that recolour and reshape the cars' polygons and
+     * draw on them, in {@link #ALL}'s order (the damage, a car's own quirk,
+     * then the weather over both), and each one's place in {@link #ALL}.
+     */
+    private static final CarLook[] looks = new CarLook[ALL.length];
+    private static final int[] lookOwners = new int[ALL.length];
+    private static int lookCount;
     /** The feature that draws the cars' bodies elsewhere (on their springs), and its place; null and -1 if none. */
     private static CarBody body;
     private static int bodyOwner = -1;
+    /** A second feature that moves parts of the cars' bodies, after {@link #body} (a car's own quirk on its springs), and its place. */
+    private static CarBody body2;
+    private static int body2Owner = -1;
+    /** A polygon's corners between two features that both move it. */
+    private static int[] chainX = new int[64];
+    private static int[] chainY = new int[64];
+    private static int[] chainZ = new int[64];
 
     /*
      * The race extras (features that change races) playing in this race,
@@ -390,81 +400,86 @@ public final class Features {
         }
     }
 
-    /** The feature that recolours the cars' polygons in the race being played, or null: the game asks it for each. */
+    /** The first feature that recolours the cars' polygons in the race being played, or null: the game asks them for each. */
     public static CarLook carLook() {
-        return look;
+        return lookCount > 0 ? looks[0] : null;
     }
 
-    /** {@link CarLook#color} of the feature that recolours the cars; a feature that throws is switched off. */
+    /** {@link CarLook#color} of each feature that recolours the cars, one after the other; a feature that throws is switched off. */
     public static int carColor(int car, int plane, int rgb) {
-        CarLook l = look;
-        if (l == null) {
-            return rgb;
-        }
-        try {
-            rgb = l.color(car, plane, rgb);
-        } catch (RuntimeException e) {
-            fail(lookOwner, e);
-            return rgb;
-        }
-        CarLook second = look2;
-        if (second != null) {
+        lamp = -1;
+        for (int k = 0; k < lookCount; k++) {
+            CarLook l = looks[k];
             try {
-                lamp2 = l.lamp();
-                rgb = second.color(car, plane, rgb);
+                rgb = l.color(car, plane, rgb);
+                if (lamp < 0) {
+                    lamp = l.lamp();
+                }
             } catch (RuntimeException e) {
-                fail(look2Owner, e);
+                fail(lookOwners[k], e);
+                return rgb;
             }
         }
         return rgb;
     }
 
-    /** The first look's lamp, kept while a second look is asked for its colour. */
-    private static int lamp2 = -1;
+    /** After {@link #carColor}: the lamp of the first look that lit or darkened one. */
+    private static int lamp = -1;
 
     /** {@link CarLook#lamp} after {@link #carColor}; -1 when no feature recolours the cars. */
     public static int carLamp() {
-        CarLook l = look;
-        return l == null ? -1 : look2 != null ? lamp2 : l.lamp();
+        return lookCount == 0 ? -1 : lamp;
     }
 
-    /** {@link CarLook#bend}; false when no feature reshapes the cars (or it threw, and is off). */
+    /**
+     * {@link CarLook#bend} of each feature that reshapes the cars, each
+     * given what the one before made of the corners; false when none does
+     * (or one threw, and is off).
+     */
     public static boolean carBend(int car, int plane, int[] x, int[] y, int[] z, int n, int[] outX, int[] outY,
             int[] outZ) {
-        CarLook l = look;
-        if (l == null) {
-            return false;
+        boolean bent = false;
+        for (int k = 0; k < lookCount; k++) {
+            try {
+                if (!bent) {
+                    bent = looks[k].bend(car, plane, x, y, z, n, outX, outY, outZ);
+                } else {
+                    chain(outX, outY, outZ, n);
+                    looks[k].bend(car, plane, chainX, chainY, chainZ, n, outX, outY, outZ);
+                }
+            } catch (RuntimeException e) {
+                fail(lookOwners[k], e);
+                return bent;
+            }
         }
-        try {
-            return l.bend(car, plane, x, y, z, n, outX, outY, outZ);
-        } catch (RuntimeException e) {
-            fail(lookOwner, e);
-            return false;
+        return bent;
+    }
+
+    /** The corners one feature moved, kept for the next to move on from. */
+    private static void chain(int[] x, int[] y, int[] z, int n) {
+        if (chainX.length < n) {
+            chainX = new int[n];
+            chainY = new int[n];
+            chainZ = new int[n];
         }
+        System.arraycopy(x, 0, chainX, 0, n);
+        System.arraycopy(y, 0, chainY, 0, n);
+        System.arraycopy(z, 0, chainZ, 0, n);
     }
 
     /** True while a feature changes how the cars' own polygons are drawn ({@link CarLook}). */
     public static boolean carLooks() {
-        return look != null;
+        return lookCount > 0;
     }
 
-    /** {@link CarLook#onPlane}; a feature that throws is switched off. */
+    /** {@link CarLook#onPlane} of each; a feature that throws is switched off. */
     public static void carOnPlane(int car, int plane, int rgb, Canvas canvas) {
-        CarLook l = look;
-        if (l == null) {
-            return;
-        }
-        try {
-            l.onPlane(car, plane, rgb, canvas);
-        } catch (RuntimeException e) {
-            fail(lookOwner, e);
-        }
-        CarLook second = look2;
-        if (second != null) {
+        for (int k = 0; k < lookCount; k++) {
             try {
-                second.onPlane(car, plane, rgb, canvas);
+                looks[k].onPlane(car, plane, rgb, canvas);
             } catch (RuntimeException e) {
-                fail(look2Owner, e);
+                fail(lookOwners[k], e);
+                return;
             }
         }
     }
@@ -481,35 +496,48 @@ public final class Features {
         if (b == null) {
             return false;
         }
+        boolean moved;
         try {
-            return b.body(car, plane, x, y, z, n, outX, outY, outZ);
+            moved = b.body(car, plane, x, y, z, n, outX, outY, outZ);
         } catch (RuntimeException e) {
             fail(bodyOwner, e);
             return false;
         }
+        CarBody second = body2;
+        if (second != null) {
+            try {
+                if (!moved) {
+                    return second.body(car, plane, x, y, z, n, outX, outY, outZ);
+                }
+                chain(outX, outY, outZ, n);
+                second.body(car, plane, chainX, chainY, chainZ, n, outX, outY, outZ);
+            } catch (RuntimeException e) {
+                fail(body2Owner, e);
+            }
+        }
+        return moved;
     }
 
     /** Finds the features on now that recolour the cars and move their bodies, if any. */
     private static void relook() {
-        look = null;
-        lookOwner = -1;
-        look2 = null;
-        look2Owner = -1;
+        lookCount = 0;
         body = null;
         bodyOwner = -1;
+        body2 = null;
+        body2Owner = -1;
         for (int f = 0; f < ALL.length; f++) {
             if (active[f] && ALL[f] instanceof CarLook l) {
-                if (look == null) {
-                    look = l;
-                    lookOwner = f;
-                } else if (look2 == null) {
-                    look2 = l;
-                    look2Owner = f;
-                }
+                looks[lookCount] = l;
+                lookOwners[lookCount++] = f;
             }
-            if (active[f] && body == null && ALL[f] instanceof CarBody b) {
-                body = b;
-                bodyOwner = f;
+            if (active[f] && ALL[f] instanceof CarBody b) {
+                if (body == null) {
+                    body = b;
+                    bodyOwner = f;
+                } else if (body2 == null) {
+                    body2 = b;
+                    body2Owner = f;
+                }
             }
         }
     }

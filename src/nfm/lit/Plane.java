@@ -427,11 +427,14 @@ public class Plane {
         int[] ox = this.ox;
         int[] oy = this.oy;
         int[] oz = this.oz;
-        if (FeatureBridge.lookCar >= 0
-                && (wz != 0 ? FeatureBridge.bend(ox, oy, oz, n) : FeatureBridge.body(ox, oy, oz, n))) {
+        // a wheel's corners an extra gave as they lie after the spin and the steering: not turned again
+        boolean baked = false;
+        if (FeatureBridge.lookCar >= 0 && (wz != 0 ? FeatureBridge.bend(ox, oy, oz, n, wheelTurn, wheelSpin)
+                : FeatureBridge.body(ox, oy, oz, n))) {
             ox = FeatureBridge.bentX;
             oy = FeatureBridge.bentY;
             oz = FeatureBridge.bentZ;
+            baked = wz != 0 && FeatureBridge.bentBaked;
         }
         // for the graphics card, the corners again without rounding (not while the plane is breaking up)
         boolean exact = Precise.on && embos == 0;
@@ -709,10 +712,10 @@ public class Plane {
                 embos = 16;
             }
         }
-        if (wz != 0) {
+        if (wz != 0 && !baked) {
             Utility.rot(py, pz, wy + y, wz + z, wheelSpin, n);
         }
-        if (wx != 0) {
+        if (wx != 0 && !baked) {
             Utility.rot(px, pz, wx + x, wz + z, wheelTurn, n);
         }
         if (chip == 1 && (Medium.fxRandom() > 0.59999999999999998D || bfase == 0)) {
@@ -1222,7 +1225,8 @@ public class Plane {
                 rd.setColor(Colors.of(red, green, blue));
             }
             if (exact) {
-                Precise.plane(ox, oy, oz, mirrored, n, x, y, z, yaw, roll, pitch, wheelTurn, wheelSpin, wx, wy, wz, screenX, screenY);
+                Precise.plane(ox, oy, oz, mirrored, n, x, y, z, yaw, roll, pitch, wheelTurn, wheelSpin, baked ? 0 : wx,
+                        baked ? 0 : wy, baked ? 0 : wz, screenX, screenY);
             }
             boolean lit = lamp < 0 ? Medium.lightson && light != 0 && !blackout : lamp == 1 && !blackout;
             if (lit) {

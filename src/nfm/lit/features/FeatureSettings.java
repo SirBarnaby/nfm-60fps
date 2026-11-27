@@ -162,6 +162,13 @@ public final class FeatureSettings {
                         + " damages the cars close to it, like a small dynamite. Off: it burns as it always did."
                         + RACE_1_0,
                 "xtrawreck", Kind.RACE, 0, "Off", "On"),
+        new Switch("personality", "Car personalities",
+                "One small thing each that only that car does: Tornado Shark starts dusty, Lead Oxide shows heat"
+                        + " at its front, Kool Kat lands heavily, Mighty Eight's radiators breathe and its nitro"
+                        + " burns big, MAX Revenge's blower shakes, M A S H E E N's plow carries dirt, DR Monstaa's"
+                        + " tyres squash, something slides in Wow Caninaro and EL KING's cab rocks. Seen and heard"
+                        + " only; the sounds need the 3D sound." + LOOK_1_0,
+                "xtraquirks", Kind.LOOK, 0, "Off", "On"),
         new Switch("weather", "Weather",
                 "Rain, rain with fog, or snow in every race: a grey or pale sky, duller light, rain or snow"
                         + " falling around you, splashes, drops on the screen (more behind another car), snow that"

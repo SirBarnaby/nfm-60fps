@@ -629,9 +629,17 @@ final class FeatureBridge {
     }
 
     /** True if {@link #lookCar}'s polygon {@link #lookPlane} is drawn from other corners, then in {@link #bentX} etc. */
-    static boolean bend(int[] x, int[] y, int[] z, int n) {
-        return n <= bentX.length && Features.carBend(lookCar, lookPlane, x, y, z, n, bentX, bentY, bentZ);
+    static boolean bend(int[] x, int[] y, int[] z, int n, int wheelTurn, int wheelSpin) {
+        nfm.lit.features.CarLooks.spin = wheelSpin;
+        nfm.lit.features.CarLooks.turn = wheelTurn;
+        nfm.lit.features.CarLooks.baked = false;
+        boolean bent = n <= bentX.length && Features.carBend(lookCar, lookPlane, x, y, z, n, bentX, bentY, bentZ);
+        bentBaked = bent && nfm.lit.features.CarLooks.baked;
+        return bent;
     }
+
+    /** After {@link #bend}: the corners in {@link #bentX} are already spun and steered (CarLooks.baked), so the game turns them no more. */
+    static boolean bentBaked;
 
     /** As {@link #bend}, for a polygon of {@link #lookCar}'s body (not a wheel's): drawn on its springs. */
     static boolean body(int[] x, int[] y, int[] z, int n) {
