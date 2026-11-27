@@ -45,3 +45,4 @@ spray	22050	loop	16_Car driving through burst water main on Wilton Way.MP3	bengo
 snowwind	22050	loop	Wind howling	paf60	CC0 1.0	https://freesound.org/people/paf60/sounds/767148/	an excerpt, mixed to mono, sampled down to 22050 Hz, its end cross-faded into its start to loop, its level changed
 snowroll	22050	loop	Walking in hard snow (crunching).WAV	DigPro120	CC0 1.0	https://freesound.org/people/DigPro120/sounds/639269/	an excerpt, mixed to mono, sampled down to 22050 Hz, its end cross-faded into its start to loop, its level changed
 snowhit	22050	shot	JM_IMPACT_01b - Snow on cement.wav	Julien_Matthey	CC0 1.0	https://freesound.org/people/Julien_Matthey/sounds/167081/	an excerpt, mixed to mono, sampled down to 22050 Hz, faded in and out, its level changed
+thunder	22050	shot	Short_Thunder_Mid.wav	SholeColtis	CC0 1.0	https://freesound.org/people/SholeColtis/sounds/683421/	an excerpt, mixed to mono, sampled down to 22050 Hz, faded in and out, its level changed

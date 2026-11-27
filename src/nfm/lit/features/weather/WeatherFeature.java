@@ -41,11 +41,21 @@ public final class WeatherFeature implements Feature {
     static final int FALL_ITEMS = 0;
     static final int DRY_ITEM = 90;
     static final int PUDDLE_ITEM = 91;
+    static final int SNOW_GROUND_ITEM = 92;
+    static final int SNOW_BED_ITEM = 93;
+    static final int REFLECT_ITEM = 94;
+    static final int BOLT_ITEM = 96;
+    static final int WASH_ITEM = 97;
     static final int SPLASH_ITEM = 100;
     static final int LENS_ITEM = 101;
     static final int SPRAY_ITEMS = 200;
-    static final int WIPER_ITEMS = 800;
-    static final int HELMET_WIPER_ITEM = 900;
+    static final int WIPER_ITEMS = 1200;
+    static final int HELMET_WIPER_ITEM = 1300;
+    static final int SNOW_CAR_ITEMS = 1400;
+    static final int SNOW_HEAP_ITEMS = 1600;
+    static final int SNOW_DRIFT_ITEMS = 1800;
+    static final int SNOW_WHEEL_ITEMS = 2000;
+    static final int SNOW_PUFF_ITEMS = 3000;
 
     private static final float[] HELMET_SCREEN = new float[5];
     private static final float[] HELMET_X = new float[4];
@@ -61,16 +71,16 @@ public final class WeatherFeature implements Feature {
     public static int helmetWipers(Canvas canvas, int car, float sweep) {
         return Wiping.helmetBlades(canvas, car, sweep, HELMET_SCREEN, HELMET_X, HELMET_Y, HELMET_Z);
     }
-    static final int SNOW_GROUND_ITEM = 92;
-    static final int SNOW_CAR_ITEMS = 1000;
-    static final int SNOW_HEAP_ITEMS = 1200;
-    static final int SNOW_PUFF_ITEMS = 1400;
 
     /** How deep the snow lies when a race starts (of its cap), and the ticks of snowfall that bring it to the cap: four minutes. */
     static final float SNOW_START = 0.3F;
     static final int SNOW_FULL_TICKS = 19 * 240;
-    /** How much of a road's and a car's upward faces full snow hides, and how much the wet of rain shows on them. */
-    static final float SNOW_ON_ROADS = 0.58F;
+    /**
+     * How much of a road's and a car's upward faces full snow hides (the
+     * bed lies on the roads as it does beside them: "everywhere there is a
+     * plain of snow"), and how much the wet of rain shows on them.
+     */
+    static final float SNOW_ON_ROADS = 0.92F;
     static final float SNOW_ON_CARS = 0.38F;
     static final float WET_ON_ROADS = 0.2F;
     static final float WET_ON_CARS = 0.12F;
@@ -84,6 +94,9 @@ public final class WeatherFeature implements Feature {
     final DrySpots dry = new DrySpots();
     final Wiping wiping = new Wiping();
     final Snow snow = new Snow();
+    final Gusts gusts = new Gusts();
+    final Storm storm = new Storm();
+    final Reflections reflections = new Reflections();
 
     /** The weather in the race being played. */
     int kind;
@@ -137,7 +150,9 @@ public final class WeatherFeature implements Feature {
         skyRgb = race.skyColor;
         Wind.of(race.seed, wind);
         boolean snow = kind == Weather.SNOW;
-        fall.start(race.seed, snow, wind[0], wind[1], race.skyColor, race.fogColor);
+        gusts.start(race.seed);
+        fall.start(race.seed, snow, wind[0], wind[1], race.skyColor, race.fogColor, gusts);
+        storm.start(race.seed, !snow, tick);
         for (int p = 0; p < PLAYERS; p++) {
             lens[p].reset(race.seed, p, snow);
             tail[p] = 0F;
@@ -147,9 +162,11 @@ public final class WeatherFeature implements Feature {
             wet.spray.clear();
             wet.puddles = 0;
             wiping.stop();
+            this.snow.wind(wind[0], wind[1], gusts);
             this.snow.start(race);
         } else {
             wet.start(race, wind[0], wind[1]);
+            reflections.start(race);
             wiping.start(race);
             this.snow.stop();
         }
@@ -182,6 +199,7 @@ public final class WeatherFeature implements Feature {
             if (ground >= 0) {
                 hooks.ground(ground, air.patchesUnder(depth));
             }
+            snow.groundRgb = ground >= 0 ? ground : Snow.LIT;
             float lies = 0.45F + 0.55F * depth;
             hooks.cover(Air.SNOW_WHITE, SNOW_ON_ROADS * lies, SNOW_ON_CARS * lies);
         } else if (coveredAt != -2) {
@@ -218,10 +236,12 @@ public final class WeatherFeature implements Feature {
         } else {
             wet.tick(race, lens, players);
             wiping.tick(race, lens, players, inside, aspect);
+            reflections.tick(race);
+            storm.tick(race);
         }
         // the hiss of the player's tyres on the wet road, or their crunch over the snow, while they touch it
         float hiss = !race.grounded[0] ? 0F : Math.min(1F, race.groundSpeed(0) / Wet.MIST_FULL);
-        WeatherSounds.around(Features.hooks(), snow, speed(race, 0), inside[0], hiss);
+        WeatherSounds.around(Features.hooks(), snow, speed(race, 0), inside[0], hiss, gusts.at(tick));
     }
 
     private static float speed(RaceView race, int car) {
@@ -284,9 +304,12 @@ public final class WeatherFeature implements Feature {
         }
         if (kind != Weather.SNOW) {
             wet.queue(queue, PUDDLE_ITEM, SPRAY_ITEMS);
+            reflections.queue(queue, REFLECT_ITEM);
             queue.ground(SPLASH_ITEM);
+            storm.queue(queue, BOLT_ITEM, WASH_ITEM, FeatureSettings.on("flash"));
         } else {
-            snow.queue(queue, SNOW_GROUND_ITEM, SNOW_HEAP_ITEMS, SNOW_CAR_ITEMS, SNOW_PUFF_ITEMS);
+            snow.queue(queue, SNOW_GROUND_ITEM, SNOW_HEAP_ITEMS, SNOW_CAR_ITEMS, SNOW_PUFF_ITEMS, SNOW_BED_ITEM,
+                    SNOW_DRIFT_ITEMS, SNOW_WHEEL_ITEMS);
         }
         if (lens[p].count > 0) {
             if (helmet) {
@@ -316,8 +339,20 @@ public final class WeatherFeature implements Feature {
             wet.drawSpray(canvas, item - SPRAY_ITEMS);
         } else if (item == SNOW_GROUND_ITEM) {
             snow.drawGround(canvas);
+        } else if (item == SNOW_BED_ITEM) {
+            snow.bed.drawGround(canvas);
+        } else if (item == REFLECT_ITEM) {
+            reflections.draw(canvas);
+        } else if (item == BOLT_ITEM) {
+            storm.drawBolt(canvas);
+        } else if (item == WASH_ITEM) {
+            storm.drawWash(canvas);
         } else if (item >= SNOW_PUFF_ITEMS) {
             snow.drawPuff(canvas, item - SNOW_PUFF_ITEMS);
+        } else if (item >= SNOW_WHEEL_ITEMS) {
+            snow.bed.drawAbout(canvas, item - SNOW_WHEEL_ITEMS);
+        } else if (item >= SNOW_DRIFT_ITEMS) {
+            snow.bed.drawDrift(canvas, item - SNOW_DRIFT_ITEMS);
         } else if (item >= SNOW_HEAP_ITEMS) {
             snow.drawHeap(canvas, item - SNOW_HEAP_ITEMS);
         } else if (item >= SNOW_CAR_ITEMS) {

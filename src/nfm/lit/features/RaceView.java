@@ -47,6 +47,23 @@ public final class RaceView {
     public float[] pointY = new float[0];
     public float[] pointZ = new float[0];
     /**
+     * The stage's solid pieces, filled when the stage loads: what the cars
+     * drive on and into, each a box about {@code (pieceX, pieceY, pieceZ)}
+     * reaching {@code pieceRadX/Y/Z} to each side. A level piece
+     * ({@code pieceXY} and {@code pieceZY} both 0) is a floor at height
+     * {@code pieceY} (250: on the flat ground); one turned 90 degrees
+     * either way is a wall, any other angle a ramp tilted that many degrees.
+     */
+    public int pieces;
+    public float[] pieceX = new float[0];
+    public float[] pieceY = new float[0];
+    public float[] pieceZ = new float[0];
+    public float[] pieceRadX = new float[0];
+    public float[] pieceRadY = new float[0];
+    public float[] pieceRadZ = new float[0];
+    public int[] pieceXY = new int[0];
+    public int[] pieceZY = new int[0];
+    /**
      * True if a feature may keep files between races (in {@code cache\});
      * false in test runs, recording and verifying, which leave no trace.
      */

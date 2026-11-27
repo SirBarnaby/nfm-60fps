@@ -3,6 +3,8 @@ package nfm.lit.features.weather;
 import static nfm.lit.features.ExtrasCheck.check;
 import static nfm.lit.features.ExtrasCheck.n;
 
+import nfm.lit.features.ExtrasCheck;
+
 import java.util.HashSet;
 import java.util.Set;
 
@@ -107,6 +109,14 @@ public final class WeatherCheck {
             c.snowUnderARoof();
             c.snowOnTheCars();
             c.snowCleared();
+            c.gusts();
+            c.storm();
+            c.wetRoad();
+            c.bedAnywhere();
+            c.carShapes();
+            c.bedDeepens();
+            c.drifts();
+            c.snowAboutTheCars();
             c.onlyALook();
         } finally {
             FeatureSettings.set(WeatherFeature.ID, saved);
@@ -280,6 +290,7 @@ public final class WeatherCheck {
         DrawQueue.Drawer drawer = (f, item) -> weather.draw(canvas, item);
         queue.before(Integer.MAX_VALUE, false, drawer);
         for (int c = 0; c < v.cars; c++) {
+            queue.under(c, drawer);
             queue.after(c, drawer);
         }
         queue.end(drawer);
@@ -723,6 +734,8 @@ public final class WeatherCheck {
         float[] look = new float[9];
         for (int kind = Weather.RAIN; kind <= Weather.SNOW; kind += 2) {
             start(kind);
+            // what falls, not the bed: that lies on the ground, where the game leaves out what reaches the eye
+            weather.snow.bed.stop();
             canvas.keeping = true;
             for (int k = 0; k < 60; k++) {
                 // the player's car, which the camera follows, at every speed and heading, climbing and falling
@@ -749,7 +762,8 @@ public final class WeatherCheck {
             }
             canvas.keeping = false;
         }
-        check(F, "nothing falls at the eye", nearest >= Fall.NEAR - 12F,
+        // a flake sways up to 9 units each way along x and z about its line: 12.7 at most towards the eye
+        check(F, "nothing falls at the eye", nearest >= Fall.NEAR - 13F,
                 "the nearest corner " + n(nearest) + " ahead in " + frames + " frames (the game leaves out a polygon"
                         + " nearer than 10)");
     }
@@ -826,7 +840,7 @@ public final class WeatherCheck {
         boolean whiter = lumOf(groundFull) > lumOf(groundFirst) + 8F && roadsFull > roadsFirst + 0.1F;
         check(F, "snow gets deeper during the race and stops at its cap",
                 first < middle && middle < full && full == 1F && after == 1F && asked.ground == groundFull && whiter
-                        && asked.coverRoads < 0.7F,
+                        && asked.coverRoads <= 0.95F,
                 "depth " + n(first) + " at the start, " + n(middle) + " after 2 min, " + n(full) + " after 4, "
                         + n(after) + " after 8; the ground " + hex(groundFirst) + " then " + hex(groundFull)
                         + ", snow over " + n(roadsFirst * 100F) + "% then " + n(roadsFull * 100F) + "% of a road");
@@ -847,7 +861,7 @@ public final class WeatherCheck {
         boolean rain = WeatherSounds.RAIN.equals(asked.bed[WeatherSounds.RAIN_BED])
                 && asked.bed[WeatherSounds.ROOF_BED] == null && asked.bed[WeatherSounds.WIND_BED] == null;
         float open = asked.bedGain[WeatherSounds.RAIN_BED];
-        WeatherSounds.around(asked, false, 0F, true, 0F);
+        WeatherSounds.around(asked, false, 0F, true, 0F, 0F);
         boolean roof = WeatherSounds.ROOF.equals(asked.bed[WeatherSounds.ROOF_BED])
                 && asked.bedGain[WeatherSounds.RAIN_BED] < open;
         weather.raceEnded(v);
@@ -1061,6 +1075,375 @@ public final class WeatherCheck {
         frame(0F, -300F, -600F, 0F, 30F);
         check(F, "no dry spots when the rain joins a race under way", weather.dry.drawn == 0,
                 weather.dry.drawn + " spots");
+    }
+
+    /* ------------------------------------------------ more oomph (2026-11-27) */
+
+    /** The tick of the next minutes at which the race's gusts are calmest, or at their hardest. */
+    private int gustTick(boolean hardest) {
+        int best = 0;
+        float bestAt = hardest ? -1F : 2F;
+        for (int t = 0; t < 19 * 600; t++) {
+            float g = weather.gusts.at(t);
+            if (hardest ? g > bestAt : g < bestAt) {
+                bestAt = g;
+                best = t;
+            }
+        }
+        return best;
+    }
+
+    /** What falls in a frame at tick {@code tick}: drops shown, and their slant. */
+    private float[] fallAt(int tick) {
+        v.tick = tick - 1;
+        ticks(1);
+        frame(0F, 100F, -400F, 0F, 0F);
+        return new float[] {weather.fall.shown, weather.fall.slant, asked.bedGain[WeatherSounds.RAIN_BED],
+            asked.bedGain[WeatherSounds.WIND_BED]};
+    }
+
+    /** The wind gusts: a squall brings more rain or snow, slanted further and louder; the formula adds up. */
+    private void gusts() {
+        start(Weather.RAIN);
+        Gusts g = weather.gusts;
+        // the closed form added up against the formula itself, tick by tick
+        double summed = 0D;
+        double worst = 0D;
+        float low = 1F;
+        float high = 0F;
+        for (int t = 0; t < 19 * 300; t++) {
+            summed += (g.at(t) + g.at(t + 1)) / 2D;
+            worst = Math.max(worst, Math.abs(g.sum(t + 1) - summed));
+            low = Math.min(low, g.at(t));
+            high = Math.max(high, g.at(t));
+        }
+        int calmTick = gustTick(false);
+        int squallTick = gustTick(true);
+        float[] calm = fallAt(calmTick);
+        float[] squall = fallAt(squallTick);
+        start(Weather.SNOW);
+        float[] snowCalm = fallAt(gustTick(false));
+        float[] snowSquall = fallAt(gustTick(true));
+        check(F, "the wind gusts by a formula of the tick", worst < 0.5D && low >= 0F && low < 0.05F && high > 0.7F
+                && high <= 1F,
+                "from " + n(low) + " in the calm to " + n(high) + " in a squall over five minutes; its closed sum is"
+                        + " within " + n(worst) + " ticks of the formula added up");
+        check(F, "a squall brings more rain, slanted further and louder", squall[0] >= calm[0] * 1.2F
+                && squall[1] >= calm[1] * 2F && squall[2] > calm[2] + 0.1F && calm[3] == 0F && squall[3] > 0.1F,
+                n(squall[0]) + " drops in the picture at a squall's peak, " + n(calm[0]) + " in the calm; slant "
+                        + n(squall[1]) + " against " + n(calm[1]) + "; the rain's sound at " + n(squall[2])
+                        + " against " + n(calm[2]) + ", the wind heard at " + n(squall[3]) + " against " + n(calm[3]));
+        check(F, "a squall drives the snow nearly level", snowSquall[0] >= snowCalm[0] * 1.2F
+                && snowSquall[1] >= snowCalm[1] * 3F && snowSquall[1] > 1F && snowSquall[3] > snowCalm[3] + 0.2F,
+                n(snowSquall[0]) + " flakes in the picture at the peak, " + n(snowCalm[0]) + " in the calm; they"
+                        + " drift " + n(snowSquall[1]) + " for every unit they fall, against " + n(snowCalm[1])
+                        + "; the wind at " + n(snowSquall[3]) + " against " + n(snowCalm[3]));
+        ExtrasCheck.waiting(F, "the owner signs off the stronger rain and snow", "the owner drives a race in rain and"
+                + " one in snow and says whether they have the oomph asked for: squalls, lightning and thunder,"
+                + " rooster tails and the wet road's reflections in rain; the bed, drifts, plumes and spindrift in"
+                + " snow");
+    }
+
+    /** Lightning in the rain: a bolt far off, the picture pales (unless the flash is off), thunder follows; none in snow. */
+    private void storm() {
+        int flashWas = FeatureSettings.get("flash");
+        start(Weather.RAIN);
+        Storm storm = weather.storm;
+        int strikeAt = -1;
+        for (int t = 0; t < 19 * 40 && strikeAt < 0; t++) {
+            ticks(1);
+            if (storm.struck == 1) {
+                strikeAt = v.tick;
+            }
+        }
+        float dx = storm.boltX() - v.x[0];
+        float dz = storm.boltZ() - v.z[0];
+        float yaw = (float) Math.toDegrees(Math.atan2(dx, dz));
+        FeatureSettings.set("flash", 1);
+        frame(v.x[0], 100F, v.z[0], yaw, -10F);
+        int bolt = storm.drawnBolt;
+        int wash = storm.drawnWash;
+        float glow = canvas.maxGlow;
+        frame(v.x[0], 100F, v.z[0], yaw + 180F, -10F);
+        int behind = storm.drawnBolt;
+        FeatureSettings.set("flash", 0);
+        frame(v.x[0], 100F, v.z[0], yaw, -10F);
+        int washOff = storm.drawnWash;
+        int boltOff = storm.drawnBolt;
+        FeatureSettings.set("flash", flashWas);
+        int thunderWith = storm.thundered;
+        int rolled = -1;
+        for (int t = 0; t < 19 * 4 && rolled < 0; t++) {
+            ticks(1);
+            if (storm.thundered == 1) {
+                rolled = v.tick;
+            }
+        }
+        frame(v.x[0], 100F, v.z[0], yaw, -10F);
+        int gone = storm.drawnBolt;
+        ticks(19 * 240);
+        int struck = storm.struck;
+        int thundered = storm.thundered;
+        start(Weather.SNOW);
+        ticks(19 * 120);
+        int inSnow = weather.storm.struck;
+        check(F, "lightning strikes far off in the rain", strikeAt > 19 * 5 && bolt >= 8 && glow == 1F && behind == 0
+                && storm.boltFar() >= Storm.NEAREST && gone == 0 && struck >= 6 && struck <= 30 && inSnow == 0,
+                "the first bolt " + n(strikeAt / 19F) + " s into the race, " + n(storm.boltFar()) + " units off, drawn"
+                        + " as " + bolt + " glowing pieces (" + behind + " looking the other way), gone " + gone
+                        + " once it is over; " + struck + " in four minutes more, " + inSnow + " in snow");
+        check(F, "the picture pales with the lightning unless the flash is off", wash == 1 && washOff == 0
+                && boltOff == bolt,
+                wash + " wash over the picture with the flash on, " + washOff + " with it off (the bolt still"
+                        + " drawn: " + boltOff + " pieces)");
+        check(F, "thunder follows the lightning", thunderWith == 0 && rolled > strikeAt + 5 && thundered >= struck - 1,
+                "none with the bolt, the first " + (rolled - strikeAt) + " ticks after it (a tick for every "
+                        + n(Storm.THUNDER_PACE) + " units); " + thundered + " for " + struck + " bolts");
+    }
+
+    /** The wet road mirrors the cars and their lights; fast cars throw rooster tails and bow spray. */
+    private void wetRoad() {
+        start(Weather.RAIN);
+        for (int t = 0; t < 5; t++) {
+            drive(8F, 0F, true);
+        }
+        int slowTails = weather.wet.tails + weather.wet.bows;
+        frame(v.x[0], 120F, v.z[0] - 500F, 0F, 10F);
+        int mirrored = weather.reflections.drawnCars;
+        int tail = weather.reflections.drawnLights;
+        boolean coasting = weather.reflections.glowed;
+        v.down[0] = true;
+        drive(8F, 0F, true);
+        frame(v.x[0], 120F, v.z[0] - 500F, 0F, 10F);
+        boolean braking = weather.reflections.glowed;
+        v.down[0] = false;
+        frame(v.x[0], 120F, v.z[0] + 600F, 180F, 10F);
+        int head = weather.reflections.drawnLights;
+        int tails = 0;
+        int bows = 0;
+        for (int t = 0; t < 40; t++) {
+            drive(60F, 0F, true);
+            tails += weather.wet.tails;
+            bows += weather.wet.bows;
+        }
+        drive(60F, 0F, false);
+        frame(v.x[0], 120F, v.z[0] - 500F, 0F, 10F);
+        int inAir = weather.reflections.drawnCars;
+        start(Weather.SNOW);
+        drive(8F, 0F, true);
+        frame(v.x[0], 120F, v.z[0] - 500F, 0F, 10F);
+        int inSnow = weather.reflections.drawnCars;
+        check(F, "the wet road mirrors the cars and their lights", mirrored == 1 && tail == 2 && !coasting && braking
+                && head == 2 && inAir == 0 && inSnow == 0,
+                mirrored + " car mirrored under itself with " + tail + " streaks from its tail lights seen from"
+                        + " behind (glowing while it brakes: " + braking + ", coasting: " + coasting + "), " + head
+                        + " from its headlights seen from ahead; " + inAir + " under a car in the air, " + inSnow
+                        + " in snow");
+        check(F, "a fast car throws a rooster tail and bow spray", tails >= 20 && bows >= 8 && slowTails == 0,
+                tails + " puffs of rooster tail and " + bows + " of bow spray in 40 ticks at 60 a tick; "
+                        + slowTails + " at 8 a tick");
+    }
+
+    /** The bed lies everywhere: far from the track a car leaves the same marks, cut in relief. */
+    private void bedAnywhere() {
+        backCars = "check";
+        start(Weather.SNOW);
+        backCars = null;
+        Snow snow = weather.snow;
+        // far from anything the stage has: no track point, no piece
+        v.x[0] = 61000F;
+        v.z[0] = -47000F;
+        for (int t = 0; t < 30; t++) {
+            drive(40F, 0F, true);
+        }
+        int ruts = snow.ruts;
+        int channels = snow.channels;
+        frame(v.x[0], 100F, v.z[0] - 500F, 0F, 0F);
+        int relief = snow.drawnRelief;
+        int polygons = canvas.polygons;
+        frame(v.x[0], 100F, v.z[0] - 4500F, 0F, 0F);
+        int far = snow.drawnRelief;
+        int farRuts = snow.drawnRuts;
+        check(F, "a car leaves its marks in the bed anywhere on the map", ruts >= 20 && channels >= 5 && relief >= 20
+                && polygons >= relief * 3 && far == 0 && farRuts >= 20,
+                "61000 across and 47000 back from the start: " + ruts + " pieces of trail after 30 ticks, " + channels
+                        + " of them the channel its body cuts (it stands " + n(snow.clearance(0)) + " high in a bed "
+                        + n(SnowBed.deep(weather.depth)) + " deep); " + relief + " drawn as cuts with walls near"
+                        + " the eye, flat strips from 4500 away (" + farRuts + ")");
+    }
+
+    /** A landing presses the car's own outline into the bed, turned as the car is; a car at rest on its roof leaves its shape too. */
+    private void carShapes() {
+        backCars = "check";
+        start(Weather.SNOW);
+        backCars = null;
+        SnowBed bed = weather.snow.bed;
+        v.xz[0] = 30;
+        drive(20F, 0F, true);
+        int before = bed.imprints;
+        v.airTicks[0] = 14;
+        drive(20F, 0F, false);
+        v.airTicks[0] = 0;
+        drive(20F, 0F, true);
+        int landed = bed.imprints;
+        float[] xs = new float[SnowBed.CORNERS];
+        float[] zs = new float[SnowBed.CORNERS];
+        float[] cut = new float[1];
+        int corners = bed.imprintAt(0, xs, zs, cut);
+        // its size along and across the car's heading (30 degrees round)
+        double yaw = Math.toRadians(30D);
+        float along0 = Float.MAX_VALUE;
+        float along1 = -Float.MAX_VALUE;
+        float across0 = Float.MAX_VALUE;
+        float across1 = -Float.MAX_VALUE;
+        for (int k = 0; k < corners; k++) {
+            float along = (float) (-(xs[k] - v.x[0]) * Math.sin(yaw) + (zs[k] - v.z[0]) * Math.cos(yaw));
+            float across = (float) ((xs[k] - v.x[0]) * Math.cos(yaw) + (zs[k] - v.z[0]) * Math.sin(yaw));
+            along0 = Math.min(along0, along);
+            along1 = Math.max(along1, along);
+            across0 = Math.min(across0, across);
+            across1 = Math.max(across1, across);
+        }
+        frame(v.x[0] - 300F, 80F, v.z[0] - 500F, 30F, 5F);
+        int prints = bed.drawnPrints;
+        int walls = bed.drawnWalls;
+        // on its roof, at rest
+        v.xz[0] = 0;
+        for (int t = 0; t < 10; t++) {
+            roofSlide(30F);
+        }
+        int sliding = bed.imprints;
+        roofSlide(0F);
+        roofSlide(0F);
+        int rested = bed.imprints;
+        v.capsized[0] = false;
+        v.xy[0] = 0;
+        ticks(SnowBed.IMPRINT_FILLS + 1);
+        frame(v.x[0] - 300F, 80F, v.z[0] - 500F, 30F, 5F);
+        int filled = bed.drawnPrints;
+        check(F, "a landing presses the car's own shape into the bed", before == 0 && landed == 1 && corners >= 4
+                && Math.abs(along1 - along0 - 100F) < 8F && Math.abs(across1 - across0 - 40F) < 6F && cut[0] > 5F
+                && prints == 1 && walls >= 4 && filled == 0,
+                landed + " imprint after a landing (" + before + " before), " + corners + " corners, "
+                        + n(along1 - along0) + " along the car and " + n(across1 - across0) + " across it (the car"
+                        + " is 100 by 40, turned 30 degrees), " + n(cut[0]) + " deep; drawn as a hollow with "
+                        + walls + " walls; " + filled + " left once the snowfall has filled it in ("
+                        + SnowBed.IMPRINT_FILLS / 19 + " s)");
+        check(F, "a car at rest on its roof leaves its shape", sliding == landed && rested == landed + 1,
+                (rested - sliding) + " more imprint where it came to rest, " + (sliding - landed)
+                        + " while it still slid");
+    }
+
+    /** The bed gets deeper with the snowfall, and so do the marks pressed into it. */
+    private void bedDeepens() {
+        backCars = "check";
+        start(Weather.SNOW);
+        backCars = null;
+        SnowBed bed = weather.snow.bed;
+        float[] xs = new float[SnowBed.CORNERS];
+        float[] zs = new float[SnowBed.CORNERS];
+        float[] cut = new float[1];
+        ticks(1);
+        float thin = SnowBed.deep(weather.depth);
+        v.airTicks[0] = 30;
+        drive(20F, 0F, false);
+        v.airTicks[0] = 0;
+        drive(20F, 0F, true);
+        bed.imprintAt(0, xs, zs, cut);
+        float first = cut[0];
+        ticks(WeatherFeature.SNOW_FULL_TICKS);
+        float deep = SnowBed.deep(weather.depth);
+        v.x[0] += 2000F;
+        v.airTicks[0] = 30;
+        drive(20F, 0F, false);
+        v.airTicks[0] = 0;
+        drive(20F, 0F, true);
+        float last = 0F;
+        for (int n = 0; bed.imprintAt(n, xs, zs, cut) > 0; n++) {
+            last = Math.max(last, cut[0]);
+        }
+        ticks(WeatherFeature.SNOW_FULL_TICKS);
+        float capped = SnowBed.deep(weather.depth);
+        check(F, "the bed gets deeper, and the marks in it with it", thin > 10F && deep > thin * 2F && capped == deep
+                && last > first * 2F && SnowBed.driftHigh(1F, deep) > SnowBed.driftHigh(1F, thin) * 1.8F,
+                "the bed " + n(thin) + " units deep when a race starts, " + n(deep) + " after four minutes and "
+                        + n(capped) + " after eight; the same landing presses " + n(first) + " deep at the start and "
+                        + n(last) + " at the cap; a drift stands " + n(SnowBed.driftHigh(1F, thin)) + " then "
+                        + n(SnowBed.driftHigh(1F, deep)) + " high");
+    }
+
+    /** Drifts lie all over the map; a car through one flattens it, and the snowfall builds it up again. */
+    private void drifts() {
+        start(Weather.SNOW);
+        SnowBed bed = weather.snow.bed;
+        // a drift far from the track
+        float[] d = new float[6];
+        int ix = 70;
+        int iz = -52;
+        while (!SnowBed.drift(ix, iz, d)) {
+            ix++;
+        }
+        frame(d[0], 60F, d[1] - 900F, 0F, 5F);
+        int seen = bed.drawnDrifts;
+        int faces = bed.drawnFaces;
+        frame(0F, 60F, -900F, 0F, 5F);
+        int atStart = bed.drawnDrifts;
+        // the car through it
+        v.x[0] = d[0];
+        v.z[0] = d[1] - 400F;
+        int lumps = Weather.lumps();
+        for (int t = 0; t < 12; t++) {
+            drive(40F, 0F, true);
+        }
+        int flattened = bed.flattened;
+        int thrown = Weather.lumps() - lumps;
+        v.x[0] += 5000F;
+        ticks(1);
+        frame(d[0], 60F, d[1] - 900F, 0F, 5F);
+        int after = bed.drawnDrifts;
+        ticks(SnowBed.REGROWS);
+        frame(d[0], 60F, d[1] - 900F, 0F, 5F);
+        int regrown = bed.drawnDrifts;
+        check(F, "drifts lie all over the map and a car flattens them", seen >= 3 && faces >= seen * 3 && atStart >= 3
+                && flattened == 1 && after == seen - 1 && regrown == seen && thrown >= 2,
+                seen + " drifts in the picture " + n(Math.hypot(d[0], d[1])) + " from the start (" + faces
+                        + " faces turned to the eye), " + atStart + " at the start; a car through one flattens it ("
+                        + flattened + ", " + after + " left in the picture, " + thrown + " lumps thrown); "
+                        + regrown + " again after " + SnowBed.REGROWS / 19 + " s of snowfall");
+    }
+
+    /** The cars stand in the bed: snow about each wheel on the ground, a wave at the nose of one that ploughs, powder behind a fast one, spindrift over it all. */
+    private void snowAboutTheCars() {
+        backCars = "check";
+        start(Weather.SNOW);
+        backCars = null;
+        Snow snow = weather.snow;
+        SnowBed bed = snow.bed;
+        for (int t = 0; t < 5; t++) {
+            drive(10F, 0F, true);
+        }
+        int slowPlumes = snow.plumes;
+        frame(v.x[0] - 200F, 120F, v.z[0] - 500F, 20F, 10F);
+        int wheels = bed.drawnWheels;
+        int noses = bed.drawnNoses;
+        int streamers = 0;
+        for (int t = 0; t < 40; t++) {
+            drive(60F, 0F, true);
+            frame(v.x[0] - 200F, 120F, v.z[0] - 500F, 20F, 10F);
+            streamers = Math.max(streamers, bed.drawnStreamers);
+        }
+        int plumes = snow.plumes;
+        float ploughs = bed.plough[0];
+        drive(60F, 0F, false);
+        frame(v.x[0] - 200F, 120F, v.z[0] - 500F, 20F, 10F);
+        int inAir = bed.drawnWheels + bed.drawnNoses;
+        check(F, "the cars stand in the bed and plough it", wheels == 4 && noses == 1 && ploughs > 1F && inAir == 0,
+                "snow banked about " + wheels + " wheels on the ground and " + noses + " wave at the nose of a car"
+                        + " cutting " + n(ploughs) + " deep; " + inAir + " about a car in the air");
+        check(F, "powder behind a fast car, spindrift over the bed", plumes >= 20 && slowPlumes == 0
+                && streamers >= 3,
+                plumes + " puffs of powder in 40 ticks at 60 a tick, " + slowPlumes + " at 10; up to " + streamers
+                        + " streamers of spindrift in the picture");
     }
 
     /** It is a look: it does not change races, and the race's copy is as it was after the weather read it. */

@@ -32,6 +32,7 @@ public final class Weather {
     /** A race starts: no explosions yet. */
     public static void raceStarts() {
         blasts = 0;
+        lumps = 0;
     }
 
     /**
@@ -78,6 +79,41 @@ public final class Weather {
 
     public static int blastTick(int slot) {
         return blastTick[slot];
+    }
+
+    /* ------------------------------------------------------------- lumps */
+
+    /** At most this many lumps of snow are kept; the oldest make way. */
+    public static final int LUMPS = 64;
+    private static final float[] lump = new float[LUMPS * 7];
+    private static int lumps;
+
+    /**
+     * The snow's look says a lump of it was thrown (a heap run over, a
+     * hard landing, a car ploughing): from {@code (x, y, z)}, moving
+     * {@code (vx, vy, vz)} a tick, {@code size} units across. For an extra
+     * that lets it tumble (PhysX); with none it is only the snow's own puffs.
+     */
+    public static void lump(float x, float y, float z, float vx, float vy, float vz, float size) {
+        int at = lumps % LUMPS * 7;
+        lump[at] = x;
+        lump[at + 1] = y;
+        lump[at + 2] = z;
+        lump[at + 3] = vx;
+        lump[at + 4] = vy;
+        lump[at + 5] = vz;
+        lump[at + 6] = size;
+        lumps++;
+    }
+
+    /** Lumps thrown since the race started; the last {@link #LUMPS} are kept, lump {@code n} in slot {@code n % LUMPS}. */
+    public static int lumps() {
+        return lumps;
+    }
+
+    /** Value {@code k} of the lump in {@code slot}: 0 to 2 its place, 3 to 5 its move a tick, 6 its size. */
+    public static float lump(int slot, int k) {
+        return lump[slot * 7 + k];
     }
 
     /** {@link #DRY}, {@link #RAIN}, {@link #RAIN_FOG} or {@link #SNOW}. */

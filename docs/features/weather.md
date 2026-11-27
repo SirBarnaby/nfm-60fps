@@ -75,6 +75,52 @@ from the tick alone, so a race replayed rains the same.
   with a little crown standing in the first. They are a ground item:
   everything that stands on the ground covers them.
 
+## Gusts and squalls (`Gusts`)
+
+"Rain and snow have more oomph" (Owner, 2026-11-27). The wind rises and
+falls through a race: two slow waves, one of 9 to 14 seconds and one of 23
+to 37, both from the race's seed, multiplied, so most of the time it is
+calm and every half minute or so a squall comes through for a few seconds.
+It is a formula of the tick alone (`Gusts.at`, 0 to 1, a quarter on
+average; `Gusts.sum` is the same added up from the start, in closed form),
+so what falls stays a pattern that follows from the tick and a race
+replayed gusts the same.
+
+- **What falls**: in the calm 70% of the drops are shown, in a squall all
+  of them (4350 rain drops near, 5400 and 3900 farther; 3000 flakes), and
+  they fall a quarter faster. At its peak a squall carries rain four times
+  as far sideways as the steady wind does, snow six times: a blizzard
+  blows nearly level. Rain's streaks are wider and denser in a gust.
+- **Sound**: the rain is a quarter louder in a squall and the wind is
+  heard in it (rain: only above a third of a squall; snow: always, 0.4
+  louder at the peak).
+- **Puffs**: the snow's and the spray's puffs drift 2 to 10 times the
+  steady wind.
+
+## The thunderstorm (`Storm`)
+
+In rain, lightning strikes 5200 to 13000 units from the player: the first
+6 to 22 seconds into the race, then every 13 to 40 seconds (96 strikes at
+most), when and where from the race's seed. A bolt is nine joints from the
+cloud to the ground, each a step aside of the last, with one branch from a
+joint a third of the way down that ends in the air; a pale glow around a
+white core, drawn facing the eye and only when it stands ahead of it. It
+flickers for five ticks (there, there, gone, back, fading) and the whole
+picture pales with it for three of them (34%, 16%, 24%), unless the
+**Explosion flash** switch is off. The thunder is a recording
+(`sounds\CREDITS.md`), heard through the 3D sound from the way the bolt
+struck, a tick later for every 420 units (two thirds of a second at the
+nearest, a second and a half at the farthest), quieter the farther off. None in
+snow.
+
+## The wet road's shine (`Reflections`)
+
+In rain, a car with two wheels or more on the ground is mirrored in the
+wet road for an eye within 3400 units: a smear of the body's main colour
+stretched towards the eye in two bands, and two streaks of light, red from
+the tail lights (longer and glowing while the car brakes) and pale from the
+headlights. Drawn with the ground, under the cars.
+
 ## On the roads and the cars
 
 The game mixes one colour into every upward-facing polygon (`Hooks.cover`,
@@ -123,6 +169,10 @@ inside (`DrawQueue.afterFirst`). In snow a few flakes land and melt.
 - **Water off a sliding tyre**: a wheel that slides sideways, spins or is
   locked by more than 2.5 units a tick throws drops outwards from the car
   and up, with a puff of mist, the most at 14.
+- **Rooster tails and bow spray**: above a quarter of that mist each rear
+  wheel also throws a tail of spray up and back, higher with speed, and
+  above a third the front wheels throw spray out to the sides (up to 900
+  puffs live at once).
 - **Only on the ground**: a wheel throws water only while it touches the
   ground (`RaceView.contact`); a car in the air throws none.
 - **Puddles**: up to 96 lie along the track, placed when the race starts
@@ -251,7 +301,44 @@ Looks and sound only, from the race's copy; in snow, not in rain.
 
 For a look at them in a screenshot, `-Dnfm.weather.show=true` (with
 `-Dnfm.weather=snow`) starts the race with six heaps beside the player's
-car and every arch and open back full.
+car and every arch and open back full; with `-Dnfm.weather=rain` lightning
+strikes every three seconds ahead of the player's car and stands for two.
+
+## The snow bed (`SnowBed`, `Snow`)
+
+"Snow is a bed over the whole map" (Owner, 2026-11-27): the snow lies as
+a bed everywhere, on the roads too (up to 92% of the road's colour is
+snow), and the cars shape it. The bed is `SnowBed.deep`: 8 units deep when
+a race starts and 38 after four minutes (the same depth "Snow gets deeper"
+has). Nothing of it is part of the race: grip and the cars' way are as in
+the dry.
+
+- **Trails are cut into the bed**: within 2600 units of the eye a wheel's
+  trail is drawn as a cut with a floor (darker, the ground showing through
+  thin snow), a lit and a shaded wall and a pale lip on each side; farther
+  off as the flat strip it was. Deeper snow gives a deeper, darker cut.
+- **The body's channel**: where the bed is more than a unit deeper than
+  the car's clearance, the body ploughs a channel as wide as the car (94%
+  of it) between the wheel trails, drawn the same way, and breaks lumps
+  out of the bed (`Weather.lump`; with PhysX on they tumble as blocks).
+- **The car's shape**: a car leaves its outline (the hull of its body's
+  corners, at most twelve) pressed into the bed where it lands after eight
+  ticks or more in the air (deeper the longer it flew), where it comes to
+  rest on its side or roof, where it is wasted, and where it stood for
+  three seconds or more. The 192 newest stay; the snowfall fills one in
+  within a minute and a half.
+- **Drifts**: low dunes lie over the open ground, one in about seven of
+  ten cells of 900 units, 240 to 500 long and up to 30 high, lying across
+  the wind; none on or beside the stage's pieces. A car through one
+  flattens it in a burst of powder and lumps, heard as a soft hit; it has
+  drifted up again after 45 seconds.
+- **Snow about the car**: within 3000 units of the eye a car standing in
+  the bed has a mound against each wheel on the ground, and while it
+  ploughs, a bow ridge pushed along at its nose.
+- **Powder**: above 14 units a tick a car trails a plume of powder,
+  fullest from 70; it drifts with the gusts.
+- **Spindrift**: 150 streamers of snow run low over the ground with the
+  wind, more in a gust.
 
 ## Checks
 
@@ -279,8 +366,18 @@ sliding on its roof pushing a heap and leaving it, heard; the arches after
 35 seconds; DR Monstaa's back filling, a ram and a hard landing emptying
 it, and no such back on another model; a blast on a trail baring the
 ground and the snow covering it again, a burning car melting it.
+Of the round of 2026-11-27: the gusts (calm most of the time, a squall
+now and then, more falling and farther aslant in one, the same in a race
+replayed); a strike (the bolt's pieces ahead of the eye, the picture's wash
+and none with the flash off, the thunder later by its distance, none in
+snow); the wet road (rooster tails and bow spray at speed, none slow or in
+the air; a car's smear and lights, the tail lights glowing under braking);
+the bed anywhere on the map, a car's shape in it after a landing, lying
+and standing, the same marks deeper later in the race, drifts flattened
+and grown back, and the mounds at the wheels and the nose.
 `cloud/check.sh extras realism` has the dust washing off in the rain and
-the mud of a slide over wet soft ground.
+the mud of a slide over wet soft ground. One check waits for the owner:
+whether rain and snow now have the oomph asked for.
 
 Seen so far only in the software renderer's hidden screenshots; not yet on
 the graphics card, and nobody has driven it.

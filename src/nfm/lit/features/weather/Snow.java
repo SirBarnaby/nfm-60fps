@@ -47,6 +47,24 @@ final class Snow {
     static final float RUT_COVER = 0.42F;
     /** Farther than this from the eye trails and bare ground are not drawn. */
     static final float SEEN = 7000F;
+    /**
+     * Nearer than this a trail is drawn as what it is, a cut into the bed:
+     * its packed floor, and a wall along each side, the one turned to the
+     * light bright and the other in shade. Farther off it is a flat strip.
+     */
+    static final float RELIEF = 2600F;
+    static final int FLOOR = 0xb4c0d0;
+    /** What shows through a trail where the race tells no colour of the ground. */
+    static final int UNDER = 0x6e7682;
+    static final int WALL = 0x7f8da6;
+    /** The light comes from this way across the ground (as the heaps are lit). */
+    static final float LIGHT_X = 0.6F;
+    static final float LIGHT_Z = -0.8F;
+    /** A car's body cuts its own channel once the bed is deeper than the car stands high; of the body's width. */
+    static final float CHANNEL_WIDE = 0.94F;
+    /** Faster than this a car's rear wheels throw a plume of powder, units a tick, and the speed at which it is fullest. */
+    static final float PLUME_FROM = 14F;
+    static final float PLUME_FULL = 70F;
 
     /* ------------------------------------------------------------- heaps */
 
@@ -101,6 +119,16 @@ final class Snow {
     private final float[] rutY = new float[RUTS];
     private final int[] rutTick = new int[RUTS];
     private final boolean[] rutLive = new boolean[RUTS];
+    /** How deep each piece is cut into the bed, units, and whether a body cut it (a channel) or a wheel. */
+    private final float[] rutCut = new float[RUTS];
+    /** What lies under the bed there (the road's colour, the earth's): a wheel's trail through thin snow shows it. */
+    private final int[] rutUnder = new int[RUTS];
+    private int underNow = UNDER;
+    /** The bed's own colour as it lies on the ground now (the stage's ground under snow). */
+    int groundRgb = LIT;
+    private final boolean[] rutWide = new boolean[RUTS];
+    /** Pieces of channel among {@link #ruts}. */
+    int channels;
     private int rutNext;
     int ruts;
     /* per wheel: the trail it is drawing */
@@ -156,7 +184,24 @@ final class Snow {
     private int clears;
     private int seenBlasts;
 
-    final Particles puffs = new Particles(360);
+    final Particles puffs = new Particles(800);
+    /** The bed itself: the cars' shapes pressed into it, its drifts, the snow about the wheels, what blows over it. */
+    final SnowBed bed = new SnowBed(this);
+    private float windX;
+    private float windZ;
+    private Gusts gusts;
+    /** How high each car's floor stands over the ground. */
+    private float[] clearance = new float[0];
+    /** Since the race started: puffs of powder thrown behind wheels at speed. */
+    int plumes;
+
+    /** The wind the next race's snow blows in, and its gusts. */
+    void wind(float x, float z, Gusts blowing) {
+        windX = x;
+        windZ = z;
+        gusts = blowing;
+    }
+
     private final Dice dice = new Dice(0L, "weather snow");
     private boolean on;
     private int tick;
@@ -198,6 +243,8 @@ final class Snow {
         thrown = 0;
         lumps = 0;
         heard = 0;
+        plumes = 0;
+        channels = 0;
         cars = r.cars;
         shapes = r.shape;
         humans = Math.max(1, Math.min(r.humans, r.cars));
@@ -218,7 +265,9 @@ final class Snow {
             carV = new float[cars * 3];
             halfWide = new float[cars];
             tyre = new float[cars];
-            int wheels = cars * RaceView.WHEELS;
+            clearance = new float[cars];
+            // a trail for each wheel, and after those one for each body
+            int wheels = cars * (RaceView.WHEELS + 1);
             rutOpen = new boolean[wheels];
             lastX = new float[wheels];
             lastZ = new float[wheels];
@@ -238,7 +287,14 @@ final class Snow {
             halfWide[c] = s != null && s.maxX > s.minX ? (s.maxX - s.minX) / 2F : 40F;
             tyre[c] = s != null && s.wheelHalfWidth[2] > 0F ? Math.max(8F, s.wheelHalfWidth[2] * 2F) : 14F;
             trunk[c] = openBack(r.modelName[c]) && findBack(c, s) ? TRUNK_START : -1F;
+            clearance[c] = s != null && s.wheelRadius[2] > 0F ? Math.max(4F, s.hubY[2] + s.wheelRadius[2] - s.maxY)
+                    : 16F;
         }
+        if (gusts == null) {
+            gusts = new Gusts();
+            gusts.start(r.seed);
+        }
+        bed.start(r, windX, windZ, gusts);
         place(r);
         if (Boolean.getBoolean("nfm.weather.show")) {
             show(r);
@@ -272,6 +328,7 @@ final class Snow {
         heaps = 0;
         clears = 0;
         puffs.clear();
+        bed.stop();
     }
 
     private static boolean openBack(String model) {
@@ -389,8 +446,11 @@ final class Snow {
             car(r, c);
         }
         rams(r);
+        bed.tick(r, SnowBed.deep(deep));
         place(r);
-        puffs.tick(0F, 0F);
+        // the powder drifts off with the wind, farther in a gust
+        float blow = 2F + 8F * gusts.at(tick);
+        puffs.tick(windX * blow, windZ * blow);
     }
 
     private void car(RaceView r, int c) {
@@ -400,6 +460,7 @@ final class Snow {
         float sliding = 0F;
         int touching = 0;
         boolean trails = c < humans || nearPlayer(r, c);
+        float bedDeep = SnowBed.deep(depth);
         for (int w = 0; w < RaceView.WHEELS; w++) {
             int at = c * RaceView.WHEELS + w;
             if (!r.contact[at] || r.wasted[c]) {
@@ -410,10 +471,19 @@ final class Snow {
             float x = r.wheelX[at];
             float y = r.wheelY[at];
             float z = r.wheelZ[at];
+            underNow = r.groundRgb[at] != 0 ? r.groundRgb[at] : UNDER;
             if (r.onRamp[at] || !trails || w < 2 && c >= humans) {
                 rutOpen[at] = false;
             } else {
-                rut(at, x, y, z, tyre[c], Math.max(RUT_STEP_LEAST, Math.min(RUT_STEP_MOST, speed * 2F)));
+                rut(at, x, y, z, tyre[c], Math.max(RUT_STEP_LEAST, Math.min(RUT_STEP_MOST, speed * 2F)), bedDeep,
+                        false);
+            }
+            // powder behind the rear wheels at speed: a plume that hangs and blows off with the wind
+            float plume = Math.max(0F, Math.min(1F, (speed - PLUME_FROM) / (PLUME_FULL - PLUME_FROM)));
+            if (w >= 2 && plume > 0F && trails && dice.next() < 0.3F + 0.7F * plume) {
+                powder(x, y, z, r.vx[c] * 0.4F + dice.between(-2F, 2F), -(3F + 8F * plume),
+                        r.vz[c] * 0.4F + dice.between(-2F, 2F), 12F, 40F + 50F * plume, 0.2F + 0.16F * plume);
+                plumes++;
             }
             if (landed) {
                 // a landing throws the snow up around each wheel
@@ -433,6 +503,26 @@ final class Snow {
         }
         if (touching > 0 && speed > 4F) {
             arch[c] = Math.min(1F, arch[c] + 1F / ARCH_FILLS);
+        }
+        // the body's own channel, where the bed is deeper than the car stands high
+        int body = cars * RaceView.WHEELS + c;
+        float cut = bedDeep - clearance[c];
+        if (touching >= 2 && trails && cut > 1F && !onRamp(r, c)) {
+            rut(body, r.x[c], groundUnder(r, c), r.z[c], halfWide[c] * 2F * CHANNEL_WIDE,
+                    Math.max(RUT_STEP_LEAST * 2F, Math.min(RUT_STEP_MOST, speed * 2F)), cut, true);
+            if (speed > 10F && dice.next() < 0.1F + 0.012F * cut) {
+                // ploughing: now and then a lump breaks off the wave at its nose
+                double yaw = Math.toRadians(r.xz[c]);
+                float side = dice.between(-1F, 1F) * halfWide[c];
+                float nx = r.x[c] + r.vx[c] * 2.5F + (float) Math.cos(yaw) * side;
+                float nz = r.z[c] + r.vz[c] * 2.5F + (float) Math.sin(yaw) * side;
+                Weather.lump(nx, groundUnder(r, c) - 6F, nz, r.vx[c] * 0.8F + dice.between(-4F, 4F),
+                        -dice.between(3F, 8F), r.vz[c] * 0.8F + dice.between(-4F, 4F), dice.between(7F, 12F));
+                puff(nx, groundUnder(r, c), nz, r.vx[c] * 0.6F + dice.between(-3F, 3F), -dice.between(2F, 5F),
+                        r.vz[c] * 0.6F + dice.between(-3F, 3F), 10F, 26F);
+            }
+        } else {
+            rutOpen[body] = false;
         }
         if (trunk[c] >= 0F) {
             trunk[c] = Math.min(1F, trunk[c] + 1F / TRUNK_FILLS);
@@ -457,6 +547,25 @@ final class Snow {
         lastAir[c] = r.airTicks[c];
     }
 
+    private static boolean onRamp(RaceView r, int c) {
+        for (int w = 0; w < RaceView.WHEELS; w++) {
+            if (r.onRamp[c * RaceView.WHEELS + w]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** How high car {@code c}'s floor stands over the ground. */
+    float clearance(int c) {
+        return c >= 0 && c < clearance.length ? clearance[c] : 16F;
+    }
+
+    /** True if car {@code c} is near enough to a player for its marks to matter. */
+    boolean marks(RaceView r, int c) {
+        return c < humans || nearPlayer(r, c);
+    }
+
     private boolean nearPlayer(RaceView r, int c) {
         for (int h = 0; h < humans; h++) {
             float dx = r.x[c] - r.x[h];
@@ -473,8 +582,8 @@ final class Snow {
         return FIRE_MELTS * Math.max(0F, Math.min(1F, ticks / (float) MELTS_IN));
     }
 
-    /** Wheel {@code at}'s trail goes on to {@code (x, y, z)}. */
-    private void rut(int at, float x, float y, float z, float wide, float step) {
+    /** Trail {@code at} (a wheel's, or a body's channel if {@code body}) goes on to {@code (x, y, z)}, cut {@code cut} deep. */
+    private void rut(int at, float x, float y, float z, float wide, float step, float cut, boolean body) {
         if (!rutOpen[at]) {
             rutOpen[at] = true;
             lastX[at] = x;
@@ -502,8 +611,16 @@ final class Snow {
         rutNext = (rutNext + 1) % RUTS;
         if (!rutLive[i]) {
             ruts++;
+        } else if (rutWide[i]) {
+            channels--;
         }
         rutLive[i] = true;
+        rutCut[i] = cut;
+        rutWide[i] = body;
+        rutUnder[i] = underNow;
+        if (body) {
+            channels++;
+        }
         boolean joined = !Float.isNaN(edgeLX[at]);
         rutX[i * 4] = joined ? edgeLX[at] : lastX[at] + ox;
         rutZ[i * 4] = joined ? edgeLZ[at] : lastZ[at] + oz;
@@ -647,6 +764,12 @@ final class Snow {
                         puff(heapX[i], heapY[i] - heapH[i] * 0.5F, heapZ[i], r.vx[c] * 0.4F + dice.between(-5F, 5F),
                                 -dice.between(2F, 6F), r.vz[c] * 0.4F + dice.between(-5F, 5F), 10F, 30F);
                     }
+                    for (int k = 0; k < 2 && heapH[i] > 6F; k++) {
+                        Weather.lump(heapX[i] + dice.between(-12F, 12F), heapY[i] - heapH[i] * 0.6F,
+                                heapZ[i] + dice.between(-12F, 12F), r.vx[c] * 0.5F + dice.between(-5F, 5F),
+                                -dice.between(4F, 9F), r.vz[c] * 0.5F + dice.between(-5F, 5F),
+                                dice.between(7F, 13F));
+                    }
                     heapH[i] *= 0.5F;
                     heapR[i] = Math.min(HEAP_WIDEST, heapR[i] * 1.1F);
                     heapTick[i] = tick;
@@ -689,7 +812,7 @@ final class Snow {
         heapTick[i] = tick;
     }
 
-    private static float groundUnder(RaceView r, int c) {
+    static float groundUnder(RaceView r, int c) {
         float sum = 0F;
         int n = 0;
         for (int w = 0; w < RaceView.WHEELS; w++) {
@@ -702,14 +825,26 @@ final class Snow {
         return n > 0 ? sum / n : GROUND;
     }
 
-    private void puff(float x, float y, float z, float vx, float vy, float vz, float from, float to) {
+    /** A cloud of powder: it hangs, thins and blows off with the wind. */
+    void powder(float x, float y, float z, float vx, float vy, float vz, float from, float to, float cover) {
+        int i = puffs.add(x, y - 5F, z, vx, vy, vz, dice.between(12F, 20F), from, to, LIT, cover, 0.08F, 0F, false);
+        puffs.water(i);
+        thrown++;
+    }
+
+    /** The snow's own dice, for the bed. */
+    Dice dice() {
+        return dice;
+    }
+
+    void puff(float x, float y, float z, float vx, float vy, float vz, float from, float to) {
         int i = puffs.add(x, y - 3F, z, vx, vy, vz, dice.between(9F, 16F), from, to, LIT, 0.34F, 0.1F, -0.25F,
                 false);
         puffs.water(i); // not smoke: the weather does not beat it down
         thrown++;
     }
 
-    private void sound(float x, float y, float z, float gain) {
+    void sound(float x, float y, float z, float gain) {
         if (Features.hooks().sound3d()) {
             Sound3D.pointSound(x, y, z, WeatherSounds.HIT, gain, dice.between(0.9F, 1.1F));
         }
@@ -767,8 +902,12 @@ final class Snow {
             if (rutLive[i] && dx * dx + dz * dz < r * r) {
                 rutLive[i] = false;
                 ruts--;
+                if (rutWide[i]) {
+                    channels--;
+                }
             }
         }
+        bed.melt(x, z, r);
     }
 
     /** How much of the bare ground a blast left {@code ticks} ago still shows, 1 to 0: the snowfall covers it again. */
@@ -808,7 +947,8 @@ final class Snow {
      * {@code heapBase}), the snow on each car after the car (from
      * {@code carBase}), the puffs (from {@code puffBase}).
      */
-    void queue(DrawQueue queue, int groundItem, int heapBase, int carBase, int puffBase) {
+    void queue(DrawQueue queue, int groundItem, int heapBase, int carBase, int puffBase, int bedItem, int driftBase,
+            int wheelBase) {
         eyeX = queue.eyeX();
         eyeY = queue.eyeY();
         eyeZ = queue.eyeZ();
@@ -829,6 +969,7 @@ final class Snow {
         if (ruts > 0 || clears > 0 || burns) {
             queue.ground(groundItem);
         }
+        bed.queue(queue, bedItem, driftBase, wheelBase);
         for (int i = 0; i < HEAPS; i++) {
             if (heapLive[i] && near(heapX[i], heapZ[i], SEEN)) {
                 // pulled a little towards the eye, so the road under it is drawn first
@@ -850,28 +991,40 @@ final class Snow {
         drawnRuts = 0;
         drawnBare = 0;
         canvas.dither(1F);
-        for (int i = 0; i < RUTS; i++) {
-            if (!rutLive[i]) {
-                continue;
+        drawnRelief = 0;
+        // the channels first: the wheels' trails run along their floors
+        for (int pass = 0; pass < 2; pass++) {
+            for (int i = 0; i < RUTS; i++) {
+                if (!rutLive[i] || rutWide[i] != (pass == 0)) {
+                    continue;
+                }
+                int age = tick - rutTick[i];
+                if (age >= RUT_FILLS) {
+                    rutLive[i] = false;
+                    ruts--;
+                    if (rutWide[i]) {
+                        channels--;
+                    }
+                    continue;
+                }
+                if (!near(rutX[i * 4], rutZ[i * 4], SEEN)) {
+                    continue;
+                }
+                float left = 1F - age / (float) RUT_FILLS;
+                if (near(rutX[i * 4], rutZ[i * 4], RELIEF)) {
+                    relief(canvas, i, left);
+                } else {
+                    for (int k = 0; k < 4; k++) {
+                        cx[k] = rutX[i * 4 + k];
+                        cy[k] = rutY[i] - 0.3F;
+                        cz[k] = rutZ[i * 4 + k];
+                    }
+                    canvas.color(canvas.fog(RUT_RGB, cx[0], cy[0], cz[0]));
+                    canvas.dither((rutWide[i] ? 0.5F : 1F) * RUT_COVER * left);
+                    canvas.world(cx, cy, cz, 4);
+                }
+                drawnRuts++;
             }
-            int age = tick - rutTick[i];
-            if (age >= RUT_FILLS) {
-                rutLive[i] = false;
-                ruts--;
-                continue;
-            }
-            if (!near(rutX[i * 4], rutZ[i * 4], SEEN)) {
-                continue;
-            }
-            for (int k = 0; k < 4; k++) {
-                cx[k] = rutX[i * 4 + k];
-                cy[k] = rutY[i] - 0.3F;
-                cz[k] = rutZ[i * 4 + k];
-            }
-            canvas.color(canvas.fog(RUT_RGB, cx[0], cy[0], cz[0]));
-            canvas.dither(RUT_COVER * (1F - age / (float) RUT_FILLS));
-            canvas.world(cx, cy, cz, 4);
-            drawnRuts++;
         }
         for (int n = Math.max(0, clears - CLEARS); n < clears; n++) {
             int i = n % CLEARS;
@@ -887,6 +1040,74 @@ final class Snow {
             }
         }
         canvas.dither(1F);
+    }
+
+    /** Trail pieces of the last frame drawn as cuts with walls. */
+    int drawnRelief;
+
+    /**
+     * Trail piece {@code i} near the eye, {@code left} of it not yet filled
+     * in by the snowfall (1 to 0): its floor, and a wall inside each edge as
+     * wide as the cut is deep, lit or in shade by the way it faces.
+     */
+    private void relief(Canvas canvas, int i, float left) {
+        int at = i * 4;
+        float y = rutY[i] - 0.3F;
+        // corners 0 and 3 are one edge, 1 and 2 the other; across the trail from the first to the second
+        float ax = rutX[at + 1] - rutX[at];
+        float az = rutZ[at + 1] - rutZ[at];
+        float bx = rutX[at + 2] - rutX[at + 3];
+        float bz = rutZ[at + 2] - rutZ[at + 3];
+        float al = (float) Math.sqrt(ax * ax + az * az);
+        float bl = (float) Math.sqrt(bx * bx + bz * bz);
+        if (al < 1F || bl < 1F) {
+            return;
+        }
+        float cut = rutCut[i] * (0.35F + 0.65F * left);
+        float wall = Math.min(cut * 0.55F, Math.min(al, bl) * 0.3F);
+        float lit = 0.5F + 0.5F * (ax / al * LIGHT_X + az / al * LIGHT_Z);
+        float deep = Math.min(1F, cut / 34F);
+        // the floor: a body skims the top off, packed snow; a wheel presses through to what lies under thin snow
+        int floor = rutWide[i] ? Air.mix(rutUnder[i], FLOOR, 0.45F + 0.4F * deep)
+                : Air.mix(Air.mix(rutUnder[i], 0x000000, 0.15F), FLOOR, 0.15F + 0.6F * deep);
+        canvas.color(canvas.fog(floor, rutX[at], y, rutZ[at]));
+        canvas.dither(Math.min(1F, (rutWide[i] ? 0.8F : 0.92F) * (0.25F + 0.75F * left)));
+        for (int k = 0; k < 4; k++) {
+            cx[k] = rutX[at + k];
+            cy[k] = y;
+            cz[k] = rutZ[at + k];
+        }
+        canvas.world(cx, cy, cz, 4);
+        canvas.dither(Math.min(1F, 0.3F + 0.7F * left));
+        // the wall along the first edge faces across to the second, and the second's back
+        for (int side = 0; side < 2; side++) {
+            float way = side == 0 ? 1F : -1F;
+            float facing = side == 0 ? lit : 1F - lit;
+            int p = side == 0 ? at : at + 1;
+            int q = side == 0 ? at + 3 : at + 2;
+            canvas.color(canvas.fog(Air.mix(WALL, LIT, facing * facing), rutX[at], y, rutZ[at]));
+            cx[0] = rutX[p];
+            cz[0] = rutZ[p];
+            cx[1] = rutX[p] + way * ax / al * wall;
+            cz[1] = rutZ[p] + way * az / al * wall;
+            cx[2] = rutX[q] + way * bx / bl * wall;
+            cz[2] = rutZ[q] + way * bz / bl * wall;
+            cx[3] = rutX[q];
+            cz[3] = rutZ[q];
+            cy[0] = cy[1] = cy[2] = cy[3] = y - 0.1F;
+            canvas.world(cx, cy, cz, 4);
+            if (rutWide[i]) {
+                // a channel's lip: the snow it pushed aside lies along its edge, lit from the other way
+                float lip = Math.min(cut * 0.8F, 16F);
+                canvas.color(canvas.fog(Air.mix(WALL, 0xffffff, 0.72F + 0.28F * (1F - facing)), rutX[at], y, rutZ[at]));
+                cx[1] = rutX[p] - way * ax / al * lip;
+                cz[1] = rutZ[p] - way * az / al * lip;
+                cx[2] = rutX[q] - way * bx / bl * lip;
+                cz[2] = rutZ[q] - way * bz / bl * lip;
+                canvas.world(cx, cy, cz, 4);
+            }
+        }
+        drawnRelief++;
     }
 
     /** A patch of bare ground {@code r} around {@code (x, z)}: an uneven round, laid darkly and thinly over the snow. */
@@ -1008,7 +1229,7 @@ final class Snow {
      * from its middle, {@code up} above its foot. In the world it moves
      * {@code (vx, vy, vz)} a tick.
      */
-    private void mound(Canvas canvas, int car, float x, float y, float z, float rx, float rz, float h, float ex,
+    void mound(Canvas canvas, int car, float x, float y, float z, float rx, float rz, float h, float ex,
             float up, float ez, int seed, float vx, float vy, float vz) {
         float fogX = car < 0 ? x : pose[car * 12];
         float fogY = car < 0 ? y : pose[car * 12 + 1];

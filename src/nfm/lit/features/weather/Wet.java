@@ -26,7 +26,7 @@ final class Wet {
     private static final float ASIDE = 420F;
     private static final float LONGEST = 14000F;
     /** The spray's particles; they are the items from the base given to {@link #queue}. */
-    static final int SPRAY = 520;
+    static final int SPRAY = 900;
     /** How fast a car must go before its rear wheels raise a mist, units a tick, and the speed at which it is fullest. */
     static final float MIST_FROM = 12F;
     static final float MIST_FULL = 60F;
@@ -60,6 +60,9 @@ final class Wet {
     private int[] heard = new int[0];
     /** Water thrown in the last tick: mist puffs, drops from sliding tyres, and wheels in puddles. */
     int misted;
+    /** Rooster tails behind rear wheels and bow spray off front wheels in the last tick. */
+    int tails;
+    int bows;
     int thrown;
     int splashed;
 
@@ -129,6 +132,8 @@ final class Wet {
     void tick(RaceView r, Lens[] lens, int players) {
         tick = r.tick;
         misted = 0;
+        tails = 0;
+        bows = 0;
         thrown = 0;
         splashed = 0;
         for (int c = 0; c < r.cars; c++) {
@@ -158,6 +163,26 @@ final class Wet {
                         mistRgb, 0.16F + 0.2F * mist, 0.1F, 0F, false);
                 spray.water(i);
                 misted++;
+                if (mist > 0.25F && dice.next() < mist) {
+                    // faster still: a rooster tail, thrown high behind the wheel and hanging there a second
+                    i = spray.add(x, y - 6F, z, r.vx[c] * 0.42F + dice.between(-2F, 2F), -(6F + 11F * mist),
+                            r.vz[c] * 0.42F + dice.between(-2F, 2F), dice.between(13F, 20F), 12F, 50F + 60F * mist,
+                            mistRgb, 0.14F + 0.16F * mist, 0.07F, 0F, false);
+                    spray.water(i);
+                    tails++;
+                }
+            }
+            // and off the front wheels, out to the sides: the bow of a car through standing water
+            if (w < 2 && mist > 0.35F && dice.next() < 0.5F * mist) {
+                float ox = x - r.x[c];
+                float oz = z - r.z[c];
+                float o = (float) Math.sqrt(ox * ox + oz * oz) + 1F;
+                float out = 3F + 6F * mist;
+                int i = spray.add(x, y - 3F, z, r.vx[c] * 0.3F + ox / o * out, -(2F + 4F * mist),
+                        r.vz[c] * 0.3F + oz / o * out, dice.between(8F, 13F), 8F, 24F + 30F * mist, mistRgb,
+                        0.16F + 0.14F * mist, 0.1F, 0F, false);
+                spray.water(i);
+                bows++;
             }
             // water off a tyre that slides, spins or is locked
             float slide = Math.abs(r.slipSide[at]) + Math.max(0F, Math.abs(r.slipLong[at]) - 2F) * 0.6F;

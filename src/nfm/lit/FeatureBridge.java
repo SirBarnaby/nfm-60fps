@@ -222,6 +222,27 @@ final class FeatureBridge {
             view.pointY[p] = checkpoints.y[p];
             view.pointZ[p] = checkpoints.z[p];
         }
+        view.pieces = trackers == null ? 0 : trackers.nt;
+        if (view.pieceX.length < view.pieces) {
+            view.pieceX = new float[view.pieces];
+            view.pieceY = new float[view.pieces];
+            view.pieceZ = new float[view.pieces];
+            view.pieceRadX = new float[view.pieces];
+            view.pieceRadY = new float[view.pieces];
+            view.pieceRadZ = new float[view.pieces];
+            view.pieceXY = new int[view.pieces];
+            view.pieceZY = new int[view.pieces];
+        }
+        for (int p = 0; p < view.pieces; p++) {
+            view.pieceX[p] = trackers.x[p];
+            view.pieceY[p] = trackers.y[p];
+            view.pieceZ[p] = trackers.z[p];
+            view.pieceRadX[p] = trackers.radx[p];
+            view.pieceRadY[p] = trackers.rady[p];
+            view.pieceRadZ[p] = trackers.radz[p];
+            view.pieceXY[p] = trackers.xy[p];
+            view.pieceZY[p] = trackers.zy[p];
+        }
     }
 
     /** One race tick of the race extras (powerups), after every car drove; run-ahead's and the verifier's too. */

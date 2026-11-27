@@ -110,3 +110,25 @@ An explosion SHALL clear the snow around it. Burning cars are warm, so the snow 
 #### Scenario: Check: a blast and a wreck in the snow
 - **WHEN** a dynamite stick blows up on snow, and a car burns on snow
 - **THEN** the ground is bare around the blast, and the snow melts back around the burning car
+
+### Requirement: Rain and snow have more oomph
+Rain and snow SHALL be enhanced beyond the first version: the weather effects need more "oomph". (Owner, 2026-11-27.)
+
+#### Scenario: Check: the owner looks
+- **WHEN** the owner drives a race in rain, and another in snow
+- **THEN** both read as stronger weather than the first version did, and the owner signs it off
+
+### Requirement: Snow is a bed over the whole map
+Snow SHALL lie as a bed across the entire map, not only in places: everywhere there is a plain of snow. It can accumulate, and a car SHALL leave marks in it, a bit like the snow in Forza Horizon 3, where the car's shape actually changes the snow. (Owner, 2026-11-27.)
+
+#### Scenario: Check: marks anywhere on the map
+- **WHEN** a car drives through the snow far from the track
+- **THEN** it leaves marks in the snow there as it does on the track
+
+#### Scenario: Check: the car's shape in the snow
+- **WHEN** a car lands in the snow, or comes to rest in it on its side
+- **THEN** it leaves a mark of its own shape
+
+#### Scenario: Check: the bed gets deeper
+- **WHEN** a race runs for several minutes while it snows
+- **THEN** the bed is deeper at the end, and the marks cars leave in it are deeper too

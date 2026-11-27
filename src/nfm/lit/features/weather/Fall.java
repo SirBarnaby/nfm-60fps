@@ -31,13 +31,13 @@ final class Fall {
     private static final float[] HIGH = {600F, 1000F, 2200F};
     private static final float[] MIDDLE = {217F, 590F, 1610F};
     /** Drops in each layer's pattern; about one in sixteen is inside the picture at a time. */
-    private static final int[] DROPS = {2900, 3600, 2600};
+    private static final int[] DROPS = {4350, 5400, 3900};
     /** The game's distance measure (the root of the distance) goes this high for the farthest drop. */
     static final int SHELLS = 64;
     /** The flat ground's height. */
     static final float GROUND = 250F;
     /** At most this many drops are drawn in a frame. */
-    static final int SHOWN = 2000;
+    static final int SHOWN = 3000;
 
     /** How fast rain and snow fall, units a tick, and how many times the wind's speed they drift. */
     static final float RAIN_FALL = 46F;
@@ -46,9 +46,19 @@ final class Fall {
     private static final float SNOW_DRIFT = 2.5F;
     /** How far a flake sways to each side, units, in the nearest layer. */
     private static final float SWAY = 9F;
+    /**
+     * The gusts: at a squall's peak the rain drifts this many times farther
+     * with the wind than in the calm, the snow this many, and what falls
+     * comes down this much faster; in the calm this share of the drops
+     * falls, at the peak all of them.
+     */
+    static final float RAIN_GUSTS = 3F;
+    static final float SNOW_GUSTS = 5F;
+    private static final float GUST_FALLS = 0.25F;
+    static final float CALM = 0.7F;
 
     /** Splash sites in the pattern, how wide it is, and how many ticks a splash lasts. */
-    private static final int SITES = 420;
+    private static final int SITES = 600;
     private static final float SITE_SIDE = 2600F;
     private static final float SITE_MIDDLE = 760F;
     private static final float SITE_FAR = 1500F;
@@ -62,6 +72,12 @@ final class Fall {
     private final float[][] phase = new float[LAYERS][];
 
     private boolean snow;
+    private Gusts gusts;
+    private float reach;
+    /** How hard it gusts in the frame being drawn, 0 to 1. */
+    float gust;
+    /** How far what falls slants in that frame: its drift a tick over its fall a tick. */
+    float slant;
     private float fall;
     private float driftX;
     private float driftZ;
@@ -99,8 +115,10 @@ final class Fall {
     private final float[] mz = new float[6];
 
     /** Rain (or snow, {@code snowing}) for the race started from {@code seed}, in wind {@code windX, windZ}. */
-    void start(long seed, boolean snowing, float windX, float windZ, int skyRgb, int fog) {
+    void start(long seed, boolean snowing, float windX, float windZ, int skyRgb, int fog, Gusts blowing) {
         snow = snowing;
+        gusts = blowing;
+        reach = snowing ? SNOW_GUSTS : RAIN_GUSTS;
         fall = snowing ? SNOW_FALL : RAIN_FALL;
         driftX = windX * (snowing ? SNOW_DRIFT : RAIN_DRIFT);
         driftZ = windZ * (snowing ? SNOW_DRIFT : RAIN_DRIFT);
@@ -169,16 +187,26 @@ final class Fall {
         float[] y0 = by[l];
         float[] z0 = bz[l];
         float[] p = pace[l];
-        double t = tick;
+        // where the wind has carried the drops by now, and how fast it carries them: more in a gust
+        gust = gusts.at(tick);
+        double t = tick + reach * gusts.sum(tick);
+        double fell = tick + GUST_FALLS * gusts.sum(tick);
+        float blow = 1F + reach * gust;
+        float falls = 1F + GUST_FALLS * gust;
+        slant = (float) Math.sqrt(driftX * driftX + driftZ * driftZ) * blow / (fall * falls);
+        // in the calm fewer fall: the last of the pattern only come down in a squall
+        int falling = (int) (x0.length * (CALM + (1F - CALM) * Math.min(1F, gust * 1.6F)));
         float fx = look[0];
         float fy = look[1];
         float fz = look[2];
-        for (int i = 0; i < x0.length && shown < SHOWN; i++) {
+        for (int i = 0; i < falling && shown < SHOWN; i++) {
             float vx = driftX * p[i];
             float vy = fall * p[i];
             float vz = driftZ * p[i];
             float x = midX + wrap((float) ((x0[i] + vx * t - midX) % side), side);
             float z = midZ + wrap((float) ((z0[i] + vz * t - midZ) % side), side);
+            vx *= blow;
+            vz *= blow;
             float rx = x - eyeX;
             float rz = z - eyeZ;
             // level distance first: most drops are out of the layer's stretch whatever their height
@@ -186,7 +214,8 @@ final class Fall {
             if (level < from - high || level > to + high) {
                 continue;
             }
-            float down = (float) ((y0[i] + vy * t - top) % high);
+            float down = (float) ((y0[i] + vy * fell - top) % high);
+            vy *= falls;
             float y = top + (down < 0F ? down + high : down);
             float ry = y - eyeY;
             float d = level + ry * fy;
@@ -251,7 +280,7 @@ final class Fall {
             half[i] = (0.25F + 0.32F * (size - 0.86F) / 0.28F) * (1F + d / 190F);
             length = Math.max(2F * half[i], Math.min(70F, speed * 0.45F) * (1F + d / 1400F));
         } else {
-            half[i] = Math.max(0.22F, d * 0.0014F);
+            half[i] = Math.max(0.22F, d * 0.0014F) * (1F + 0.5F * gust);
             length = Math.max(16F, Math.min(130F, speed * 0.8F)) * (1F + d / 1100F);
         }
         tx[i] = -rx / speed * length;
@@ -285,7 +314,7 @@ final class Fall {
         // farther off they sink into the fog and thin out
         float far = Math.min(1F, shell * shell / FAR[LAYERS - 1]);
         canvas.color(Air.mix(rgb, fogRgb, 0.75F * far));
-        canvas.dither(snow ? 0.95F - 0.4F * far : 0.55F - 0.3F * far);
+        canvas.dither(snow ? 0.95F - 0.4F * far : 0.55F + 0.15F * gust - 0.3F * far);
         for (int i = first[shell]; i >= 0; i = next[i]) {
             streak(i);
             canvas.moving(cx, cy, cz, svx[i], svy[i], svz[i], 4);

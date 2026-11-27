@@ -21,6 +21,8 @@ final class WeatherSounds {
     static final String HIT = "wx-hit";
     /** One wipe of a blade over wet glass, heard from inside the car. */
     static final String WIPE = "wx-wipe";
+    /** Thunder, a second or so after its lightning. */
+    static final String THUNDER = "wx-thunder";
 
     /** The 3D sound's beds the weather uses. */
     static final int RAIN_BED = 0;
@@ -42,6 +44,7 @@ final class WeatherSounds {
         Recordings.give(ROLL, "snowroll", false);
         Recordings.give(HIT, "snowhit", false);
         Recordings.give(WIPE, "wipewet", false);
+        Recordings.give(THUNDER, "thunder", false);
     }
 
     /**
@@ -49,9 +52,10 @@ final class WeatherSounds {
      * listener at {@code speed} of their car's top speed (0 to 1) and, if
      * {@code inside}, under the roof of a closed car (the helmet cam);
      * {@code hiss} how much their tyres hiss on the wet road, or crunch
-     * over the snow (0 to 1).
+     * over the snow (0 to 1); {@code gust} how hard the wind gusts (0 to
+     * 1): the rain and the wind are louder in a squall.
      */
-    static void around(GameHooks hooks, boolean snow, float speed, boolean inside, float hiss) {
+    static void around(GameHooks hooks, boolean snow, float speed, boolean inside, float hiss, float gust) {
         if (!hooks.sound3d()) {
             return;
         }
@@ -59,12 +63,15 @@ final class WeatherSounds {
             hooks.bed(RAIN_BED, null, 0F, 1F);
             hooks.bed(ROOF_BED, null, 0F, 1F);
             hooks.bed(SPRAY_BED, null, 0F, 1F);
-            hooks.bed(WIND_BED, WIND, (0.3F + 0.3F * speed) * (inside ? 0.55F : 1F), 0.92F + 0.2F * speed);
+            hooks.bed(WIND_BED, WIND, (0.3F + 0.3F * speed + 0.4F * gust) * (inside ? 0.55F : 1F),
+                    0.92F + 0.2F * speed + 0.12F * gust);
             hooks.bed(ROLL_BED, hiss > 0.02F ? ROLL : null, 0.4F * hiss * (inside ? 0.6F : 1F), 0.86F + 0.26F * hiss);
         } else {
-            hooks.bed(WIND_BED, null, 0F, 1F);
+            // the wind is heard in the rain only while it gusts
+            float wind = Math.max(0F, gust - 0.3F) * 0.7F;
+            hooks.bed(WIND_BED, wind > 0.02F ? WIND : null, wind * (inside ? 0.55F : 1F), 0.9F + 0.2F * gust);
             hooks.bed(ROLL_BED, null, 0F, 1F);
-            hooks.bed(RAIN_BED, RAIN, inside ? 0.26F : 0.5F + 0.2F * speed, 1F);
+            hooks.bed(RAIN_BED, RAIN, inside ? 0.26F + 0.1F * gust : 0.5F + 0.2F * speed + 0.25F * gust, 1F);
             hooks.bed(ROOF_BED, inside ? ROOF : null, inside ? 0.6F : 0F, 1F);
             hooks.bed(SPRAY_BED, hiss > 0.02F ? SPRAY : null, 0.5F * hiss * (inside ? 0.6F : 1F), 0.85F + 0.3F * hiss);
         }
