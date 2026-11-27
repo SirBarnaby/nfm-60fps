@@ -64,7 +64,12 @@ from the tick alone, so a race replayed rains the same.
   the fog's colour.
 - **Snow** falls 6.5 units a tick, drifts two and a half times the wind and
   sways about its line; a flake is a small white diamond, a few pixels
-  across at any distance, drawn out a little at speed.
+  across at any distance. It stays a flake at any speed: at most 3.2 units
+  long in the nearest layer (what it is seen from a standing car), never
+  drawn out into a streak. Driving thins the snowfall instead of thickening
+  it: the faster the camera moves the fewer flakes are shown, down to 45%
+  of them from 70 units a tick ("Snowfall stays light while driving",
+  Owner, 2026-11-27).
 - Nothing falls nearer than 40 units ahead of the eye (the game leaves out
   a polygon that reaches the eye), below the flat ground, or outside the
   picture. The drops are queued by distance (one item per value of the
@@ -344,8 +349,10 @@ the dry.
   block are queued with `DrawQueue.near`: beside or under a car they are
   drawn the same way, as a part of that car, elsewhere by their distance
   as before.
-- **Powder**: above 14 units a tick a car trails a plume of powder,
-  fullest from 70; it drifts with the gusts.
+- **Powder**: above 30 units a tick a car trails a plume of powder,
+  fullest from 130, thin and low so the chase camera looks through it (it
+  began at 14 and stood twice as high and thick until 27 Nov 2026: "wayy
+  too strong when driving, even slowly"); it drifts with the gusts.
 - **Spindrift**: 150 streamers of snow run low over the ground with the
   wind, more in a gust.
 

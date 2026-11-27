@@ -139,3 +139,10 @@ Blocks of snow under a car, and snow as it accumulates, SHALL NOT render through
 #### Scenario: Check: snow under and beside a car
 - **WHEN** a car stands or drives in the snow and is looked at from every side
 - **THEN** the snow under it, at its wheels and heaped against it is hidden where the car stands in front of it
+
+### Requirement: Snowfall stays light while driving
+The snowfall SHALL look while driving, even slowly, as it does at a standstill: it SHALL NOT get stronger, and the snowflakes SHALL NOT get long at speed. (Owner, 2026-11-27: "Snow effect looked okay when on a standstill, but was wayy too strong when driving, even slowly. I see the snowflakes get very "long" when driving at speed, so this needs to be scaled down majorly.")
+
+#### Scenario: Check: standing and at speed
+- **WHEN** the same snowfall is seen from a standing car, a slow one and one at top speed
+- **THEN** no more of the picture is covered by flakes while driving than standing, and no flake is drawn out into a streak

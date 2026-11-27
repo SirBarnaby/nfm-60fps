@@ -63,8 +63,8 @@ final class Snow {
     /** A car's body cuts its own channel once the bed is deeper than the car stands high; of the body's width. */
     static final float CHANNEL_WIDE = 0.94F;
     /** Faster than this a car's rear wheels throw a plume of powder, units a tick, and the speed at which it is fullest. */
-    static final float PLUME_FROM = 14F;
-    static final float PLUME_FULL = 70F;
+    static final float PLUME_FROM = 30F;
+    static final float PLUME_FULL = 130F;
 
     /* ------------------------------------------------------------- heaps */
 
@@ -484,9 +484,10 @@ final class Snow {
             }
             // powder behind the rear wheels at speed: a plume that hangs and blows off with the wind
             float plume = Math.max(0F, Math.min(1F, (speed - PLUME_FROM) / (PLUME_FULL - PLUME_FROM)));
-            if (w >= 2 && plume > 0F && trails && dice.next() < 0.3F + 0.7F * plume) {
-                powder(x, y, z, r.vx[c] * 0.4F + dice.between(-2F, 2F), -(3F + 8F * plume),
-                        r.vz[c] * 0.4F + dice.between(-2F, 2F), 12F, 40F + 50F * plume, 0.2F + 0.16F * plume);
+            // (thin and low: the chase camera looks through it)
+            if (w >= 2 && plume > 0F && trails && dice.next() < 0.15F + 0.45F * plume) {
+                powder(x, y, z, r.vx[c] * 0.4F + dice.between(-2F, 2F), -(2F + 4F * plume),
+                        r.vz[c] * 0.4F + dice.between(-2F, 2F), 10F, 26F + 26F * plume, 0.1F + 0.1F * plume);
                 plumes++;
             }
             if (landed) {
@@ -831,7 +832,7 @@ final class Snow {
 
     /** A cloud of powder: it hangs, thins and blows off with the wind. */
     void powder(float x, float y, float z, float vx, float vy, float vz, float from, float to, float cover) {
-        int i = puffs.add(x, y - 5F, z, vx, vy, vz, dice.between(12F, 20F), from, to, LIT, cover, 0.08F, 0F, false);
+        int i = puffs.add(x, y - 5F, z, vx, vy, vz, dice.between(8F, 13F), from, to, LIT, cover, 0.08F, 0F, false);
         puffs.water(i);
         thrown++;
     }

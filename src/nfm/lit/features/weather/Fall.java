@@ -57,6 +57,12 @@ final class Fall {
     private static final float GUST_FALLS = 0.25F;
     static final float CALM = 0.7F;
 
+    /** A flake is at most this long, units, in the nearest layer: what it is in the calm seen from a standing car. */
+    static final float FLAKE_LONG = 3.2F;
+    /** Driving thins the snowfall out: at this camera speed and above only {@link #SNOW_AT_SPEED} of the flakes are shown. */
+    static final float THIN_FULL = 70F;
+    static final float SNOW_AT_SPEED = 0.45F;
+
     /** Splash sites in the pattern, how wide it is, and how many ticks a splash lasts. */
     private static final int SITES = 600;
     private static final float SITE_SIDE = 2600F;
@@ -98,6 +104,10 @@ final class Fall {
     private final int[] next = new int[SHOWN];
     private final int[] first = new int[SHELLS];
     int shown;
+    /** Of the nearest layer's pattern, how many drops fall in the frame being drawn. */
+    int fallingNow;
+    /** The longest drop or flake shown in the last frame, units. */
+    float longest;
     /** The nearest a drop shown in the last frame is to the eye along the view, and how many were looked at. */
     float nearest;
 
@@ -158,6 +168,7 @@ final class Fall {
         queue.look(look);
         frameTick = tick;
         shown = 0;
+        longest = 0F;
         nearest = Float.MAX_VALUE;
         java.util.Arrays.fill(first, -1);
         // the picture's edges as slopes, widened: between ticks the camera turns a little further
@@ -196,6 +207,12 @@ final class Fall {
         slant = (float) Math.sqrt(driftX * driftX + driftZ * driftZ) * blow / (fall * falls);
         // in the calm fewer fall: the last of the pattern only come down in a squall
         int falling = (int) (x0.length * (CALM + (1F - CALM) * Math.min(1F, gust * 1.6F)));
+        if (snow) {
+            // flakes rush at a moving camera: fewer of them the faster it goes, so the picture stays as calm as at rest
+            float cam = (float) Math.sqrt(camVX * camVX + camVY * camVY + camVZ * camVZ);
+            falling = (int) (falling * (1F - (1F - SNOW_AT_SPEED) * Math.min(1F, cam / THIN_FULL)));
+        }
+        fallingNow = falling;
         float fx = look[0];
         float fy = look[1];
         float fz = look[2];
@@ -276,13 +293,15 @@ final class Fall {
         }
         float length;
         if (snow) {
-            // a flake a few pixels across at any distance, drawn out a little at speed
+            // a flake a few pixels across at any distance. It stays a flake however fast the camera passes
+            // it: as long as it is standing still in the snowfall, never drawn out into a streak
             half[i] = (0.25F + 0.32F * (size - 0.86F) / 0.28F) * (1F + d / 190F);
-            length = Math.max(2F * half[i], Math.min(70F, speed * 0.45F) * (1F + d / 1400F));
+            length = Math.max(2F * half[i], Math.min(FLAKE_LONG, speed * 0.45F) * (1F + d / 1400F));
         } else {
             half[i] = Math.max(0.22F, d * 0.0014F) * (1F + 0.5F * gust);
             length = Math.max(16F, Math.min(130F, speed * 0.8F)) * (1F + d / 1100F);
         }
+        longest = Math.max(longest, length);
         tx[i] = -rx / speed * length;
         ty[i] = -ry / speed * length;
         tz[i] = -rz / speed * length;

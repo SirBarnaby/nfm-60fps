@@ -110,6 +110,7 @@ public final class WeatherCheck {
             c.snowOnTheCars();
             c.snowCleared();
             c.gusts();
+            c.snowAtSpeed();
             c.storm();
             c.wetRoad();
             c.bedAnywhere();
@@ -1412,6 +1413,31 @@ public final class WeatherCheck {
                         + regrown + " again after " + SnowBed.REGROWS / 19 + " s of snowfall");
     }
 
+    /**
+     * Driving does not turn the snowfall into streaks ("Snow stays light
+     * while driving"): a flake is as short from a car at 110 a tick as from
+     * one standing, and fewer are shown.
+     */
+    private void snowAtSpeed() {
+        start(Weather.SNOW);
+        ticks(3);
+        frame(0F, 100F, -400F, 0F, 0F);
+        float stillLong = weather.fall.longest;
+        int stillFalling = weather.fall.fallingNow;
+        int stillShown = weather.fall.shown;
+        for (int t = 0; t < 10; t++) {
+            drive(110F, 0F, true);
+        }
+        frame(v.x[0], 100F, v.z[0] - 400F, 0F, 0F);
+        float fastLong = weather.fall.longest;
+        int fastFalling = weather.fall.fallingNow;
+        check(F, "snow stays light while driving", stillShown > 50 && fastLong <= stillLong * 1.1F + 0.5F
+                && fastFalling <= stillFalling * 0.6F,
+                "the longest flake (a far one, as wide as it is long) from a standing car " + n(stillLong)
+                        + " units, from one at 110 a tick " + n(fastLong) + "; of the pattern " + stillFalling
+                        + " flakes fall around a standing car, " + fastFalling + " around the fast one");
+    }
+
     /** The cars stand in the bed: snow about each wheel on the ground, a wave at the nose of one that ploughs, powder behind a fast one, spindrift over it all. */
     private void snowAboutTheCars() {
         backCars = "check";
@@ -1432,7 +1458,11 @@ public final class WeatherCheck {
             frame(v.x[0] - 200F, 120F, v.z[0] - 500F, 20F, 10F);
             streamers = Math.max(streamers, bed.drawnStreamers);
         }
-        int plumes = snow.plumes;
+        int cruising = snow.plumes;
+        for (int t = 0; t < 40; t++) {
+            drive(120F, 0F, true);
+        }
+        int plumes = snow.plumes - cruising;
         float ploughs = bed.plough[0];
         drive(60F, 0F, false);
         frame(v.x[0] - 200F, 120F, v.z[0] - 500F, 20F, 10F);
@@ -1441,8 +1471,9 @@ public final class WeatherCheck {
                 "snow banked about " + wheels + " wheels on the ground and " + noses + " wave at the nose of a car"
                         + " cutting " + n(ploughs) + " deep; " + inAir + " about a car in the air");
         check(F, "powder behind a fast car, spindrift over the bed", plumes >= 20 && slowPlumes == 0
-                && streamers >= 3,
-                plumes + " puffs of powder in 40 ticks at 60 a tick, " + slowPlumes + " at 10; up to " + streamers
+                && cruising < plumes && streamers >= 3,
+                plumes + " puffs of powder in 40 ticks at 120 a tick, " + cruising + " at 60, " + slowPlumes
+                        + " at 10; up to " + streamers
                         + " streamers of spindrift in the picture");
     }
 
