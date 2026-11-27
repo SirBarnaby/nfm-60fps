@@ -8,9 +8,11 @@ import nfm.lit.features.RaceView;
  * the engine warm with work and cool with time and air, a little after each
  * real tick.
  * <p>
- * A disc takes heat in proportion to the car's speed while it brakes (the
- * work it does), the fronts 1.3 times the share and the rears 0.7, as cars
- * brake mostly on the front; it loses a part of its heat every tick, more
+ * A disc takes heat in proportion to the car's speed while it brakes with
+ * its wheel on the road (the work it does; none in the air), the fronts 1.3
+ * times the share and the rears 0.7, as cars brake mostly on the front. A
+ * drift heats the rears: while a rear tyre slides sideways over the road,
+ * not for the handbrake key alone. A disc loses a part of its heat every tick, more
  * at speed. One hard stop from top speed leaves the fronts a dull red;
  * stops close together take them to orange; the glow is gone in about 3 s
  * at speed and 6 s standing. The brakes in the car's sheet change both
@@ -26,6 +28,9 @@ final class HeatEffects {
     /** The fronts' and rears' share of the braking. */
     static final float FRONT_SHARE = 1.3F;
     static final float REAR_SHARE = 0.7F;
+    /** A rear tyre sliding sideways this fast, units a tick, is a drift that heats its disc; from this fast as much as braking does. */
+    static final float DRIFT_FROM = 6F;
+    static final float DRIFT_FULL = 18F;
     /** A disc shows from this heat. */
     static final float VISIBLE = 0.45F;
     /** The exhaust and the engine: heat taken flat out at top speed, and lost, per tick. */
@@ -61,15 +66,19 @@ final class HeatEffects {
         float ground = race.groundSpeed(c);
         boolean alive = !race.wasted[c];
         boolean footBrake = alive && race.down[c] && race.speed[c] > 2F;
-        boolean handBrake = alive && race.handbrake[c] && ground > 2F;
-        s.braking = footBrake || handBrake;
+        // (the brake lamps follow the keys, as before)
+        s.braking = footBrake || alive && race.handbrake[c] && ground > 2F;
         for (int w = 0; w < RaceView.WHEELS; w++) {
+            // a disc only works against the road: in the air a brake stops the wheel and takes no heat
+            boolean onRoad = race.contact[c * RaceView.WHEELS + w];
             float input = 0F;
-            if (footBrake) {
+            if (footBrake && onRoad) {
                 input = BRAKE_HEAT * (p.frontWheel[w] ? FRONT_SHARE : REAR_SHARE) * share;
             }
-            if (handBrake && !p.frontWheel[w]) {
-                input = Math.max(input, BRAKE_HEAT * share);
+            // a drift heats the rears: not the handbrake key by itself, the tyre sliding sideways over the road
+            float slide = Math.abs(race.slipSide[c * RaceView.WHEELS + w]);
+            if (alive && onRoad && !p.frontWheel[w] && ground > 2F && slide >= DRIFT_FROM) {
+                input = Math.max(input, BRAKE_HEAT * share * Math.min(1F, slide / DRIFT_FULL));
             }
             float t = s.brake[w] + input * sheet.brakeHeating();
             t -= t * (BRAKE_COOL + BRAKE_COOL_SPEED * share) * sheet.brakeCooling();

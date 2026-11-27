@@ -73,7 +73,13 @@ scratches are kept per side.
 ## Heat
 
 - **Brake discs** take heat in proportion to the car's speed while it brakes
-  (the work they do): the fronts 1.3 times the share, the rears 0.7. Each tick
+  with the wheel on the road (the work they do): the fronts 1.3 times the
+  share, the rears 0.7. In the air a disc takes none, and the handbrake key
+  by itself heats nothing: a drift does, each rear disc while its tyre slides
+  sideways over the road, from 6 units a tick and as much as braking from 18
+  (owner, 27 Nov 2026: "Brakes get redhot even midair ... It shouldnt happen
+  only on handbrake keypress, but it should happen when we are actively
+  drifting"; the two speeds are the extra's own). Each tick
   a disc loses 0.6% of its heat standing, 1.4% at top speed. Drums keep heat
   (1.3 times the heating, 0.7 the cooling), carbon sheds it (0.85, 1.3). A disc
   shows from 0.45: one hard stop from top speed leaves the fronts a dull red,

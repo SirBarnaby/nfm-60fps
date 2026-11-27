@@ -19,6 +19,17 @@ After a lot of braking, the brake discs SHALL turn red: dull red after long hard
 - **WHEN** a car brakes hard from top speed several times in a row
 - **THEN** its front discs glow red, more than the rear ones, and fade over a few seconds once the braking stops
 
+### Requirement: Discs heat on the road, from braking and drifting
+The brakes SHALL NOT get red hot in mid-air. They SHALL NOT heat from the handbrake key being pressed alone; they SHALL heat while the car is actively drifting. (Owner, 2026-11-27: "Brakes get redhot even midair. This shouldnt happen. It shouldnt happen only on handbrake keypress, but it should happen when we are actively drifting.")
+
+#### Scenario: Check: in the air and on the handbrake
+- **WHEN** a car holds the brake or the handbrake through a long jump, and when it holds the handbrake standing still
+- **THEN** its discs get no hotter
+
+#### Scenario: Check: a drift
+- **WHEN** a car slides sideways through a corner on the road, with or without the handbrake
+- **THEN** its discs heat up while it slides
+
 ### Requirement: The brake disc sits inside the wheel
 Glowing discs do not work well on wheels that are 100% opaque, so the cars SHALL get new wheel models with a brake disc hidden behind the wheel, in the game's own style. The brake SHALL be inside the wheel, never outside of it (as it showed on Sword of Justice). (Owner, 2026-11-26.)
 

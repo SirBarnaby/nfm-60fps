@@ -93,6 +93,7 @@ public final class RealismCheck {
         RealismCheck c = new RealismCheck();
         c.cosmeticOnly();
         c.discs();
+        c.discsOnTheRoad();
         c.discInside();
         c.radiator();
         c.sidePods();
@@ -412,6 +413,58 @@ public final class RealismCheck {
                 + " (shows from " + n(HeatEffects.VISIBLE) + "), a front disc glows in " + drawn
                 + " openings of its wheel, glow " + n(glow)
                 + "; gone in " + n(atSpeed / 19F) + " s at speed, " + n(standing / 19F) + " s standing");
+    }
+
+    /**
+     * Brake discs glow only from work against the road (Owner, 2026-11-27):
+     * braking in the air heats none, the handbrake key alone heats none,
+     * and a drift (the rear tyres sliding sideways over the road) heats the
+     * rears until they show.
+     */
+    private void discsOnTheRoad() {
+        start();
+        for (int i = 0; i < 60; i++) {
+            carZ += 40F;
+            place(100F, 40F, false);
+            v.up[0] = false;
+            v.down[0] = true;
+            v.handbrake[0] = true;
+            tick();
+        }
+        float inAir = Math.max(Math.max(s.brake[0], s.brake[1]), Math.max(s.brake[2], s.brake[3]));
+        start();
+        for (int i = 0; i < 60; i++) {
+            carZ += 40F;
+            place(100F, 40F, true);
+            v.down[0] = false;
+            v.handbrake[0] = true;
+            tick();
+        }
+        float keyOnly = Math.max(s.brake[2], s.brake[3]);
+        start();
+        int shows = -1;
+        for (int i = 0; i < 120; i++) {
+            carZ += 40F;
+            place(100F, 40F, true);
+            v.down[0] = false;
+            v.handbrake[0] = false;
+            v.slipSide[2] = 12F;
+            v.slipSide[3] = -12F;
+            tick();
+            if (shows < 0 && Math.min(s.brake[2], s.brake[3]) > HeatEffects.VISIBLE) {
+                shows = i + 1;
+            }
+        }
+        float drifting = Math.min(s.brake[2], s.brake[3]);
+        float fronts = Math.max(s.brake[0], s.brake[1]);
+        v.slipSide[2] = 0F;
+        v.slipSide[3] = 0F;
+        check(F, "discs heat only against the road, and in a drift", inAir == 0F && keyOnly == 0F && shows > 0
+                && shows <= 4 * 19 && fronts == 0F,
+                "three seconds of brake and handbrake in the air: " + n(inAir) + "; the handbrake key held driving"
+                        + " straight on the road: rears " + n(keyOnly) + "; a drift (rear tyres sliding 12 a tick,"
+                        + " no key): the rears show after " + (shows < 0 ? "never" : n(shows / 19F) + " s") + " and"
+                        + " reach " + n(drifting) + ", the fronts " + n(fronts));
     }
 
     /**
