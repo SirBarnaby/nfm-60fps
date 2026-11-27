@@ -54,6 +54,23 @@ public interface Feature {
     }
 
     /**
+     * A race extra: the degrees more car {@code car} turns this tick, asked
+     * as it steers on the ground. {@code steer} is how far its wheels are
+     * turned (positive left) and {@code steered} the degrees that has just
+     * turned it, {@code bothBrakes} says the brake and the handbrake are
+     * both held, {@code moving} is its speed over the ground and
+     * {@code along} how much of that is along its heading (negative sliding
+     * backwards). 0 for none (the tailwhip gives some).
+     */
+    default int turn(int car, int steer, int steered, boolean bothBrakes, float along, float moving) {
+        return 0;
+    }
+
+    /** A race extra: corner {@code wheel} of car {@code car} and corner {@code otherWheel} of car {@code other} touch this tick. */
+    default void touch(int car, int wheel, int other, int otherWheel) {
+    }
+
+    /**
      * A stage is loading, and its file says {@code what} of its air (one of
      * {@link StageAir}'s) with the values {@code c}: change them to change
      * the stage's sky, light, ground or fog (the weather). Asked of every

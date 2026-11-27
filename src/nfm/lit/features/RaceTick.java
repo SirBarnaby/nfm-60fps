@@ -66,6 +66,11 @@ public interface RaceTick {
 
     float wheelZ(int car, int wheel);
 
+    /** True if wheel {@code wheel} of the car is one of its rear wheels. */
+    default boolean rearWheel(int car, int wheel) {
+        return wheel >= 2;
+    }
+
     /** Some wheel touches the ground. */
     boolean grounded(int car);
 
@@ -100,6 +105,10 @@ public interface RaceTick {
 
     /** Adds {@code (vx, vy, vz)} to wheel {@code wheel}'s velocity, as a crash does. */
     void push(int car, int wheel, float vx, float vy, float vz);
+
+    /** Turns the car {@code degrees} about its upright, as its steering turns it (positive as left does). */
+    default void turn(int car, int degrees) {
+    }
 
     /**
      * Damages the car by {@code share} of what wastes it, struck at wheel

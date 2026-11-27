@@ -75,6 +75,9 @@ public final class ExtrasCheck {
         if (wants(only, "handling")) {
             nfm.lit.features.handling.HandlingCheck.run();
         }
+        if (wants(only, "tailwhip")) {
+            nfm.lit.features.tailwhip.TailwhipCheck.run();
+        }
         if (wants(only, "weather")) {
             nfm.lit.features.weather.WeatherCheck.run();
         }

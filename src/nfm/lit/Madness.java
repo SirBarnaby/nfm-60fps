@@ -403,6 +403,7 @@ class Madness {
                 do
                     if (Utility.rpy(wheelX[myWheel], otherX[otherWheel], wheelY[myWheel], otherY[otherWheel], wheelZ[myWheel], otherZ[otherWheel]) < (closing + 7000)
                             * (stat.comprad + stat.comprad)) {
+                        FeatureBridge.raceTouch(im, myWheel, other.im, otherWheel); // a race extra's (the tailwhip): nothing without one
                         if (Math.abs(scx[myWheel] * stat.moment) > Math.abs(other.scx[otherWheel] * StatList.moment[other.cn])) {
                             float pushBackX = other.scx[otherWheel] * stat.revpush;
                             if (pushBackX > 300F)
@@ -932,6 +933,7 @@ class Madness {
                 else
                     fxz = car.wxz / steerDivisor;
                 car.xz += car.wxz / steerDivisor;
+                car.xz += FeatureBridge.raceTurn(this, car, control, car.wxz / steerDivisor); // a race extra's (the tailwhip): 0 without one
             }
             wtouch = false;
             gtouch = false;

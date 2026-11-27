@@ -27,6 +27,7 @@ public final class Features {
         nfm.lit.features.powerups.PowerupsFeature.FEATURE,
         nfm.lit.features.handling.HandlingFeature.FEATURE,
         nfm.lit.features.wrecks.WrecksFeature.FEATURE,
+        nfm.lit.features.tailwhip.TailwhipFeature.FEATURE,
         nfm.lit.features.personality.PersonalityFeature.FEATURE,
         // last: what it lays on the ground is drawn over the marks and craters of those before it
         nfm.lit.features.weather.WeatherFeature.FEATURE,
@@ -244,6 +245,32 @@ public final class Features {
             }
         }
         return grip;
+    }
+
+    /** The degrees more the race extras turn car {@code car} this tick ({@link Feature#turn}): 0 without one. */
+    public static int raceTurn(int car, int steer, int steered, boolean bothBrakes, float along, float moving) {
+        if (!raceAny) {
+            return 0;
+        }
+        int add = 0;
+        for (int f = 0; f < ALL.length; f++) {
+            if (racePlays[f]) {
+                add += ALL[f].turn(car, steer, steered, bothBrakes, along, moving);
+            }
+        }
+        return add;
+    }
+
+    /** Two cars' corners touch this tick ({@link Feature#touch}); nothing without a race extra. */
+    public static void raceTouch(int car, int wheel, int other, int otherWheel) {
+        if (!raceAny) {
+            return;
+        }
+        for (int f = 0; f < ALL.length; f++) {
+            if (racePlays[f]) {
+                ALL[f].touch(car, wheel, other, otherWheel);
+            }
+        }
     }
 
     /*

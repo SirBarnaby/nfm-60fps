@@ -6646,6 +6646,56 @@ public class GameSparker extends Panel implements Runnable {
     private static final int TEST_CAR = Integer.getInteger("nfm.autotest.car", -1);
     private static final boolean SHOTS = !"false".equalsIgnoreCase(System.getProperty("nfm.autotest.shots"));
     /**
+     * {@code -Dnfm.autotest.whip=<race tick>}: a test run's player holds the
+     * throttle from the start of each race, and from that tick the
+     * handbrake, the brake and left for a second and a half (28 ticks); how
+     * far the car turned is logged, tick by tick. The keys are pressed as a
+     * recording's or the autopilot's are, so a recorded race has them. For
+     * looking at the tailwhip.
+     */
+    private static final int TEST_WHIP = Integer.getInteger("nfm.autotest.whip", 0);
+    private static final int WHIP_TICKS = 28;
+    private int whipStep;
+    private int whipTick;
+    private int whipFrom;
+    private float whipSpeed;
+    private final StringBuilder whipTurns = new StringBuilder();
+
+    /** The whip test's keys for the race tick about to be latched. Game thread. */
+    private void whipScript(GameUi gameUi) {
+        if (raceTicks < whipTick) {
+            whipStep = 0; // a new race
+        }
+        whipTick = raceTicks;
+        if (gameUi.starcnt > 0 || whipStep == 3) {
+            return;
+        }
+        if (whipStep == 0) {
+            pressKey(1004, false, 0L);
+            whipStep = 1;
+        }
+        if (whipStep == 1 && raceTicks >= TEST_WHIP) {
+            releaseKey(1004, 0L);
+            pressKey(32, false, 0L);
+            pressKey(1005, false, 0L);
+            pressKey(1006, false, 0L);
+            whipFrom = sceneObjects[0].xz;
+            whipSpeed = racers[0].speed;
+            whipTurns.setLength(0);
+            whipStep = 2;
+        } else if (whipStep == 2) {
+            whipTurns.append(' ').append(sceneObjects[0].xz - whipFrom);
+            if (raceTicks >= TEST_WHIP + WHIP_TICKS) {
+                releaseKey(32, 0L);
+                releaseKey(1005, 0L);
+                releaseKey(1006, 0L);
+                System.out.println("[autotest] whip: from speed " + (int) whipSpeed + ", handbrake, brake and left for "
+                        + WHIP_TICKS + " ticks turned the car" + whipTurns);
+                whipStep = 3;
+            }
+        }
+    }
+    /**
      * How often the live test takes a race screenshot: rarely, as writing one
      * takes a processor core from the frames it measures (split screen's
      * countdown went uneven with one every 2 s).
@@ -7111,7 +7161,6 @@ public class GameSparker extends Panel implements Runnable {
                     long cycle = inGameMillis % 4000L;
                     u[0].right = cycle > 2200L && cycle < 2500L;
                     u[0].left = cycle > 3400L && cycle < 3700L;
-
                     if (now - lastShot >= (LIVE ? LIVE_SHOT_MILLIS : 1000L)) {
                         saveFrame(directory, String.format("%02d-ingame-%04dms.png", shots++, inGameMillis));
                         lastShot = now;
@@ -7818,6 +7867,9 @@ public class GameSparker extends Panel implements Runnable {
             }
             FeatureBridge.phase(gameUi.fase); // out of the race, its extras end
             if (gameUi.fase == Phase.INGAME) {
+                if (TEST_WHIP > 0) {
+                    whipScript(gameUi);
+                }
                 latchRaceInput();
                 if (session != null) {
                     session.ingameInput();

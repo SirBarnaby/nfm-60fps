@@ -18,6 +18,11 @@ public interface GameHooks {
     default void say(int player, String text) {
     }
 
+    /** Car {@code car}'s name as the game shows it ("Tornado Shark"). */
+    default String carName(int car) {
+        return "Car " + (car + 1);
+    }
+
     /** The game's white flash, for one drawn frame. */
     default void flash() {
     }

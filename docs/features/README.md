@@ -22,7 +22,7 @@ One page per extra. Each lives in `src\nfm\lit\features\<feature>\`, has a switc
 - Look and sound extras only read the race: `test\verify-races.ps1 -Features looks -NoGolden` must give 20 matched.
 - Nothing allocated per frame or per tick once a race runs: fixed rings and pools, made at race start.
 - Everything drawn goes through `Canvas`, so the graphics card draws it in the kept scene.
-- Race extras (powerups, exploding wrecks, the suspension) keep their state in the race state and take their dice from a race stream of their own; a recording notes which were on.
+- Race extras (powerups, exploding wrecks, the suspension, the tailwhip) keep their state in the race state and take their dice from a race stream of their own; a recording notes which were on.
 
 ## Pages
 
@@ -33,6 +33,7 @@ One page per extra. Each lives in `src\nfm\lit\features\<feature>\`, has a switc
 - [The rebuilt engine sound](enginesound.md)
 - [Powerups](powerups.md)
 - [Exploding wrecks](wrecks.md)
+- [Tailwhip](tailwhip.md)
 - [Suspension handling](handling.md)
 - [The weather](weather.md)
 - [Car personalities](personality.md)

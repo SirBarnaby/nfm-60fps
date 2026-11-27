@@ -240,6 +240,28 @@ final class FeatureBridge {
     }
 
     /**
+     * The degrees more the race extras turn car {@code m} this tick, asked
+     * as it steers on the ground and has turned {@code steered} degrees by
+     * itself (the tailwhip, with both brakes held): 0 without one, and
+     * nothing is worked out then.
+     */
+    static int raceTurn(Madness m, ContO car, Control control, int steered) {
+        if (!Features.raceExtras()) {
+            return 0;
+        }
+        float vx = mean(m.scx);
+        float vz = mean(m.scz);
+        float along = -vx * RadicalMath.sin(car.xz) + vz * RadicalMath.cos(car.xz);
+        float moving = (float) StrictMath.sqrt(vx * vx + vz * vz);
+        return Features.raceTurn(m.im, car.wxz, steered, control.handb && control.down, along, moving);
+    }
+
+    /** Corner {@code wheel} of car {@code car} and corner {@code otherWheel} of car {@code other} touch this tick: for the race extras (the tailwhip). */
+    static void raceTouch(int car, int wheel, int other, int otherWheel) {
+        Features.raceTouch(car, wheel, other, otherWheel);
+    }
+
+    /**
      * Car {@code m}'s tyres this tick, from its grip block on the ground,
      * when the suspension handling plays: its wheels' velocities and heading
      * moved by the springs and tyres ({@link HandlingFeature#tyres}), and the
@@ -884,6 +906,16 @@ final class FeatureBridge {
         }
 
         @Override
+        public boolean rearWheel(int car, int wheel) {
+            return scene[car].keyz[wheel] < 0;
+        }
+
+        @Override
+        public void turn(int car, int degrees) {
+            scene[car].xz += degrees;
+        }
+
+        @Override
         public boolean grounded(int car) {
             return racers[car].mtouch;
         }
@@ -996,6 +1028,13 @@ final class FeatureBridge {
             if (!SoundManager.isDiscarding()) {
                 Gamepads.hit(SplitRace.active == null ? -1 : player, force);
             }
+        }
+
+        @Override
+        public String carName(int car) {
+            GameUi u = ui;
+            return u != null && car >= 0 && car < u.sc.length && u.sc[car] >= 0 && u.sc[car] < u.names.length
+                    ? u.names[u.sc[car]] : GameHooks.super.carName(car);
         }
 
         @Override

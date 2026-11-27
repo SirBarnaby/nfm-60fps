@@ -18,6 +18,9 @@ public final class CheckRace implements RaceTick {
     public final boolean[] wasted;
     public final float[] pushed;
     public final float[] damaged;
+    /** The way each car points, degrees, and how far the extras have turned it. */
+    public final int[] yaw;
+    public final int[] turned;
 
     public CheckRace(int cars, int gates) {
         this.cars = cars;
@@ -30,6 +33,8 @@ public final class CheckRace implements RaceTick {
         wasted = new boolean[cars];
         pushed = new float[cars];
         damaged = new float[cars];
+        yaw = new int[cars];
+        turned = new int[cars];
         for (int c = 0; c < cars; c++) {
             x[c] = -900F - 400F * c; // beside the boxes
             y[c] = 220F;
@@ -45,6 +50,7 @@ public final class CheckRace implements RaceTick {
         System.arraycopy(y, 0, t.y, 0, cars);
         System.arraycopy(z, 0, t.z, 0, cars);
         System.arraycopy(place, 0, t.place, 0, cars);
+        System.arraycopy(yaw, 0, t.yaw, 0, cars);
         return t;
     }
 
@@ -75,7 +81,13 @@ public final class CheckRace implements RaceTick {
 
     @Override
     public int yaw(int car) {
-        return 0;
+        return yaw[car];
+    }
+
+    @Override
+    public void turn(int car, int degrees) {
+        yaw[car] += degrees;
+        turned[car] += degrees;
     }
 
     @Override

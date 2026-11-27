@@ -162,6 +162,11 @@ public final class FeatureSettings {
                         + " damages the cars close to it, like a small dynamite. Off: it burns as it always did."
                         + RACE_1_0,
                 "xtrawreck", Kind.RACE, 0, "Off", "On"),
+        new Switch("tailwhip", "Tailwhip",
+                "Hold the handbrake and the brake and steer while moving: the car rotates more easily and its"
+                        + " tail swings round. A swinging tail that hits another car spins it, and everyone is"
+                        + " told who tailwhipped whom. The computer cars' driving changes with it too." + RACE_1_0,
+                "xtrawhip", Kind.RACE, 0, "Off", "On"),
         new Switch("personality", "Car personalities",
                 "One small thing each that only that car does: Tornado Shark starts dusty, Lead Oxide shows heat"
                         + " at its front, Kool Kat lands heavily, Mighty Eight's radiators breathe and its nitro"
