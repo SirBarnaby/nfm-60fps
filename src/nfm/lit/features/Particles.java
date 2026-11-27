@@ -23,6 +23,15 @@ public final class Particles {
     private static final float CLOD_TURN = 0.45F;
     /** Spreads the particles' first angles evenly (the golden angle). */
     private static final float GOLDEN = 2.3999631F;
+    /**
+     * In rain a puff (smoke, dust, steam) ages this much more a tick, so it
+     * is gone sooner, keeps this share of its lift and is beaten down this
+     * many units a tick faster each tick, so it hangs low (weather, "Rain
+     * changes fire and smoke").
+     */
+    public static final float RAIN_AGES = 0.4F;
+    public static final float RAIN_LIFT = 0.25F;
+    public static final float RAIN_SINKS = 0.16F;
 
     private final int capacity;
     private final float[] x;
@@ -47,6 +56,8 @@ public final class Particles {
     private final float[] floor;
     /** Stays as debris where it lands ({@link CarLooks#debris}), if something keeps debris. */
     private final boolean[] stays;
+    /** The rain leaves it alone (it is the rain's own: spray). */
+    private final boolean[] isWater;
     private int next;
     private int count;
 
@@ -84,6 +95,7 @@ public final class Particles {
         turn = new float[capacity];
         floor = new float[capacity];
         stays = new boolean[capacity];
+        isWater = new boolean[capacity];
     }
 
     /** Forgets every particle. */
@@ -178,6 +190,7 @@ public final class Particles {
         turn[i] = spark ? 0F : way * (rise < 0F ? CLOD_TURN : PUFF_TURN);
         floor[i] = GROUND;
         stays[i] = false;
+        isWater[i] = false;
         return i;
     }
 
@@ -185,6 +198,13 @@ public final class Particles {
     public void floor(int i, float y) {
         if (i >= 0 && i < capacity) {
             floor[i] = y;
+        }
+    }
+
+    /** Particle {@code i} is water itself (spray off a wet road): the rain does not beat it down. */
+    public void water(int i) {
+        if (i >= 0 && i < capacity) {
+            isWater[i] = true;
         }
     }
 
@@ -209,9 +229,14 @@ public final class Particles {
         if (count == 0) {
             return;
         }
+        boolean rain = Weather.raining();
         for (int i = 0; i < capacity; i++) {
             if (!alive[i]) {
                 continue;
+            }
+            boolean beaten = rain && !streak[i] && lift[i] >= 0F && !isWater[i];
+            if (beaten) {
+                age[i] += RAIN_AGES;
             }
             if (++age[i] >= life[i]) {
                 alive[i] = false;
@@ -225,7 +250,7 @@ public final class Particles {
             float keep = 1F - drag[i];
             vx[i] = vx[i] * keep + (streak[i] ? 0F : windX * drag[i]);
             vz[i] = vz[i] * keep + (streak[i] ? 0F : windZ * drag[i]);
-            vy[i] = vy[i] * keep - lift[i];
+            vy[i] = beaten ? vy[i] * keep - lift[i] * RAIN_LIFT + RAIN_SINKS : vy[i] * keep - lift[i];
             if (y[i] > floor[i] && vy[i] > 0F) {
                 Debris debris = stays[i] ? CarLooks.debris() : null;
                 if (debris != null) {

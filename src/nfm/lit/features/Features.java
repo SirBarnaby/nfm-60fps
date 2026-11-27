@@ -287,6 +287,7 @@ public final class Features {
         }
         racing = true;
         lastView = race;
+        Weather.raceStarts();
         java.util.Arrays.fill(broken, false);
         seenVersion = FeatureSettings.version();
         activeCount = 0;

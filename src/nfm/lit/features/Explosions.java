@@ -56,7 +56,10 @@ public final class Explosions {
 
     /* the craters: a scorched patch, a bowl this deep and a raised lip, in rings of this many sides */
     private static final int SIDES = 12;
-    private static final float DEPTH = 18F;
+    /** A crater of size 1: how deep its bowl is, and how wide its floor and its mouth are (radii). Rain fills it. */
+    public static final float DEPTH = 18F;
+    public static final float FLOOR = 34F;
+    public static final float MOUTH = 92F;
     private static final float LIP = 7F;
     private static final int SOOT = 0x2A241E;
     private static final float[] RING_COS = new float[SIDES + 1];
@@ -185,14 +188,17 @@ public final class Explosions {
         fireball(x, y - 30F * size, z, size);
         smoke(x, y - 20F * size, z, ground, size);
         debris(x, y - 10F, z, ground, size);
+        float cratered = size;
         if (crater) {
             int i = craters % CRATERS;
             craterX[i] = x;
             craterY[i] = ground;
             craterZ[i] = z;
             craterSize[i] = size * dice.between(0.85F, 1.15F);
+            cratered = craterSize[i];
             craters++;
         }
+        Weather.blast(x, ground, z, cratered, crater, r.tick);
     }
 
     /** The smoke already there is blown outwards, the nearest the most. */
@@ -365,9 +371,9 @@ public final class Explosions {
         // the bowl's floor
         canvas.color(canvas.fog(lit(burnt, 0F, -1F, 0F), x, y, z));
         for (int k = 0; k < SIDES; k++) {
-            px[k] = x + RING_COS[k] * 34F * s;
+            px[k] = x + RING_COS[k] * FLOOR * s;
             py[k] = y + DEPTH * s;
-            pz[k] = z + RING_SIN[k] * 34F * s;
+            pz[k] = z + RING_SIN[k] * FLOOR * s;
         }
         canvas.world(px, py, pz, SIDES);
         // the rings, the far side first
@@ -375,8 +381,8 @@ public final class Explosions {
         int start = (int) Math.round((eye + Math.PI) / (2D * Math.PI) * SIDES);
         for (int n = 0; n < SIDES; n++) {
             int k = Math.floorMod(start + (n % 2 == 0 ? n / 2 : -(n + 1) / 2), SIDES);
-            ring(canvas, x, y, z, k, 34F * s, DEPTH * s, 92F * s, 0F, burnt);
-            ring(canvas, x, y, z, k, 92F * s, 0F, 118F * s, -LIP * s, earth);
+            ring(canvas, x, y, z, k, FLOOR * s, DEPTH * s, MOUTH * s, 0F, burnt);
+            ring(canvas, x, y, z, k, MOUTH * s, 0F, 118F * s, -LIP * s, earth);
             ring(canvas, x, y, z, k, 118F * s, -LIP * s, 150F * s, 0F, earth);
         }
     }

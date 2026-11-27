@@ -1,5 +1,6 @@
 package nfm.lit.features.weather;
 
+import fallk.logmaster.HLogger;
 import nfm.lit.features.Canvas;
 import nfm.lit.features.DrawQueue;
 import nfm.lit.features.Feature;
@@ -38,8 +39,11 @@ public final class WeatherFeature implements Feature {
     static final int PLAYERS = 2;
     /** What it queues: the fall by distance, the splashes, each player's screen. */
     static final int FALL_ITEMS = 0;
+    static final int DRY_ITEM = 90;
+    static final int PUDDLE_ITEM = 91;
     static final int SPLASH_ITEM = 100;
     static final int LENS_ITEM = 101;
+    static final int SPRAY_ITEMS = 200;
 
     /** How deep the snow lies when a race starts (of its cap), and the ticks of snowfall that bring it to the cap: four minutes. */
     static final float SNOW_START = 0.3F;
@@ -55,6 +59,8 @@ public final class WeatherFeature implements Feature {
     final Air air = new Air();
     final Fall fall = new Fall();
     final Lens[] lens = {new Lens(), new Lens()};
+    final Wet wet = new Wet();
+    final DrySpots dry = new DrySpots();
 
     /** The weather in the race being played. */
     int kind;
@@ -113,6 +119,15 @@ public final class WeatherFeature implements Feature {
             tail[p] = 0F;
             inside[p] = false;
         }
+        if (snow) {
+            wet.spray.clear();
+            wet.puddles = 0;
+        } else {
+            wet.start(race, wind[0], wind[1]);
+        }
+        dry.start(race, snow);
+        HLogger.info("[extras] weather: " + FeatureSettings.find(ID).name(kind) + " on stage " + race.stage + ", "
+                + wet.puddles + " puddles along " + race.points + " track points");
         WeatherSounds.make();
         coveredAt = -1;
         depth = snowAt(tick);
@@ -169,7 +184,13 @@ public final class WeatherFeature implements Feature {
             tail[p] = tailing(race, p);
             lens[p].tick(speed(race, p), tail[p]);
         }
-        WeatherSounds.around(Features.hooks(), snow, speed(race, 0), inside[0]);
+        dry.tick(race);
+        if (!snow) {
+            wet.tick(race, lens, players);
+        }
+        // the hiss of the player's tyres on the wet road, while they touch it
+        float hiss = snow || !race.grounded[0] ? 0F : Math.min(1F, race.groundSpeed(0) / Wet.MIST_FULL);
+        WeatherSounds.around(Features.hooks(), snow, speed(race, 0), inside[0], hiss);
     }
 
     private static float speed(RaceView race, int car) {
@@ -223,7 +244,12 @@ public final class WeatherFeature implements Feature {
         boolean helmet = HelmetCam.FEATURE.framing() == p;
         inside[p] = helmet && HelmetCam.FEATURE.closed(p);
         fall.queue(queue, tick, camVX[p], camVY[p], camVZ[p], FALL_ITEMS);
+        // on the ground, in this order: the dry spots, the puddles over them, the rain's splashes over those
+        if (dry.any()) {
+            queue.ground(DRY_ITEM);
+        }
         if (kind != Weather.SNOW) {
+            wet.queue(queue, PUDDLE_ITEM, SPRAY_ITEMS);
             queue.ground(SPLASH_ITEM);
         }
         if (lens[p].count > 0) {
@@ -242,6 +268,12 @@ public final class WeatherFeature implements Feature {
             fall.draw(canvas, item - FALL_ITEMS);
         } else if (item == SPLASH_ITEM) {
             fall.splashes(canvas);
+        } else if (item == DRY_ITEM) {
+            dry.draw(canvas);
+        } else if (item == PUDDLE_ITEM) {
+            wet.drawPuddles(canvas);
+        } else if (item >= SPRAY_ITEMS && item < SPRAY_ITEMS + Wet.SPRAY) {
+            wet.drawSpray(canvas, item - SPRAY_ITEMS);
         } else if (item >= LENS_ITEM && item < LENS_ITEM + PLAYERS) {
             lens[item - LENS_ITEM].draw(canvas, aspect, Air.mix(skyRgb, 0xffffff, 0.55F),
                     Air.mix(skyRgb, 0xffffff, 0.92F), Air.mix(skyRgb, 0x000000, 0.6F));

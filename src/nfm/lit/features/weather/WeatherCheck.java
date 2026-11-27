@@ -8,6 +8,7 @@ import java.util.Set;
 
 import nfm.lit.features.CheckCanvas;
 import nfm.lit.features.DrawQueue;
+import nfm.lit.features.Explosions;
 import nfm.lit.features.FeatureSettings;
 import nfm.lit.features.Features;
 import nfm.lit.features.GameHooks;
@@ -89,6 +90,10 @@ public final class WeatherCheck {
             c.dropsOnTheScreen();
             c.snowGetsDeeper();
             c.heard();
+            c.smokeInRain();
+            c.spray();
+            c.puddles();
+            c.theGrid();
             c.onlyALook();
         } finally {
             FeatureSettings.set(WeatherFeature.ID, saved);
@@ -119,6 +124,7 @@ public final class WeatherCheck {
             v.topSpeed[c] = 200F;
             v.grounded[c] = true;
         }
+        Weather.raceStarts(); // as the game does: no crater of another race is left to fill
         weather.raceStarted(v);
     }
 
@@ -417,7 +423,7 @@ public final class WeatherCheck {
         boolean rain = WeatherSounds.RAIN.equals(asked.bed[WeatherSounds.RAIN_BED])
                 && asked.bed[WeatherSounds.ROOF_BED] == null && asked.bed[WeatherSounds.WIND_BED] == null;
         float open = asked.bedGain[WeatherSounds.RAIN_BED];
-        WeatherSounds.around(asked, false, 0F, true);
+        WeatherSounds.around(asked, false, 0F, true, 0F);
         boolean roof = WeatherSounds.ROOF.equals(asked.bed[WeatherSounds.ROOF_BED])
                 && asked.bedGain[WeatherSounds.RAIN_BED] < open;
         weather.raceEnded(v);
@@ -434,6 +440,203 @@ public final class WeatherCheck {
         check(F, "the weather is heard through the 3D sound only", rain && roof && ended && wind && asked.beds == 0,
                 "rain all around " + rain + ", on the roof from inside " + roof + ", the wind in snow " + wind
                         + ", silent after the race " + ended + ", " + asked.beds + " asked of Classic sound");
+    }
+
+    /** The same explosion in the dry and in the rain: its smoke is gone sooner and hangs lower in the rain. */
+    private void smokeInRain() {
+        float[] dryAt = smokeAfter(Weather.DRY, 100);
+        float[] rainAt = smokeAfter(Weather.RAIN, 100);
+        start(Weather.DRY);
+        check(F, "smoke is gone sooner and hangs lower in the rain",
+                dryAt[0] >= 10F && rainAt[0] < dryAt[0] * 0.8F && rainAt[1] < dryAt[1] * 0.7F,
+                n(rainAt[0]) + " puffs left 100 ticks after an explosion in the rain, " + n(rainAt[1])
+                        + " above the ground on average; in the dry " + n(dryAt[0]) + ", " + n(dryAt[1]) + " above");
+    }
+
+    /** The smoke of a dynamite stick's explosion {@code ticks} later in weather {@code kind}: puffs left, and their mean height over the ground. */
+    private float[] smokeAfter(int kind, int ticks) {
+        start(kind);
+        Explosions blast = new Explosions("weather check");
+        blast.start(v);
+        blast.explode(v, 2000F, 240F, 2000F, 250F, false, 1F, Explosions.BLAST, false);
+        for (int t = 0; t < ticks; t++) {
+            v.tick++;
+            blast.tick(v);
+        }
+        float[] at = new float[3];
+        int puffs = 0;
+        float height = 0F;
+        for (int i = 0; i < blast.particles.capacity(); i++) {
+            if (blast.particles.isPuff(i) && blast.particles.position(i, at)) {
+                puffs++;
+                height += 250F - at[1];
+            }
+        }
+        return new float[] {puffs, puffs == 0 ? 0F : height / puffs};
+    }
+
+    /** Car 0 for a tick: its wheels on the ground or not, moving {@code speed} along z, its rear wheels sliding {@code slide} sideways. */
+    private void drive(float speed, float slide, boolean onGround) {
+        v.vz[0] = speed;
+        v.z[0] += speed;
+        v.grounded[0] = onGround;
+        v.y[0] = onGround ? 220F : 60F;
+        for (int w = 0; w < RaceView.WHEELS; w++) {
+            v.contact[w] = onGround;
+            v.wheelX[w] = v.x[0] + ((w & 1) == 0 ? -40F : 40F);
+            v.wheelY[w] = onGround ? 250F : 90F;
+            v.wheelZ[w] = v.z[0] + (w < 2 ? 70F : -70F);
+            v.slipSide[w] = w >= 2 ? slide : 0F;
+        }
+        ticks(1);
+    }
+
+    /** A drift on the wet road throws water and a car at speed raises a mist; in the air neither, and none in the dry. */
+    private void spray() {
+        start(Weather.RAIN);
+        int thrown = 0;
+        int mist = 0;
+        for (int t = 0; t < 20; t++) {
+            drive(30F, 12F, true);
+            thrown += weather.wet.thrown;
+            mist += weather.wet.misted;
+        }
+        int inSpray = weather.wet.spray.count();
+        frame(0F, 100F, v.z[0] - 500F, 0F, 0F);
+        int drawn = canvas.polygons;
+        // the same slide, off the ground
+        start(Weather.RAIN);
+        int airThrown = 0;
+        int airMist = 0;
+        for (int t = 0; t < 20; t++) {
+            drive(30F, 12F, false);
+            airThrown += weather.wet.thrown;
+            airMist += weather.wet.misted;
+        }
+        int airSpray = weather.wet.spray.count();
+        // rolling straight and slowly: no water thrown
+        start(Weather.RAIN);
+        int slow = 0;
+        for (int t = 0; t < 20; t++) {
+            drive(6F, 0F, true);
+            slow += weather.wet.thrown + weather.wet.misted;
+        }
+        check(F, "a drift in the rain throws water, a car at speed raises a mist",
+                thrown >= 20 && mist >= 10 && inSpray >= 20 && drawn > inSpray && slow == 0,
+                thrown + " drops and " + mist + " puffs of mist in 20 ticks of a slide at speed, " + inSpray
+                        + " in the air at once; " + slow + " rolling slowly");
+        check(F, "no water comes off a car in the air", airThrown == 0 && airMist == 0 && airSpray == 0,
+                airThrown + " drops, " + airMist + " puffs from the same slide off the ground");
+    }
+
+    /** Puddles lie along the track, a wheel through one splashes, and a crater fills with a small one. */
+    private void puddles() {
+        start(Weather.RAIN);
+        // a track of eight points on the flat ground, 3000 apart
+        v.points = 8;
+        v.pointX = new float[8];
+        v.pointY = new float[8];
+        v.pointZ = new float[8];
+        for (int p = 0; p < 8; p++) {
+            v.pointX[p] = p < 4 ? 0F : 6000F;
+            v.pointZ[p] = (p < 4 ? p : 7 - p) * 3000F;
+        }
+        weather.raceStarted(v);
+        int laid = weather.wet.puddles;
+        frame(3000F, -2500F, 4500F, 0F, 60F);
+        int seen = weather.wet.drawnPuddles;
+        // drive through the first puddle
+        v.x[0] = weather.wet.puddleX[0];
+        v.z[0] = weather.wet.puddleZ[0] - 200F;
+        int before = weather.lens[0].count;
+        int splashes = 0;
+        for (int t = 0; t < 12; t++) {
+            drive(30F, 0F, true);
+            for (int w = 0; w < RaceView.WHEELS; w++) {
+                v.wheelX[w] = v.x[0]; // all four along the middle, through the puddle
+            }
+            splashes += weather.wet.splashed;
+        }
+        int onScreen = weather.lens[0].count - before;
+        check(F, "puddles lie along the track and splash under a wheel",
+                laid >= 12 && seen == laid && splashes >= 2 && onScreen >= 2,
+                laid + " puddles along 8 track points, " + seen + " drawn from above; " + splashes
+                        + " wheels splashed driving through one, " + onScreen + " more drops on the screen");
+        // an explosion's crater, and one that left none
+        Weather.raceStarts();
+        Weather.blast(500F, 250F, 500F, 1F, true, v.tick);
+        Weather.blast(900F, 250F, 500F, 1F, false, v.tick);
+        ticks(2);
+        frame(500F, -400F, 0F, 0F, 50F);
+        int fresh = weather.wet.drawnCraters;
+        ticks(Wet.CRATER_FILLS);
+        canvas.keeping = true;
+        frame(500F, -400F, 0F, 0F, 50F);
+        canvas.keeping = false;
+        int filled = weather.wet.drawnCraters;
+        float deepest = -Float.MAX_VALUE;
+        float widest = 0F;
+        for (float[] c : canvas.kept) {
+            if (c.length != 30) {
+                continue;
+            }
+            for (int i = 0; i + 2 < c.length; i += 3) {
+                float dx = c[i] - 500F;
+                float dz = c[i + 2] - 500F;
+                if (dx * dx + dz * dz < 150F * 150F && c[i + 1] > 250.5F) {
+                    deepest = Math.max(deepest, c[i + 1]);
+                    widest = Math.max(widest, (float) Math.sqrt(dx * dx + dz * dz));
+                }
+            }
+        }
+        Weather.raceStarts();
+        check(F, "a small puddle fills the crater an explosion left",
+                fresh == 0 && filled == 1 && deepest > 250.5F && deepest < 250F + Explosions.DEPTH
+                        && widest < Explosions.MOUTH,
+                fresh + " right after the blast, " + filled + " after " + Wet.CRATER_FILLS / 19 + " s of rain: water "
+                        + n(deepest - 250F) + " below the ground in a bowl " + n(Explosions.DEPTH) + " deep, "
+                        + n(widest) + " from its middle (the bowl's mouth " + n(Explosions.MOUTH) + ")");
+    }
+
+    /** A dry spot shows where each car stood when the race started in rain or snow, for a while after it drove off. */
+    private void theGrid() {
+        String[] names = {"", "rain", "", "snow"};
+        for (int kind = Weather.RAIN; kind <= Weather.SNOW; kind += 2) {
+            start(kind);
+            v.z[1] = 400F; // both on the grid
+            weather.raceStarted(v);
+            for (int w = 0; w < 2 * RaceView.WHEELS; w++) {
+                v.contact[w] = true;
+                v.wheelY[w] = 250F;
+                v.groundRgb[w] = 0x808080;
+            }
+            ticks(19);
+            frame(0F, -300F, -600F, 0F, 30F);
+            int standing = weather.dry.drawn;
+            // both drive off
+            v.z[0] += 2000F;
+            v.z[1] += 2000F;
+            ticks(19);
+            frame(0F, -300F, -600F, 0F, 30F);
+            int justLeft = weather.dry.drawn;
+            float showing = weather.dry.shows(0);
+            ticks(kind == Weather.SNOW ? DrySpots.SNOWED_IN : DrySpots.WET_IN);
+            frame(0F, -300F, -600F, 0F, 30F);
+            int later = weather.dry.any() ? weather.dry.drawn : 0;
+            check(F, "a dry spot shows where each car stood on the grid in " + names[kind],
+                    standing == 2 && justLeft == 2 && showing > 0.5F && showing < 1F && later == 0,
+                    standing + " spots under 2 cars, " + justLeft + " a second after they drove off (" + n(showing)
+                            + " of each left), " + later + " after "
+                            + (kind == Weather.SNOW ? DrySpots.SNOWED_IN : DrySpots.WET_IN) / 19 + " s more");
+        }
+        // a weather switched on in the middle of a race lays no spots
+        start(Weather.RAIN);
+        v.tick = 19 * 60;
+        weather.raceStarted(v);
+        ticks(5);
+        frame(0F, -300F, -600F, 0F, 30F);
+        check(F, "no dry spots when the rain joins a race under way", weather.dry.drawn == 0,
+                weather.dry.drawn + " spots");
     }
 
     /** It is a look: it does not change races, and the race's copy is as it was after the weather read it. */

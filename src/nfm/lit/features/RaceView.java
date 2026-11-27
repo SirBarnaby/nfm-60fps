@@ -39,7 +39,8 @@ public final class RaceView {
     /**
      * Points along the track (the computer drivers' path and the
      * checkpoints), in order, filled when the stage loads: what lies along
-     * the road (puddles) is placed by them.
+     * the road (puddles) is placed by them. A point's height is as the
+     * stage's file gives it: 0 (none given) or 250 on the flat ground.
      */
     public int points;
     public float[] pointX = new float[0];

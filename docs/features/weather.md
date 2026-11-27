@@ -115,19 +115,65 @@ In the chase views the drops lie over the whole picture, under the HUD. In
 the helmet cam they are on the windscreen: over the bonnet, under the car's
 inside (`DrawQueue.afterFirst`). In snow a few flakes land and melt.
 
+## The wet road (`Wet`)
+
+- **Mist**: a car going faster than 12 units a tick raises pale puffs
+  behind its rear wheels, fullest from 60; they spread, drift with the wind
+  and thin out within a second.
+- **Water off a sliding tyre**: a wheel that slides sideways, spins or is
+  locked by more than 2.5 units a tick throws drops outwards from the car
+  and up, with a puff of mist, the most at 14.
+- **Only on the ground**: a wheel throws water only while it touches the
+  ground (`RaceView.contact`); a car in the air throws none.
+- **Puddles**: up to 96 lie along the track, placed when the race starts
+  from the track's own points (`RaceView.pointX/Y/Z`, where they lie on the
+  flat ground), at least 900 units apart and up to 420 aside of the line
+  between two points. A puddle is three flat polygons on the ground, drawn
+  right after the road: a dark wet edge, the water (the sky's colour, paler
+  than the wet road) and a paler sheen off its middle. The rain's splashes
+  are drawn over them.
+- **Through a puddle**: a wheel faster than 5 units a tick throws drops and
+  a burst of mist, a splash is heard at the car (the 3D sound; at most one
+  every six ticks a car), and a player's screen gets two large drops.
+- **Craters**: every explosion's look reports where it went off
+  (`Weather.blast`, from `Explosions.explode`). A crater fills over twelve
+  seconds of rain to 72% of its bowl: a rounder small puddle, lying as deep
+  and as wide as the bowl is at that height.
+
+The spray's particles are the extras' shared `Particles`, marked as water so
+the rain does not beat them down as it does smoke.
+
+## Smoke in the rain
+
+In rain every puff of the extras' particles (smoke, dust, steam; not sparks,
+not clods, not the spray) ages 1.4 ticks a tick, keeps a quarter of its lift
+and is pushed down 0.16 units a tick more each tick (`Particles.tick`,
+`RAIN_AGES`, `RAIN_LIFT`, `RAIN_SINKS`): an explosion's smoke is thinner
+after five seconds (26 puffs against 42) and hangs about 19 units over the
+ground instead of 70.
+
+## The grid's dry spots (`DrySpots`)
+
+A race that starts in rain or snow leaves a spot the shape of each car
+where it stood: paler than the wet road in rain, the darker bare ground in
+snow (a thin layer over the ground as drawn, so it suits any road). Once
+its car has driven off a spot fades: wet in twelve seconds, snowed over in
+forty. Weather switched on more than two seconds into a race lays none.
+
 ## Sound (`WeatherSounds`)
 
 Real recordings (`sounds\CREDITS.md`), looping around the listener through
 the 3D sound's beds (`Sound3D.bed`: a flat source whose loudness follows
 over a third of a second): rain all around, louder at speed; from the
 helmet cam of a car with a roof the rain is quieter and its drumming on the
-roof is heard; in snow, wind. Classic sound hears none of it.
+roof is heard; the player's tyres hiss on the wet road, louder with speed,
+while the car touches the ground; in snow, wind. A splash is heard where a
+car goes through a puddle. Classic sound hears none of it.
 
 ## Still to come
 
 The rest of the weather's requirements are built in later steps and are not
-in the game yet: spray off wet roads, puddles (in craters too), smoke that
-sinks in rain, rain washing dirt off, wipers, dry spots on the grid; snow
+in the game yet: wipers, rain washing dirt off and the wet stain; snow
 trails, heaps beside drifts, snow on the cars and in two cars' trunks,
 explosions and fire clearing snow.
 
@@ -141,7 +187,12 @@ race replayed; nothing falls at the eye in 120 frames of a camera looking
 and moving every way; splashes on the ground in rain only; drops on the
 screen, more behind another car, none beside it or in the dry; the snow's
 depth after 0, 2, 4 and 8 minutes; what is heard, and nothing through
-Classic sound.
+Classic sound; the same explosion's smoke in the dry and in the rain; a
+slide at speed on the ground (drops and mist), the same slide in the air
+(none) and slow rolling (none); puddles laid along a made-up track, a wheel
+through one, a crater right after its blast and after twelve seconds of
+rain; the grid's spots under the cars, a second after they left and after
+the time each weather takes to hide them.
 
 Seen so far only in the software renderer's hidden screenshots; not yet on
 the graphics card, and nobody has driven it.

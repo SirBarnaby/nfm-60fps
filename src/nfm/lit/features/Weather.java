@@ -16,7 +16,68 @@ public final class Weather {
     private static volatile int kind;
     private static volatile float snow;
 
+    /** At most this many explosions are kept; the oldest make way. */
+    public static final int BLASTS = 32;
+    private static final float[] blastX = new float[BLASTS];
+    private static final float[] blastGround = new float[BLASTS];
+    private static final float[] blastZ = new float[BLASTS];
+    private static final float[] blastSize = new float[BLASTS];
+    private static final boolean[] blastCrater = new boolean[BLASTS];
+    private static final int[] blastTick = new int[BLASTS];
+    private static int blasts;
+
     private Weather() {
+    }
+
+    /** A race starts: no explosions yet. */
+    public static void raceStarts() {
+        blasts = 0;
+    }
+
+    /**
+     * An explosion's look says where it went off, for what the weather
+     * does with it (rain fills a crater, a blast clears snow): over ground
+     * at height {@code ground}, {@code size} 1 for a dynamite stick, leaving
+     * a crater or not, {@code tick} ticks into the race.
+     */
+    public static void blast(float x, float ground, float z, float size, boolean crater, int tick) {
+        int i = blasts % BLASTS;
+        blastX[i] = x;
+        blastGround[i] = ground;
+        blastZ[i] = z;
+        blastSize[i] = size;
+        blastCrater[i] = crater;
+        blastTick[i] = tick;
+        blasts++;
+    }
+
+    /** Explosions since the race started; the last {@link #BLASTS} are kept, explosion {@code n} in slot {@code n % BLASTS}. */
+    public static int blasts() {
+        return blasts;
+    }
+
+    public static float blastX(int slot) {
+        return blastX[slot];
+    }
+
+    public static float blastGround(int slot) {
+        return blastGround[slot];
+    }
+
+    public static float blastZ(int slot) {
+        return blastZ[slot];
+    }
+
+    public static float blastSize(int slot) {
+        return blastSize[slot];
+    }
+
+    public static boolean blastCrater(int slot) {
+        return blastCrater[slot];
+    }
+
+    public static int blastTick(int slot) {
+        return blastTick[slot];
     }
 
     /** {@link #DRY}, {@link #RAIN}, {@link #RAIN_FOG} or {@link #SNOW}. */

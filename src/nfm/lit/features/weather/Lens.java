@@ -87,6 +87,13 @@ final class Lens {
         }
     }
 
+    /** A splash of water on the screen (through a puddle): {@code drops} large drops at once. */
+    void splash(int drops) {
+        for (int k = 0; k < drops && !snow; k++) {
+            land(0F);
+        }
+    }
+
     private void land(float tail) {
         int i = -1;
         for (int k = 0; k < MAX; k++) {
