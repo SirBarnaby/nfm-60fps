@@ -44,6 +44,8 @@ public final class WeatherFeature implements Feature {
     static final int SPLASH_ITEM = 100;
     static final int LENS_ITEM = 101;
     static final int SPRAY_ITEMS = 200;
+    static final int WIPER_ITEMS = 800;
+    static final int HELMET_WIPER_ITEM = 900;
 
     /** How deep the snow lies when a race starts (of its cap), and the ticks of snowfall that bring it to the cap: four minutes. */
     static final float SNOW_START = 0.3F;
@@ -61,6 +63,7 @@ public final class WeatherFeature implements Feature {
     final Lens[] lens = {new Lens(), new Lens()};
     final Wet wet = new Wet();
     final DrySpots dry = new DrySpots();
+    final Wiping wiping = new Wiping();
 
     /** The weather in the race being played. */
     int kind;
@@ -78,6 +81,7 @@ public final class WeatherFeature implements Feature {
     private final boolean[] inside = new boolean[PLAYERS];
     private int skyRgb;
     private float aspect = 16F / 9F;
+    private float share = 1F;
 
     private WeatherFeature() {
     }
@@ -122,8 +126,10 @@ public final class WeatherFeature implements Feature {
         if (snow) {
             wet.spray.clear();
             wet.puddles = 0;
+            wiping.stop();
         } else {
             wet.start(race, wind[0], wind[1]);
+            wiping.start(race);
         }
         dry.start(race, snow);
         HLogger.info("[extras] weather: " + FeatureSettings.find(ID).name(kind) + " on stage " + race.stage + ", "
@@ -187,6 +193,7 @@ public final class WeatherFeature implements Feature {
         dry.tick(race);
         if (!snow) {
             wet.tick(race, lens, players);
+            wiping.tick(race, lens, players, inside, aspect);
         }
         // the hiss of the player's tyres on the wet road, while they touch it
         float hiss = snow || !race.grounded[0] ? 0F : Math.min(1F, race.groundSpeed(0) / Wet.MIST_FULL);
@@ -230,6 +237,7 @@ public final class WeatherFeature implements Feature {
         hooks.cover(0, 0F, 0F);
         Weather.set(Weather.DRY, 0F);
         kind = Weather.DRY;
+        wiping.stop();
     }
 
     /* ------------------------------------------------------------ drawing */
@@ -241,6 +249,7 @@ public final class WeatherFeature implements Feature {
         }
         int p = Math.max(0, Math.min(PLAYERS - 1, queue.player()));
         aspect = queue.aspect();
+        share = queue.share();
         boolean helmet = HelmetCam.FEATURE.framing() == p;
         inside[p] = helmet && HelmetCam.FEATURE.closed(p);
         fall.queue(queue, tick, camVX[p], camVY[p], camVZ[p], FALL_ITEMS);
@@ -260,6 +269,10 @@ public final class WeatherFeature implements Feature {
                 queue.at(queue.eyeX(), queue.eyeY(), queue.eyeZ(), LENS_ITEM + p); // nearest of all: over everything
             }
         }
+        if (kind != Weather.SNOW) {
+            // after the screen's drops: the blades pass over them
+            wiping.queue(queue, WIPER_ITEMS, helmet ? p : -1, HELMET_WIPER_ITEM);
+        }
     }
 
     @Override
@@ -274,6 +287,10 @@ public final class WeatherFeature implements Feature {
             wet.drawPuddles(canvas);
         } else if (item >= SPRAY_ITEMS && item < SPRAY_ITEMS + Wet.SPRAY) {
             wet.drawSpray(canvas, item - SPRAY_ITEMS);
+        } else if (item >= HELMET_WIPER_ITEM && item < HELMET_WIPER_ITEM + PLAYERS) {
+            wiping.drawHelmet(canvas, item - HELMET_WIPER_ITEM, share);
+        } else if (item >= WIPER_ITEMS && item < HELMET_WIPER_ITEM) {
+            wiping.draw(canvas, item - WIPER_ITEMS, share);
         } else if (item >= LENS_ITEM && item < LENS_ITEM + PLAYERS) {
             lens[item - LENS_ITEM].draw(canvas, aspect, Air.mix(skyRgb, 0xffffff, 0.55F),
                     Air.mix(skyRgb, 0xffffff, 0.92F), Air.mix(skyRgb, 0x000000, 0.6F));

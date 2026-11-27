@@ -138,6 +138,33 @@ public final class HelmetCam implements Feature {
         return ready(player) && cockpits[player].closed;
     }
 
+    /**
+     * {@code player}'s windscreen as the helmet sees it, for what is drawn
+     * on it (the weather's wipers), into {@code out[0..4]}: the eyes at
+     * rest in the car's own numbers, how far ahead of them the dashboard is
+     * drawn, and the cowl (the foot of the glass) as a slope down from
+     * level. False for an open car or a player with no helmet.
+     */
+    public boolean windscreen(int player, float[] out) {
+        if (!closed(player)) {
+            return false;
+        }
+        Cockpit c = cockpits[player];
+        out[0] = c.eyeX;
+        out[1] = c.eyeY;
+        out[2] = c.eyeZ;
+        out[3] = Interior.ahead(c);
+        out[4] = Interior.cowl(c);
+        return true;
+    }
+
+    /** The slopes from the eyes at which the helmet's windscreen ends: at its pillars' feet and heads, and at the roof's edge. */
+    public static final float GLASS_FOOT_ASIDE = Interior.PILLAR_FOOT;
+    public static final float GLASS_HEAD_ASIDE = Interior.PILLAR_HEAD;
+    public static final float GLASS_TOP = Interior.ROOF_EDGE;
+    /** How far above the cowl the dark scuttle stands, as a slope: a wiper's pivot hides in it. */
+    public static final float SCUTTLE = Interior.SCUTTLE_HIGH;
+
     /** True while the extra is on in a race and has a head for {@code player}. */
     public boolean ready(int player) {
         return running && player >= 0 && player < players;

@@ -12,6 +12,7 @@ import nfm.lit.features.CarLooks;
 import nfm.lit.features.CarShape;
 import nfm.lit.features.CheckCanvas;
 import nfm.lit.features.RaceView;
+import nfm.lit.features.Weather;
 
 /**
  * Damage and heat's checks (realism, every requirement): a made-up car,
@@ -101,6 +102,7 @@ public final class RealismCheck {
         c.glass();
         c.wheels();
         c.dirt();
+        c.rainWash();
         c.scratches();
         c.landing();
         c.debris();
@@ -1045,6 +1047,69 @@ public final class RealismCheck {
         check(F, "dirt builds up", ok, "after 16 s on soft ground dirt " + n(dirty) + ": the lower side "
                 + hex(side) + " (clean " + hex(cleanSide) + ", ground " + hex(mud) + "), the roof " + hex(roof)
                 + ", a tyre " + hex(tyre) + "; after 32 s on tarmac " + n(worn));
+    }
+
+    /** In the rain the dust washes off, and sliding over wet soft ground leaves mud: a darker stain, also higher up (weather, "Rain washes the car"). */
+    private void rainWash() {
+        start();
+        int ground = 0x8a6a40;
+        Weather.set(Weather.DRY, 0F);
+        for (int t = 0; t < 300; t++) {
+            carZ += 20F;
+            place(50F, 20F, true);
+            for (int w = 0; w < RaceView.WHEELS; w++) {
+                v.surface[w] = 1;
+                v.groundRgb[w] = ground;
+            }
+            tick();
+        }
+        float dusty = s.dirt;
+        int dustSide = real.color(0, LEFT_SIDE, BODY_RGB);
+        Weather.set(Weather.RAIN, 0F);
+        int washedIn = -1;
+        for (int t = 0; t < 19 * 30; t++) {
+            drive(50F, true, false);
+            if (washedIn < 0 && s.dirt < 0.01F) {
+                washedIn = t + 1;
+            }
+        }
+        float washed = s.dirt;
+        float mudBefore = s.mud;
+        int cleanSide = real.color(0, LEFT_SIDE, BODY_RGB);
+        // through the wet soft ground: rolling straight first, then sliding
+        for (int t = 0; t < 100; t++) {
+            carZ += 20F;
+            place(50F, 20F, true);
+            for (int w = 0; w < RaceView.WHEELS; w++) {
+                v.surface[w] = 1;
+                v.groundRgb[w] = ground;
+                v.slipSide[w] = 0F;
+            }
+            tick();
+        }
+        float rolled = s.mud;
+        float dustInRain = s.dirt;
+        for (int t = 0; t < 200; t++) {
+            carZ += 20F;
+            place(50F, 20F, true);
+            for (int w = 0; w < RaceView.WHEELS; w++) {
+                v.surface[w] = 1;
+                v.groundRgb[w] = ground;
+                v.slipSide[w] = 9F;
+            }
+            tick();
+        }
+        float mud = s.mud;
+        int mudSide = real.color(0, LEFT_SIDE, BODY_RGB);
+        Arrays.fill(v.slipSide, 0F);
+        Weather.set(Weather.DRY, 0F);
+        boolean ok = dusty > 0.5F && washed < 0.01F && washedIn > 0 && mudBefore == 0F && cleanSide == BODY_RGB
+                && rolled == 0F && dustInRain < 0.01F && mud > 0.5F && light(mudSide) < light(dustSide) - 20F
+                && distance(mudSide, dustSide) > 30F;
+        check(F, "rain washes the dust off, and wet dirt leaves a different stain", ok, "dust " + n(dusty)
+                + " (the lower side " + hex(dustSide) + "); in the rain it is gone in " + washedIn / 19 + " s (side "
+                + hex(cleanSide) + "); rolling over wet soft ground mud " + n(rolled) + " and dust " + n(dustInRain)
+                + ", sliding over it mud " + n(mud) + ": the side " + hex(mudSide) + ", darker than the dust's");
     }
 
     /** A wall scraped along the left side scratches the left side only. */

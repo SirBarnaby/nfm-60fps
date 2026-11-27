@@ -19,6 +19,8 @@ final class WeatherSounds {
     static final String SPRAY = "wx-spray";
     static final String ROLL = "wx-roll";
     static final String HIT = "wx-hit";
+    /** One wipe of a blade over wet glass, heard from inside the car. */
+    static final String WIPE = "wx-wipe";
 
     /** The 3D sound's beds the weather uses. */
     static final int RAIN_BED = 0;
@@ -39,6 +41,7 @@ final class WeatherSounds {
         Recordings.give(SPRAY, "spray", false);
         Recordings.give(ROLL, "snowroll", false);
         Recordings.give(HIT, "snowhit", false);
+        Recordings.give(WIPE, "wipewet", false);
     }
 
     /**

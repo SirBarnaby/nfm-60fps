@@ -25,7 +25,9 @@ when the race starts) and its sheet (`CarSheets`, see
   sideways), other glass, front or rear **light** (the model's `lightF` and
   `lightB`), **wheel**;
 - how low each polygon sits (dirt sticks below 45% of the body's height, fully
-  at 85%) and which side a panel faces (scratches);
+  at 85%; in the rain the dust washes off and a slide over wet soft ground
+  throws mud, darker and in splashes, from 15% down: see
+  [the weather](weather.md)) and which side a panel faces (scratches);
 - the engine, from the sheet: under the bonnet (front), behind the cab (mid),
   over the rear (rear); the radiators at the front corners or in the side pods
   (none when air-cooled); the exhaust tips at the back (1 or 2) or as stacks

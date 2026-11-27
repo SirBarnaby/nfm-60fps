@@ -6,6 +6,9 @@ import static nfm.lit.features.ExtrasCheck.n;
 import java.util.HashSet;
 import java.util.Set;
 
+import nfm.lit.features.helmetcam.HelmetCam;
+import nfm.lit.features.Wipers;
+import nfm.lit.features.CarShape;
 import nfm.lit.features.CheckCanvas;
 import nfm.lit.features.DrawQueue;
 import nfm.lit.features.Explosions;
@@ -71,6 +74,8 @@ public final class WeatherCheck {
     }
 
     private RaceView v;
+    /** The next races' cars have a windscreen (and so wipers); else they are empty shapes. */
+    private boolean glassCars;
     private WeatherFeature weather;
     private Asked asked;
     private final CheckCanvas canvas = new CheckCanvas();
@@ -94,6 +99,8 @@ public final class WeatherCheck {
             c.spray();
             c.puddles();
             c.theGrid();
+            c.wipers();
+            c.wipersFromTheHelmet();
             c.onlyALook();
         } finally {
             FeatureSettings.set(WeatherFeature.ID, saved);
@@ -123,6 +130,10 @@ public final class WeatherCheck {
             v.z[c] = c * 6000F; // the other car far ahead: clear air
             v.topSpeed[c] = 200F;
             v.grounded[c] = true;
+            if (glassCars) {
+                v.shape[c] = glassCar();
+                v.modelName[c] = "check";
+            }
         }
         Weather.raceStarts(); // as the game does: no crater of another race is left to fill
         weather.raceStarted(v);
@@ -154,6 +165,47 @@ public final class WeatherCheck {
         w.air(StageAir.END, new int[5]);
     }
 
+    /**
+     * A closed car for the wipers: 40 wide, 100 long, a bonnet ahead of a
+     * sloped windscreen that narrows towards the roof, side windows, a roof.
+     */
+    private static CarShape glassCar() {
+        float[][] polys = {
+            {-18, -12, 16, 18, -12, 16, 18, -12, 50, -18, -12, 50}, // the bonnet
+            {-16, -12, 15, 16, -12, 15, 13, -24, -2, -13, -24, -2}, // the windscreen
+            {-13, -24, -2, 13, -24, -2, 13, -24, -30, -13, -24, -30}, // the roof
+            {-19, -22, -4, -19, -22, -28, -19, -13, -28, -19, -13, -4}, // the side windows
+            {19, -22, -4, 19, -22, -28, 19, -13, -28, 19, -13, -4},
+            {-20, -12, -50, -20, -12, 50, -20, -2, 50, -20, -2, -50}, // the sides
+            {20, -12, -50, 20, -12, 50, 20, -2, 50, 20, -2, -50},
+        };
+        boolean[] glass = {false, true, false, true, true, false, false};
+        CarShape s = new CarShape();
+        s.fit(polys.length, polys.length * 4);
+        s.minX = s.minY = s.minZ = Float.MAX_VALUE;
+        s.maxX = s.maxY = s.maxZ = -Float.MAX_VALUE;
+        int at = 0;
+        for (int i = 0; i < polys.length; i++) {
+            s.first[i] = at;
+            s.count[i] = 4;
+            s.rgb[i] = glass[i] ? 0x9fb4c8 : 0xc03020;
+            s.glass[i] = glass[i];
+            s.wheel[i] = -1;
+            for (int k = 0; k < 4; k++, at++) {
+                s.x[at] = polys[i][k * 3];
+                s.y[at] = polys[i][k * 3 + 1];
+                s.z[at] = polys[i][k * 3 + 2];
+                s.minX = Math.min(s.minX, s.x[at]);
+                s.maxX = Math.max(s.maxX, s.x[at]);
+                s.minY = Math.min(s.minY, s.y[at]);
+                s.maxY = Math.max(s.maxY, s.y[at]);
+                s.minZ = Math.min(s.minZ, s.z[at]);
+                s.maxZ = Math.max(s.maxZ, s.z[at]);
+            }
+        }
+        return s;
+    }
+
     private static void set(int[] c, int a, int b, int d) {
         c[0] = a;
         c[1] = b;
@@ -178,6 +230,9 @@ public final class WeatherCheck {
         canvas.reset();
         DrawQueue.Drawer drawer = (f, item) -> weather.draw(canvas, item);
         queue.before(Integer.MAX_VALUE, false, drawer);
+        for (int c = 0; c < v.cars; c++) {
+            queue.after(c, drawer);
+        }
         queue.end(drawer);
         return canvas.polygons;
     }
@@ -290,6 +345,103 @@ public final class WeatherCheck {
         check(F, "a race replayed rains the same, and the rain falls", again.equals(here) && kept < again.size() / 10,
                 (again.equals(here) ? "the same drops" : "other drops") + " in the same race again; " + kept + " of "
                         + again.size() + " still where they were a tick later");
+    }
+
+    /** In the rain every car with a windscreen wipes it, the blades staying on the glass; not in snow, not in the dry. */
+    private void wipers() {
+        glassCars = true;
+        start(Weather.RAIN);
+        int fitted = weather.wiping.fitted;
+        Wipers w = weather.wiping.of(0);
+        float least = 1F;
+        float most = 0F;
+        boolean onGlass = w.has;
+        float[] uv = new float[2];
+        for (int t = 0; t < Wipers.CYCLE; t++) {
+            ticks(1);
+            float sweep = weather.wiping.sweep(0);
+            least = Math.min(least, sweep);
+            most = Math.max(most, sweep);
+            for (int k = 0; k < 2 && w.has; k++) {
+                w.end(k, sweep, uv);
+                onGlass &= w.covers(uv[0], uv[1]);
+            }
+        }
+        // from ahead of the first car, looking back at its windscreen; the other car's faces away
+        frame(0F, 150F, 400F, 180F, 0F);
+        int rain = canvas.onCar;
+        float apart = Math.abs(weather.wiping.sweep(0) - weather.wiping.sweep(1));
+        start(Weather.SNOW);
+        ticks(3);
+        frame(0F, 150F, 400F, 180F, 0F);
+        int snow = canvas.onCar;
+        start(Weather.DRY);
+        ticks(3);
+        frame(0F, 150F, 400F, 180F, 0F);
+        int dry = canvas.onCar;
+        glassCars = false;
+        start(Weather.RAIN);
+        int open = weather.wiping.fitted;
+        check(F, "the wipers work in the rain", fitted == 2 && rain == 4 && least < 0.05F && most > 0.95F && onGlass
+                && apart > 0.05F && snow == 0 && dry == 0 && open == 0,
+                fitted + " of 2 closed cars have wipers, " + rain + " polygons on the car seen from ahead (two blades,"
+                        + " two arms); through a wipe the blades go from " + n(least) + " to " + n(most)
+                        + " of the way up, their ends " + (onGlass ? "on" : "off") + " the glass; the two cars "
+                        + n(apart) + " apart; " + snow + " polygons in snow, " + dry + " in the dry; " + open
+                        + " cars without glass have wipers");
+    }
+
+    /** From the helmet of a closed car the player's wipers sweep the windscreen beyond the dashboard and wipe the drops off the screen. */
+    private void wipersFromTheHelmet() {
+        glassCars = true;
+        // from the chase view first: the same rain on the screen, nothing wiping it
+        start(Weather.RAIN);
+        int outside = 0;
+        for (int t = 0; t < 120; t++) {
+            ticks(1);
+            frame(0F, 100F, -400F, 0F, 0F);
+            outside += weather.lens[0].count;
+        }
+        start(Weather.RAIN);
+        HelmetCam helmet = HelmetCam.FEATURE;
+        helmet.raceStarted(v);
+        helmet.drawingFor(0);
+        float[] screen = new float[5];
+        boolean closed = helmet.windscreen(0, screen);
+        int inside = 0;
+        int polygons = 0;
+        float nearest = Float.MAX_VALUE;
+        float highest = Float.MAX_VALUE;
+        for (int t = 0; t < 120; t++) {
+            ticks(1);
+            canvas.keeping = true;
+            frame(v.x[0], v.y[0] - 20F, v.z[0], 0F, 0F);
+            canvas.keeping = false;
+            inside += weather.lens[0].count;
+            polygons = Math.max(polygons, canvas.onCar);
+            for (int j = 0; j < canvas.kept.size(); j++) {
+                float[] c = canvas.kept.get(j);
+                if (canvas.keptColor.get(j) != Wipers.RGB) {
+                    continue; // not a blade
+                }
+                for (int i = 0; i + 2 < c.length; i += 3) {
+                    nearest = Math.min(nearest, c[i + 2] - screen[2]);
+                    highest = Math.min(highest, (c[i + 1] - screen[1]) / Math.max(1F, c[i + 2] - screen[2]));
+                }
+            }
+        }
+        int wiped = weather.wiping.wiped;
+        int heard = weather.wiping.heard;
+        helmet.drawingFor(-1);
+        helmet.raceEnded(v);
+        glassCars = false;
+        check(F, "from the helmet the wipers clear the screen", closed && polygons == 4 && nearest >= 86F
+                && highest >= HelmetCam.GLASS_TOP && wiped >= 3 && inside < outside * 0.95F && heard >= 4,
+                polygons + " polygons under the car's inside, the nearest " + n(nearest) + " ahead of the eyes (the"
+                        + " inside's parts are at least 86), reaching up to slope " + n(highest) + " (the roof's edge "
+                        + n(HelmetCam.GLASS_TOP) + "); in 120 ticks " + wiped + " drops wiped off, " + inside
+                        + " drop-ticks on the screen against " + outside + " from outside; " + heard
+                        + " wipes heard");
     }
 
     /** Nothing falls so near the eye that the game would leave it out, whichever way the camera looks and moves. */

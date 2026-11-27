@@ -2,6 +2,7 @@ package nfm.lit.features.realism;
 
 import nfm.lit.features.CarLooks;
 import nfm.lit.features.RaceView;
+import nfm.lit.features.Weather;
 
 /**
  * Damage as it shows (realism: the radiator, the engine, the glass, the
@@ -397,13 +398,33 @@ final class DamageEffects {
         s.lastVy = race.vy[c];
     }
 
-    /** Soft ground dusts the lower body and the wheels in its colour; tarmac slowly wears it off. */
+    /** In the rain the dust washes off the car by this much a tick (all of it in some twenty seconds), and the mud by this. */
+    static final float RAIN_WASHES = 0.0026F;
+    static final float RAIN_WASHES_MUD = 0.00012F;
+    /** A wheel sliding this fast over wet soft ground throws mud at the car, and this much of it a tick. */
+    static final float MUD_SLIDE = 3F;
+    static final float MUD_THROWN = 0.012F;
+    /** Mud is the ground's colour, wet: this much darker. */
+    static final float MUD_DARK = 0.45F;
+
+    /**
+     * Soft ground dusts the lower body and the wheels in its colour; tarmac
+     * slowly wears it off. In the rain the dust washes off instead (weather,
+     * "Rain washes the car"), and wheels sliding over the wet soft ground
+     * throw mud: a different stain, darker, in splashes, higher up the car.
+     */
     private void dirt(RaceView race, int c, CarState s, float share) {
+        boolean rain = Weather.raining();
+        if (rain) {
+            s.dirt = Math.max(0F, s.dirt - RAIN_WASHES);
+            s.mud = Math.max(0F, s.mud - RAIN_WASHES_MUD);
+        }
         if (race.groundSpeed(c) < 2F) {
             return;
         }
         int loose = 0;
         int road = 0;
+        int sliding = 0;
         int rgb = s.dirtRgb;
         for (int w = 0; w < RaceView.WHEELS; w++) {
             int at = c * RaceView.WHEELS + w;
@@ -413,9 +434,20 @@ final class DamageEffects {
             if (race.surface[at] == 1 || race.surface[at] == 2) {
                 loose++;
                 rgb = race.groundRgb[at];
+                if (Math.abs(race.slipSide[at]) + Math.abs(race.slipLong[at]) >= MUD_SLIDE) {
+                    sliding++;
+                }
             } else if (race.surface[at] == 0) {
                 road++;
             }
+        }
+        if (rain) {
+            if (sliding > 0) {
+                int wet = RealismFeature.mix(rgb, 0x120e08, MUD_DARK);
+                s.mudRgb = s.mud < 0.02F ? wet : RealismFeature.mix(s.mudRgb, wet, 0.08F);
+                s.mud = Math.min(1F, s.mud + MUD_THROWN * sliding / 4F);
+            }
+            return; // wet ground does not dust
         }
         if (loose > 0) {
             s.dirtRgb = s.dirt < 0.02F ? rgb : RealismFeature.mix(s.dirtRgb, rgb, 0.08F);

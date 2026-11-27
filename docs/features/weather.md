@@ -170,12 +170,47 @@ roof is heard; the player's tyres hiss on the wet road, louder with speed,
 while the car touches the ground; in snow, wind. A splash is heard where a
 car goes through a puddle. Classic sound hears none of it.
 
+## Wipers (`Wiping`, `features/Wipers`)
+
+In rain (with or without fog; not in snow) every car with a windscreen
+wipes it. `Wipers.build` finds the windscreen on the car's model as the
+damage extra does (the glass that faces forward most over the biggest area,
+with every pane in its plane), and places two blades on it that wipe the
+same way: pivots at 47% and 93% of the way across the foot of the glass,
+each blade 42% of the glass's width or 85% of its height at most, shortened
+until its end stays on the glass through the whole wipe (a windscreen
+narrows towards the roof). A blade and its arm are two flat polygons
+standing half a unit off the glass, four polygons a car. A wipe takes 24
+ticks there and back, from 4 to 86 degrees up from the foot; each car is 7
+ticks behind the one before, so they do not wipe as one. A wasted car's stop
+once parked. They are drawn right after their car, for the cars whose
+windscreen faces the eye within 4500 units. An open car has none.
+
+From the helmet of a closed car the player's own are drawn as the car's
+inside is: on a plane across the car 8 units beyond the dashboard's, their
+places slopes from the eyes, under the inside so their pivots hide in the
+scuttle. They sweep from 3 to 110 degrees, past upright, so the left blade
+clears the middle of the view. The drops on the screen that a blade crosses
+are wiped off (`Lens.wipe`), and each wipe is heard quietly from inside: a
+recording of a blade over wet glass, through the 3D sound.
+
+## Rain washes the car
+
+Built into the damage extra's dirt (`DamageEffects.dirt`), which reads the
+weather through `features/Weather`. In rain the dust on a car washes off,
+all of it in about twenty seconds, and wet soft ground does not dust the
+car. Instead a wheel sliding, spinning or locked on soft ground in the rain
+throws mud: a second stain (`CarState.mud`), the ground's colour 45%
+darker, laid in splashes (`RealismFeature.mud`): some polygons thick with
+it and their neighbours clean, the low ones first, reaching well above
+where dust stops. The rain washes mud off twenty times slower than dust.
+With the damage extra off there is no dirt to wash.
+
 ## Still to come
 
 The rest of the weather's requirements are built in later steps and are not
-in the game yet: wipers, rain washing dirt off and the wet stain; snow
-trails, heaps beside drifts, snow on the cars and in two cars' trunks,
-explosions and fire clearing snow.
+in the game yet: snow trails, heaps beside drifts, snow on the cars and in
+two cars' trunks, explosions and fire clearing snow.
 
 ## Checks
 
@@ -192,7 +227,12 @@ slide at speed on the ground (drops and mist), the same slide in the air
 (none) and slow rolling (none); puddles laid along a made-up track, a wheel
 through one, a crater right after its blast and after twelve seconds of
 rain; the grid's spots under the cars, a second after they left and after
-the time each weather takes to hide them.
+the time each weather takes to hide them; the wipers of two closed cars
+through a wipe, their ends on the glass, none in snow, in the dry or on a
+car without glass; from the helmet, the blades beyond the dashboard and
+below the roof's edge, drops wiped off the screen and the wipes heard.
+`cloud/check.sh extras realism` has the dust washing off in the rain and
+the mud of a slide over wet soft ground.
 
 Seen so far only in the software renderer's hidden screenshots; not yet on
 the graphics card, and nobody has driven it.

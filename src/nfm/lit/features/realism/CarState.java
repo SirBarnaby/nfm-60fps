@@ -66,6 +66,9 @@ final class CarState {
     /* dirt: how much, and its colour */
     float dirt;
     int dirtRgb;
+    /* the wet stain: mud thrown up sliding on soft ground in the rain, how much and its colour */
+    float mud;
+    int mudRgb;
 
     /* scratches per side: the polygon, the streak's height and length, the chips */
     final int[] scratches = new int[2];
@@ -101,6 +104,8 @@ final class CarState {
         repair();
         dirt = 0F;
         dirtRgb = groundRgb;
+        mud = 0F;
+        mudRgb = groundRgb;
         lastVy = 0F;
         lastAir = 0;
         rattleWait = 0;

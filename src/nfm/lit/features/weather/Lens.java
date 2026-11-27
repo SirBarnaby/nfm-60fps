@@ -94,6 +94,37 @@ final class Lens {
         }
     }
 
+    /**
+     * A wiper's blade passes: the drops it crosses are wiped off. The
+     * blade turns about {@code (px, py)} (shares of the picture), reaches
+     * {@code reach} of the picture's height, and went from {@code from} to
+     * {@code to} degrees up from pointing right, on a picture
+     * {@code aspect} times as wide as high. Returns the drops wiped off.
+     */
+    int wipe(float px, float py, float reach, float from, float to, float aspect) {
+        float low = Math.min(from, to) - 3F;
+        float high = Math.max(from, to) + 3F;
+        int off = 0;
+        for (int i = 0; i < MAX; i++) {
+            if (!alive[i]) {
+                continue;
+            }
+            float dx = (x[i] - px) * aspect;
+            float dy = py - y[i];
+            float d = (float) Math.sqrt(dx * dx + dy * dy);
+            if (d > reach || d < reach * 0.14F) {
+                continue;
+            }
+            float a = (float) Math.toDegrees(Math.atan2(dy, dx));
+            if (a >= low && a <= high) {
+                alive[i] = false;
+                count--;
+                off++;
+            }
+        }
+        return off;
+    }
+
     private void land(float tail) {
         int i = -1;
         for (int k = 0; k < MAX; k++) {

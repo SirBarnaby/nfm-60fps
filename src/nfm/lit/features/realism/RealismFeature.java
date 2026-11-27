@@ -243,7 +243,29 @@ public final class RealismFeature implements Feature, CarLook {
             }
         }
         float d = s.dirt * parts.low[plane] * 0.8F;
-        return d > 0.01F ? mix(out, shaded(s.dirtRgb, rgb, base), d) : out;
+        if (d > 0.01F) {
+            out = mix(out, shaded(s.dirtRgb, rgb, base), d);
+        }
+        float m = s.mud > 0.01F ? mud(s.mud, parts, plane) : 0F;
+        return m > 0.01F ? mix(out, shaded(s.mudRgb, rgb, base), m) : out;
+    }
+
+    /** Mud reaches this far up the car, from its sills (1) towards its roof (0), and covers at most this much of a polygon. */
+    static final float MUD_FROM = 0.15F;
+    static final float MUD_COVERS = 0.85F;
+
+    /**
+     * How much of polygon {@code plane} mud {@code mud} (0 to 1) covers:
+     * in splashes, some polygons thick with it and their neighbours clean,
+     * the lower ones first, unlike the dust's even fade up from the sills.
+     */
+    static float mud(float mud, CarParts parts, int plane) {
+        float t = (parts.my[plane] - parts.top) / parts.height;
+        float reach = parts.role[plane] == CarParts.WHEEL ? 1F : CarParts.clamp((t - MUD_FROM) / 0.45F);
+        // which polygons a splash lands on: fixed for a polygon, different for its neighbour
+        int h = plane * 0x9E3779B1;
+        float blot = ((h ^ h >>> 15) & 0xffff) / 65535F;
+        return CarParts.clamp((mud * (0.15F + 1.05F * reach) - 0.55F * blot) * 2.5F) * MUD_COVERS;
     }
 
     @Override
