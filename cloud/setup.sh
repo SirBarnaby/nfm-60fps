@@ -19,4 +19,12 @@ for module in lwjgl lwjgl-sdl lwjgl-openal lwjgl-bgfx; do
     done
     unzip -tq "$jar" >/dev/null 2>&1 || echo "warning: $jar could not be fetched (only the graphics card renderer needs lwjgl-bgfx)"
 done
+# PhysX's Linux natives, for the PhysX extra's checks and hidden runs (the Windows ones are in lib/)
+jar=cloud/natives/physx-jni-2.9.0-natives-linux.jar
+for attempt in 1 2 3 4 5; do
+    if [ -s "$jar" ] && unzip -tq "$jar" >/dev/null 2>&1; then break; fi
+    curl -sS -o "$jar" "https://repo1.maven.org/maven2/de/fabmax/physx-jni/2.9.0/physx-jni-2.9.0-natives-linux.jar" || true
+    sleep $((attempt * 10))
+done
+unzip -tq "$jar" >/dev/null 2>&1 || echo "warning: $jar could not be fetched (only the PhysX extra needs it; without it that extra stays off)"
 echo "Setup done. Build with cloud/build.sh."

@@ -23,5 +23,5 @@ if (-not (Test-Path $java)) {
     Write-Host 'runtime\bin\java.exe is missing: run build.ps1 first.'
     exit 1
 }
-& $java '-Djava.awt.headless=true' -cp $jar nfm.lit.features.ExtrasCheck $Feature
+& $java '-Djava.awt.headless=true' '--enable-native-access=ALL-UNNAMED' -cp $jar nfm.lit.features.ExtrasCheck $Feature
 exit $LASTEXITCODE

@@ -84,6 +84,9 @@ public final class ExtrasCheck {
         if (wants(only, "personality")) {
             nfm.lit.features.personality.PersonalityCheck.run();
         }
+        if (wants(only, "physx")) {
+            nfm.lit.features.physx.PhysxCheck.run();
+        }
         System.out.println("[extras] checks: " + passed + " passed, " + failed + " failed"
                 + (waiting > 0 ? ", " + waiting + " waiting for the owner" : ""));
         System.exit(failed == 0 && passed > 0 ? 0 : 1);

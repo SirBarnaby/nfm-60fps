@@ -180,6 +180,12 @@ public final class FeatureSettings {
                         + " gets deeper, and its sound with the 3D sound. Only the look and the sound: the road"
                         + " grips as in the dry. The sky changes with the next race." + LOOK_1_0,
                 "xtraweather", Kind.LOOK, 0, "Off", "Rain", "Rain and fog", "Snow"),
+        new Switch("physx", "PhysX debris",
+                "NVIDIA PhysX moves loose pieces through the race: panels a hard hit knocks off a car, chunks a"
+                        + " wasted car and an explosion throw, and in snow the lumps the cars break out of it. They"
+                        + " fall, bounce off the ground, walls and ramps, come to rest, and cars shove them about."
+                        + " Only seen: the cars drive through them as if they were not there." + LOOK_1_0,
+                "xtraphysx", Kind.LOOK, 0, "Off", "On"),
         new Switch("customgame", "Custom game",
                 "Adds Custom Game to the main menu: up to 32 computer cars, whose cars they drive (Default, Novice,"
                         + " Pro, or picked one by one), and above 9 a start in groups of six, a second apart, with you"

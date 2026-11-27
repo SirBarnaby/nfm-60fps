@@ -31,6 +31,7 @@ public final class Features {
         nfm.lit.features.wrecks.WrecksFeature.FEATURE,
         nfm.lit.features.tailwhip.TailwhipFeature.FEATURE,
         nfm.lit.features.personality.PersonalityFeature.FEATURE,
+        nfm.lit.features.physx.PhysxFeature.FEATURE,
         // last: what it lays on the ground is drawn over the marks and craters of those before it
         nfm.lit.features.weather.WeatherFeature.FEATURE,
     };

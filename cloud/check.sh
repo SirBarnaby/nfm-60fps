@@ -30,7 +30,7 @@ if [ "$what" = all ] || [ "$what" = races ] || [ "$what" = looks ]; then
     grep -q 'CHANGED\|ERROR' /tmp/nfm-verify.txt && status=1
 fi
 if [ "$what" = all ] || [ "$what" = extras ]; then
-    "$jdk/bin/java" -Djava.awt.headless=true -cp madness.jar nfm.lit.features.ExtrasCheck "${1:-all}" 2>&1 \
+    "$jdk/bin/java" -Djava.awt.headless=true --enable-native-access=ALL-UNNAMED -cp "$cp" nfm.lit.features.ExtrasCheck "${1:-all}" 2>&1 \
         | grep -E '^\[extras\].*(FAILED|checks:)' | tee /tmp/nfm-extras.txt
     grep -q ' 0 failed' /tmp/nfm-extras.txt || status=1
 fi

@@ -17,7 +17,13 @@ libs=$(ls lib/*.jar)
 [ -f "$build/classes/nfm/lit/RunApp.class" ] || { echo 'Compilation failed.'; exit 1; }
 cp -r src/nfm/lit/aimg "$build/classes/nfm/lit/aimg"
 (cd src && find nfm/lit/features -type f ! -name '*.java' -exec cp --parents {} "$build/classes/" \;)
-printf 'Main-Class: nfm.lit.RunApp\nClass-Path: %s\nEnable-Native-Access: ALL-UNNAMED\n\n' "$(echo $libs)" > "$build/manifest.txt"
+# one library to a line (a line that goes on starts with a space): the jar tool reads no line longer than 512 bytes
+{
+    echo 'Main-Class: nfm.lit.RunApp'
+    echo "Class-Path:$(echo "$libs" | sed 's/^/  /' | sed '1s/^ //')"
+    echo 'Enable-Native-Access: ALL-UNNAMED'
+    echo
+} > "$build/manifest.txt"
 "$jdk/bin/jar" --create --file madness.jar --manifest "$build/manifest.txt" -C "$build/classes" . 2>&1 | grep -v '^Picked up' || true
 commit=$(git rev-parse --verify --quiet HEAD || true)
 dirty=$([ -n "$(git status --porcelain)" ] && echo true || echo false)

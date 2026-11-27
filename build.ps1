@@ -62,7 +62,8 @@ if ($LASTEXITCODE -ne 0) { Write-Warning 'Baking the shaders failed: the game wi
 
 @(
     'Main-Class: nfm.lit.RunApp'
-    "Class-Path: $($libJars -join ' ')"
+    # one library to a line (a line that goes on starts with a space): the jar tool reads no line longer than 512 bytes
+    "Class-Path: $($libJars -join "`r`n  ")"
     'Enable-Native-Access: ALL-UNNAMED'
     ''
 ) | Set-Content "$build\manifest.txt" -Encoding ascii

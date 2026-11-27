@@ -37,4 +37,5 @@ One page per extra. Each lives in `src\nfm\lit\features\<feature>\`, has a switc
 - [Suspension handling](handling.md)
 - [The weather](weather.md)
 - [Car personalities](personality.md)
+- [PhysX debris](physx.md): loose pieces moved by NVIDIA PhysX, a look only
 - [Custom game](customgame.md): a way into a race, not a part of one (`Feature.playsInRaces` is false), so a race with only its switch on runs, and is recorded, as one with no extra
