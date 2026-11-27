@@ -33,6 +33,27 @@ public final class EngineLayers {
     public static final int TURBO = 1;
     public static final int BLOWER = 2;
 
+    /**
+     * How fast a car whose sheet says {@code loud} fades with distance,
+     * against a usual one's 1 (OpenAL's roll-off factor): a strong engine
+     * fades slower. Its level near the car is not raised: "some cars are
+     * overly loud. In split screen with 2 speakers, this was very
+     * noticeable" (owner, 2026-11-27).
+     */
+    public static float rollOff(float loud) {
+        return 1F / Math.max(0.25F, loud);
+    }
+
+    /**
+     * How loud an engine of {@code loud} is heard {@code distance} away, 1
+     * at full level: full within {@code full} of the car whatever
+     * {@code loud} is, then down as the 3D sound plays it (inverse
+     * distance, clamped, with {@link #rollOff}).
+     */
+    public static float heard(float loud, float distance, float full) {
+        return full / (full + rollOff(loud) * (Math.max(distance, full) - full));
+    }
+
     /** What a car is fitted with, as its sheet has it; the same for the whole race. */
     public static final class Kit {
         public int charger = NO_CHARGER;
@@ -40,7 +61,11 @@ public final class EngineLayers {
         public boolean beeps;
         /** A radiator fan at the front, heard when the car stands. */
         public boolean fan;
-        /** How loud its engine is, 1 for most: a strong engine carries further, a quiet car is harder to place. */
+        /**
+         * How far its engine carries, 1 for most: a strong engine is heard
+         * from further off, a quiet car is harder to place. Up close every
+         * car is as loud as any other ({@link EngineLayers#heard}).
+         */
         public float loud = 1F;
         /** Semitones its recordings bend across a third of a speed band: a wide rev range bends further. */
         public float revs = 4F;

@@ -101,3 +101,10 @@ In mid-air, with the wheels off the ground, the engine's revs SHALL be able to m
 #### Scenario: Check: a jump on full throttle
 - **WHEN** a car leaves a ramp with the throttle held
 - **THEN** its engine revs up to its limit while it is in the air, and comes back to the road's revs after it lands
+
+### Requirement: No car is overly loud
+No car's audio SHALL be overly loud beside the others', also with a speaker for each player in split screen. (Owner, 2026-11-27: "Car audio seems like some cars are overly loud. In split screen with 2 speakers, this was very noticeable.")
+
+#### Scenario: Check: two cars, a speaker each
+- **WHEN** a strong-engined car and a quiet one are each heard from their own chase camera
+- **THEN** both engines play at the same level

@@ -98,11 +98,15 @@ sheet (`car-sheets.md`) says what it is fitted with:
 
 And three things the sheet sets for the whole car:
 
-- **How loud it is** (`loud=`, 0.5 to 1.6): its engine's level, and the
-  distance within which it is at full level (15 m times `loud`), so a strong
-  engine is still heard and placed from far off where a quiet car has faded.
-  A car with `loud=1.5` is 7 dB over a usual one at any distance beyond that;
-  one with `loud=0.6` is 9 dB under.
+- **How far it carries** (`loud=`, 0.5 to 1.6): how slowly its engine fades
+  with distance (`EngineLayers.rollOff`, 1 / `loud`), so a strong engine is
+  still heard and placed from far off where a quiet car has faded. Within
+  15 m, the chase camera's distance, every car plays at the same level: no
+  car is louder than another to its own driver (owner, 27 Nov 2026: "some
+  cars are overly loud", heard with a speaker for each player in split
+  screen; until then `loud` also raised the engine's own level, 3.5 dB for
+  `loud=1.5`). At 150 m a car with `loud=1.5` is 3 dB over a usual one, one
+  with `loud=0.6` 4 dB under.
 - **Its rev range** (`revs=`, semitones its recordings bend across a third of
   a speed band, 4 for most): a screamer climbs further through a gear, a
   truck less.

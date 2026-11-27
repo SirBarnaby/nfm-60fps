@@ -3642,10 +3642,10 @@ public final class Sound3D implements Runnable {
             turnOf(car);
             kit = kitOf(index);
             if (kit.loud != reach) {
-                // a strong engine carries further, a quiet one fades sooner
+                // a strong engine carries further, a quiet one fades sooner; up close they are as loud as each other
                 reach = kit.loud;
-                alSourcef(front.source, AL_REFERENCE_DISTANCE, FULL_VOLUME_DISTANCE * reach);
-                alSourcef(back.source, AL_REFERENCE_DISTANCE, FULL_VOLUME_DISTANCE * reach);
+                alSourcef(front.source, AL_ROLLOFF_FACTOR, EngineLayers.rollOff(reach));
+                alSourcef(back.source, AL_ROLLOFF_FACTOR, EngineLayers.rollOff(reach));
             }
             place(front.source, 0, position, velocity);
             place(back.source, 3, position, velocity);
@@ -3659,7 +3659,7 @@ public final class Sound3D implements Runnable {
             layers.update(car, kit, bandShare(car), b[0], b[2], dt, muted);
             float blown = layers.takeBlowOff();
             if (blown > 0F) {
-                playAt(index, EngineLayers.BLOW_OFF_CLIP, 0.6F * blown * kit.loud, variation());
+                playAt(index, EngineLayers.BLOW_OFF_CLIP, 0.6F * blown, variation());
             }
             layerVoices(position, velocity);
         }
@@ -3700,7 +3700,7 @@ public final class Sound3D implements Runnable {
                     layerClip[i] = clip;
                 }
                 boolean engines = i == EngineLayers.CHARGER || i == EngineLayers.WHINE || i == EngineLayers.FAN;
-                alSourcef(source, AL_GAIN, g * (engines ? engineLevel * kit.loud : everyday * bus[BUS_EFFECTS]));
+                alSourcef(source, AL_GAIN, g * (engines ? engineLevel : everyday * bus[BUS_EFFECTS]));
                 alSourcef(source, AL_PITCH, Math.max(0.5F, Math.min(2F, layers.pitch[i])));
                 if (LAYER_AT[i] < 0) {
                     alSource3f(source, AL_POSITION, position[0], position[1], position[2]);
@@ -3781,8 +3781,8 @@ public final class Sound3D implements Runnable {
                 queue(front, frontBlock, FRONT_LEVEL);
                 queue(back, backBlock, BACK_LEVEL);
             }
-            alSourcef(front.source, AL_GAIN, engineLevel * kit.loud);
-            alSourcef(back.source, AL_GAIN, engineLevel * kit.loud);
+            alSourcef(front.source, AL_GAIN, engineLevel);
+            alSourcef(back.source, AL_GAIN, engineLevel);
             front.keepPlaying();
             back.keepPlaying();
         }

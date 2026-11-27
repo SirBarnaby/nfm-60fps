@@ -380,6 +380,19 @@ public final class EngineCheck {
                         + (blower.charger == EngineLayers.BLOWER) + ", loud " + n(blower.loud) + "; beeps=yes: "
                         + truck.beeps + ", air-cooled so no fan " + !truck.fan + "; loud=0.6: " + n(small.loud));
 
+        // every car as loud as another at its own chase camera (15 m), a strong engine still heard further off
+        float near = 900F;
+        float far = 9000F;
+        float usualFar = EngineLayers.heard(1F, far, near);
+        float strongFar = EngineLayers.heard(truck.loud, far, near);
+        float quietFar = EngineLayers.heard(small.loud, far, near);
+        check(F, "no car is louder than another up close; a strong engine carries further", EngineLayers.heard(truck.loud,
+                near, near) == 1F && EngineLayers.heard(small.loud, near, near) == 1F
+                && EngineLayers.heard(truck.loud, near * 0.4F, near) == 1F && strongFar > usualFar * 1.3F
+                && quietFar < usualFar * 0.75F && strongFar < usualFar * 1.6F,
+                "at the chase camera's distance loud=1.5, 1 and 0.6 all play at 1.00 of full level; 150 m off at "
+                        + n(strongFar) + ", " + n(usualFar) + " and " + n(quietFar));
+
         float big = EngineSound.kit(CarSheet.DEFAULT, shape(2F * EngineSound.USUAL_WHEEL)).skidPitch;
         float little = EngineSound.kit(CarSheet.DEFAULT, shape(0.8F * EngineSound.USUAL_WHEEL)).skidPitch;
         check(F, "big wheels skid lower", plain.skidPitch == 1F && big < 0.85F && big >= 0.75F && little > 1.05F,

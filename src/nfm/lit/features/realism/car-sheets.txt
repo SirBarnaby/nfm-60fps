@@ -17,8 +17,8 @@
 #   beeps=yes       a truck: it beeps while it reverses
 #   pops=yes        its exhaust pops when the throttle lifts at high revs, each pop heard and seen as
 #                   a flash at a pipe (the default for "turbo yes"; pops=no for one that does not)
-#   loud=1.4        how loud its engine is, 1 for most (0.5 to 1.6): a strong engine is heard from
-#                   further off, a quiet car is harder to place by ear
+#   loud=1.4        how far its engine carries, 1 for most (0.5 to 1.6): a strong engine is heard from
+#                   further off, a quiet car is harder to place by ear; up close all are as loud
 #   revs=6          how far its engine's pitch climbs through a gear, in semitones a third of the
 #                   gear (4 for most; a screamer more, a truck less)
 #   pipe=own        its model has exhaust pipes of its own; every other car is fitted with drawn
