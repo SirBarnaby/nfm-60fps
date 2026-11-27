@@ -160,6 +160,8 @@ final class Snow {
     /** The snow in the car's open back, 0 to 1; -1 for a car with none. */
     float[] trunk = new float[0];
     private float[] trunkX = new float[0];
+    /** The polygon of the car that is the floor of its open back. */
+    private int[] trunkPlane = new int[0];
     private float[] trunkY = new float[0];
     private float[] trunkZ = new float[0];
     private float[] trunkWide = new float[0];
@@ -254,6 +256,7 @@ final class Snow {
             arch = new float[cars];
             trunk = new float[cars];
             trunkX = new float[cars];
+            trunkPlane = new int[cars];
             trunkY = new float[cars];
             trunkZ = new float[cars];
             trunkWide = new float[cars];
@@ -384,6 +387,7 @@ final class Snow {
             if (level && z1 <= glassBack + 2F && y0 < s.minY + 0.85F * high && y0 > s.minY + 0.15F * high && x0 < 0F
                     && x1 > 0F && area > best) {
                 best = area;
+                trunkPlane[c] = i;
                 trunkX[c] = (x0 + x1) / 2F;
                 trunkY[c] = y0;
                 trunkZ[c] = (z0 + z1) / 2F;
@@ -961,9 +965,23 @@ final class Snow {
         boolean burns = false;
         for (int c = 0; c < cars; c++) {
             burns |= burning[c] > 0;
-            if (near(pose[c * 12], pose[c * 12 + 2], 5000F)
-                    && (arch[c] > 0.08F || trunk[c] > 0.05F || pushed[c] > 0.05F)) {
-                queue.after(c, carBase + c);
+            int at = c * 12;
+            if (!near(pose[at], pose[at + 2], 5000F)) {
+                continue;
+            }
+            if (arch[c] > 0.08F) {
+                queue.after(c, carBase + c * CAR_PARTS); // on the outside of the side that faces the eye
+            }
+            if (trunk[c] > 0.05F) {
+                // a part of the car: among its polygons, after the floor it lies on, so the cab and the walls cover it
+                float ly = trunkY[c] - trunkWall[c] * 0.5F;
+                queue.within(c, trunkPlane[c], pose[at] + pose[at + 3] * trunkX[c] + pose[at + 6] * ly
+                        + pose[at + 9] * trunkZ[c], pose[at + 1] + pose[at + 4] * trunkX[c] + pose[at + 7] * ly
+                        + pose[at + 10] * trunkZ[c], pose[at + 2] + pose[at + 5] * trunkX[c] + pose[at + 8] * ly
+                        + pose[at + 11] * trunkZ[c], carBase + c * CAR_PARTS + 1);
+            }
+            if (pushed[c] > 0.05F) {
+                queue.within(c, -1, pose[at], GROUND - 10F, pose[at + 2], carBase + c * CAR_PARTS + 2);
             }
         }
         if (ruts > 0 || clears > 0 || burns) {
@@ -973,7 +991,8 @@ final class Snow {
         for (int i = 0; i < HEAPS; i++) {
             if (heapLive[i] && near(heapX[i], heapZ[i], SEEN)) {
                 // pulled a little towards the eye, so the road under it is drawn first
-                queue.at(eyeX + (heapX[i] - eyeX) * 0.97F, eyeY + (heapY[i] - eyeY) * 0.97F,
+                // (beside or under a car it is drawn as a part of the car, so it does not show through it)
+                queue.near(eyeX + (heapX[i] - eyeX) * 0.97F, eyeY + (heapY[i] - eyeY) * 0.97F,
                         eyeZ + (heapZ[i] - eyeZ) * 0.97F, heapBase + i);
             }
         }
@@ -1136,8 +1155,13 @@ final class Snow {
         drawnHeaps++;
     }
 
-    /** Draws the snow on car {@code c}: in its wheel arches, in its open back, and what it pushes lying on its side. */
-    void drawCar(Canvas canvas, int c) {
+    /** Items a car: the snow in its wheel arches, in its open back, and what it pushes lying on its side. */
+    static final int CAR_PARTS = 4;
+
+    /** Draws item {@code item} of the snow on a car ({@link #CAR_PARTS} a car). */
+    void drawCar(Canvas canvas, int item) {
+        int c = item / CAR_PARTS;
+        int part = item % CAR_PARTS;
         if (c < 0 || c >= cars) {
             return;
         }
@@ -1149,7 +1173,7 @@ final class Snow {
         float ex = dx * pose[at + 3] + dy * pose[at + 4] + dz * pose[at + 5];
         float ey = dx * pose[at + 6] + dy * pose[at + 7] + dz * pose[at + 8];
         float ez = dx * pose[at + 9] + dy * pose[at + 10] + dz * pose[at + 11];
-        if (pushed[c] > 0.05F) {
+        if (part == 2 && pushed[c] > 0.05F) {
             // the heap it pushes: in the world, ahead of it the way it slides, moving with it
             float vx = carV[c * 3];
             float vz = carV[c * 3 + 2];
@@ -1163,8 +1187,7 @@ final class Snow {
                         200 + c, vx, 0F, vz);
             }
         }
-        if (trunk[c] > 0.05F && (ez < trunkZ[c] + trunkLong[c] || ey < trunkY[c] - 60F)) {
-            // seen from behind the cab or from well above: from ahead the cab hides it
+        if (part == 1 && trunk[c] > 0.05F) {
             // it fills from the floor up to the top of the walls around it, and heaps up over them
             float fill = trunk[c];
             float foot = trunkY[c] - trunkWall[c] * Math.min(1F, fill * 1.5F);
@@ -1173,7 +1196,7 @@ final class Snow {
                     trunkLong[c] * (0.6F + 0.3F * fill), high, ex - trunkX[c], foot - ey, ez - trunkZ[c],
                     300 + c, 0F, 0F, 0F);
         }
-        if (arch[c] > 0.08F && shapes != null && c < shapes.length && shapes[c] != null) {
+        if (part == 0 && arch[c] > 0.08F && shapes != null && c < shapes.length && shapes[c] != null) {
             arches(canvas, c, shapes[c], ex);
         }
     }

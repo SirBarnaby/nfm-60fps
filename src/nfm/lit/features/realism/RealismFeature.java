@@ -445,12 +445,12 @@ public final class RealismFeature implements Feature, CarLook {
         int base = CAR + c * PER_CAR;
         localEye(s);
         if (!helmet) {
+            // parts of the car: drawn among its own polygons, never before the one they come out of
             for (int pipe = 0; pipe < fitted.pipes; pipe++) {
-                if (fitted.over(pipe, eye[0], eye[1], eye[2])) {
-                    queue.after(c, base + PIPE + pipe);
-                } else {
-                    queue.under(c, base + PIPE + pipe);
-                }
+                fitted.middle(pipe, p);
+                queue.within(c, fitted.on[pipe], s.at[0] + s.right[0] * p[0] + s.down[0] * p[1] + s.ahead[0] * p[2],
+                        s.at[1] + s.right[1] * p[0] + s.down[1] * p[1] + s.ahead[1] * p[2],
+                        s.at[2] + s.right[2] * p[0] + s.down[2] * p[1] + s.ahead[2] * p[2], base + PIPE + pipe);
             }
         }
         Wipers w = fitted.wipers;
@@ -479,12 +479,11 @@ public final class RealismFeature implements Feature, CarLook {
 
     /**
      * The car select's car (car 0 of {@code one}, a view of just that car)
-     * seen from {@code (ex, ey, ez)}: its pipes that the car hides
-     * ({@code over} false, before the car is drawn) or that lie over it and
-     * its wipers, parked ({@code over} true, after it). Nothing of the race
+     * is about to be drawn, seen from {@code (ex, ey, ez)}: readies what it
+     * is fitted with and returns how many pipes it has. Nothing of the race
      * is touched.
      */
-    public void showroom(RaceView one, Canvas canvas, float ex, float ey, float ez, boolean over) {
+    public int showroomFits(RaceView one, float ex, float ey, float ez) {
         CarState s = shown;
         if (one.shape[0] != shownShape || !shownModel.equals(one.modelName[0])) {
             shownShape = one.shape[0];
@@ -493,30 +492,62 @@ public final class RealismFeature implements Feature, CarLook {
             s.fitted.build(shownShape, s.parts);
         }
         if (s.parts.shape == null) {
-            return;
+            return 0;
         }
         s.pose(one, 0, p);
+        shownEyeX = ex;
+        shownEyeY = ey;
+        shownEyeZ = ez;
+        return s.fitted.pipes;
+    }
+
+    private float shownEyeX;
+    private float shownEyeY;
+    private float shownEyeZ;
+
+    /** How far from the eye the car select's car's pipe {@code pipe} is ({@link #showroomFits} first). */
+    public float showroomPipeFar(int pipe) {
+        CarState s = shown;
+        s.fitted.middle(pipe, p);
+        float dx = s.at[0] + s.right[0] * p[0] + s.down[0] * p[1] + s.ahead[0] * p[2] - shownEyeX;
+        float dy = s.at[1] + s.right[1] * p[0] + s.down[1] * p[1] + s.ahead[1] * p[2] - shownEyeY;
+        float dz = s.at[2] + s.right[2] * p[0] + s.down[2] * p[1] + s.ahead[2] * p[2] - shownEyeZ;
+        return (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
+    /** The polygon of the car select's car its pipe {@code pipe} comes out of or stands on, or -1. */
+    public int showroomPipeOn(int pipe) {
+        return shown.fitted.on[pipe];
+    }
+
+    /** Draws the car select's car's pipe {@code pipe}, as a part of the car (among its polygons, by how far it is). */
+    public void showroomPipe(Canvas canvas, int pipe) {
+        CarState s = shown;
+        if (s.parts.shape == null) {
+            return;
+        }
         float keptX = eyeX;
         float keptY = eyeY;
         float keptZ = eyeZ;
-        eyeX = ex;
-        eyeY = ey;
-        eyeZ = ez;
+        eyeX = shownEyeX;
+        eyeY = shownEyeY;
+        eyeZ = shownEyeZ;
         localEye(s);
-        Fitted fitted = s.fitted;
-        for (int pipe = 0; pipe < fitted.pipes; pipe++) {
-            if (fitted.over(pipe, eye[0], eye[1], eye[2]) == over) {
-                fitted.draw(canvas, 0, pipe, eye[0], eye[1], eye[2], Fitted.STEEL, Fitted.MOUTH);
-            }
-        }
-        Wipers w = fitted.wipers;
-        if (over && w.has && s.faces(w.mid[0], w.mid[1], w.mid[2], w.out[0], w.out[1], w.out[2], ex, ey, ez)) {
-            canvas.color(Wipers.RGB);
-            w.draw(canvas, 0, 0F);
-        }
+        s.fitted.draw(canvas, 0, pipe, eye[0], eye[1], eye[2], Fitted.STEEL, Fitted.MOUTH);
         eyeX = keptX;
         eyeY = keptY;
         eyeZ = keptZ;
+    }
+
+    /** Draws the car select's car's wipers, parked, after the car, if its windscreen faces the eye. */
+    public void showroomWipers(Canvas canvas) {
+        CarState s = shown;
+        Wipers w = s.fitted.wipers;
+        if (s.parts.shape != null && w.has && s.faces(w.mid[0], w.mid[1], w.mid[2], w.out[0], w.out[1], w.out[2],
+                shownEyeX, shownEyeY, shownEyeZ)) {
+            canvas.color(Wipers.RGB);
+            w.draw(canvas, 0, 0F);
+        }
     }
 
     /** The car select's car as last shown, for the checks. */

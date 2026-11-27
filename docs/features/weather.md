@@ -335,6 +335,15 @@ the dry.
 - **Snow about the car**: within 3000 units of the eye a car standing in
   the bed has a mound against each wheel on the ground, and while it
   ploughs, a bow ridge pushed along at its nose.
+- **Snow never shows through a car** ("Snow does not show through
+  things", Owner, 2026-11-27): what lies on or against a car (the mound in
+  an open back, the heap a car on its side pushes, the mound at a wheel,
+  the bow ridge) is queued with `DrawQueue.within`, so the game draws it
+  among that car's own polygons by how far it is from the eye and the car
+  covers it as it covers its own parts. A heap on the ground and a PhysX
+  block are queued with `DrawQueue.near`: beside or under a car they are
+  drawn the same way, as a part of that car, elsewhere by their distance
+  as before.
 - **Powder**: above 14 units a tick a car trails a plume of powder,
   fullest from 70; it drifts with the gusts.
 - **Spindrift**: 150 streamers of snow run low over the ground with the

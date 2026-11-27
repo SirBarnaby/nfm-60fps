@@ -171,17 +171,25 @@ select does the same for the car it shows (`FeatureBridge.showroom`, around
   windscreen has nothing to carry them: of the game's sixteen that is
   Formula 7, and the requirement's check fails on it until the owner says
   what it should have.
-- **Pipes**: a square tube in steel with a dark mouth, five polygons (the
-  sides turned to the eye and the mouth are drawn). Its half width is 2.5% of
-  the body's width (1.2 to 4 units). Where, by the sheet: **out of the tail**
-  (1 or 2, low on the rear face where the exhaust ends, three widths out),
-  **stacks** (upright behind the cab, from what they stand on to a little
-  above the roof) or **side pipes** (`pipes=side`: along each sill, ending
-  ahead of the rear wheel). A car whose sheet says `pipe=own` has pipes in
-  its model and gets none: Lead Oxide, EL KING, M A S H E E N. The flames,
-  pops and shimmer come out of the drawn mouths.
-- A pipe the car would hide is drawn right before the car
-  (`DrawQueue.under`), one seen from behind where it comes out right after it.
+- **Pipes**: a six-sided steel tube that widens into a brighter tip, 1.4
+  times as wide, with a rim and a dark mouth; eight polygons at most as seen
+  from any one side (the sides turned to the eye, each lit by how it faces
+  up). Its half width is 2.5% of the body's width (1.2 to 4 units). Where, by
+  the sheet: **out of the tail** (1 or 2, low on the rear face where the
+  exhaust ends, three widths out), **stacks** (upright behind the cab, from
+  what they stand on to a little above the roof) or **side pipes**
+  (`pipes=side`: along each sill, ending ahead of the rear wheel). A car
+  whose sheet says `pipe=own` has pipes in its model and gets none: Lead
+  Oxide, EL KING, M A S H E E N. The flames, pops and shimmer come out of the
+  drawn mouths.
+- A pipe is drawn as a part of its car: among the car's own polygons, which
+  the game draws farthest first, at its own distance from the eye
+  (`DrawQueue.within`, `FeatureBridge.drawWithin` in `ContO.d`'s loop), and
+  never before the polygon it comes out of or stands on. So the body that
+  stands in front of a pipe is drawn over it from the front and the sides,
+  as over any of the car's own parts (owner, 27 Nov 2026: the pipes showed
+  from the sides and the front; until then a pipe was drawn whole before or
+  after the whole car).
 - The log names what each model got when it first races (`[extras] damage:
   nimi is fitted with wipers on its windscreen, 1 pipe out of the tail`).
 

@@ -420,7 +420,7 @@ public final class PhysxFeature implements Feature {
             float dx = now[i * 7] - eyeX;
             float dz = now[i * 7 + 2] - eyeZ;
             if (dx * dx + dz * dz < SEEN * SEEN) {
-                queue.at(now[i * 7], now[i * 7 + 1], now[i * 7 + 2], i);
+                queue.near(now[i * 7], now[i * 7 + 1], now[i * 7 + 2], i); // by a car: a part of it, not through it
             }
         }
     }

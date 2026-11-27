@@ -132,3 +132,10 @@ Snow SHALL lie as a bed across the entire map, not only in places: everywhere th
 #### Scenario: Check: the bed gets deeper
 - **WHEN** a race runs for several minutes while it snows
 - **THEN** the bed is deeper at the end, and the marks cars leave in it are deeper too
+
+### Requirement: Snow does not show through things
+Blocks of snow under a car, and snow as it accumulates, SHALL NOT render through things. (Owner, 2026-11-27: "Same bug with the blocks of snow, when they are under the car or when they accumulate, they render through things, and this should be fixed.")
+
+#### Scenario: Check: snow under and beside a car
+- **WHEN** a car stands or drives in the snow and is looked at from every side
+- **THEN** the snow under it, at its wheels and heaped against it is hidden where the car stands in front of it

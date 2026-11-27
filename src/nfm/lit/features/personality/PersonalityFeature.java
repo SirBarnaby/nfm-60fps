@@ -772,7 +772,7 @@ public final class PersonalityFeature implements Feature, CarLook, CarBody {
         }
         for (int j = 0; j < CHUNKS; j++) {
             if (chunkLive[j]) {
-                queue.at(chunkX[j], chunkY[j], chunkZ[j], CHUNK_ITEM + j);
+                queue.near(chunkX[j], chunkY[j], chunkZ[j], CHUNK_ITEM + j);
             }
         }
         if (lying.count() > 0) {

@@ -717,6 +717,12 @@ public class ContO {
                 for (int rank = npl - 1; rank >= 0; rank--) {
                     int index = npl - 1 - (int) order[rank];
                     Plane plane = p[index];
+                    while (FeatureBridge.withinDepth >= plane.av) { // an extra's part of this car that is farther than this polygon
+                        FeatureBridge.drawWithin();
+                        if (Precise.on) {
+                            Precise.object(this);
+                        }
+                    }
                     FeatureBridge.lookPlane = index;
                     if (FeatureBridge.lookCar < 0 || !FeatureBridge.hidden()) { // the helmet cam leaves some out
                         plane.d(rd, x - Medium.x, y - Medium.y, z - Medium.z, xz, xy, zy, wxz, wzy, noline, screenSize,
@@ -734,6 +740,9 @@ public class ContO {
                             Precise.object(this);
                         }
                     }
+                }
+                while (FeatureBridge.withinDepth != nfm.lit.features.DrawQueue.NONE) { // nearer than every polygon
+                    FeatureBridge.drawWithin();
                 }
                 FeatureBridge.lookCar = -1;
                 Plane.carPart = false;

@@ -14,7 +14,10 @@ import java.util.Arrays;
  * under every ramp, tree and car;
  * <li>{@link #at}: at a point in the world, drawn just before the first
  * object nearer than it, so what is in front covers it;
- * <li>{@link #after}: on a car, drawn right after that car ({@link #afterFirst}: before the others there).
+ * <li>{@link #after}: on a car, drawn right after that car ({@link #afterFirst}: before the others there);
+ * <li>{@link #within}: part of a car, drawn among that car's own polygons by
+ * how far it is from the eye, so the car covers it as it covers its own
+ * parts ({@link #near}: that for whatever lies next to a car, else {@link #at}).
  * </ul>
  * The game fills it once per frame drawn and merges it into its own order;
  * nothing is allocated once its arrays have grown.
@@ -26,6 +29,9 @@ public final class DrawQueue {
     private static final int AFTER = 2;
     private static final int AFTER_FIRST = 3;
     private static final int UNDER = 4;
+    private static final int WITHIN = 5;
+    /** No item is left to draw within the car ({@link #within(int)}). */
+    public static final int NONE = Integer.MIN_VALUE;
 
     /** Draws item {@code item} of feature {@code feature}. */
     public interface Drawer {
@@ -43,6 +49,15 @@ public final class DrawQueue {
     private int nextDepth;
     private boolean groundDrawn;
     private int afterCount;
+    /* the items within cars: each one's distance from the eye, and all of them by car, the farthest first */
+    private int[] deep = new int[256];
+    private long[] inCar = new long[64];
+    private int withinCount;
+    private int withinNext;
+    private int withinEnd;
+    private int withinCar = -1;
+    /** The race drawn, for {@link #near}: where its cars are (null: none are known). */
+    private RaceView race;
 
     /** The feature queuing now (its place in the list). */
     private int current;
@@ -66,6 +81,10 @@ public final class DrawQueue {
         depthCount = 0;
         afterCount = 0;
         underCount = 0;
+        withinCount = 0;
+        withinNext = 0;
+        withinEnd = 0;
+        withinCar = -1;
         groundDrawn = false;
         this.eyeX = eyeX;
         this.eyeY = eyeY;
@@ -199,6 +218,70 @@ public final class DrawQueue {
 
     private int underCount;
 
+    /** The race whose frame this is (for the game): {@link #near} asks it where the cars are. */
+    public void cars(RaceView race) {
+        this.race = race;
+    }
+
+    /**
+     * Item {@code item} is a part of car {@code car} at world point
+     * {@code (x, y, z)}: drawn among the car's own polygons, right before
+     * the first of them that is nearer the eye than the point, so the car
+     * covers it exactly as it covers its own parts (a pipe behind the
+     * tail, snow in a wheel arch, a lump lying under the car). With
+     * {@code plane} 0 or more it is also never drawn before that polygon of
+     * the car: what it stands on or comes out of.
+     */
+    public void within(int car, int plane, float x, float y, float z, int item) {
+        float dx = eyeX - x;
+        float dy = eyeY - y;
+        float dz = eyeZ - z;
+        int far = (int) Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (plane >= 0) {
+            int on = Features.hooks().polygonDepth(car, plane);
+            if (on > 0 && on <= far) {
+                far = on - 1;
+            }
+        }
+        add(WITHIN, item, car);
+        if (deep.length < items.length) {
+            deep = Arrays.copyOf(deep, items.length);
+        }
+        deep[count - 1] = Math.max(0, Math.min(0xfffff, far));
+        withinCount++;
+    }
+
+    /**
+     * Item {@code item} is at world point {@code (x, y, z)}, as with
+     * {@link #at}; but where that is next to a car (within the car's
+     * radius of its middle) it is drawn as a part of that car
+     * ({@link #within}), so a thing lying under or against a car does not
+     * show through it.
+     */
+    public void near(float x, float y, float z, int item) {
+        RaceView r = race;
+        if (r != null) {
+            int best = -1;
+            float bestFar = Float.MAX_VALUE;
+            for (int c = 0; c < r.cars; c++) {
+                float dx = r.x[c] - x;
+                float dy = r.y[c] - y;
+                float dz = r.z[c] - z;
+                float far = dx * dx + dy * dy + dz * dz;
+                float reach = r.radius[c] > 0 ? r.radius[c] : 150F;
+                if (far < reach * reach && far < bestFar) {
+                    best = c;
+                    bestFar = far;
+                }
+            }
+            if (best >= 0) {
+                within(best, -1, x, y, z, item);
+                return;
+            }
+        }
+        at(x, y, z, item);
+    }
+
     /** The game's distance measure of world point {@code (x, y, z)}: the square root of how far it is from the eye. */
     public int depth(float x, float y, float z) {
         float dx = eyeX - x;
@@ -242,6 +325,65 @@ public final class DrawQueue {
         }
         Arrays.sort(order, 0, d);
         nextDepth = d - 1;
+        if (withinCount > 0) {
+            if (inCar.length < withinCount) {
+                inCar = new long[Math.max(withinCount, inCar.length * 2)];
+            }
+            int w = 0;
+            for (int i = 0; i < count; i++) {
+                if (kinds[i] == WITHIN) {
+                    // by car, then the farthest first, then as queued
+                    inCar[w++] = ((long) where[i] << 44) | ((long) (0xfffff - deep[i]) << 24) | i;
+                }
+            }
+            Arrays.sort(inCar, 0, w);
+        }
+        withinCar = -1;
+        withinNext = 0;
+        withinEnd = 0;
+    }
+
+    /**
+     * Before the game draws car {@code car}'s polygons: readies what was
+     * queued {@link #within} it and returns how far from the eye the
+     * farthest of it is, or {@link #NONE}. The game draws its polygons
+     * farthest first and, before each, calls {@link #withinNext} while what
+     * is returned is as far as that polygon or farther.
+     */
+    public int within(int car) {
+        withinCar = car;
+        withinNext = 0;
+        withinEnd = 0;
+        if (withinCount == 0) {
+            return NONE;
+        }
+        int lo = 0;
+        int hi = withinCount;
+        long from = (long) car << 44;
+        while (lo < hi) {
+            int mid = (lo + hi) >>> 1;
+            if (inCar[mid] < from) {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        withinNext = lo;
+        withinEnd = lo;
+        while (withinEnd < withinCount && inCar[withinEnd] >>> 44 == car) {
+            withinEnd++;
+        }
+        return withinNext < withinEnd ? 0xfffff - (int) (inCar[withinNext] >>> 24 & 0xfffff) : NONE;
+    }
+
+    /** Draws the farthest item left within the car readied; returns how far the next is, or {@link #NONE}. */
+    public int withinNext(Drawer drawer) {
+        if (withinNext >= withinEnd) {
+            return NONE;
+        }
+        int i = (int) (inCar[withinNext++] & 0xffffff);
+        drawer.draw(owner[i], items[i]);
+        return withinNext < withinEnd ? 0xfffff - (int) (inCar[withinNext] >>> 24 & 0xfffff) : NONE;
     }
 
     /**
@@ -274,8 +416,17 @@ public final class DrawQueue {
         }
     }
 
-    /** After the game drew car {@code car}: what is on it. */
+    /** After the game drew car {@code car}: what is on it (and whatever within it its polygons did not come to). */
     public void after(int car, Drawer drawer) {
+        if (withinCount > 0) {
+            if (withinCar != car) {
+                within(car);
+            }
+            while (withinNext < withinEnd) {
+                int i = (int) (inCar[withinNext++] & 0xffffff);
+                drawer.draw(owner[i], items[i]);
+            }
+        }
         if (afterCount == 0) {
             return;
         }

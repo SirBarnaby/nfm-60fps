@@ -1342,12 +1342,15 @@ public final class RealismCheck {
         start();
         RealismFeature shop = new RealismFeature();
         canvas.reset();
-        shop.showroom(v, canvas, 60F, GROUND - 150F, carZ - 300F, false);
-        shop.showroom(v, canvas, 60F, GROUND - 150F, carZ - 300F, true);
+        int shopPipes = shop.showroomFits(v, 60F, GROUND - 150F, carZ - 300F);
+        for (int pipe = 0; pipe < shopPipes; pipe++) {
+            shop.showroomPipe(canvas, pipe);
+        }
+        shop.showroomWipers(canvas);
         int shopMouths = canvas.drawn(Fitted.MOUTH);
         canvas.reset();
-        shop.showroom(v, canvas, 0F, GROUND - 60F, carZ + 300F, false);
-        shop.showroom(v, canvas, 0F, GROUND - 60F, carZ + 300F, true);
+        shop.showroomFits(v, 0F, GROUND - 60F, carZ + 300F);
+        shop.showroomWipers(canvas);
         int shopBlades = canvas.drawn(Wipers.RGB);
         // a car with no windscreen has nothing to carry wipers
         start();
@@ -1356,7 +1359,7 @@ public final class RealismCheck {
         CarParts bareParts = new CarParts();
         bareParts.build(open, CarSheet.DEFAULT, DROP);
         bare.build(open, bareParts);
-        ok &= shopMouths == shop.shown().fitted.pipes && shopMouths > 0 && shopBlades == 4 && most <= 5;
+        ok &= shopMouths == shop.shown().fitted.pipes && shopMouths > 0 && shopBlades == 4 && most <= 8;
         // the game's own cars, each model as the game's files have it
         List<String> noWipers = new ArrayList<>();
         List<String> noPipe = new ArrayList<>();

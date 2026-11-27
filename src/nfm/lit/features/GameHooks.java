@@ -72,4 +72,13 @@ public interface GameHooks {
      */
     default void bed(int slot, String clip, float gain, float pitch) {
     }
+
+    /**
+     * How far from the eye the game last measured polygon {@code plane} of
+     * car {@code car} (what it sorts the car's polygons by), or 0 if it is
+     * not known.
+     */
+    default int polygonDepth(int car, int plane) {
+        return 0;
+    }
 }

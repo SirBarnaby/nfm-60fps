@@ -686,20 +686,17 @@ final class SnowBed {
                 if (!wheelIn[at]) {
                     continue;
                 }
-                float side = (wheelX[at] - carX[c]) * ex + (wheelZ[at] - carZ[c]) * ez;
-                if (side > -0.25F * halfWide[c]) {
-                    queue.after(c, wheelBase + c * PER_CAR + w);
-                } else {
-                    queue.under(c, wheelBase + c * PER_CAR + w);
-                }
+                // a part of the car: among its polygons by how far it is, a tyre's width nearer than the
+                // wheel's foot, so it banks up over its own tyre and the rest of the car covers it as it should
+                float pull = wheelR[c] + 12F;
+                queue.within(c, -1, wheelX[at] + ex * pull, wheelY[at] - 0.5F * wheelR[c], wheelZ[at] + ez * pull,
+                        wheelBase + c * PER_CAR + w);
             }
             if (plough[c] > 1F) {
                 float forwards = carVX[c] * headX[c] + carVZ[c] * headZ[c] >= 0F ? 1F : -1F;
-                if (forwards * (headX[c] * ex + headZ[c] * ez) > 0F) {
-                    queue.after(c, wheelBase + c * PER_CAR + NOSE);
-                } else {
-                    queue.under(c, wheelBase + c * PER_CAR + NOSE);
-                }
+                float reach = forwards > 0F ? noseZ[c] + 14F : tailZ[c] - 14F;
+                queue.within(c, -1, carX[c] + headX[c] * reach, carY[c] - 8F, carZ[c] + headZ[c] * reach,
+                        wheelBase + c * PER_CAR + NOSE);
             }
         }
     }

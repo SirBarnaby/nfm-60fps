@@ -183,3 +183,14 @@ If the suspension of a car with low HP is damaged, turning the car SHALL be able
 #### Scenario: Check: turning after the damage
 - **WHEN** a car with low HP and a damaged suspension turns
 - **THEN** a faint metallic squeak is heard as it turns, and none from a car whose suspension is whole
+
+### Requirement: Exhaust pipes are hidden where the car hides them, and look like pipes
+The rear exhaust pipes SHALL NOT be visible from the sides and the front, where the car's geometry does not allow them to be seen. The game's graphics rendering has its quirks, but this SHALL stay rugged. The exhausts SHALL be enhanced so they do not look like blocks. (Owner, 2026-11-27.)
+
+#### Scenario: Check: round the car
+- **WHEN** a car with fitted pipes at its tail is looked at from the front, from each side and from behind
+- **THEN** the pipes show from behind only, and no part of a pipe is drawn over the body that stands in front of it
+
+#### Scenario: Check: the shape of a pipe
+- **WHEN** a fitted pipe is looked at from close by
+- **THEN** it is a round tube with an open end, not a block

@@ -580,16 +580,31 @@ final class FeatureBridge {
 
     /**
      * The car select draws car model {@code car} ({@code model}, where it
-     * stands): what the damage extra fits every car with, its wipers and
-     * exhaust pipes, drawn on it; before the car is drawn ({@code over}
-     * false) what the car hides, after it the rest. Nothing with the extra
-     * off.
+     * stands): what the damage extra fits every car with. Before the car is
+     * drawn ({@code over} false) its exhaust pipes are readied, and the
+     * car's own drawing then puts each among its polygons by how far it is
+     * ({@link #withinDepth}); after it ({@code over} true) come the wipers.
+     * Nothing with the extra off.
      */
     static void showroom(Graphics2D g, ContO model, int car, boolean over) {
         if (car < 0 || model == null || !FeatureSettings.on(nfm.lit.features.realism.RealismFeature.ID)) {
             return;
         }
+        nfm.lit.features.realism.RealismFeature damage = nfm.lit.features.realism.RealismFeature.FEATURE;
         try {
+            if (over) {
+                while (showLeft > 0) {
+                    drawWithin();
+                }
+                withinDepth = DrawQueue.NONE;
+                FeatureCanvas c = showCanvas;
+                c.begin(g, 1F, 1F, showScene, 1);
+                c.startItem();
+                damage.showroomWipers(c);
+                c.endItem();
+                c.end();
+                return;
+            }
             if (shownModel != model) {
                 shownModel = model;
                 ModelShapes.shape(showShape, model);
@@ -606,18 +621,60 @@ final class FeatureBridge {
             showView.xy[0] = model.xy;
             showView.zy[0] = model.zy;
             showScene[0] = model;
-            FeatureCanvas c = showCanvas;
+            showTarget = g;
             Precise.cameraAngles(); // the menu's camera: the race's last is no longer it
-            c.begin(g, 1F, 1F, showScene, 1);
+            int pipes = damage.showroomFits(showView, Medium.x + Medium.cx, Medium.y + Medium.cy, Medium.z);
+            showLeft = 0;
+            for (int pipe = 0; pipe < pipes && pipe < showPipe.length; pipe++) {
+                int far = (int) damage.showroomPipeFar(pipe);
+                int on = damage.showroomPipeOn(pipe);
+                if (on >= 0 && on < model.npl && model.p[on].av > 0 && model.p[on].av <= far) {
+                    far = model.p[on].av - 1;
+                }
+                // the farthest first
+                int at = showLeft++;
+                while (at > 0 && showFar[at - 1] < far) {
+                    showFar[at] = showFar[at - 1];
+                    showPipe[at] = showPipe[at - 1];
+                    at--;
+                }
+                showFar[at] = far;
+                showPipe[at] = pipe;
+            }
+            showNext = 0;
+            withinDepth = showLeft > 0 ? showFar[0] : DrawQueue.NONE;
+        } catch (RuntimeException e) {
+            showLeft = 0;
+            withinDepth = DrawQueue.NONE;
+            fallk.logmaster.HLogger.error("[extras] the car select's car could not be fitted: " + e);
+        } finally {
+            if (over) {
+                showScene[0] = null;
+            }
+        }
+    }
+
+    /* the car select's car's pipes not drawn yet, the farthest first */
+    private static final int[] showPipe = new int[2];
+    private static final int[] showFar = new int[2];
+    private static int showNext;
+    private static int showLeft;
+    private static Graphics2D showTarget;
+
+    /** Draws the car select's car's farthest pipe left; {@link #withinDepth} becomes the next one's. */
+    private static void drawShownPipe() {
+        int pipe = showPipe[showNext++];
+        showLeft--;
+        withinDepth = showLeft > 0 ? showFar[showNext] : DrawQueue.NONE;
+        try {
+            FeatureCanvas c = showCanvas;
+            c.begin(showTarget, 1F, 1F, showScene, 1);
             c.startItem();
-            nfm.lit.features.realism.RealismFeature.FEATURE.showroom(showView, c, Medium.x + Medium.cx,
-                    Medium.y + Medium.cy, Medium.z, over);
+            nfm.lit.features.realism.RealismFeature.FEATURE.showroomPipe(c, pipe);
             c.endItem();
             c.end();
         } catch (RuntimeException e) {
-            fallk.logmaster.HLogger.error("[extras] the car select's car could not be fitted: " + e);
-        } finally {
-            showScene[0] = null;
+            fallk.logmaster.HLogger.error("[extras] the car select's car's pipe could not be drawn: " + e);
         }
     }
 
@@ -767,6 +824,8 @@ final class FeatureBridge {
         if (!Features.anyActive()) {
             return;
         }
+        frameScene = scene;
+        queue.cars(view);
         queue.begin(Medium.x + Medium.cx + Precise.camX, Medium.y + Medium.cy + Precise.camY,
                 Medium.z + Precise.camZ, view.tick, ahead ? 1F : Math.max(0F, Math.min(1F, share)));
         queue.view(framePlayer, Medium.xz + Precise.camXZ, Medium.zy + Precise.camZY,
@@ -786,14 +845,37 @@ final class FeatureBridge {
         queue.before(dist, o.flat(), DRAWER);
         if (index < cars) {
             queue.under(index, DRAWER);
+            withinDepth = queue.within(index);
         }
     }
 
     /** After the game drew object {@code index} ({@code o}). */
     static void afterObject(int index, ContO o) {
+        withinDepth = DrawQueue.NONE;
         if (index < cars && o.dist != 0) {
             queue.after(index, DRAWER);
         }
+    }
+
+    /** The scene of the frame being drawn, for {@link Hooks#polygonDepth}. */
+    private static ContO[] frameScene = new ContO[0];
+
+    /**
+     * While a car's polygons are drawn, farthest first: how far from the
+     * eye the farthest thing is that an extra draws within the car and that
+     * is not drawn yet ({@link DrawQueue#within}), or {@link DrawQueue#NONE}.
+     * The car's loop draws it ({@link #drawWithin}) before the first polygon
+     * that is no farther.
+     */
+    static int withinDepth = DrawQueue.NONE;
+
+    /** Draws the farthest thing left within the car being drawn; {@link #withinDepth} becomes the next one's. */
+    static void drawWithin() {
+        if (showLeft > 0) {
+            drawShownPipe();
+            return;
+        }
+        withinDepth = drawing ? queue.withinNext(DRAWER) : DrawQueue.NONE;
     }
 
     /** After the game's last object. */
@@ -1030,6 +1112,15 @@ final class FeatureBridge {
     private static final class Hooks implements GameHooks {
         /** Classic sound's clips of the extras, played straight, so the game's own sound commands stay as they were. */
         private final java.util.Map<String, nfm.lit.audio.SoundClipUnthreaded> classic = new java.util.HashMap<>();
+
+        @Override
+        public int polygonDepth(int car, int plane) {
+            ContO[] scene = frameScene;
+            if (car < 0 || car >= scene.length || scene[car] == null || plane < 0 || plane >= scene[car].npl) {
+                return 0;
+            }
+            return scene[car].p[plane].av;
+        }
 
         @Override
         public void say(int player, String text) {
