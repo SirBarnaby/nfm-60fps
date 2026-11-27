@@ -5,7 +5,8 @@ Switches: **Skidmarks** (`skidmarks`, cookie `xtramarks`), its **Detail**
 zones** (`skidzones`, cookie `xtrazones`). All off by default until 1.0.
 Requirements: `openspec\specs\effects` ("Skidmarks are per wheel", "show each
 maneuver", "carry the surface's colour", "Skidding leaves particles", "Last
-race's skid zones can be shown").
+race's skid zones can be shown", "The track is littered by the end of a
+race").
 
 Code: `src\nfm\lit\features\skidmarks\`.
 
@@ -79,6 +80,35 @@ spark is a short glowing streak. Every corner gets its own move to the next
 tick, so the growing and turning are as smooth as the flight. The simple
 detail throws half as many.
 
+## Litter (`Litter`)
+
+With the skidmarks on, a race litters the track. A wheel that leaves a mark
+also sheds, by how hard it slides: on the road a crumb of rubber (dark, 4.5
+to 10 units across, about one tick in seven at a full slide), on loose
+ground a stone of the ground's own colour, paler or darker (6 to 15 units,
+about one tick in five). A crumb lands up to 30 units behind the wheel and
+38 to either side, a stone up to 60 behind and 80 aside, so stones lie on
+the road beside the gravel too. A bit stays where it landed for the rest of
+the race; the newest 8192 are kept. Nothing of a car's damage is among them.
+
+A car going at least 8 units a tick stirs the bits within 170 units of its
+middle, the more the faster it goes (fullest from 50) and the nearer it
+passes: a bit rocks (one side lifts and falls back, settling within a
+second), and the light ones shift a little, along with the car and out of
+its way, a crumb some 5 to 10 units a pass, a stone less than half of that.
+A bit on a ramp only rocks.
+
+Within 1100 units of the eye a bit is a small lump: its flat foot and three
+to five sides up to a peak, the sides turned to the light paler. Farther
+off it is its foot alone; beyond 1800 units every other bit is left out and
+beyond 3600 all of them (they are less than a pixel). A moving or rocking
+bit gives each corner its own move, so it goes smoothly between ticks. Bits
+on the flat ground are drawn with the road, after the marks.
+
+Looks only, from the race's copy, with dice of its own seeded from the
+race. For a look in a screenshot, `-Dnfm.litter.show=true` scatters some
+two hundred bits around the player's car at the start.
+
 ## The zones (`SkidZonesFeature`)
 
 A grid of 4 m squares (open addressing, 16,384 squares) adds up the slide of
@@ -96,6 +126,10 @@ One and measures the marks: one wheel locking, hard braking, understeer, a
 power slide (wider rear arc, stronger outside wheel, countersteering), a
 handbrake 180, a stationary burnout, a T-bone, landing turning (first wheel
 first, a bounce's gap), landing backwards, two wheels and the metal scrape,
-mud onto tarmac, particles, the drawing, and the zones (second race, the
-toggle, no file from a test run). `test\verify-races.ps1 -Features
+mud onto tarmac, particles, the litter (three laps of a drift through the
+same corner: the first lap's bits all still there, none from a car rolling
+cleanly, stones of the ground's colour on loose ground; a car driving past
+at speed rocks and shifts a crumb, a slow car and a car far off do not),
+the drawing, and the zones (second race, the toggle, no file from a test
+run). `test\verify-races.ps1 -Features
 skidmarks,skidzones -NoGolden` proves the races stay as recorded with them on.

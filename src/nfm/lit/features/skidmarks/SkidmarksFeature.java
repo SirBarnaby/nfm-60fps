@@ -19,7 +19,9 @@ import nfm.lit.features.RaceView;
  * loose ground carries its colour onto the road for a while ("carry the
  * surface's colour"); sliding wheels throw smoke on the road, dust and
  * clods on loose ground, and a body scraping the road sparks and leaves a
- * metal scrape ("Skidding leaves particles").
+ * metal scrape ("Skidding leaves particles"). What a slide sheds stays on
+ * the track and is stirred by the cars driving past ({@link Litter}, "The
+ * track is littered by the end of a race").
  * <p>
  * It reads the race and throws its own dice, seeded from the race, so a race
  * replayed looks the same; it never changes the race.
@@ -42,6 +44,9 @@ public final class SkidmarksFeature implements Feature {
     static final int GROUND_ITEM = MarkRing.CAPACITY;
     static final int PARTICLE = 2 * MarkRing.CAPACITY;
     static final int PARTICLES = 640;
+    /** Items: every bit of litter on the road; from {@link #LITTER}, the slot of a bit on a ramp. */
+    static final int LITTER_GROUND = MarkRing.CAPACITY + 1;
+    static final int LITTER = PARTICLE + PARTICLES;
 
     private static final float DEG = (float) (Math.PI / 180D);
     /** Pieces farther than this from the eye are not drawn: the fog has hidden them. */
@@ -66,6 +71,7 @@ public final class SkidmarksFeature implements Feature {
     final SkidSlip slip = new SkidSlip();
     final MarkRing ring = new MarkRing();
     final Particles particles = new Particles(PARTICLES);
+    final Litter litter = new Litter();
     private final Dice dice = new Dice(0L, ID);
     private float windX;
     private float windZ;
@@ -117,6 +123,7 @@ public final class SkidmarksFeature implements Feature {
         ring.fit(wheels + cars);
         ring.clear();
         particles.clear();
+        litter.start(race);
         slip.reset();
         dice.reset(race.seed, ID);
         windX = dice.between(-0.6F, 0.6F);
@@ -139,12 +146,13 @@ public final class SkidmarksFeature implements Feature {
             body(race, c);
         }
         particles.tick(windX, windZ);
+        litter.tick(race);
     }
 
     @Override
     public void raceEnded(RaceView race) {
         HLogger.info("[extras] skidmarks: " + ring.made + " pieces of mark in " + tick + " ticks, " + ring.count
-                + " kept");
+                + " kept; " + litter.dropped + " bits of litter, " + litter.count + " lying");
     }
 
     /** A hard hit across a car shoves it sideways: each of its wheels on the ground scrubs a short mark from there. */
@@ -242,6 +250,8 @@ public final class SkidmarksFeature implements Feature {
         ring.mark(at, race.wheelX[at] + hz * sway, y, race.wheelZ[at] - hx * sway, hx, hz, TYRE, color, cover, kind,
                 race.onRamp[at], tick);
         throwFrom(race, c, at, s, loose, y);
+        litter.shed(race.wheelX[at], y, race.wheelZ[at], race.wheelVX[at], race.wheelVZ[at], intensity[at], loose,
+                race.groundRgb[at], race.onRamp[at]);
     }
 
     /** How far wheel {@code at}'s tread is to the side of its hub now, from how bent it is and how far it has turned. */
@@ -375,13 +385,18 @@ public final class SkidmarksFeature implements Feature {
         if (road) {
             queue.ground(GROUND_ITEM);
         }
+        litter.queue(queue, LITTER_GROUND, LITTER);
         particles.queue(queue, PARTICLE);
     }
 
     @Override
     public void draw(Canvas canvas, int item) {
-        if (item >= PARTICLE) {
+        if (item >= LITTER) {
+            litter.draw(canvas, item - LITTER);
+        } else if (item >= PARTICLE) {
             particles.draw(canvas, item - PARTICLE);
+        } else if (item == LITTER_GROUND) {
+            litter.drawGround(canvas);
         } else if (item == GROUND_ITEM) {
             for (int i = 0; i < ring.count; i++) {
                 int q = ring.slot(i);

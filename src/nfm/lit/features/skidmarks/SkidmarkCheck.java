@@ -57,6 +57,8 @@ public final class SkidmarkCheck {
         c.mudOntoTarmac();
         c.bentWheelWavy();
         c.particlesMove();
+        c.litterStays();
+        c.litterSways();
         c.draws();
         c.zones();
     }
@@ -722,6 +724,167 @@ public final class SkidmarkCheck {
         }
         check(F, "particles", live >= 0 && moved > 0.1F, marks.particles.count() + " particles; one moved "
                 + n(moved) + " in a tick with no car near");
+    }
+
+    /* ------------------------------------------------------------- litter */
+
+    /** One tick of a left power slide round (0, 0) at angle {@code psi} degrees, on the road or on loose ground. */
+    private void drift(float psi, boolean loose) {
+        float r = 1500F;
+        float speed = 40F;
+        float yaw = psi * DEG;
+        place(r * (float) Math.cos(yaw), r * (float) Math.sin(yaw), psi + 25F, -speed * (float) Math.sin(yaw),
+                speed * (float) Math.cos(yaw), speed, 15);
+        if (loose) {
+            for (int w = 0; w < RaceView.WHEELS; w++) {
+                v.surface[w] = 1;
+            }
+        }
+        tick();
+    }
+
+    /**
+     * Cars drifting through the same corner lap after lap leave bits lying
+     * there, and the first lap's are still there two laps later (effects,
+     * "The track is littered by the end of a race": after some laps).
+     */
+    private void litterStays() {
+        start();
+        Litter l = marks.litter;
+        float step = 40F / 1500F / DEG;
+        int lap = Math.round(360F / step);
+        float psi = 0F;
+        for (int t = 0; t < lap; t++) {
+            drift(psi, false);
+            psi += step;
+        }
+        int first = l.count;
+        float[] wasX = new float[first];
+        float[] wasZ = new float[first];
+        for (int k = 0; k < first; k++) {
+            wasX[k] = l.x[l.slot(k)];
+            wasZ[k] = l.z[l.slot(k)];
+        }
+        for (int t = 0; t < 2 * lap; t++) {
+            drift(psi, false);
+            psi += step;
+        }
+        int third = l.count;
+        boolean kept = l.dropped == l.count && first > 0;
+        float shifted = 0F;
+        float offLine = 0F;
+        boolean dark = true;
+        for (int k = 0; k < first && kept; k++) {
+            int i = l.slot(k);
+            shifted = Math.max(shifted, (float) Math.hypot(l.x[i] - wasX[k], l.z[i] - wasZ[k]));
+            offLine = Math.max(offLine, Math.abs((float) Math.hypot(l.x[i], l.z[i]) - 1500F));
+            dark &= (l.rgb[i] >> 16 & 0xff) < 0x40;
+        }
+        CheckCanvas canvas = new CheckCanvas();
+        canvas.frame(marks, 1500F, GROUND - 300F, -400F, v.tick);
+        int drawn = l.drawn;
+
+        // rolling cleanly leaves nothing
+        start();
+        for (int t = 0; t < 100; t++) {
+            place(0F, 40F * t, 0F, 0F, 40F, 40F, 0);
+            tick();
+        }
+        int rolling = marks.litter.count;
+
+        // on loose ground: stones of the ground's own colour (a brown: more red than blue)
+        start();
+        psi = 0F;
+        for (int t = 0; t < lap; t++) {
+            drift(psi, true);
+            psi += step;
+        }
+        Litter g = marks.litter;
+        int stones = g.count;
+        boolean ground = stones > 0;
+        for (int k = 0; k < stones; k++) {
+            int i = g.slot(k);
+            ground &= (g.rgb[i] >> 16 & 0xff) > (g.rgb[i] & 0xff) + 20;
+        }
+        check(F, "litter: bits lie where the cars drifted and are still there laps later", first >= 20
+                && third > first * 2 && kept && shifted < 150F && offLine < 400F && dark && drawn > 0
+                && rolling == 0 && ground && stones > first, first + " crumbs of rubber after one lap of a drift, "
+                + third + " after three; every one of the first lap's still lies there, the farthest "
+                + n(shifted) + " from where it fell and " + n(offLine) + " from the cars' line; " + drawn
+                + " drawn from above the corner; " + rolling + " from a car rolling cleanly; on loose ground "
+                + stones + " stones of the ground's colour in a lap");
+    }
+
+    /**
+     * A car driving past bits on the track stirs them: they rock and the
+     * light ones shift, along with the car and out of its way, then lie
+     * still again ("driving past"). A slow car and a car far off stir none.
+     */
+    private void litterSways() {
+        float[] fast = pass(40F, 60F);
+        float[] slow = pass(5F, 60F);
+        float[] far = pass(40F, 400F);
+        boolean sways = fast[0] > 0.3F && fast[1] > 0.5F && fast[1] < 90F && fast[2] > 0F && fast[3] < 0F
+                && fast[4] == 0F && fast[5] > 0F && fast[6] > 0F;
+        check(F, "litter: a car driving past stirs the bits", sways && slow[1] == 0F && slow[0] == 0F
+                && far[1] == 0F && far[0] == 0F, "a car passing 60 to the side at 40 a tick: " + n(fast[5])
+                + " bits in its wind at once, the nearest crumb rocks (its side lifts " + n(fast[0])
+                + " of the way) and shifts " + n(fast[1]) + " (" + n(fast[2]) + " along with the car, "
+                + n(-fast[3]) + " out of its way), drawn on its way in " + n(fast[6])
+                + " frames, and lies still afterwards; at 5 a tick it shifts " + n(slow[1]) + ", from 400 to the side "
+                + n(far[1]));
+    }
+
+    /**
+     * Lays bits with a slide, lets them rest, then drives the car straight
+     * past the lightest of them, {@code aside} to its right at {@code speed}
+     * a tick. Returns: the most it rocked, how far it shifted, how far along
+     * the car's way and to the car's side, its speed and rocking 40 ticks
+     * later (0 at rest), the most bits stirred in a tick, the frames in which
+     * the bit was drawn as moving.
+     */
+    private float[] pass(float speed, float aside) {
+        slide(15);
+        Litter l = marks.litter;
+        for (int t = 0; t < 40; t++) {
+            place(60000F, 60000F, 0F, 0F, 0F, 0F, 0);
+            tick();
+        }
+        int b = -1;
+        for (int k = 0; k < l.count; k++) {
+            int i = l.slot(k);
+            if (b < 0 || l.light[i] > l.light[b]) {
+                b = i;
+            }
+        }
+        if (b < 0) {
+            return new float[7];
+        }
+        float bx = l.x[b];
+        float bz = l.z[b];
+        float most = 0F;
+        int stirred = 0;
+        int moving = 0;
+        CheckCanvas canvas = new CheckCanvas();
+        int ticks = Math.round(1600F / speed);
+        for (int t = 0; t < ticks; t++) {
+            place(bx + aside, bz - 800F + speed * t, 0F, 0F, speed, speed, 0);
+            tick();
+            most = Math.max(most, l.rock[b]);
+            stirred = Math.max(stirred, l.stirred);
+            canvas.frame(marks, bx, GROUND - 200F, bz - 300F, v.tick);
+            if (canvas.moving > 0) {
+                moving++;
+            }
+        }
+        for (int t = 0; t < 40; t++) {
+            place(60000F, 60000F, 0F, 0F, 0F, 0F, 0);
+            tick();
+        }
+        float dx = l.x[b] - bx;
+        float dz = l.z[b] - bz;
+        float rest = Math.abs(l.vx[b]) + Math.abs(l.vz[b]) + l.rock[b] + l.lift[b];
+        return new float[] {most, (float) Math.hypot(dx, dz), dz, dx, rest, stirred, moving};
     }
 
     /** The marks are drawn: the full detail adds streaks and striations to the simple strips. */
