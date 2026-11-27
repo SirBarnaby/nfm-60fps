@@ -63,6 +63,8 @@ public final class WrecksCheck {
             tick(f, t, v);
         }
         boolean once = r.blown() == 1 && f.explosions.craters() == 1;
+        check(F, "an exploding wreck is seen, not heard: no sound effect of its own", r.blown() == 1
+                && f.explosions.heard == 0, "the wreck exploded, explosions with a sound: " + f.explosions.heard);
         check(F, "a wasted car burns two seconds, then explodes and dents the ground", races
                 && ticks == WreckRace.FUSE && sparks > 0 && fire > 0 && craters == 1 && r.dented[1] && hop > 0F && once
                 && f.explosions.particles.count() > 10,

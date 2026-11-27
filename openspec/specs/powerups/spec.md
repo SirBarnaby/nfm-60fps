@@ -104,6 +104,13 @@ A new setting SHALL make a wasted car, instead of only being on fire, light on f
 - **WHEN** a car is wasted with the setting off
 - **THEN** it burns as it always did and does not explode
 
+### Requirement: No new sound effects for wrecking cars
+Wrecking a car SHALL NOT have new sound effects. (Owner, 2026-11-27: "there are new soundeffects now? For wrecking people? We dont need that.")
+
+#### Scenario: Check: a wreck explodes
+- **WHEN** a car is wasted with exploding wrecks on, and explodes
+- **THEN** no sound effect is played for it beyond what a wasted car always sounded like
+
 ### Requirement: An exploding wreck hurts like a small dynamite
 The explosion of a wasted car SHALL push the cars close to the wreck and do some damage to them, like a small dynamite, besides denting the ground. (Owner, 2026-11-26: picked "Yes, like a small dynamite".)
 

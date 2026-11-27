@@ -130,6 +130,7 @@ public final class Explosions {
     public void start(RaceView r) {
         particles.clear();
         craters = 0;
+        heard = 0;
         dice.reset(r.seed, owner);
         Wind.of(r.seed, wind);
         groundColor = r.groundColor;
@@ -149,11 +150,15 @@ public final class Explosions {
         return craters;
     }
 
+    /** The explosions of this race that had a sound of their own. */
+    public int heard;
+
     /**
      * An explosion at {@code (x, y, z)} over ground at {@code ground}:
      * {@code size} 1 for a dynamite stick, smaller for less. It leaves a
-     * crater if {@code crater}, plays clip {@code clip} there, and flashes
-     * the screen of a player near it if {@code flash}.
+     * crater if {@code crater}, plays clip {@code clip} there (null for an
+     * explosion that is only seen: a wreck's), and flashes the screen of a
+     * player near it if {@code flash}.
      */
     public void explode(RaceView r, float x, float y, float z, float ground, boolean crater, float size,
             String clip, boolean flash) {
@@ -176,10 +181,16 @@ public final class Explosions {
             }
         }
         float near = NEAR_PLAYER * Math.min(1F, size + 0.25F);
-        if (hooks.sound3d()) {
+        if (clip == null) {
+            // seen only
+        } else if (hooks.sound3d()) {
+            heard++;
             Sound3D.pointSound(x, y, z, clip, 1.4F * (float) Math.sqrt(size), dice.between(0.94F, 1.06F));
-        } else if (nearest < near) {
-            hooks.classic(nearestPlayer, clip, GameHooks.PLAY);
+        } else {
+            heard++;
+            if (nearest < near) {
+                hooks.classic(nearestPlayer, clip, GameHooks.PLAY);
+            }
         }
         if (flash && nearest < near) {
             hooks.flash();

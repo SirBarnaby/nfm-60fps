@@ -14,18 +14,19 @@ import nfm.lit.features.RaceView;
  * Exploding wrecks: a wasted car burns for two seconds, then explodes. The
  * explosion dents the ground and throws and damages the cars close to the
  * wreck, like a small dynamite, so it changes races: the race half
- * ({@link WreckRace}) plays inside the race tick. This half is the look and
- * the sound, made after real ticks only: sparks spitting from the wreck
- * while it waits, then the shared explosion ({@link Explosions}) with its
- * fireball, crater, flash and smoke. With the switch off a wasted car burns
- * as it always did.
+ * ({@link WreckRace}) plays inside the race tick. This half is the look,
+ * made after real ticks only: sparks spitting from the wreck while it
+ * waits, then the shared explosion ({@link Explosions}) with its fireball,
+ * crater, flash and smoke. It has no sound of its own ("new soundeffects
+ * ... for wrecking people? We dont need that"): a wasted car sounds as it
+ * always did. With the switch off a wasted car burns as it always did.
  */
 public final class WrecksFeature implements Feature {
 
     public static final String ID = "wrecks";
     public static final WrecksFeature FEATURE = new WrecksFeature();
 
-    /** A wreck's explosion beside a dynamite stick's: its fireball, smoke, crater and loudness. */
+    /** A wreck's explosion beside a dynamite stick's: its fireball, smoke and crater. */
     static final float SIZE = 0.75F;
     /** The powerups' switch of the white flash, which an exploding wreck follows too. */
     private static final String FLASH = "flash";
@@ -54,7 +55,6 @@ public final class WrecksFeature implements Feature {
     @Override
     public void raceSetUp(RaceTick r, long seed) {
         race.setUp(r);
-        Explosions.sounds(); // made while the stage loads, not when the first wreck blows
     }
 
     @Override
@@ -90,7 +90,7 @@ public final class WrecksFeature implements Feature {
                 if (!shown[c]) {
                     shown[c] = true;
                     explosions.explode(r, race.blastX[c], race.blastY[c], race.blastZ[c], race.blastGround[c],
-                            race.dented[c], SIZE, Explosions.BLAST, FeatureSettings.on(FLASH));
+                            race.dented[c], SIZE, null, FeatureSettings.on(FLASH)); // seen, not heard
                 }
                 continue;
             }

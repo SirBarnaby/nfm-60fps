@@ -7,7 +7,7 @@ until 1.0, in the Extras tab's Races group. It follows the powerups'
 like a small dynamite).
 
 Code: `src\nfm\lit\features\wrecks\` (`WreckRace` the race half,
-`WrecksFeature` the look and sound, `WrecksCheck` the checks), with the
+`WrecksFeature` the look, `WrecksCheck` the checks), with the
 explosions' shared parts: `features\BlastPush` (what an explosion does to
 the cars) and `features\Explosions` (its look, sound and smoke; see
 [Powerups](powerups.md)).
@@ -37,19 +37,22 @@ holds how long each car has been wasted and where each wreck exploded;
 run-ahead, rollback and the verifier cover it; a recording notes it among
 the extras that played (format 7). It throws no dice.
 
-## The look and the sound
+## The look
 
 After real ticks only. While a wreck waits, sparks spit from it, more of
 them as the two seconds run out. The explosion is `Explosions` at 0.75 of a
 dynamite stick's size: the dithered fireball, clods and sparks, the crater,
-the recorded blast at the wreck's place, the white flash for a player near
-it (the Explosion flash switch) and the smoke, which drifts with the race's
-wind, stays on the ground and is moved by the cars and by later explosions.
+the white flash for a player near it (the Explosion flash switch) and the
+smoke, which drifts with the race's wind, stays on the ground and is moved
+by the cars and by later explosions. It has no sound of its own (owner,
+27 Nov 2026: no new sound effects for wrecking cars); a wasted car sounds
+as it always did. The powerups' dynamite and bomb keep their blasts.
 
 ## Checking
 
 `test\extras-check.ps1 wrecks` (`cloud/check.sh extras wrecks`): a wasted car
-explodes 38 ticks on, once, with its fireball, crater and lasting smoke;
+explodes 38 ticks on, once, with its fireball, crater and lasting smoke,
+and without a sound of its own;
 with the switch off ten seconds wasted touch nothing; a car 200 units away
 is pushed and damaged less than a dynamite stick there would, one 2000 away
 not at all; and the state saved, played on and restored plays on the same.
