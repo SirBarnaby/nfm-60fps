@@ -46,6 +46,10 @@ public final class WeatherFeature implements Feature {
     static final int SPRAY_ITEMS = 200;
     static final int WIPER_ITEMS = 800;
     static final int HELMET_WIPER_ITEM = 900;
+    static final int SNOW_GROUND_ITEM = 92;
+    static final int SNOW_CAR_ITEMS = 1000;
+    static final int SNOW_HEAP_ITEMS = 1200;
+    static final int SNOW_PUFF_ITEMS = 1400;
 
     /** How deep the snow lies when a race starts (of its cap), and the ticks of snowfall that bring it to the cap: four minutes. */
     static final float SNOW_START = 0.3F;
@@ -64,6 +68,7 @@ public final class WeatherFeature implements Feature {
     final Wet wet = new Wet();
     final DrySpots dry = new DrySpots();
     final Wiping wiping = new Wiping();
+    final Snow snow = new Snow();
 
     /** The weather in the race being played. */
     int kind;
@@ -127,9 +132,11 @@ public final class WeatherFeature implements Feature {
             wet.spray.clear();
             wet.puddles = 0;
             wiping.stop();
+            this.snow.start(race);
         } else {
             wet.start(race, wind[0], wind[1]);
             wiping.start(race);
+            this.snow.stop();
         }
         dry.start(race, snow);
         HLogger.info("[extras] weather: " + FeatureSettings.find(ID).name(kind) + " on stage " + race.stage + ", "
@@ -191,12 +198,14 @@ public final class WeatherFeature implements Feature {
             lens[p].tick(speed(race, p), tail[p]);
         }
         dry.tick(race);
-        if (!snow) {
+        if (snow) {
+            this.snow.tick(race, depth);
+        } else {
             wet.tick(race, lens, players);
             wiping.tick(race, lens, players, inside, aspect);
         }
-        // the hiss of the player's tyres on the wet road, while they touch it
-        float hiss = snow || !race.grounded[0] ? 0F : Math.min(1F, race.groundSpeed(0) / Wet.MIST_FULL);
+        // the hiss of the player's tyres on the wet road, or their crunch over the snow, while they touch it
+        float hiss = !race.grounded[0] ? 0F : Math.min(1F, race.groundSpeed(0) / Wet.MIST_FULL);
         WeatherSounds.around(Features.hooks(), snow, speed(race, 0), inside[0], hiss);
     }
 
@@ -238,6 +247,7 @@ public final class WeatherFeature implements Feature {
         Weather.set(Weather.DRY, 0F);
         kind = Weather.DRY;
         wiping.stop();
+        snow.stop();
     }
 
     /* ------------------------------------------------------------ drawing */
@@ -260,6 +270,8 @@ public final class WeatherFeature implements Feature {
         if (kind != Weather.SNOW) {
             wet.queue(queue, PUDDLE_ITEM, SPRAY_ITEMS);
             queue.ground(SPLASH_ITEM);
+        } else {
+            snow.queue(queue, SNOW_GROUND_ITEM, SNOW_HEAP_ITEMS, SNOW_CAR_ITEMS, SNOW_PUFF_ITEMS);
         }
         if (lens[p].count > 0) {
             if (helmet) {
@@ -287,6 +299,14 @@ public final class WeatherFeature implements Feature {
             wet.drawPuddles(canvas);
         } else if (item >= SPRAY_ITEMS && item < SPRAY_ITEMS + Wet.SPRAY) {
             wet.drawSpray(canvas, item - SPRAY_ITEMS);
+        } else if (item == SNOW_GROUND_ITEM) {
+            snow.drawGround(canvas);
+        } else if (item >= SNOW_PUFF_ITEMS) {
+            snow.drawPuff(canvas, item - SNOW_PUFF_ITEMS);
+        } else if (item >= SNOW_HEAP_ITEMS) {
+            snow.drawHeap(canvas, item - SNOW_HEAP_ITEMS);
+        } else if (item >= SNOW_CAR_ITEMS) {
+            snow.drawCar(canvas, item - SNOW_CAR_ITEMS);
         } else if (item >= HELMET_WIPER_ITEM && item < HELMET_WIPER_ITEM + PLAYERS) {
             wiping.drawHelmet(canvas, item - HELMET_WIPER_ITEM, share);
         } else if (item >= WIPER_ITEMS && item < HELMET_WIPER_ITEM) {

@@ -206,11 +206,52 @@ it and their neighbours clean, the low ones first, reaching well above
 where dust stops. The rain washes mud off twenty times slower than dust.
 With the damage extra off there is no dirt to wash.
 
-## Still to come
+## The snow and the cars (`Snow`)
 
-The rest of the weather's requirements are built in later steps and are not
-in the game yet: snow trails, heaps beside drifts, snow on the cars and in
-two cars' trunks, explosions and fire clearing snow.
+Looks and sound only, from the race's copy; in snow, not in rain.
+
+- **Trails**: a wheel on the flat ground presses a track into the snow: a
+  strip of flat pieces as wide as the tyre, the packed snow a little darker
+  (42% of a grey-blue over the ground as drawn), drawn with the ground so
+  everything stands on them. A player's car leaves all four wheels', a
+  computer car its rear wheels' while within 9000 units of a player; none
+  from a wheel in the air or on a ramp. A piece is laid every two ticks'
+  way (30 to 160 units) and the snowfall fills it in again within a minute.
+  The 8192 newest pieces are kept; those within 7000 units of the eye are
+  drawn.
+- **Heaps**: low mounds with sides and a top (six sides, a ring and a peak;
+  the sides turned to the light paler than the others), up to 62 units wide
+  and 24 high, 160 at most. A wheel sliding sideways faster than 4 units a
+  tick throws snow to the outside of the slide, where it lands 55 to 80
+  units beyond the car's side and piles up (snow that lands within 110
+  units of a heap grows it). A wheel through a settled heap flattens it.
+- **A car on its side or roof** pushes a growing heap along (drawn moving
+  with it) and leaves it where it stops, a full heap after about two
+  seconds' slide; the lump is heard (a recording, through the 3D sound).
+- **Wheel arches**: snow packs into them while a car drives on the ground,
+  full after thirty seconds: a white crescent over each wheel on the side
+  towards the eye.
+- **Open backs**: DR Monstaa's bed and M A S H E E N's rear deck (found on
+  the model: the biggest level panel behind all the glass) are two fifths
+  full when a race starts in snow and full after 45 seconds: a mound whose
+  foot stands at the top of the bed's walls. A landing after twelve ticks
+  or more in the air knocks all of it out: lumps that stay on the ground as
+  a heap, puffs of snow, and it is heard. A ram pushing 3 units a tick or
+  more shakes snow off both cars, in puffs: three fifths of what is in
+  the arches, two fifths of what is in an open back.
+- **Landing**: any car landing after a jump throws up puffs of snow.
+- **Bare ground**: an explosion (`Weather.blast`) clears the snow 300 units
+  around it at once: trails and heaps there are gone, snow is thrown
+  outwards, and no snow heaps on it; the snowfall covers it again in forty
+  seconds. Around a wasted (burning) car the snow melts back to 190 units
+  in twelve seconds and stays melted. Bare ground is a round dark patch
+  over the ground as drawn.
+- **Sound**: the player's tyres crunch on the snow, louder with speed,
+  while the car touches the ground (a recording, a bed of the 3D sound).
+
+For a look at them in a screenshot, `-Dnfm.weather.show=true` (with
+`-Dnfm.weather=snow`) starts the race with six heaps beside the player's
+car and every arch and open back full.
 
 ## Checks
 
@@ -230,7 +271,14 @@ rain; the grid's spots under the cars, a second after they left and after
 the time each weather takes to hide them; the wipers of two closed cars
 through a wipe, their ends on the glass, none in snow, in the dry or on a
 car without glass; from the helmet, the blades beyond the dashboard and
-below the roof's edge, drops wiped off the screen and the wipes heard.
+below the roof's edge, drops wiped off the screen and the wipes heard; in
+snow, the trails of thirty ticks' driving, still there after ten seconds
+and filled in after a minute, none from a car in the air or in rain; the
+heaps of a slide, to the outside of its path and drawn as shapes; a car
+sliding on its roof pushing a heap and leaving it, heard; the arches after
+35 seconds; DR Monstaa's back filling, a ram and a hard landing emptying
+it, and no such back on another model; a blast on a trail baring the
+ground and the snow covering it again, a burning car melting it.
 `cloud/check.sh extras realism` has the dust washing off in the rain and
 the mud of a slide over wet soft ground.
 

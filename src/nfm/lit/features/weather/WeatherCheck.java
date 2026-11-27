@@ -76,6 +76,8 @@ public final class WeatherCheck {
     private RaceView v;
     /** The next races' cars have a windscreen (and so wipers); else they are empty shapes. */
     private boolean glassCars;
+    /** The next races' cars have an open back behind the cab and wheels, and this model's name; null for the usual. */
+    private String backCars;
     private WeatherFeature weather;
     private Asked asked;
     private final CheckCanvas canvas = new CheckCanvas();
@@ -101,6 +103,10 @@ public final class WeatherCheck {
             c.theGrid();
             c.wipers();
             c.wipersFromTheHelmet();
+            c.snowTrailsAndHeaps();
+            c.snowUnderARoof();
+            c.snowOnTheCars();
+            c.snowCleared();
             c.onlyALook();
         } finally {
             FeatureSettings.set(WeatherFeature.ID, saved);
@@ -133,6 +139,10 @@ public final class WeatherCheck {
             if (glassCars) {
                 v.shape[c] = glassCar();
                 v.modelName[c] = "check";
+            }
+            if (backCars != null) {
+                v.shape[c] = backCar();
+                v.modelName[c] = backCars;
             }
         }
         Weather.raceStarts(); // as the game does: no crater of another race is left to fill
@@ -202,6 +212,45 @@ public final class WeatherCheck {
                 s.minZ = Math.min(s.minZ, s.z[at]);
                 s.maxZ = Math.max(s.maxZ, s.z[at]);
             }
+        }
+        return s;
+    }
+
+    /** The closed car with a level panel behind its cab (an open back) and four wheels of radius 8. */
+    private static CarShape backCar() {
+        CarShape g = glassCar();
+        CarShape s = new CarShape();
+        s.fit(g.planes + 1, (g.planes + 1) * 4);
+        System.arraycopy(g.first, 0, s.first, 0, g.planes);
+        System.arraycopy(g.count, 0, s.count, 0, g.planes);
+        System.arraycopy(g.rgb, 0, s.rgb, 0, g.planes);
+        System.arraycopy(g.glass, 0, s.glass, 0, g.planes);
+        System.arraycopy(g.x, 0, s.x, 0, g.planes * 4);
+        System.arraycopy(g.y, 0, s.y, 0, g.planes * 4);
+        System.arraycopy(g.z, 0, s.z, 0, g.planes * 4);
+        java.util.Arrays.fill(s.wheel, -1);
+        int i = g.planes;
+        float[] bed = {-15, -14, -30, 15, -14, -30, 15, -14, -48, -15, -14, -48};
+        s.first[i] = i * 4;
+        s.count[i] = 4;
+        s.rgb[i] = 0x969696;
+        for (int k = 0; k < 4; k++) {
+            s.x[i * 4 + k] = bed[k * 3];
+            s.y[i * 4 + k] = bed[k * 3 + 1];
+            s.z[i * 4 + k] = bed[k * 3 + 2];
+        }
+        s.minX = g.minX;
+        s.maxX = g.maxX;
+        s.minY = g.minY;
+        s.maxY = g.maxY;
+        s.minZ = g.minZ;
+        s.maxZ = g.maxZ;
+        for (int w = 0; w < RaceView.WHEELS; w++) {
+            s.hubX[w] = (w & 1) == 0 ? -20F : 20F;
+            s.hubY[w] = 0F;
+            s.hubZ[w] = w < 2 ? 35F : -35F;
+            s.wheelRadius[w] = 8F;
+            s.wheelHalfWidth[w] = 2F;
         }
         return s;
     }
@@ -442,6 +491,229 @@ public final class WeatherCheck {
                         + n(HelmetCam.GLASS_TOP) + "); in 120 ticks " + wiped + " drops wiped off, " + inside
                         + " drop-ticks on the screen against " + outside + " from outside; " + heard
                         + " wipes heard");
+    }
+
+    /** The wheels leave trails in the snow that the snowfall fills in; a drift piles snow at the outside of the slide, on the ground only. */
+    private void snowTrailsAndHeaps() {
+        start(Weather.SNOW);
+        Snow snow = weather.snow;
+        for (int t = 0; t < 30; t++) {
+            drive(40F, 0F, true);
+        }
+        int straightRuts = snow.ruts;
+        int straightHeaps = snow.heaps;
+        frame(0F, 100F, v.z[0] - 500F, 0F, 0F);
+        int seen = snow.drawnRuts;
+        // a slide to the right: the path from here on, and each heap's distance to its right
+        float x0 = v.x[0];
+        float z0 = v.z[0];
+        for (int t = 0; t < 60; t++) {
+            v.vx[0] = 14F;
+            v.x[0] += 14F;
+            drive(40F, 12F, true);
+        }
+        int heaps = snow.heaps;
+        float nearest = Float.MAX_VALUE;
+        float highest = 0F;
+        float[] h = new float[5];
+        float norm = (float) Math.sqrt(14F * 14F + 40F * 40F);
+        for (int n = 0; snow.heapAt(n, h); n++) {
+            nearest = Math.min(nearest, ((h[0] - x0) * 40F - (h[2] - z0) * 14F) / norm);
+            highest = Math.max(highest, h[4]);
+        }
+        frame(v.x[0] - 400F, 60F, v.z[0] - 900F, 0F, 0F);
+        int drawnHeaps = snow.drawnHeaps;
+        int sides = snow.drawnSides;
+        v.vx[0] = 0F;
+        ticks(19 * 10);
+        frame(0F, 100F, z0 - 500F, 0F, 0F);
+        int later = snow.drawnRuts;
+        ticks(Snow.RUT_FILLS);
+        frame(0F, 100F, z0 - 500F, 0F, 0F);
+        int filled = snow.drawnRuts;
+        // the same slide off the ground, and in the rain
+        start(Weather.SNOW);
+        for (int t = 0; t < 60; t++) {
+            v.vx[0] = 14F;
+            v.x[0] += 14F;
+            drive(40F, 12F, false);
+        }
+        int airHeaps = weather.snow.heaps;
+        int airRuts = weather.snow.ruts;
+        start(Weather.RAIN);
+        for (int t = 0; t < 60; t++) {
+            v.vx[0] = 14F;
+            v.x[0] += 14F;
+            drive(40F, 12F, true);
+        }
+        int rainHeaps = weather.snow.heaps + weather.snow.ruts;
+        v.vx[0] = 0F;
+        check(F, "wheels leave trails in the snow that stay", straightRuts >= 20 && seen >= 20 && straightHeaps == 0
+                && later >= 20 && filled == 0 && airRuts == 0 && rainHeaps == 0,
+                straightRuts + " pieces of trail after 30 ticks' driving, " + seen + " drawn, no heaps ("
+                        + straightHeaps + "); " + later + " still drawn ten seconds later, " + filled
+                        + " once the snowfall has filled them in (" + Snow.RUT_FILLS / 19 + " s); " + airRuts
+                        + " from a car in the air, " + rainHeaps + " trails and heaps in the rain");
+        check(F, "a drift piles snow at the side of its path", heaps >= 3 && nearest >= 60F && highest >= 8F
+                && drawnHeaps >= 3 && sides >= drawnHeaps * 3 && airHeaps == 0,
+                heaps + " heaps after a slide of 60 ticks, the nearest " + n(nearest) + " to the outside of the path"
+                        + " (the car is 40 to each side), the highest " + n(highest) + " high; " + drawnHeaps
+                        + " drawn, as " + sides + " sides and tops turned to the eye (shapes, not marks); " + airHeaps
+                        + " from the same slide in the air");
+    }
+
+    /** A car on its roof for a tick, sliding {@code speed} along z. */
+    private void roofSlide(float speed) {
+        v.capsized[0] = true;
+        v.xy[0] = 180;
+        v.vz[0] = speed;
+        v.z[0] += speed;
+        v.y[0] = 230F;
+        v.grounded[0] = false;
+        for (int w = 0; w < RaceView.WHEELS; w++) {
+            v.contact[w] = false;
+        }
+        ticks(1);
+    }
+
+    /** A car sliding on its roof pushes snow along and leaves a heap where it stops. */
+    private void snowUnderARoof() {
+        start(Weather.SNOW);
+        Snow snow = weather.snow;
+        for (int t = 0; t < 40; t++) {
+            roofSlide(30F);
+        }
+        float pushed = snow.pushed[0];
+        int during = snow.heaps;
+        frame(-300F, 100F, v.z[0] - 300F, 45F, 0F);
+        int moving = snow.drawnPushed;
+        roofSlide(0F);
+        int left = snow.heaps;
+        float[] h = new float[5];
+        boolean there = snow.heapAt(0, h) && Math.abs(h[0] - v.x[0]) < 60F && Math.abs(h[2] - v.z[0]) < 90F;
+        frame(-300F, 100F, v.z[0] - 300F, 45F, 0F);
+        int still = snow.drawnHeaps;
+        v.capsized[0] = false;
+        v.xy[0] = 0;
+        // on its wheels the same way: nothing pushed
+        start(Weather.SNOW);
+        for (int t = 0; t < 40; t++) {
+            drive(30F, 0F, true);
+        }
+        float upright = weather.snow.pushed[0];
+        check(F, "a car on its roof pushes snow along and leaves a heap", pushed > 0.5F && during == 0 && moving >= 4
+                && left == 1 && there && h[3] >= 40F && still == 1 && snow.heard >= 1 && upright == 0F,
+                "after 40 ticks sliding on its roof it has pushed up " + n(pushed) + " of a full heap, drawn moving"
+                        + " with it (" + moving + " polygons); where it stops " + left + " heap is left, "
+                        + n(h[3]) + " wide and " + n(h[4]) + " high, " + (there ? "at" : "away from")
+                        + " the car, and is heard; on its wheels it pushes " + n(upright));
+    }
+
+    /** Snow packs into the wheel arches and into an open back; a ram shakes it off, a hard landing knocks it out. */
+    private void snowOnTheCars() {
+        backCars = "drmonster";
+        start(Weather.SNOW);
+        Snow snow = weather.snow;
+        float atStart = snow.trunk[0];
+        for (int t = 0; t < 19 * 35; t++) {
+            drive(40F, 0F, true);
+        }
+        float arch = snow.arch[0];
+        float trunk = snow.trunk[0];
+        // from behind the car, to its left
+        frame(v.x[0] - 300F, 100F, v.z[0] - 300F, 45F, 0F);
+        int onCar = canvas.onCar;
+        int flewBefore = snow.thrown;
+        v.rams = 1;
+        v.ramCar[0] = 1;
+        v.ramOther[0] = 0;
+        v.ramPush[0] = 8F;
+        ticks(1);
+        v.rams = 0;
+        float archRammed = snow.arch[0];
+        float trunkRammed = snow.trunk[0];
+        int flew = snow.thrown - flewBefore;
+        for (int t = 0; t < 20; t++) {
+            v.airTicks[0] = t + 1;
+            drive(40F, 0F, false);
+        }
+        int heapsBefore = snow.heaps;
+        v.airTicks[0] = 0;
+        drive(40F, 0F, true);
+        float trunkLanded = snow.trunk[0];
+        float archLanded = snow.arch[0];
+        int lumps = snow.lumps;
+        int heapsAfter = snow.heaps;
+        int heard = snow.heard;
+        // any other car has no back that fills
+        backCars = "check";
+        start(Weather.SNOW);
+        float other = weather.snow.trunk[0];
+        backCars = null;
+        check(F, "snow sits in the wheel arches", arch > 0.95F && onCar >= 2,
+                "after 35 s of driving the arches are " + n(arch) + " full; " + onCar
+                        + " polygons of snow on the car seen from behind its left (two arches and the back's heap)");
+        check(F, "a hard landing knocks the snow out of an open back, a ram shakes it off", atStart > 0.3F
+                && trunk > 0.95F && onCar >= 5 && archRammed < arch * 0.5F && trunkRammed < trunk * 0.7F && flew >= 3
+                && trunkLanded < 0.05F && archLanded < archRammed && lumps >= 2 && heapsAfter > heapsBefore
+                && heard >= 1 && other < 0F,
+                "DR Monstaa's back " + n(atStart) + " full at the start, " + n(trunk) + " after 35 s; a ram leaves "
+                        + n(trunkRammed) + " in it and " + n(archRammed) + " in the arches, " + flew
+                        + " puffs fly off; a landing after 20 ticks in the air leaves " + n(trunkLanded) + ", "
+                        + lumps + " lumps on the ground (" + heapsBefore + " heaps before, " + heapsAfter
+                        + " after), heard; a car of another model " + (other < 0F ? "has no such back" : "fills too"));
+    }
+
+    /** An explosion bares the ground around it, and the snowfall covers it again; the snow melts back around a burning car. */
+    private void snowCleared() {
+        start(Weather.SNOW);
+        Snow snow = weather.snow;
+        for (int t = 0; t < 40; t++) {
+            v.vx[0] = 14F;
+            v.x[0] += 14F;
+            drive(40F, 12F, true);
+        }
+        v.vx[0] = 0F;
+        int heapsBefore = snow.heaps;
+        int rutsBefore = snow.ruts;
+        float bx = v.x[0] - 100F;
+        float bz = v.z[0] - 300F;
+        int flewBefore = snow.thrown;
+        Weather.blast(bx, 250F, bz, 1F, true, v.tick);
+        ticks(1);
+        int heapsAfter = snow.heaps;
+        int rutsAfter = snow.ruts;
+        int flew = snow.thrown - flewBefore;
+        snow.heap(bx + 50F, 250F, bz, 20F, 7F);
+        int refused = snow.heaps;
+        frame(bx, 60F, bz - 900F, 0F, 0F);
+        int bare = snow.drawnBare;
+        float wide = canvas.span(Snow.BARE);
+        ticks(DrySpots.SNOWED_IN + 2);
+        frame(bx, 60F, bz - 900F, 0F, 0F);
+        int covered = snow.drawnBare;
+        // the other car burns
+        v.wasted[1] = true;
+        ticks(19);
+        frame(0F, 60F, v.z[1] - 900F, 0F, 0F);
+        float early = snow.drawnBare == 1 ? canvas.span(Snow.BARE) : 0F;
+        ticks(Snow.MELTS_IN);
+        frame(0F, 60F, v.z[1] - 900F, 0F, 0F);
+        float melted = snow.drawnBare == 1 ? canvas.span(Snow.BARE) : 0F;
+        ticks(DrySpots.SNOWED_IN);
+        frame(0F, 60F, v.z[1] - 900F, 0F, 0F);
+        int kept = snow.drawnBare;
+        v.wasted[1] = false;
+        check(F, "an explosion bares the ground and a burning car melts the snow", heapsBefore >= 2
+                && heapsAfter < heapsBefore && rutsAfter < rutsBefore && refused == heapsAfter && flew >= 10
+                && bare == 1 && wide > Snow.BLAST_CLEARS * 1.5F && covered == 0 && early > 0F && melted > early * 3F
+                && melted > Snow.FIRE_MELTS * 1.5F && kept == 1,
+                "a blast on the trail: " + heapsBefore + " heaps and " + rutsBefore + " trail pieces before, "
+                        + heapsAfter + " and " + rutsAfter + " after, " + flew + " puffs thrown out, bare ground "
+                        + n(wide) + " across, no snow heaped on it; covered again after "
+                        + DrySpots.SNOWED_IN / 19 + " s (" + covered + " drawn); around a burning car bare "
+                        + n(early) + " across after a second, " + n(melted) + " after " + Snow.MELTS_IN / 19
+                        + " s, and still there " + DrySpots.SNOWED_IN / 19 + " s later (" + kept + ")");
     }
 
     /** Nothing falls so near the eye that the game would leave it out, whichever way the camera looks and moves. */

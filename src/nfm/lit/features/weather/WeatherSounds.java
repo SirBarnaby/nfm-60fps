@@ -48,7 +48,8 @@ final class WeatherSounds {
      * What is heard all around this tick: {@code snow} or rain, the
      * listener at {@code speed} of their car's top speed (0 to 1) and, if
      * {@code inside}, under the roof of a closed car (the helmet cam);
-     * {@code hiss} how much their tyres hiss on the wet road (0 to 1).
+     * {@code hiss} how much their tyres hiss on the wet road, or crunch
+     * over the snow (0 to 1).
      */
     static void around(GameHooks hooks, boolean snow, float speed, boolean inside, float hiss) {
         if (!hooks.sound3d()) {
@@ -59,8 +60,10 @@ final class WeatherSounds {
             hooks.bed(ROOF_BED, null, 0F, 1F);
             hooks.bed(SPRAY_BED, null, 0F, 1F);
             hooks.bed(WIND_BED, WIND, (0.3F + 0.3F * speed) * (inside ? 0.55F : 1F), 0.92F + 0.2F * speed);
+            hooks.bed(ROLL_BED, hiss > 0.02F ? ROLL : null, 0.4F * hiss * (inside ? 0.6F : 1F), 0.86F + 0.26F * hiss);
         } else {
             hooks.bed(WIND_BED, null, 0F, 1F);
+            hooks.bed(ROLL_BED, null, 0F, 1F);
             hooks.bed(RAIN_BED, RAIN, inside ? 0.26F : 0.5F + 0.2F * speed, 1F);
             hooks.bed(ROOF_BED, inside ? ROOF : null, inside ? 0.6F : 0F, 1F);
             hooks.bed(SPRAY_BED, hiss > 0.02F ? SPRAY : null, 0.5F * hiss * (inside ? 0.6F : 1F), 0.85F + 0.3F * hiss);
