@@ -1,4 +1,63 @@
-## Need For Madness: LIT
+<p align="center">
+  <img src="assets/logo.png" alt="NFM:LIT logo" width="160" />
+</p>
+
+<h1 align="center">Need For Madness: LIT</h1>
+
+<p align="center"><em>Radicalplay's Need for Madness 2, rebuilt to run smooth on modern PCs.</em></p>
+
+<p align="center">
+  <a href="https://github.com/SirBarnaby/nfm-60fps/releases/latest"><img src="https://img.shields.io/badge/download-Windows%20ZIP-24292f?style=flat" alt="Download the Windows ZIP" /></a>
+  &nbsp;
+  <img src="https://img.shields.io/badge/Windows-64--bit-24292f?style=flat" alt="64-bit Windows" />
+  &nbsp;
+  <img src="https://img.shields.io/badge/Java-25-24292f?style=flat" alt="Java 25" />
+</p>
+
+<p align="center"><sub><a href="#features">Features</a> · <a href="#see-it-in-action">See it in action</a> · <a href="#install">Install</a> · <a href="#about-the-project">About the project</a> · <a href="#developer-options">Developer options</a></sub></p>
+
+<p align="center">
+  <img src="assets/race.gif" alt="A race start on stage 9: the pack leaves the grid" width="100%" />
+</p>
+
+## Features
+
+- **Smooth racing.** Races are drawn as often as your monitor can show them, smoothly between the original game's ticks, which still run at their own pace underneath.
+- **Any window, no black bars.** 16:9, 21:9, 32:9 or 4:3, windowed or fullscreen: the race fills the screen and the menus scale with it.
+- **Drawn by the graphics card.** Direct3D 11, with MSAA, supersampling, dynamic resolution and HDR.
+- **One tick less input lag.** Run-ahead shows where your car is going, not where it was.
+- **Split screen.** Two players on one PC, side by side or top and bottom, with up to five computer cars.
+- **Game controllers.** Xbox, PlayStation, Switch Pro and most other pads, through SDL 3.
+- **3D sound.** Every engine heard from where it is, muffled behind hills and walls by Steam Audio.
+- **Settings screen.** Picture, sound and controls in the game's own menu style, on the main menu and the pause menu.
+- **Replays.** Every race is kept, and the fastest run on each stage is never thrown away.
+- **Mods.** Drop replacement models, stages, sounds and music into the `mods` folder.
+- **Extras, all optional.** Skidmarks, helmet cam, rain, fog and snow, damage and heat, exploding wrecks, powerups, suspension handling and a rebuilt engine sound. Each has its own switch in **Settings → Extras**.
+- **The original game, untouched.** Handling, AI and every quirk play exactly as in NFM2. Twenty recorded races are replayed tick for tick after every change to prove it.
+
+## See it in action
+
+**Rain, puddles and skidmarks**
+
+<p align="center"><img src="assets/rain.gif" alt="Racing in the rain with skidmarks and puddles" width="100%" /></p>
+
+**Split screen**
+
+<p align="center"><img src="assets/split-screen.gif" alt="Two players racing in split screen" width="100%" /></p>
+
+**Helmet cam**
+
+<p align="center"><img src="assets/helmet-cam.gif" alt="The first-person helmet cam at a race start" width="100%" /></p>
+
+## Install
+
+1. Download the Windows ZIP from [Releases](https://github.com/SirBarnaby/nfm-60fps/releases/latest).
+2. Extract the whole ZIP to a folder.
+3. Double-click `madness64.exe`. The Java runtime comes with it, nothing else to install.
+
+Turn extras on in **Settings → Extras**. Need for Madness 2 (c) Radicalplay.com.
+
+## About the project
 
 Need For Madness: LIT (NFML) is a decompilation and subsequent improvement of Need For Madness 2, developed by Radicalplay.com.
 
