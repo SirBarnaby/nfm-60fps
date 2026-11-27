@@ -192,6 +192,18 @@ final class PowerupRace {
         Arrays.fill(bombAge, 0);
         Arrays.fill(eventKind, 0);
         events = 0;
+        /*
+         * The empty slots too: they are saved with the rest, and what the
+         * race before left in them made a race recorded after another
+         * differ at its first tick when played again by itself (the owner's
+         * races of 2026-11-27).
+         */
+        for (float[] slots : new float[][] {stickX, stickY, stickZ, stickVX, stickVY, stickVZ, bombX, bombY, bombZ,
+                bombVY, bombRoad, eventX, eventY, eventZ, eventGround}) {
+            Arrays.fill(slots, 0F);
+        }
+        Arrays.fill(eventCar, 0);
+        Arrays.fill(eventWhat, 0);
     }
 
     /** Rows of boxes the first build had on a lap with {@code gates} checkpoints: one at each, every second with many. */
