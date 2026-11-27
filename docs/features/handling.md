@@ -34,22 +34,32 @@ game's. What changes is the tyres and the body.
   rising side in, so the body lags and settles. In the air they hang 5 long.
 - **Tyres.** One grip for braking and turning together, a circle: each step
   each wheel's slip (the velocity the game wants less the wheel's) is pulled
-  in along itself by a smooth curve (the magic formula's shape, C 1.5): in
-  proportion for a small slip, the most at 70% of the grip, falling to 71% of
+  in along itself by a smooth curve (the magic formula's shape): in
+  proportion for a small slip, the most at 70% of the grip, falling to 90% of
   that in a full slide. The grip is the game's (its losses to steering, the
-  handbrake and grass taken), times 1.1 so the circle grips as the game's
-  square does on average, times the axles' grip for their loads. The upward
-  pull is the game's.
+  handbrake and grass taken), times 1.41, the corner of the game's square,
+  times the axles' grip for their loads. The upward pull is the game's.
+  (Until 27 Nov 2026 the circle was 1.1 of the grip and fell to 71%: the path
+  lagged the nose, 11 degrees against the old handling's 2 after 13 ticks of
+  a turn. The owner: "Immediate action when turning ... Must be somewhat
+  instant".)
 - **Load.** A wheel's load is `1 + travel/18`; an axle grips by the mean of
   `load^0.8`, so moving weight costs a little grip in all.
 - **Balance.** The steering's turn grows by half the front axle's grip over
   the rear's: braking into a corner turns the car in more, power out of it a
   little less. Forwards above 20.
-- **Drift assist.** Past 38 degrees between the nose and where the car goes,
-  the nose is turned toward it by 60% of the excess each tick; steering into a
-  slide turns it a quarter more; at most 12 degrees a tick. Because the tyres
-  let go past their peak, a slide held on the throttle stays a slide; steering
-  into it brings the slip back under the peak and the grip back.
+- **Drift assist.** Only while the driver countersteers: steering against a
+  slide of 8 to 120 degrees between the nose and where the car goes turns
+  the nose a quarter more, and past 38 degrees it is turned toward the way
+  it goes by 60% of the excess besides; at most 12 degrees a tick. It never
+  turns the car by itself or against the steering, so full lock turns as far
+  as the game's own steering (until 27 Nov 2026 it pulled every slide past 38
+  degrees back, which capped a turn: 203 degrees against the old handling's
+  372 in three seconds of full lock). The nose is read from the velocity the
+  game wants, not from the heading: after a stunt landed turned over both
+  ways a car faces the other way from its heading, and the assist read from
+  the heading turned it the wrong way until it would not go forward (the
+  owner's race of 27 Nov, replayed in the cloud).
 - **Dust and skids.** While the tyres slide past their peak the game is told
   a lower grip, so its own dust, skid sounds and the skidmarks follow the
   slide.
@@ -93,6 +103,10 @@ degrees. Stepping the whole race at 120 Hz is the rebuild after 1.0.
 `test\extras-check.ps1 handling` plays the race part on a made-up car: the
 120 steps a second, braking loading the front and the springs settling, one
 grip shared by braking and turning (a diagonal slip pulled as far as a
-straight one), the grip falling to about 71% past its peak, the drift assist
-turning a 60 degree slide back, and the state restored playing on the same.
+straight one), the grip falling to about 90% past its peak, the drift assist
+adding to a countersteer and never turning the nose by itself or against the
+steering, the same for a car facing the other way from its heading, full
+lock turning as far as the game's steering (420 degrees in 60 ticks), the
+path following the nose as closely as under the game's own rule (within a
+degree in the first half second), and the state restored playing on the same.
 The other check is the owner's drive: corners, bumps, a jump and a stunt.

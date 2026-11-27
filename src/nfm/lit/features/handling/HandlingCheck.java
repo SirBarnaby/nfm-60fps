@@ -12,8 +12,10 @@ import nfm.lit.features.RaceTick;
  * game hands it over and a {@link RaceTick} of plain values. The 120 steps a
  * second, the springs loading the front under braking and settling, one
  * grip shared by braking and turning, the grip falling past its peak (a
- * slide can be held), the drift assist's turn, and the state restored
- * playing on the same. The owner's drive is the requirement's other check.
+ * slide can be held), the drift assist adding only to a countersteer, a
+ * held turn going all the way round, the car's path following its nose as
+ * soon as under the game's own grip, and the state restored playing on the
+ * same. The owner's drive is the requirement's other check.
  */
 public final class HandlingCheck {
 
@@ -28,6 +30,9 @@ public final class HandlingCheck {
         circle();
         peak();
         drift();
+        turnedRound();
+        fullLock();
+        response();
         rewind();
     }
 
@@ -77,32 +82,147 @@ public final class HandlingCheck {
                         + n(diagonal) + " units a tick");
     }
 
-    /** The tyre grips most at its peak and lets go to about 71% in a full slide: a slide can be held. */
+    /** The tyre grips most at its peak and lets go to about 90% in a full slide: a slide can be held, and it still turns the car. */
     private static void peak() {
         double g = 20;
         double atPeak = g * StrictMath.sin(HandlingRace.SHAPE * StrictMath.atan(HandlingRace.STIFFNESS
                 * HandlingRace.PEAK));
         double sliding = g * StrictMath.sin(HandlingRace.SHAPE * StrictMath.atan(HandlingRace.STIFFNESS * 20));
         double share = sliding / atPeak;
-        check(F, "past its peak the tyre lets go smoothly, to about 71%", Math.abs(atPeak - g) < 1e-6
-                && share > 0.69 && share < 0.74, "peak " + n(atPeak) + ", full slide " + n(share * 100) + "%");
+        check(F, "past its peak the tyre lets go smoothly, to about 90%", Math.abs(atPeak - g) < 1e-6
+                && share > 0.88 && share < 0.93, "peak " + n(atPeak) + ", full slide " + n(share * 100) + "%");
     }
 
-    /** A car sliding 60 degrees off its nose is turned toward where it goes. */
+    /**
+     * The drift assist only adds to the driver's countersteer: a car sliding
+     * 75 degrees off its nose is left as it points with no steering and
+     * with steering deeper into the turn, and turned more than the steering
+     * alone when the driver steers toward where the car goes.
+     */
     private static void drift() {
+        int alone = slideTurn(0);
+        int deeper = slideTurn(-5);
+        int counter = slideTurn(5);
+        check(F, "the drift assist adds to a countersteer and never turns the nose by itself or against the steering",
+                alone == 0 && deeper == 0 && counter >= 3 && counter <= (int) HandlingRace.MAX_TURN,
+                "sliding 75 degrees: no steering " + alone + ", steering deeper " + deeper + ", countersteering 5 "
+                        + counter + " degrees more in a tick");
+    }
+
+    /** The degrees the suspension itself turns a car sliding 75 degrees off its nose in a tick the game steered {@code steer}. */
+    private static int slideTurn(int steer) {
+        return slideTurn(steer, false);
+    }
+
+    /**
+     * The same for a car that stands facing the other way from its heading
+     * ({@code turnedRound}, as after a stunt landed turned over both ways:
+     * the game drives it along its nose, half a turn from its heading).
+     */
+    private static int slideTurn(int steer, boolean turnedRound) {
         Car car = new Car();
+        car.turnedRound = turnedRound;
         car.cruise(150F, 10);
         Chassis c = car.chassis;
-        double a = StrictMath.toRadians(60);
+        double a = StrictMath.toRadians(turnedRound ? 255 : 75); // 75 degrees off the nose either way
         for (int w = 0; w < HandlingRace.WHEELS; w++) {
             c.vx[w] = (float) (-150 * StrictMath.sin(a));
             c.vz[w] = (float) (150 * StrictMath.cos(a));
         }
+        c.heading += steer;
         int before = c.heading;
         car.drive(150F);
-        int turned = HandlingRace.wrap(c.heading - before);
-        check(F, "the drift assist turns a slide past 38 degrees back toward where the car goes",
-                turned >= 8 && turned <= (int) HandlingRace.MAX_TURN, "turned " + turned + " degrees in a tick");
+        return HandlingRace.wrap(c.heading - before);
+    }
+
+    /**
+     * A car that landed a stunt turned over both ways stands facing the
+     * other way from its heading, and the game drives it along its nose.
+     * The assist reads the nose, so it does there what it does anywhere: it
+     * adds to a countersteer, and never turns the car by itself or deeper
+     * into the slide (which spun the owner's car on 2026-11-27 until its
+     * engine ran backwards).
+     */
+    private static void turnedRound() {
+        int alone = slideTurn(0, true);
+        int deeper = slideTurn(-5, true);
+        int counter = slideTurn(5, true);
+        check(F, "a car facing the other way from its heading after a stunt is assisted the same",
+                alone == 0 && deeper == 0 && counter >= 3 && counter <= (int) HandlingRace.MAX_TURN,
+                "sliding 75 degrees off its nose: no steering " + alone + ", steering deeper " + deeper
+                        + ", countersteering 5 " + counter + " degrees more in a tick");
+    }
+
+    /** Full lock held for three seconds (7 degrees a tick, the game's most) turns the car as far as the steering does. */
+    private static void fullLock() {
+        Car car = new Car();
+        car.cruise(200F, 20);
+        Chassis c = car.chassis;
+        int before = c.heading;
+        int steered = 0;
+        for (int t = 0; t < 60; t++) {
+            c.heading += 7;
+            steered += 7;
+            c.grip = gameGrip(20F, 7, 200F);
+            car.drive(200F);
+        }
+        int turned = c.heading - before;
+        check(F, "a held turn goes all the way round: nothing holds the nose back", turned >= steered * 0.92F,
+                "steered " + steered + " degrees in 60 ticks, turned " + turned);
+    }
+
+    /**
+     * Turning in (the steering growing to 7 degrees a tick, as the game's
+     * does) and steering back, the car's path follows its nose as soon as
+     * under the game's own grip: in the first half second of the turn the
+     * angle between where the car points and where it goes is within a
+     * degree of the game's, and over the whole of it less on average. (The
+     * game's own grip is a square, stronger between the axes than along
+     * them, so tick by tick later on now one leads and now the other.)
+     */
+    private static void response() {
+        Car car = new Car();
+        car.cruise(200F, 20);
+        Chassis c = car.chassis;
+        float gx = c.vx[0];
+        float gz = c.vz[0];
+        float early = -1000F;
+        float sum = 0F;
+        float sumGame = 0F;
+        int ticks = 44;
+        for (int t = 0; t < ticks; t++) {
+            int steer = t < 20 ? Math.min(7, 1 + t) : Math.max(-7, 7 - (t - 20) * 2);
+            c.heading += steer;
+            float grip = gameGrip(20F, steer, 200F);
+            c.grip = grip;
+            car.drive(200F);
+            // the game's own tyres, on the same target: each axis by itself, by the grip
+            gx += HandlingRace.clamp(c.targetX - gx, -grip, grip);
+            gz += HandlingRace.clamp(c.targetZ - gz, -grip, grip);
+            float mine = offNose(c.vx[0], c.vz[0], c.heading);
+            float game = offNose(gx, gz, c.heading);
+            if (t < 10) {
+                early = Math.max(early, mine - game);
+            }
+            sum += mine;
+            sumGame += game;
+        }
+        check(F, "the car's path follows its nose as soon as under the game's own grip",
+                early <= 1F && sum <= sumGame, "turning in and steering back at 200: in the first half second "
+                        + "at most " + n(Math.max(0F, early)) + " degrees further off the nose than under the game's "
+                        + "grip; over 2.3 s " + n(sum / ticks) + " degrees off on average, the game's "
+                        + n(sumGame / ticks));
+    }
+
+    /** The game's grip for a tick: the car's, less for the steering at speed, at least 1. */
+    private static float gameGrip(float grip, int steer, float speed) {
+        return Math.max(1F, grip - Math.abs(steer) * speed / 250F);
+    }
+
+    /** The degrees between where a car points and where it goes. */
+    private static float offNose(float vx, float vz, int heading) {
+        float going = (float) StrictMath.toDegrees(StrictMath.atan2(-vx, vz));
+        return Math.abs(HandlingRace.wrap(going - heading));
     }
 
     /** Saved, played on and restored, the state plays on exactly as before (run-ahead and rollback). */
@@ -154,6 +274,8 @@ public final class HandlingCheck {
         HandlingRace race = new HandlingRace();
         final Chassis chassis = new Chassis();
         float speed;
+        /** The car stands facing the other way from its heading: the game drives it along its nose. */
+        boolean turnedRound;
 
         Car() {
             int[] kx = {-40, 40, -40, 40};
@@ -187,8 +309,9 @@ public final class HandlingCheck {
         void drive(float at) {
             speed = at;
             chassis.speed = at;
-            chassis.targetX = -(int) (at * StrictMath.sin(StrictMath.toRadians(chassis.heading)));
-            chassis.targetZ = (int) (at * StrictMath.cos(StrictMath.toRadians(chassis.heading)));
+            int along = turnedRound ? -1 : 1;
+            chassis.targetX = -(int) (along * at * StrictMath.sin(StrictMath.toRadians(chassis.heading)));
+            chassis.targetZ = (int) (along * at * StrictMath.cos(StrictMath.toRadians(chassis.heading)));
             chassis.targetY = 0;
             race.tyres(0, chassis);
             chassis.lastHeading = chassis.heading;

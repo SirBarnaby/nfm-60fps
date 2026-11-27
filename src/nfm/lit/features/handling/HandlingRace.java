@@ -6,8 +6,9 @@ import nfm.lit.features.RaceTick;
 /**
  * The suspension handling's race part: a spring and damper at each wheel,
  * tyres with one grip shared by braking and turning, the axles' loads
- * setting the car's balance, and a drift assist, stepped 120 times a second
- * of game time inside the race's 53 ms tick.
+ * setting the car's balance, and a drift assist that adds to the driver's
+ * countersteer, stepped 120 times a second of game time inside the race's
+ * 53 ms tick.
  * <p>
  * It acts at the game's tyres ({@link #tyres}, from {@code Madness.drive}'s
  * grip block, while the car is on the ground) and in the race tick
@@ -46,21 +47,30 @@ final class HandlingRace {
     static final float LOAD_UNITS = 18F;
     /** A tyre's grip grows as its load to this power: each unit of load grips less than the one before. */
     static final double LOAD_POWER = 0.8;
-    /** The circle's grip over the game's per-axis grip, so it grips as the game's square does on average. */
-    static final float CIRCLE = 1.1F;
+    /**
+     * The circle's grip at its peak over the game's per-axis grip: the
+     * circle through the corners of the game's square. A sliding tyre keeps
+     * {@link #SLIDING} of it, 1.27, which is the square's mean pull toward
+     * where the car should go; so the car's path follows its nose as soon
+     * as the game's does, and a long slide keeps the game's speed (the
+     * owner, 2026-11-27: "must be somewhat instant").
+     */
+    static final float CIRCLE = 1.41F;
     /** The slip, as a share of the grip, at which a tyre grips most. */
     static final float PEAK = 0.7F;
-    /** The magic formula's shape: past its peak the grip falls to sin(C pi/2), 71%. */
-    static final double SHAPE = 1.5;
+    /** The share of its peak grip a tyre keeps in a full slide. */
+    static final double SLIDING = 0.9;
+    /** The magic formula's shape: past its peak the grip falls to sin(C pi/2), {@link #SLIDING}. */
+    static final double SHAPE = 2 * (StrictMath.PI - StrictMath.asin(SLIDING)) / StrictMath.PI;
     /** Its stiffness: the peak (atan reaching pi/(2C)) falls at a slip of {@link #PEAK}. */
     static final double STIFFNESS = StrictMath.tan(StrictMath.PI / (2 * SHAPE)) / PEAK;
 
     /* the car's turn */
     /** The steering's turn grows by this times the front axle's grip over the rear's. */
     static final float BALANCE = 0.5F;
-    /** A slide past this many degrees between the nose and where the car goes is turned back. */
+    /** Countersteered, a slide past this many degrees between the nose and where the car goes is turned back. */
     static final float DRIFT_ANGLE = 38F;
-    /** The share of a slide's excess turned back each tick. */
+    /** The share of a slide's excess turned back each tick of countersteer. */
     static final float DRIFT_PULL = 0.6F;
     /** Steering into a slide turns the car this much more. */
     static final float COUNTER = 0.25F;
@@ -334,11 +344,22 @@ final class HandlingRace {
     }
 
     /**
-     * The drift assist: past {@link #DRIFT_ANGLE} between the nose and where
-     * the car goes, the nose is turned toward it; steering into a slide turns
-     * it more. Degrees for this tick.
+     * The drift assist, which only ever adds to the driver's own
+     * countersteer: while the steering turns the nose toward where the car
+     * goes, it turns it that much more, and a slide past
+     * {@link #DRIFT_ANGLE} is turned back besides. Steering deeper into the
+     * turn, or not at all, it does nothing: the nose is the driver's, as
+     * far round as the game's steering takes it. Degrees for this tick.
+     * <p>
+     * The nose is where the game drives the car (its target velocity), not
+     * its heading: a car that landed a stunt turned over both ways stands
+     * on its wheels facing the other way, and drives that way, with its
+     * heading left half a turn behind.
      */
     private static float assist(Chassis ch, int steer) {
+        if (steer == 0 || ch.targetX == 0 && ch.targetZ == 0) {
+            return 0F;
+        }
         float mx = 0F;
         float mz = 0F;
         for (int w = 0; w < WHEELS; w++) {
@@ -350,19 +371,17 @@ final class HandlingRace {
         if (mx * mx + mz * mz < MIN_SLIDE_SPEED * MIN_SLIDE_SPEED) {
             return 0F;
         }
-        // the car drives along (-sin, cos) of its heading
+        // a car heading h drives along (-sin h, cos h): the same angle for where it goes and where it is driven
         float going = (float) StrictMath.toDegrees(StrictMath.atan2(-mx, mz));
-        float slide = wrap(going - ch.heading);
+        float nose = (float) StrictMath.toDegrees(StrictMath.atan2(-ch.targetX, ch.targetZ));
+        float slide = wrap(going - nose);
         float size = Math.abs(slide);
-        if (size >= 120F) {
-            return 0F; // going backwards: not a slide
+        if (size >= 120F || size <= 8F || steer * slide <= 0F) {
+            return 0F; // going backwards, no slide to speak of, or not countersteering
         }
-        float turn = 0F;
+        float turn = steer * COUNTER;
         if (size > DRIFT_ANGLE) {
             turn += Math.signum(slide) * (size - DRIFT_ANGLE) * DRIFT_PULL;
-        }
-        if (size > 8F && steer * slide > 0F) {
-            turn += steer * COUNTER;
         }
         return turn;
     }
